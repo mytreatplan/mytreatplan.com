@@ -20,7 +20,7 @@ from decouple import Config, Csv, RepositoryEnv
 from unipath import Path
 from dj_database_url import parse as db_url
 
-config = Config(RepositoryEnv("home/mytpdevuser/mytreatplan/settings.env"))
+config = Config(RepositoryEnv("/Users/jadeandres/Library/CloudStorage/GoogleDrive-mytpdso@gmail.com/Mi unidad/Desarrollo Portal MyTreatplan/code/mytreatplan.com/settings.env"))
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -129,7 +129,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.1/howto/static-files/
 
 STATIC_URL = 'static/'
-
+STATIC_ROOT = os.path.join(BASE_DIR, 'static_root')
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
