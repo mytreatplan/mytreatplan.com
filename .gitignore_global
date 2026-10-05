@@ -1,0 +1,8 @@
+.DS_Store
+settings.py
+.log
+.env
+# IDEs
+.vscode/
+.idea/
+
