@@ -71,7 +71,7 @@
         {% translate "Registered address at Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, U.A.E." %}
       </p>
       <p class="mt-[1em] text-copy text-white">
-        {% blocktranslate with year=2026 %}Copyright &copy; {{ year }} <strong>MytreatPlan</strong>. All Rights Reserved{% endblocktranslate %}
+        {% now "Y" as year %}{% blocktranslate %}Copyright &copy; {{ year }} <strong>MytreatPlan</strong>. All Rights Reserved{% endblocktranslate %}
       </p>
     </footer>
     {% endblock %}
