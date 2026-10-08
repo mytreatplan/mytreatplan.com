@@ -55,6 +55,7 @@ Tracer path: epic 1's base layout and deploy target → epic 2's signup → epic
 
 - Decision (2026-10-08): epics run landing → signup → login; signup waits on the landing epic.
 - Decision (2026-10-08): the decisions shared across epics (custom user model, encrypted fields with HMAC blind index, key-provider interface) live in epic 2, entries 1–2, instead of the opening epic; epic 3 waits on them.
+- Decision (2026-10-08, later): a minimal custom user model is created in epic 1 entry 1.1 before the first migration, to avoid a database reset; signup 2.1 extends it with the email username. Encryption and the blind index stay in epic 2.
 - Decision (2026-10-08): URL names `signup` (epic 2) and `login`, `password_reset` (epic 3); epic 1's menu links use them.
 - Decision (2026-10-08): epic 3's activity logging reuses epic 2's signup event log service (2.3).
 - Decision (2026-10-08): signup and login go to production together; signup stays on staging until epic 3 is live.

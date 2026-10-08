@@ -1,0 +1,126 @@
+# Entries of epic-landing-integration. Table order is the build order; ids are permanent.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Public site tracer bullet"
+description = "Commits env-driven settings.py (removing the commented old SECRET_KEY) with a settings.env.example, untracks __pycache__ and static_root, adds a minimal custom user model in an accounts app before the first migration (signup entry 2.1 extends it), the base template with Tailwind built from design-system tokens and HTMX, the public-site view at `/` with the Home section, header and footer from mytreatplan.ae and its Inter font and images as static files, pytest-django, and a GitHub Actions workflow running the tests against a Postgres service; later pages and epic 2 extend this base template, and entry 8's deploy runs this Tailwind build."
+verify = "Locally `/` shows the Home section matching mytreatplan.ae; AUTH_USER_MODEL points to accounts.User in the first migration; tests pass in GitHub Actions on push."
+covers = ["E1", "E6"]
+after = []
+hitl = false
+risk = "medium"
+notes = ["Yes, reset dev if needed"]
+
+[[entry]]
+id = 2
+type = "story"
+title = "Port the remaining sections"
+description = "Ports What we do, About us, Who we are, Where we are and the Contact info block, the desktop and mobile menus with burger behaviour, anchors and responsive images, matching mytreatplan.ae at mobile, tablet and desktop widths."
+verify = "Side-by-side check against mytreatplan.ae at 480, 768 and 1200 px; tests assert every section and anchor renders."
+covers = ["E1"]
+after = [1]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 3
+type = "story"
+title = "English and Spanish"
+description = "Sets up Django i18n with locale-prefixed URLs (i18n_patterns, which epic 2's `signup` and epic 3's `login` routes also use) and a language switcher in the base template, marks all public strings, and adds Spanish drafted by Claude for the team to review; signup entry 2.4 builds on it."
+verify = "Every section renders in EN and ES with the switcher; a test fails on any untranslated public string; the team approved the Spanish."
+covers = ["E2"]
+after = [2]
+hitl = true
+risk = "low"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Legal pages, SEO and portal links"
+description = "Ports Privacy and Terms (current texts until the lawyer's arrive, Spanish reviewed by the team), sitemap, robots, Open Graph and JSON-LD for mytreatplan.com, and menu links Sign up and Login resolved by URL names `signup` and `login`, hidden while those names are not registered."
+verify = "Privacy and Terms render in EN and ES; sitemap and robots validate; the links are absent with no route and appear when a test registers the names."
+covers = ["E3", "E4"]
+after = [3]
+hitl = true
+risk = "low"
+
+[[entry]]
+id = 7
+type = "spike"
+title = "Choose production hosting"
+description = "The team decides the staging and production host, its managed PostgreSQL and KMS, using the recommendation in the epic's Notes, and opens the accounts; the chosen KMS is passed to bmad-spec to update encryption-policy.md."
+verify = "The decision and accounts are recorded in the epic's Notes."
+covers = ["E6"]
+after = []
+hitl = true
+risk = "high"
+unknown = "Hosting provider; the user is deciding."
+
+[[entry]]
+id = 8
+type = "story"
+title = "Staging and production environments with deploys"
+description = "Provisions staging and production on the chosen host with managed PostgreSQL over TLS, disk encryption, HTTPS and environment secrets, a per-environment switch that turns portal features on or off (signup entry 2.1 registers behind it; on in staging, off in production until epic 3), and a GitHub Actions deploy (staging on every push to master, production on manual approval) running the Tailwind build, compilemessages, collectstatic, migrate and createcachetable."
+verify = "A push deploys to staging over HTTPS; a manual approval deploys the same build to production; the DB connection uses TLS; the portal switch is on in staging and off in production."
+covers = ["E6"]
+after = [4, 7]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Contact form"
+description = "Adds the contact form with the existing fields and limits, the anti-spam checks from enviar.php (honeypot, JS flag, minimum fill time, per-sender hourly limit on Django's database cache), HTMX submission in EN and ES, storage with admin listing, and email to the company inbox through SendGrid as Django's email backend from environment secrets (epic 3's password reset reuses it); marketing provides the SendGrid credentials and the inbox address."
+verify = "Tests show valid submissions are stored and emailed (locmem backend) and each anti-spam rule silently drops the bot case; on staging a real message reaches the inbox."
+covers = ["E5"]
+after = [4, 8]
+hitl = true
+risk = "medium"
+unknown = "SendGrid credentials and the inbox address, from marketing."
+
+[[entry]]
+id = 9
+type = "story"
+title = "Operations: backups, monitoring, cron and KMS"
+description = "Adds off-region automated PostgreSQL backups with a tested restore, uptime and error monitoring with alerts (signup entry 2.11's send-failure alert and entry 6's failures report through it), a cron host running Django management commands on each environment (signup entry 2.10 and entry 6 register jobs there), and provisions the KMS that signup entry 2.12 uses."
+verify = "A restore of last night's backup succeeds on a scratch DB; a forced error alerts; a test command runs from cron on staging; a KMS key is reachable from staging."
+covers = ["E6"]
+after = [8]
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Forward contact messages to the CRM"
+description = "Forwards each stored contact message to the chosen CRM as a lead through its API with credentials from environment secrets, retrying failures from a cron management command and marking forwarded rows in admin."
+verify = "With a sandbox CRM account a submission appears as a lead; a forced API failure is retried by the cron job and stays visible in admin."
+covers = ["E5"]
+after = [5, 9]
+hitl = true
+risk = "medium"
+unknown = "CRM choice; Zoho is likely."
+
+[[entry]]
+id = 10
+type = "story"
+title = "Public site go-live"
+description = "Points mytreatplan.com DNS to production with TLS and releases the public site with portal features off; mytreatplan.ae stays on its current hosting unchanged."
+verify = "mytreatplan.com loads over HTTPS in EN and ES; the contact form delivers in production; Sign up and Login links are hidden in production."
+covers = ["E1", "E6"]
+after = [4, 6, 9]
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
+verify = "The full test suite passes; deferred review findings are closed or recorded."
+covers = []
+after = [1, 2, 3, 4, 7, 8, 5, 9, 6, 10]
+hitl = false
+risk = "low"

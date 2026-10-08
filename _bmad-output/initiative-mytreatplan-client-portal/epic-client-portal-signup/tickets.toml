@@ -4,10 +4,10 @@
 id = 1
 type = "story"
 title = "Signup tracer bullet"
-description = "Creates the accounts app, the custom user model (email username, before any user migration), the pending-registration model with server-side step saving and the created/updated timestamps entry 10 purges by, a wizard step registry, URL name `signup`, step 1 with email and password only, a verification-provider interface with a console fake provider for email and mobile, account creation after the email code and auto-login to a welcome route; temporary until entry 7: only the email code is required, and until entry 2: fields are plaintext."
+description = "Extends the minimal accounts.User from 1.1 (email as username), and adds the pending-registration model with server-side step saving and the created/updated timestamps entry 10 purges by, a wizard step registry, URL name `signup` inside 1.3's i18n_patterns and behind 1.8's portal switch, step 1 with email and password only, a verification-provider interface with a console fake provider for email and mobile, account creation after the email code and auto-login to a welcome route; temporary until entry 7: only the email code is required, and until entry 2: fields are plaintext."
 verify = "Locally a person registers with email and password, reads the code from the console, enters it and lands logged in on the welcome route; tests pass."
 covers = ["CAP-1", "CAP-5", "CAP-7"]
-after = ["epic-landing-integration"]
+after = ["1.1", "1.3", "1.8"]
 hitl = false
 risk = "high"
 
@@ -137,7 +137,7 @@ title = "KMS key provider"
 description = "Implements the key provider for the KMS of the hosting chosen in epic 1 (envelope encryption, key rotation) behind entry 2's interface; a person configures it on staging and production."
 verify = "On staging data keys are unwrapped through the KMS, and a key rotation leaves existing data readable."
 covers = []
-after = [2, "epic-landing-integration"]
+after = [2, "1.9"]
 hitl = true
 risk = "medium"
 references = ["spec-client-portal-signup/encryption-policy.md"]
