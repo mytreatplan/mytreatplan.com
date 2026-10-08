@@ -1,0 +1,32 @@
+{% load i18n static %}
+<section id="where-we-are" class="relative">
+  <img class="block min-h-[130px] w-full object-cover"
+       src="{% static 'img/Cabecera_Where.webp' %}"
+       srcset="{% static 'img/Cabecera_Where-480.webp' %} 480w, {% static 'img/Cabecera_Where-768.webp' %} 768w, {% static 'img/Cabecera_Where-1200.webp' %} 1200w, {% static 'img/Cabecera_Where.webp' %} 1980w"
+       sizes="(min-width: 1440px) 1440px, 100vw" width="1980" height="975" alt="" loading="lazy">
+  <h2 class="absolute right-gutter bottom-[clamp(14px,3vw,40px)] text-h2 font-black text-white">{% translate "Where we are" %}</h2>
+</section>
+
+<section class="px-gutter py-section">
+  <img class="mb-[clamp(20px,4vw,40px)] block h-auto w-full"
+       src="{% static 'img/Mapa_mundo.webp' %}"
+       srcset="{% static 'img/Mapa_mundo-480.webp' %} 480w, {% static 'img/Mapa_mundo-768.webp' %} 768w, {% static 'img/Mapa_mundo-1200.webp' %} 1200w, {% static 'img/Mapa_mundo.webp' %} 1561w"
+       sizes="(min-width: 1440px) 1328px, 92vw" width="1561" height="620" alt="" loading="lazy">
+  <ul class="grid grid-cols-3 gap-grid max-tablet:grid-cols-1">
+    <li>
+      <h3 class="text-h3 font-black">{% translate "Dublin" %}</h3>
+      <p class="mt-1.5 text-sub/[1.55] font-bold">{% translate "Europe &amp; North America" %}</p>
+      <p class="mt-[1em] text-copy">{% blocktranslate %}<strong>European HQ.</strong><br>Dublin &amp; Cork offices attending UK, Ireland &amp; North Europe.{% endblocktranslate %}</p>
+    </li>
+    <li>
+      <h3 class="text-h3 font-black">{% translate "Dubai" %}</h3>
+      <p class="mt-1.5 text-sub/[1.55] font-bold">{% blocktranslate %}Global Headquarters<br>&amp; MEA Market{% endblocktranslate %}</p>
+      <p class="mt-[1em] text-copy">{% blocktranslate %}<strong>Global HQ.</strong><br>Attending MEA &amp; Turkey Markets.{% endblocktranslate %}</p>
+    </li>
+    <li>
+      <h3 class="text-h3 font-black">{% translate "Madrid" %}</h3>
+      <p class="mt-1.5 text-sub/[1.55] font-bold">{% translate "Iberia &amp; Rest of America" %}</p>
+      <p class="mt-[1em] text-copy"><strong>{% translate "Offices attending Iberia &amp; Rest of America." %}</strong></p>
+    </li>
+  </ul>
+</section>

@@ -35,6 +35,18 @@ SECRET_KEY = config('SECRET_KEY')
 DEBUG = config('DEBUG', default=False, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='', cast=Csv())
 
+# Public address of the site, without a trailing slash. Canonical, Open Graph, hreflang,
+# sitemap and robots.txt URLs are built from it (never from the request host), so a
+# staging deploy sets its own host here.
+SITE_URL = config('SITE_URL', default='https://mytreatplan.com').rstrip('/')
+
+# The Privacy and Terms pages show draft texts (ported from mytreatplan.ae) until the
+# lawyer supplies the mytreatplan.com versions. While this is False, `check --deploy`
+# fails with DEBUG off, so production cannot ship the drafts. Set it to True only after
+# replacing mytp_publicsite/templates/publicsite/legal/_privacy_body.html and _terms_body.html
+# and adding the Spanish texts as _privacy_body_es.html and _terms_body_es.html.
+LEGAL_TEXTS_FINAL = False
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -44,6 +56,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sitemaps',
     'accounts.apps.AccountsConfig',
     'mytp_publicsite.apps.MytpPublicsiteConfig',
 ]
@@ -51,6 +64,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.locale.LocaleMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -111,7 +125,17 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+# English is the default; every public page lives under /en/ or /es/ (see urls.py).
+LANGUAGE_CODE = 'en'
+
+LANGUAGES = [
+    ('en', 'English'),
+    ('es', 'Español'),
+]
+
+# Spanish catalogue: locale/es/LC_MESSAGES/django.po. The compiled .mo is not
+# committed; build it with `python manage.py compilemessages`.
+LOCALE_PATHS = [BASE_DIR / 'locale']
 
 TIME_ZONE = 'Europe/Madrid'
 

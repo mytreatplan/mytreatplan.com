@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% load i18n static %}
+{% comment %}
+Layout for the Privacy and Terms pages, after the mytreatplan.ae privacy/ and terms/ pages:
+a light header with the logo, a 760px column with numbered h2s, and the shared footer.
+The legal text lives in legal/_<page>_body.html (English) and, once the lawyer supplies it,
+legal/_<page>_body_<lang>.html; the view picks one (see LegalPageView).
+{% endcomment %}
+
+{% block og_type %}article{% endblock %}
+
+{% block header %}
+<header class="border-b border-line px-gutter py-[clamp(28px,5vw,52px)]">
+  <div class="flex flex-col items-center gap-4">
+    <a href="{% url 'publicsite:home' %}" class="block" aria-label="{% translate 'MyTreatPlan home' %}">
+      <img class="block h-auto w-[clamp(170px,26vw,240px)]"
+           src="{% static 'img/Logo_MyTreatPlan.webp' %}" width="461" height="88" alt="MyTreatPlan">
+    </a>
+    <nav aria-label="{% translate 'Main' %}" class="flex flex-wrap items-center justify-center gap-x-[clamp(14px,2.2vw,26px)] gap-y-2 text-nav">
+      {% include "includes/_portal_links.html" with ul_class="flex items-center gap-[clamp(10px,1.6vw,18px)]" link="font-semibold underline-offset-4 hover:underline" %}
+      {% include "includes/_language_switcher.html" with ul_class="flex gap-[clamp(10px,1.6vw,18px)]" link="font-semibold text-ink-muted underline-offset-4 hover:underline" current="font-black text-ink" %}
+    </nav>
+  </div>
+</header>
+{% endblock %}
+
+{% block content %}
+<article class="mx-auto max-w-legal px-gutter pt-[clamp(34px,6vw,68px)] pb-[clamp(48px,8vw,90px)] text-[16px] leading-[1.6]">
+  <h1 class="text-[clamp(28px,5vw,42px)] font-black leading-[1.1] tracking-[-0.03em]">{% block legal_heading %}{% endblock %}</h1>
+  {# Shown only when this language has no body of its own yet and the English one is used. #}
+  {% if legal_body_is_fallback %}
+  <p class="mt-5 rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] leading-[1.55] text-notice-text" role="note">
+    {% translate "The version of this document in your language is being prepared. In the meantime, the English version is shown below." %}
+  </p>
+  {% endif %}
+  <div class="legal-prose" lang="{{ legal_body_lang }}">
+    {% include legal_body_template %}
+  </div>
+</article>
+{% endblock %}

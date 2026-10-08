@@ -113,6 +113,7 @@ covers = ["E1", "E6"]
 after = [4, 6, 9]
 hitl = true
 risk = "medium"
+unknown = "Final mytreatplan.com legal texts (Privacy and Terms, EN and ES) from the lawyer; until then LEGAL_TEXTS_FINAL stays False and check --deploy fails (story 1.4)."
 
 [[entry]]
 id = 11

@@ -1,0 +1,442 @@
+# Spanish catalogue for the MyTreatPlan public site.
+# Draft by Claude; reviewed in story-english-and-spanish-es-review.md.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: mytreatplan.com\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-10-08 20:10+0200\n"
+"PO-Revision-Date: 2026-10-08 20:00+0200\n"
+"Last-Translator: Claude draft, pending team review\n"
+"Language-Team: MyTreatPlan <sayhi@mytreatplan.com>\n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? "
+"1 : 2;\n"
+
+#: mytp_publicsite/templates/publicsite/home.html:12
+msgid "Digital Orthodontics"
+msgstr "Ortodoncia Digital"
+
+#: mytp_publicsite/templates/publicsite/home.html:13
+msgid "Made Simple"
+msgstr "Sin complicaciones"
+
+#: mytp_publicsite/templates/publicsite/legal/base_legal.html:14
+msgid "MyTreatPlan home"
+msgstr "Inicio de MyTreatPlan"
+
+#: mytp_publicsite/templates/publicsite/legal/base_legal.html:18
+#: templates/base.html:62
+msgid "Main"
+msgstr "Principal"
+
+#: mytp_publicsite/templates/publicsite/legal/base_legal.html:32
+msgid ""
+"The version of this document in your language is being prepared. In the "
+"meantime, the English version is shown below."
+msgstr "La versión en español de este documento se está preparando. Mientras tanto, se muestra a continuación la versión en inglés."
+
+#: mytp_publicsite/templates/publicsite/privacy.html:4
+#: mytp_publicsite/templates/publicsite/privacy.html:6
+#: mytp_publicsite/templates/publicsite/privacy.html:9 templates/base.html:113
+msgid "Privacy Policy"
+msgstr "Política de privacidad"
+
+#: mytp_publicsite/templates/publicsite/privacy.html:5
+#: mytp_publicsite/templates/publicsite/privacy.html:7
+msgid ""
+"How MyTreatPlan collects, uses, stores and shares personal data through this "
+"website."
+msgstr "Cómo MyTreatPlan recoge, utiliza, conserva y comparte datos personales a través de este sitio web."
+
+#: mytp_publicsite/templates/publicsite/sections/_about_us.html:7
+msgid "About us"
+msgstr "Sobre nosotros"
+
+#: mytp_publicsite/templates/publicsite/sections/_about_us.html:13
+msgid ""
+"<strong>MyTreatPlan</strong> is the evolution of one of the most successful "
+"TPS companies in Europe. Starting in 2017, the founder team continued "
+"innovating through the years while developing the best and highest quality "
+"<strong><em>treatment planning services in the market.</em></strong>"
+msgstr ""
+"<strong>MyTreatPlan</strong> es la evolución de una de las empresas de TPS "
+"con más éxito de Europa. Desde 2017, el equipo fundador no ha dejado de "
+"innovar, desarrollando con la máxima calidad los mejores "
+"<strong><em>servicios de planificación de tratamientos del mercado.</em></"
+"strong>"
+
+#: mytp_publicsite/templates/publicsite/sections/_about_us.html:14
+msgid ""
+"Now in 2026, with all the immense experience gathered, we present a new "
+"brand and a whole new set of products and services for <strong>Digital "
+"Orthodontics</strong> intended to push dental practices to a higher level in "
+"terms of efficiency and profitability."
+msgstr ""
+"Ahora, en 2026, con toda la experiencia acumulada, presentamos una nueva "
+"marca y una gama completamente nueva de productos y servicios de "
+"<strong>Ortodoncia Digital</strong>, pensados para llevar a las clínicas "
+"dentales a un nivel superior de eficiencia y rentabilidad."
+
+#: mytp_publicsite/templates/publicsite/sections/_about_us.html:17
+msgid ""
+"Our unique approach, focused on being partners of our Doctors and Practices "
+"and accompanying them during their treatments makes us much more than just a "
+"service provider but a trustworthy Orthodontic Center in which you can "
+"always rely for helping you taking care of your patients."
+msgstr ""
+"Nuestro enfoque, centrado en ser socios de nuestros Doctores y Clínicas y en "
+"acompañarles durante sus tratamientos, nos convierte en mucho más que un "
+"proveedor de servicios: somos un Centro de Ortodoncia de confianza en el que "
+"siempre puede apoyarse para cuidar de sus pacientes."
+
+#: mytp_publicsite/templates/publicsite/sections/_about_us.html:30
+msgid "+50.000"
+msgstr "+50.000"
+
+#: mytp_publicsite/templates/publicsite/sections/_about_us.html:31
+msgid "Plannings successfully delivered by our team"
+msgstr "Planificaciones entregadas con éxito por nuestro equipo"
+
+#: mytp_publicsite/templates/publicsite/sections/_about_us.html:34
+msgid "+700"
+msgstr "+700"
+
+#: mytp_publicsite/templates/publicsite/sections/_about_us.html:35
+msgid "Satisfied Customers"
+msgstr "Clientes satisfechos"
+
+#: mytp_publicsite/templates/publicsite/sections/_contact.html:7
+msgid "Contact"
+msgstr "Contacto"
+
+#: mytp_publicsite/templates/publicsite/sections/_contact.html:12
+msgid "Get in touch"
+msgstr "Contáctenos"
+
+#: mytp_publicsite/templates/publicsite/sections/_what_we_do.html:8
+msgid "What we do"
+msgstr "Qué hacemos"
+
+#: mytp_publicsite/templates/publicsite/sections/_what_we_do.html:17
+msgid "High Quality"
+msgstr "Alta calidad"
+
+#: mytp_publicsite/templates/publicsite/sections/_what_we_do.html:18
+msgid "Premium Digital Orthodontics Services"
+msgstr "Servicios premium de Ortodoncia Digital"
+
+#: mytp_publicsite/templates/publicsite/sections/_what_we_do.html:25
+msgid "Tailored TPS"
+msgstr "TPS a medida"
+
+#: mytp_publicsite/templates/publicsite/sections/_what_we_do.html:27
+msgid ""
+"Digital treatment plan in 3D showing bracket placement and tooth movement"
+msgstr ""
+"Plan de tratamiento digital en 3D que muestra la colocación de los brackets "
+"y el movimiento dental"
+
+#: mytp_publicsite/templates/publicsite/sections/_what_we_do.html:28
+msgid "with <strong>Mentoring and Clinical Support</strong>"
+msgstr "con <strong>mentoría y soporte clínico</strong>"
+
+#: mytp_publicsite/templates/publicsite/sections/_what_we_do.html:31
+msgid "VirtuaOrtho"
+msgstr "VirtuaOrtho"
+
+#: mytp_publicsite/templates/publicsite/sections/_what_we_do.html:33
+msgid ""
+"Orthodontist reviewing a clinical case remotely with digital planning tools"
+msgstr ""
+"Ortodoncista revisando un caso clínico a distancia con herramientas de "
+"planificación digital"
+
+#: mytp_publicsite/templates/publicsite/sections/_what_we_do.html:34
+msgid ""
+"Full remote VIRTUAL ORTHODONTIST support (case study review, diagnostic "
+"confirmation, treatment design assistance, digital planning, full online "
+"clinical support)"
+msgstr ""
+"Soporte completo de ORTODONCISTA VIRTUAL a distancia (revisión de casos, "
+"confirmación del diagnóstico, asistencia en el diseño del tratamiento, "
+"planificación digital y soporte clínico online completo)"
+
+#: mytp_publicsite/templates/publicsite/sections/_what_we_do.html:37
+msgid "Education"
+msgstr "Formación"
+
+#: mytp_publicsite/templates/publicsite/sections/_what_we_do.html:39
+msgid "Orthodontics masterclass with dental professionals"
+msgstr "Masterclass de ortodoncia con profesionales dentales"
+
+#: mytp_publicsite/templates/publicsite/sections/_what_we_do.html:40
+msgid "One to one and workshops with a highly practical approach"
+msgstr "Sesiones individuales y talleres con un enfoque muy práctico"
+
+#: mytp_publicsite/templates/publicsite/sections/_where_we_are.html:7
+msgid "Where we are"
+msgstr "Dónde estamos"
+
+#: mytp_publicsite/templates/publicsite/sections/_where_we_are.html:17
+msgid "Dublin"
+msgstr "Dublín"
+
+#: mytp_publicsite/templates/publicsite/sections/_where_we_are.html:18
+msgid "Europe &amp; North America"
+msgstr "Europa y Norteamérica"
+
+#: mytp_publicsite/templates/publicsite/sections/_where_we_are.html:19
+msgid ""
+"<strong>European HQ.</strong><br>Dublin &amp; Cork offices attending UK, "
+"Ireland &amp; North Europe."
+msgstr ""
+"<strong>Sede europea.</strong><br>Oficinas en Dublín y Cork que atienden "
+"Reino Unido, Irlanda y el norte de Europa."
+
+#: mytp_publicsite/templates/publicsite/sections/_where_we_are.html:22
+msgid "Dubai"
+msgstr "Dubái"
+
+#: mytp_publicsite/templates/publicsite/sections/_where_we_are.html:23
+msgid "Global Headquarters<br>&amp; MEA Market"
+msgstr "Sede central global<br>y mercado MEA"
+
+#: mytp_publicsite/templates/publicsite/sections/_where_we_are.html:24
+msgid "<strong>Global HQ.</strong><br>Attending MEA &amp; Turkey Markets."
+msgstr ""
+"<strong>Sede central global.</strong><br>Atiende los mercados de MEA y "
+"Turquía."
+
+#: mytp_publicsite/templates/publicsite/sections/_where_we_are.html:27
+msgid "Madrid"
+msgstr "Madrid"
+
+#: mytp_publicsite/templates/publicsite/sections/_where_we_are.html:28
+msgid "Iberia &amp; Rest of America"
+msgstr "Iberia y resto de América"
+
+#: mytp_publicsite/templates/publicsite/sections/_where_we_are.html:29
+msgid "Offices attending Iberia &amp; Rest of America."
+msgstr "Oficinas que atienden Iberia y el resto de América."
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:7
+msgid "Who<br>we are"
+msgstr "Quiénes<br>somos"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:14
+msgid "carousel"
+msgstr "carrusel"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:14
+msgid "Our team"
+msgstr "Nuestro equipo"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:15
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:21
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:27
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:33
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:39
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:45
+msgid "slide"
+msgstr "diapositiva"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:15
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:21
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:27
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:33
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:39
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:45
+#, python-format
+msgid "%(n)s of %(total)s: %(name)s"
+msgstr "%(n)s de %(total)s: %(name)s"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:18
+msgid "Co-Founder &amp; Clinical<br>Chief Officer"
+msgstr "Cofundadora y Directora<br>Clínica"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:19
+msgid ""
+"With over 19 years of experience as Orthodontist, having worked for the "
+"aligners industry, professor at various Universities and KOL for a well "
+"renown brand, Belén is our Clinical Cornerstone."
+msgstr ""
+"Con más de 19 años de experiencia como ortodoncista, tras haber trabajado "
+"para la industria de los alineadores, como profesora en varias universidades "
+"y como KOL de una marca de renombre, Belén es nuestro pilar clínico."
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:24
+msgid "Co-Founder, Chair &amp; CEO"
+msgstr "Cofundador, Presidente y CEO"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:25
+msgid ""
+"As a telecomm engineer with over 20 years of wide experience, Antonio is in "
+"charge of making our business run, both technically and at managing levels."
+msgstr ""
+"Ingeniero de telecomunicaciones con más de 20 años de amplia experiencia, "
+"Antonio se encarga de que nuestro negocio funcione, tanto en lo técnico como "
+"en la gestión."
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:30
+msgid "MEA-T Regional Manager"
+msgstr "Directora Regional MEA-T"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:31
+msgid ""
+"With over 14 years of experience in the Aligners Market all over the MEA-T "
+"region, Adina leads our expansion in the Middle East, Africa and Turkey "
+"region."
+msgstr ""
+"Con más de 14 años de experiencia en el mercado de alineadores en toda la "
+"región MEA-T, Adina lidera nuestra expansión en Oriente Medio, África y "
+"Turquía."
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:36
+msgid "Commercial Director"
+msgstr "Director Comercial"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:37
+msgid ""
+"With an Executive MBA and over 16 years of extensive experience in the "
+"Dental market, Albert is the person who leads our Marketing and Sales "
+"department and an invaluable asset for our company."
+msgstr ""
+"Con un Executive MBA y más de 16 años de amplia experiencia en el sector "
+"dental, Albert dirige nuestro departamento de Marketing y Ventas y es un "
+"activo de valor incalculable para nuestra empresa."
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:42
+msgid "Senior CAD Designer<br>&amp; Team Leader"
+msgstr "Diseñadora CAD sénior<br>y jefa de equipo"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:43
+msgid ""
+"Iliyana has both Dental Prosthetist and Hygienist education background. She "
+"has been working as a digital planner for orthodontics for more than 7 years "
+"now."
+msgstr ""
+"Iliyana tiene formación como protésica dental e higienista. Lleva más de 7 "
+"años trabajando como planificadora digital de ortodoncia."
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:48
+msgid "Senior CAD Designer<br>&amp; DM Coordinator"
+msgstr "Diseñadora CAD sénior<br>y coordinadora DM"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:49
+msgid ""
+"Marta has both Dental Prosthetist and Hygienist background. She has been "
+"working as a digital planner for orthodontics for more than 8 years now."
+msgstr ""
+"Marta tiene formación como protésica dental e higienista. Lleva más de 8 "
+"años trabajando como planificadora digital de ortodoncia."
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:53
+msgid "Previous"
+msgstr "Anterior"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:57
+msgid "Next"
+msgstr "Siguiente"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:60
+msgid "Team members"
+msgstr "Miembros del equipo"
+
+#: mytp_publicsite/templates/publicsite/sections/_who_we_are.html:61
+#, python-brace-format
+msgid "Go to position {n} of {total}"
+msgstr "Ir a la posición {n} de {total}"
+
+#: mytp_publicsite/templates/publicsite/terms.html:4
+#: mytp_publicsite/templates/publicsite/terms.html:6
+#: mytp_publicsite/templates/publicsite/terms.html:9
+msgid "Website Terms &amp; Conditions"
+msgstr "Términos y condiciones del sitio web"
+
+#: mytp_publicsite/templates/publicsite/terms.html:5
+#: mytp_publicsite/templates/publicsite/terms.html:7
+msgid "Terms governing access to and use of the MyTreatPlan website."
+msgstr "Términos que regulan el acceso al sitio web de MyTreatPlan y su uso."
+
+#: mytp_publicsite/views.py:26 templates/base.html:8 templates/base.html:16
+msgid ""
+"Treatment planning services, remote virtual orthodontist support and "
+"education for orthodontic practices. Offices in Dublin, Dubai and Madrid."
+msgstr ""
+"Servicios de planificación de tratamientos, soporte de ortodoncista virtual "
+"a distancia y formación para clínicas de ortodoncia. Oficinas en Dublín, "
+"Dubái y Madrid."
+
+#: templates/base.html:7 templates/base.html:15 templates/base.html:24
+msgid "Digital Orthodontics Made Simple"
+msgstr "Ortodoncia Digital sin complicaciones"
+
+#: templates/base.html:53
+msgid "Menu"
+msgstr "Menú"
+
+#: templates/base.html:66
+msgid "home"
+msgstr "inicio"
+
+#: templates/base.html:67
+msgid "what we do"
+msgstr "qué hacemos"
+
+#: templates/base.html:68
+msgid "about us"
+msgstr "sobre nosotros"
+
+#: templates/base.html:69
+msgid "who we are"
+msgstr "quiénes somos"
+
+#: templates/base.html:70
+msgid "where we are"
+msgstr "dónde estamos"
+
+#: templates/base.html:71
+msgid "contact"
+msgstr "contacto"
+
+#: templates/base.html:108
+msgid "Company number"
+msgstr "Número de registro mercantil"
+
+#: templates/base.html:109
+msgid "Registered office: 19 Baggot Street Lower, Dublin 2, D02 X658, Ireland"
+msgstr "Domicilio social: 19 Baggot Street Lower, Dublin 2, D02 X658, Irlanda"
+
+#: templates/base.html:111
+msgid "Legal"
+msgstr "Legal"
+
+#: templates/base.html:114
+msgid "Terms &amp; Conditions"
+msgstr "Términos y condiciones"
+
+#: templates/base.html:118
+#, python-format
+msgid ""
+"Copyright &copy; %(year)s <strong>MyTreatPlan</strong>. All Rights Reserved"
+msgstr "Copyright &copy; %(year)s <strong>MyTreatPlan</strong>. Todos los derechos reservados"
+
+#: templates/includes/_language_switcher.html:2
+msgid "Language"
+msgstr "Idioma"
+
+#: templates/includes/_portal_links.html:5
+msgid "Client portal"
+msgstr "Portal de clientes"
+
+#: templates/includes/_portal_links.html:6
+msgid "Log in"
+msgstr "Iniciar sesión"
+
+#: templates/includes/_portal_links.html:7
+msgid "Sign up"
+msgstr "Registrarse"

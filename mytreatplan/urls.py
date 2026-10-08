@@ -14,10 +14,25 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf.urls.i18n import i18n_patterns
 from django.contrib import admin
+from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path
+
+from mytp_publicsite.sitemaps import PublicPagesSitemap
+from mytp_publicsite.views import robots_txt
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('mytp_publicsite.urls')),
+    # Crawler files sit at the root, outside the language prefixes.
+    path('robots.txt', robots_txt, name='robots_txt'),
+    path('sitemap.xml', sitemap, {'sitemaps': {'pages': PublicPagesSitemap}},
+         name='django.contrib.sitemaps.views.sitemap'),
 ]
+
+# Public pages live under /en/ and /es/. A bare / is redirected by LocaleMiddleware
+# to the visitor's language (Accept-Language), falling back to English.
+urlpatterns += i18n_patterns(
+    path('', include('mytp_publicsite.urls')),
+    prefix_default_language=True,
+)

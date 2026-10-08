@@ -10,6 +10,7 @@ from django.db.migrations.autodetector import MigrationAutodetector
 from django.db.migrations.loader import MigrationLoader
 from django.db.migrations.questioner import NonInteractiveMigrationQuestioner
 from django.db.migrations.state import ProjectState
+from django.utils import translation
 
 
 def test_user_model_is_custom():
@@ -18,14 +19,18 @@ def test_user_model_is_custom():
 
 
 def test_no_missing_migrations():
-    """Every model change has a migration (same as `makemigrations --check`, without a DB)."""
-    loader = MigrationLoader(None, ignore_no_migrations=True)
-    autodetector = MigrationAutodetector(
-        loader.project_state(),
-        ProjectState.from_apps(apps),
-        NonInteractiveMigrationQuestioner(),
-    )
-    changes = autodetector.changes(graph=loader.graph)
+    """Every model change has a migration (same as `makemigrations --check`, without a DB).
+
+    Like makemigrations (@no_translations), compare with translations off: a language left
+    active by an earlier request (e.g. /es/) would otherwise translate verbose names."""
+    with translation.override(None):
+        loader = MigrationLoader(None, ignore_no_migrations=True)
+        autodetector = MigrationAutodetector(
+            loader.project_state(),
+            ProjectState.from_apps(apps),
+            NonInteractiveMigrationQuestioner(),
+        )
+        changes = autodetector.changes(graph=loader.graph)
     assert changes == {}
 
 
