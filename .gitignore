@@ -1,0 +1,35 @@
+# OS
+.DS_Store
+
+# Secrets (copy settings.env.example to settings.env)
+settings.env
+
+# Django settings hold no secrets and must be tracked (overrides global ignores)
+!mytreatplan/settings.py
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Django collectstatic output
+static_root/
+
+# Node / Tailwind build
+node_modules/
+static/css/site.css
+
+# Spec Driven Development: BMAD
+.agents/
+.claude/
+skills-lock.json
+
+# IDEs
+.vscode/
+.idea/
+
+# BMad rendered workflow cache
+_bmad/render/
