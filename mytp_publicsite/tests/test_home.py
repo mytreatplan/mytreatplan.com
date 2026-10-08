@@ -26,7 +26,7 @@ def test_home_shows_hero_header_and_footer(client):
     assert 'Made Simple' in html
     assert 'alt="MyTreatPlan"' in html  # header logo
     assert 'what we do' in html  # header nav
-    assert 'License number' in html  # footer company line
+    assert 'MyTPDSO Limited' in html  # footer company line
     assert 'linkedin.com/company/mytreatplan' in html  # footer socials
 
 

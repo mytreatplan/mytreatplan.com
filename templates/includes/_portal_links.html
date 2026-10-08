@@ -1,0 +1,9 @@
+{% load i18n %}{% comment %}
+Client portal links. Each renders only when its URL name exists, so the links appear by
+themselves once the Sign up (epic 2) and Login (epic 3) pages are routed.
+{% endcomment %}{% url 'login' as login_url %}{% url 'signup' as signup_url %}{% if login_url or signup_url %}
+<ul class="{{ ul_class }}" aria-label="{% translate 'Client portal' %}">
+  {% if login_url %}<li><a href="{{ login_url }}" class="{{ link }}" data-portal-link="login">{% translate "Log in" %}</a></li>{% endif %}
+  {% if signup_url %}<li><a href="{{ signup_url }}" class="{{ link }}" data-portal-link="signup">{% translate "Sign up" %}</a></li>{% endif %}
+</ul>
+{% endif %}

@@ -41,7 +41,7 @@ def test_spanish_page(client):
     # One string from every section, plus header and footer.
     for text in ['Ortodoncia Digital', 'qué hacemos', 'Qué hacemos', 'Sobre nosotros',
                  'Quiénes<br>somos', 'Dónde estamos', 'Contacto', 'Contáctenos',
-                 'Número de licencia', 'Todos los derechos reservados']:
+                 'Número de registro mercantil', 'Todos los derechos reservados']:
         assert text in html, text
     assert 'font-black">Dubái</h3>' in html
     assert 'What we do' not in html
@@ -104,21 +104,24 @@ def test_switcher_sits_inside_the_burger_panel(client):
     assert 'aria-label="Language"' in nav
 
 
+@override_settings(SITE_URL='https://mytreatplan.example')
 def test_head_lists_alternate_languages(client):
+    """Alternates are on SITE_URL, like the canonical URL, whatever host served the page."""
     html = client.get('/es/').content.decode()
 
-    assert '<link rel="alternate" hreflang="en" href="http://testserver/en/">' in html
-    assert '<link rel="alternate" hreflang="es" href="http://testserver/es/">' in html
-    assert '<link rel="alternate" hreflang="x-default" href="http://testserver/">' in html
+    assert '<link rel="alternate" hreflang="en" href="https://mytreatplan.example/en/">' in html
+    assert '<link rel="alternate" hreflang="es" href="https://mytreatplan.example/es/">' in html
+    assert '<link rel="alternate" hreflang="x-default" href="https://mytreatplan.example/">' in html
 
 
+@override_settings(SITE_URL='https://mytreatplan.example')
 def test_head_alternates_omit_the_query_string(client):
     html = client.get('/es/?utm=1').content.decode()
 
     alternates = re.findall(r'<link rel="alternate" hreflang="[^"]+" href="([^"]+)">', html)
     assert alternates
     assert all('?' not in href for href in alternates), alternates
-    assert '<link rel="alternate" hreflang="en" href="http://testserver/en/">' in html
+    assert '<link rel="alternate" hreflang="en" href="https://mytreatplan.example/en/">' in html
 
 
 # --- Spanish catalogue -----------------------------------------------------------------

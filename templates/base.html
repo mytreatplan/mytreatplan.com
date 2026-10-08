@@ -7,7 +7,23 @@
   <title>{% block title %}MyTreatPlan &mdash; {% translate "Digital Orthodontics Made Simple" %}{% endblock %}</title>
   <meta name="description" content="{% block meta_description %}{% translate "Treatment planning services, remote virtual orthodontist support and education for orthodontic practices. Offices in Dublin, Dubai and Madrid." %}{% endblock %}">
   {% for lang in site_languages %}<link rel="alternate" hreflang="{{ lang.code }}" href="{% translated_url lang.code absolute=True %}">
-  {% endfor %}<link rel="alternate" hreflang="x-default" href="{{ request.scheme }}://{{ request.get_host }}/">
+  {% endfor %}<link rel="alternate" hreflang="x-default" href="{% site_url '/' %}">
+  {# Canonical and sharing tags: absolute URLs always come from settings.SITE_URL. #}
+  <link rel="canonical" href="{% canonical_url %}">
+  <meta property="og:type" content="{% block og_type %}website{% endblock %}">
+  <meta property="og:site_name" content="MyTreatPlan">
+  <meta property="og:title" content="{% block og_title %}MyTreatPlan &mdash; {% translate "Digital Orthodontics Made Simple" %}{% endblock %}">
+  <meta property="og:description" content="{% block og_description %}{% translate "Treatment planning services, remote virtual orthodontist support and education for orthodontic practices. Offices in Dublin, Dubai and Madrid." %}{% endblock %}">
+  <meta property="og:url" content="{% canonical_url %}">
+  <meta property="og:locale" content="{% if LANGUAGE_CODE == 'es' %}es_ES{% else %}en_GB{% endif %}">
+  {% for lang in site_languages %}{% if lang.code != LANGUAGE_CODE %}<meta property="og:locale:alternate" content="{% if lang.code == 'es' %}es_ES{% else %}en_GB{% endif %}">
+  {% endif %}{% endfor %}{% static 'img/og-mytreatplan.png' as og_image %}<meta property="og:image" content="{% site_url og_image %}">
+  <meta property="og:image:type" content="image/png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="MyTreatPlan &mdash; {% translate "Digital Orthodontics Made Simple" %}">
+  <meta name="twitter:card" content="summary_large_image">
+  {% block structured_data %}{% endblock %}
   <link rel="preload" href="{% static 'fonts/inter-latin-wght-normal.woff2' %}" as="font" type="font/woff2" crossorigin>
   <style>
     @font-face{font-family:"Inter Variable";font-style:normal;font-display:swap;font-weight:100 900;src:url("{% static 'fonts/inter-latin-ext-wght-normal.woff2' %}") format("woff2-variations");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
@@ -55,16 +71,10 @@
             <li><a href="#contact" class="{{ link }}">{% translate "contact" %}</a></li>
           </ul>
           {% endwith %}
+          {# Sign up and Login: only once those pages exist (URL names signup / login). #}
+          {% include "includes/_portal_links.html" with ul_class="flex items-center gap-[clamp(10px,1.6vw,18px)] text-nav max-tablet:mt-3 max-tablet:[.js_&]:mt-0 max-tablet:[.js_&]:flex-col max-tablet:[.js_&]:gap-[26px] max-tablet:[.js_&]:text-[20px] tablet:border-l-2 tablet:border-ink/40 tablet:pl-[clamp(10px,2.2vw,26px)]" link="font-semibold max-tablet:[.js_&]:text-white" %}
           {# Language switcher: the same page in each language; the current one is marked. #}
-          {% with link="font-semibold max-tablet:[.js_&]:text-white" current="font-black text-white" %}
-          <ul class="flex gap-[clamp(10px,1.6vw,18px)] text-nav max-tablet:mt-3 max-tablet:[.js_&]:mt-0 max-tablet:[.js_&]:gap-[26px] max-tablet:[.js_&]:text-[20px] tablet:border-l-2 tablet:border-ink/40 tablet:pl-[clamp(10px,2.2vw,26px)]"
-              aria-label="{% translate 'Language' %}">
-            {% for lang in site_languages %}
-            <li><a href="{% translated_url lang.code %}" lang="{{ lang.code }}" hreflang="{{ lang.code }}"
-                   {% if lang.code == LANGUAGE_CODE %}aria-current="true" class="{{ current }}"{% else %}class="{{ link }}"{% endif %}>{{ lang.name_local|capfirst }}</a></li>
-            {% endfor %}
-          </ul>
-          {% endwith %}
+          {% include "includes/_language_switcher.html" with ul_class="flex gap-[clamp(10px,1.6vw,18px)] text-nav max-tablet:mt-3 max-tablet:[.js_&]:mt-0 max-tablet:[.js_&]:gap-[26px] max-tablet:[.js_&]:text-[20px] tablet:border-l-2 tablet:border-ink/40 tablet:pl-[clamp(10px,2.2vw,26px)]" link="font-semibold max-tablet:[.js_&]:text-white" current="font-black text-white" %}
         </nav>
         {% block hero %}{% endblock %}
       </div>
@@ -95,11 +105,17 @@
         </li>
       </ul>
       <p class="mx-auto max-w-[62ch] text-legal text-footer-text">
-        {% translate "MyTPDSO L.L.C.-FZ" %} &middot; {% translate "License number" %} 2542361.01<br>
-        {% translate "Registered address at Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, U.A.E." %}
+        MyTPDSO Limited &middot; {% translate "Company number" %} 815526<br>
+        {% translate "Registered office: 19 Baggot Street Lower, Dublin 2, D02 X658, Ireland" %}
       </p>
-      <p class="mt-[1em] text-copy text-white">
-        {% now "Y" as year %}{% blocktranslate %}Copyright &copy; {{ year }} <strong>MytreatPlan</strong>. All Rights Reserved{% endblocktranslate %}
+      <nav aria-label="{% translate 'Legal' %}" class="mt-[18px]">
+        <ul class="flex flex-wrap justify-center gap-x-[26px] gap-y-2.5">
+          <li><a href="{% url 'publicsite:privacy' %}" class="text-[14px] font-bold text-white underline underline-offset-4 hover:text-green">{% translate "Privacy Policy" %}</a></li>
+          <li><a href="{% url 'publicsite:terms' %}" class="text-[14px] font-bold text-white underline underline-offset-4 hover:text-green">{% translate "Terms &amp; Conditions" %}</a></li>
+        </ul>
+      </nav>
+      <p class="mt-[18px] text-copy text-white">
+        {% now "Y" as year %}{% blocktranslate %}Copyright &copy; {{ year }} <strong>MyTreatPlan</strong>. All Rights Reserved{% endblocktranslate %}
       </p>
     </footer>
     {% endblock %}

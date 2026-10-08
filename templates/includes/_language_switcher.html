@@ -1,0 +1,7 @@
+{% load i18n language_urls %}{% get_current_language as LANGUAGE_CODE %}{% get_available_languages as LANGUAGES %}{% get_language_info_list for LANGUAGES as site_languages %}
+<ul class="{{ ul_class }}" aria-label="{% translate 'Language' %}">
+  {% for lang in site_languages %}
+  <li><a href="{% translated_url lang.code %}" lang="{{ lang.code }}" hreflang="{{ lang.code }}"
+         {% if lang.code == LANGUAGE_CODE %}aria-current="true" class="{{ current }}"{% else %}class="{{ link }}"{% endif %}>{{ lang.name_local|capfirst }}</a></li>
+  {% endfor %}
+</ul>

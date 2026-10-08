@@ -128,3 +128,49 @@
     display: none;
   }
 }
+
+/* Legal text (Privacy, Terms): plain h2/h3/p/ul markup from legal/_*_body.html, styled as
+   on the mytreatplan.ae legal pages. The body templates carry no utility classes so the
+   lawyer's final texts can replace them as they are. */
+@layer components {
+  .legal-prose h2 {
+    @apply mt-[clamp(40px,6vw,60px)] border-t border-line pt-[clamp(24px,4vw,34px)] text-[clamp(21px,3vw,27px)] leading-[1.2] font-black tracking-[-0.02em];
+  }
+
+  .legal-prose h3 {
+    @apply mt-[clamp(26px,4vw,34px)] text-[17px] leading-[1.35] font-extrabold;
+  }
+
+  .legal-prose p,
+  .legal-prose ul {
+    @apply mt-4;
+  }
+
+  .legal-prose ul {
+    @apply list-disc pl-[22px];
+  }
+
+  .legal-prose li {
+    @apply mt-2;
+  }
+
+  .legal-prose a {
+    @apply text-ink underline decoration-green decoration-2 underline-offset-3 hover:text-green;
+  }
+
+  .legal-prose .legal-updated {
+    @apply mt-2.5 text-[14px] text-ink-muted;
+  }
+
+  .legal-prose .legal-scope {
+    @apply mt-[clamp(26px,4vw,34px)] rounded-r-12 border-l-4 border-green bg-panel px-5 py-[18px] text-[15px] leading-[1.55];
+  }
+
+  .legal-prose .legal-scope p {
+    @apply mt-0;
+  }
+
+  .legal-prose .legal-scope p + p {
+    @apply mt-2.5;
+  }
+}

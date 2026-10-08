@@ -128,3 +128,24 @@ Conventions used in the draft (tell us if any should change):
 |---|---|---|---|
 | 69 | Contact | Contacto | |
 | 70 | Get in touch | Contáctenos | |
+
+## Story 1.4
+
+Story: [Legal pages, SEO and portal links](story-legal-pages-seo-and-portal-links-plan.md). The footer now names the Irish company, so rows 12–14 (UAE company, licence and address) are no longer in the catalogue, and row 15 is replaced by row 71 ("MytreatPlan" corrected to "MyTreatPlan"). The Privacy and Terms body text is not in the catalogue: the lawyer provides the Spanish version.
+
+| # | English | Español (borrador) | Corrección |
+|---|---|---|---|
+| 71 | `Copyright &copy; %(year)s <strong>MyTreatPlan</strong>. All Rights Reserved` | `Copyright &copy; %(year)s <strong>MyTreatPlan</strong>. Todos los derechos reservados` | |
+| 72 | Company number | Número de registro mercantil | |
+| 73 | Registered office: 19 Baggot Street Lower, Dublin 2, D02 X658, Ireland | Domicilio social: 19 Baggot Street Lower, Dublin 2, D02 X658, Irlanda | |
+| 74 | Legal | Legal | |
+| 75 | Privacy Policy | Política de privacidad | |
+| 76 | `Terms &amp; Conditions` | Términos y condiciones | |
+| 77 | `Website Terms &amp; Conditions` | Términos y condiciones del sitio web | |
+| 78 | How MyTreatPlan collects, uses, stores and shares personal data through this website. | Cómo MyTreatPlan recoge, utiliza, conserva y comparte datos personales a través de este sitio web. | |
+| 79 | Terms governing access to and use of the MyTreatPlan website. | Términos que regulan el acceso al sitio web de MyTreatPlan y su uso. | |
+| 80 | The version of this document in your language is being prepared. In the meantime, the English version is shown below. | La versión en español de este documento se está preparando. Mientras tanto, se muestra a continuación la versión en inglés. | |
+| 81 | MyTreatPlan home | Inicio de MyTreatPlan | |
+| 82 | Client portal | Portal de clientes | |
+| 83 | Log in | Iniciar sesión | |
+| 84 | Sign up | Registrarse | |
