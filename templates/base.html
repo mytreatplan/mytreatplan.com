@@ -1,11 +1,13 @@
-{% load i18n static %}<!DOCTYPE html>
-{% get_current_language as LANGUAGE_CODE %}
+{% load i18n static language_urls %}<!DOCTYPE html>
+{% get_current_language as LANGUAGE_CODE %}{% get_available_languages as LANGUAGES %}{% get_language_info_list for LANGUAGES as site_languages %}
 <html lang="{{ LANGUAGE_CODE|slice:':2' }}" class="scroll-smooth">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}MyTreatPlan &mdash; {% translate "Digital Orthodontics Made Simple" %}{% endblock %}</title>
   <meta name="description" content="{% block meta_description %}{% translate "Treatment planning services, remote virtual orthodontist support and education for orthodontic practices. Offices in Dublin, Dubai and Madrid." %}{% endblock %}">
+  {% for lang in site_languages %}<link rel="alternate" hreflang="{{ lang.code }}" href="{% translated_url lang.code absolute=True %}">
+  {% endfor %}<link rel="alternate" hreflang="x-default" href="{{ request.scheme }}://{{ request.get_host }}/">
   <link rel="preload" href="{% static 'fonts/inter-latin-wght-normal.woff2' %}" as="font" type="font/woff2" crossorigin>
   <style>
     @font-face{font-family:"Inter Variable";font-style:normal;font-display:swap;font-weight:100 900;src:url("{% static 'fonts/inter-latin-ext-wght-normal.woff2' %}") format("woff2-variations");unicode-range:U+0100-02BA,U+02BD-02C5,U+02C7-02CC,U+02CE-02D7,U+02DD-02FF,U+0304,U+0308,U+0329,U+1D00-1DBF,U+1E00-1E9F,U+1EF2-1EFF,U+2020,U+20A0-20AB,U+20AD-20C0,U+2113,U+2C60-2C7F,U+A720-A7FF}
@@ -40,8 +42,9 @@
         </div>
         {# One nav for every width. Above 700px it sits under the logo; at 700px and below, with JS, #}
         {# it becomes the full-screen burger panel once menu.js has set html.js. If menu.js does not run, it stays in the flow, so links stay reachable. #}
+        {# The language switcher sits inside it, so it shows beside the links above 700px and inside the burger panel below. #}
         <nav id="site-menu" aria-label="{% translate 'Main' %}"
-             class="max-tablet:mt-4 max-tablet:[.js_&]:fixed max-tablet:[.js_&]:inset-0 max-tablet:[.js_&]:z-50 max-tablet:[.js_&]:mt-0 max-tablet:[.js_&]:items-center max-tablet:[.js_&]:justify-center max-tablet:[.js_&]:bg-ink max-tablet:[.js_&]:not-data-open:hidden max-tablet:[.js_&]:data-open:flex">
+             class="tablet:flex tablet:flex-wrap tablet:items-center tablet:justify-center tablet:gap-x-[clamp(10px,2.2vw,26px)] tablet:gap-y-2 max-tablet:mt-4 max-tablet:[.js_&]:fixed max-tablet:[.js_&]:inset-0 max-tablet:[.js_&]:z-50 max-tablet:[.js_&]:mt-0 max-tablet:[.js_&]:flex-col max-tablet:[.js_&]:items-center max-tablet:[.js_&]:justify-center max-tablet:[.js_&]:gap-[40px] max-tablet:[.js_&]:bg-ink max-tablet:[.js_&]:not-data-open:hidden max-tablet:[.js_&]:data-open:flex">
           {% with link="text-nav font-semibold max-tablet:[.js_&]:text-[22px] max-tablet:[.js_&]:font-medium max-tablet:[.js_&]:tracking-[-0.02em] max-tablet:[.js_&]:text-white" current="text-nav font-black text-white max-tablet:[.js_&]:text-[22px] max-tablet:[.js_&]:tracking-[-0.02em]" %}
           <ul class="flex flex-wrap justify-center gap-[clamp(10px,2.2vw,26px)] max-tablet:justify-start max-tablet:[.js_&]:flex-col max-tablet:[.js_&]:items-center max-tablet:[.js_&]:gap-[26px]">
             <li><a href="#home" class="{{ current }}" aria-current="page">{% translate "home" %}</a></li>
@@ -50,6 +53,16 @@
             <li><a href="#who-we-are" class="{{ link }}">{% translate "who we are" %}</a></li>
             <li><a href="#where-we-are" class="{{ link }}">{% translate "where we are" %}</a></li>
             <li><a href="#contact" class="{{ link }}">{% translate "contact" %}</a></li>
+          </ul>
+          {% endwith %}
+          {# Language switcher: the same page in each language; the current one is marked. #}
+          {% with link="font-semibold max-tablet:[.js_&]:text-white" current="font-black text-white" %}
+          <ul class="flex gap-[clamp(10px,1.6vw,18px)] text-nav max-tablet:mt-3 max-tablet:[.js_&]:mt-0 max-tablet:[.js_&]:gap-[26px] max-tablet:[.js_&]:text-[20px] tablet:border-l-2 tablet:border-ink/40 tablet:pl-[clamp(10px,2.2vw,26px)]"
+              aria-label="{% translate 'Language' %}">
+            {% for lang in site_languages %}
+            <li><a href="{% translated_url lang.code %}" lang="{{ lang.code }}" hreflang="{{ lang.code }}"
+                   {% if lang.code == LANGUAGE_CODE %}aria-current="true" class="{{ current }}"{% else %}class="{{ link }}"{% endif %}>{{ lang.name_local|capfirst }}</a></li>
+            {% endfor %}
           </ul>
           {% endwith %}
         </nav>

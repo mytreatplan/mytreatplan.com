@@ -14,10 +14,17 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf.urls.i18n import i18n_patterns
 from django.contrib import admin
 from django.urls import include, path
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('', include('mytp_publicsite.urls')),
 ]
+
+# Public pages live under /en/ and /es/. A bare / is redirected by LocaleMiddleware
+# to the visitor's language (Accept-Language), falling back to English.
+urlpatterns += i18n_patterns(
+    path('', include('mytp_publicsite.urls')),
+    prefix_default_language=True,
+)
