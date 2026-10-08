@@ -1,0 +1,63 @@
+{% load i18n static %}
+<section id="who-we-are" class="relative">
+  <img class="block min-h-[200px] w-full object-cover"
+       src="{% static 'img/Img_Who.webp' %}"
+       srcset="{% static 'img/Img_Who-480.webp' %} 480w, {% static 'img/Img_Who-768.webp' %} 768w, {% static 'img/Img_Who-1200.webp' %} 1200w, {% static 'img/Img_Who.webp' %} 1980w"
+       sizes="(min-width: 1440px) 1440px, 100vw" width="1980" height="1155" alt="" loading="lazy">
+  <h2 class="absolute top-[24%] left-1/2 w-max max-w-[90vw] -translate-1/2 text-center text-h2 font-black text-ink max-tablet:static max-tablet:w-auto max-tablet:max-w-none max-tablet:translate-none max-tablet:px-gutter max-tablet:pt-4 max-tablet:pb-[22px]">{% blocktranslate %}Who<br>we are{% endblocktranslate %}</h2>
+</section>
+
+{# Team carousel: native scroll-snap; carousel.js adds the arrows, dots and keyboard. #}
+<section class="py-section">
+  <div class="relative" data-carousel>
+    <div class="flex snap-x snap-mandatory scroll-pl-gutter gap-[clamp(18px,3vw,40px)] overflow-x-auto overscroll-x-contain scrollbar-none px-gutter pb-[6px] focus-visible:rounded-8 focus-visible:outline-3 focus-visible:outline-offset-6 focus-visible:outline-green"
+         role="group" aria-roledescription="{% translate 'carousel' %}" aria-label="{% translate 'Our team' %}" tabindex="0" data-carousel-track>
+    <article class="w-[clamp(230px,33vw,320px)] flex-none snap-start" role="group" aria-roledescription="{% translate 'slide' %}" aria-label="{% blocktranslate with n=1 total=6 name="Belén Jiménez" %}{{ n }} of {{ total }}: {{ name }}{% endblocktranslate %}" data-carousel-card>
+      <img class="block h-auto w-full" src="{% static 'img/Equipo_Belen.webp' %}" alt="Belén Jiménez" width="595" height="595" loading="lazy">
+      <h3 class="mt-4 text-h3 font-black">Belén Jiménez</h3>
+      <p class="mt-1.5 text-sub/[1.25] font-bold">{% blocktranslate %}Co-Founder &amp; Clinical<br>Chief Officer{% endblocktranslate %}</p>
+      <p class="mt-2.5 text-copy">{% translate "With over 19 years of experience as Orthodontist, having worked for the aligners industry, professor at various Universities and KOL for a well renown brand, Belén is our Clinical Cornerstone." %}</p>
+    </article>
+    <article class="w-[clamp(230px,33vw,320px)] flex-none snap-start" role="group" aria-roledescription="{% translate 'slide' %}" aria-label="{% blocktranslate with n=2 total=6 name="J. Antonio de Andrés" %}{{ n }} of {{ total }}: {{ name }}{% endblocktranslate %}" data-carousel-card>
+      <img class="block h-auto w-full" src="{% static 'img/Equipo_Antonio.webp' %}" alt="J. Antonio de Andrés" width="595" height="595" loading="lazy">
+      <h3 class="mt-4 text-h3 font-black">J. Antonio de Andrés</h3>
+      <p class="mt-1.5 text-sub/[1.25] font-bold">{% translate "Co-Founder, Chair &amp; CEO" %}</p>
+      <p class="mt-2.5 text-copy">{% translate "As a telecomm engineer with over 20 years of wide experience, Antonio is in charge of making our business run, both technically and at managing levels." %}</p>
+    </article>
+    <article class="w-[clamp(230px,33vw,320px)] flex-none snap-start" role="group" aria-roledescription="{% translate 'slide' %}" aria-label="{% blocktranslate with n=3 total=6 name="Adina Marin" %}{{ n }} of {{ total }}: {{ name }}{% endblocktranslate %}" data-carousel-card>
+      <img class="block h-auto w-full" src="{% static 'img/Equipo_Adina.webp' %}" alt="Adina Marin" width="595" height="595" loading="lazy">
+      <h3 class="mt-4 text-h3 font-black">Adina Marin</h3>
+      <p class="mt-1.5 text-sub/[1.25] font-bold">{% translate "MEA-T Regional Manager" %}</p>
+      <p class="mt-2.5 text-copy">{% translate "With over 14 years of experience in the Aligners Market all over the MEA-T region, Adina leads our expansion in the Middle East, Africa and Turkey region." %}</p>
+    </article>
+    <article class="w-[clamp(230px,33vw,320px)] flex-none snap-start" role="group" aria-roledescription="{% translate 'slide' %}" aria-label="{% blocktranslate with n=4 total=6 name="Albert Isern" %}{{ n }} of {{ total }}: {{ name }}{% endblocktranslate %}" data-carousel-card>
+      <img class="block h-auto w-full" src="{% static 'img/Equipo_Albert.webp' %}" alt="Albert Isern" width="595" height="595" loading="lazy">
+      <h3 class="mt-4 text-h3 font-black">Albert Isern</h3>
+      <p class="mt-1.5 text-sub/[1.25] font-bold">{% translate "Commercial Director" %}</p>
+      <p class="mt-2.5 text-copy">{% translate "With an Executive MBA and over 16 years of extensive experience in the Dental market, Albert is the person who leads our Marketing and Sales department and an invaluable asset for our company." %}</p>
+    </article>
+    <article class="w-[clamp(230px,33vw,320px)] flex-none snap-start" role="group" aria-roledescription="{% translate 'slide' %}" aria-label="{% blocktranslate with n=5 total=6 name="Iliyana Petrova" %}{{ n }} of {{ total }}: {{ name }}{% endblocktranslate %}" data-carousel-card>
+      <img class="block h-auto w-full" src="{% static 'img/Equipo_Iliyana.webp' %}" alt="Iliyana Petrova" width="595" height="595" loading="lazy">
+      <h3 class="mt-4 text-h3 font-black">Iliyana Petrova</h3>
+      <p class="mt-1.5 text-sub/[1.25] font-bold">{% blocktranslate %}Senior CAD Designer<br>&amp; Team Leader{% endblocktranslate %}</p>
+      <p class="mt-2.5 text-copy">{% translate "Iliyana has both Dental Prosthetist and Hygienist education background. She has been working as a digital planner for orthodontics for more than 7 years now." %}</p>
+    </article>
+    <article class="w-[clamp(230px,33vw,320px)] flex-none snap-start" role="group" aria-roledescription="{% translate 'slide' %}" aria-label="{% blocktranslate with n=6 total=6 name="Marta Estebaranz" %}{{ n }} of {{ total }}: {{ name }}{% endblocktranslate %}" data-carousel-card>
+      <img class="block h-auto w-full" src="{% static 'img/Equipo_Marta.webp' %}" alt="Marta Estebaranz" width="595" height="595" loading="lazy">
+      <h3 class="mt-4 text-h3 font-black">Marta Estebaranz</h3>
+      <p class="mt-1.5 text-sub/[1.25] font-bold">{% blocktranslate %}Senior CAD Designer<br>&amp; DM Coordinator{% endblocktranslate %}</p>
+      <p class="mt-2.5 text-copy">{% translate "Marta has both Dental Prosthetist and Hygienist background. She has been working as a digital planner for orthodontics for more than 8 years now." %}</p>
+    </article>
+    </div>
+  <button class="absolute top-[clamp(115px,16vw,160px)] left-1.5 z-8 flex size-[46px] -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-ink text-white shadow-arrow transition-[background,color,opacity] duration-[180ms] hover:bg-linear-to-r hover:from-lime hover:to-green hover:text-ink focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-green disabled:cursor-default disabled:opacity-28 disabled:shadow-none disabled:hover:bg-none disabled:hover:text-white"
+          type="button" aria-label="{% translate 'Previous' %}" hidden data-carousel-prev>
+    <svg class="size-6" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5 8 12l7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+  <button class="absolute top-[clamp(115px,16vw,160px)] right-1.5 z-8 flex size-[46px] -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-ink text-white shadow-arrow transition-[background,color,opacity] duration-[180ms] hover:bg-linear-to-r hover:from-lime hover:to-green hover:text-ink focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-green disabled:cursor-default disabled:opacity-28 disabled:shadow-none disabled:hover:bg-none disabled:hover:text-white"
+          type="button" aria-label="{% translate 'Next' %}" hidden data-carousel-next>
+    <svg class="size-6" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </button>
+    <div class="mt-[26px] flex justify-center gap-2.5" role="tablist" aria-label="{% translate 'Team members' %}"
+         data-carousel-dots data-label-template="{% blocktranslate %}Go to position {n} of {total}{% endblocktranslate %}"></div>
+  </div>
+</section>

@@ -1,0 +1,38 @@
+{% load i18n static %}
+<section id="about-us" class="relative">
+  <img class="block min-h-[130px] w-full object-cover"
+       src="{% static 'img/Cabecera_About.webp' %}"
+       srcset="{% static 'img/Cabecera_About-480.webp' %} 480w, {% static 'img/Cabecera_About-768.webp' %} 768w, {% static 'img/Cabecera_About-1200.webp' %} 1200w, {% static 'img/Cabecera_About.webp' %} 1755w"
+       sizes="(min-width: 1440px) 1440px, 100vw" width="1755" height="926" alt="" loading="lazy">
+  <h2 class="absolute right-gutter bottom-[clamp(14px,3vw,40px)] text-h2 font-black text-white">{% translate "About us" %}</h2>
+</section>
+
+<section class="px-gutter py-section">
+  <div class="grid grid-cols-2 gap-grid max-tablet:grid-cols-1">
+    <div>
+      <p class="text-copy">{% blocktranslate %}<strong>MyTreatPlan</strong> is the evolution of one of the most successful TPS companies in Europe. Starting in 2017, the founder team continued innovating through the years while developing the best and highest quality <strong><em>treatment planning services in the market.</em></strong>{% endblocktranslate %}</p>
+      <p class="mt-[1em] text-copy">{% blocktranslate %}Now in 2026, with all the immense experience gathered, we present a new brand and a whole new set of products and services for <strong>Digital Orthodontics</strong> intended to push dental practices to a higher level in terms of efficiency and profitability.{% endblocktranslate %}</p>
+    </div>
+    <div>
+      <p class="text-copy">{% translate "Our unique approach, focused on being partners of our Doctors and Practices and accompanying them during their treatments makes us much more than just a service provider but a trustworthy Orthodontic Center in which you can always rely for helping you taking care of your patients." %}</p>
+    </div>
+  </div>
+</section>
+
+{# The stats always sit below the photo, at every width. #}
+<section class="relative">
+  <img class="block min-h-[220px] w-full object-cover"
+       src="{% static 'img/Img_About.webp' %}"
+       srcset="{% static 'img/Img_About-480.webp' %} 480w, {% static 'img/Img_About-768.webp' %} 768w, {% static 'img/Img_About-1200.webp' %} 1200w, {% static 'img/Img_About.webp' %} 1980w"
+       sizes="(min-width: 1440px) 1440px, 100vw" width="1980" height="974" alt="" loading="lazy">
+  <div class="grid grid-cols-[repeat(2,auto)] justify-center gap-[clamp(24px,6vw,90px)] px-gutter pt-[clamp(22px,3vw,34px)] text-center">
+    <div>
+      <span class="block text-num font-black">{% translate "+50.000" %}</span>
+      <span class="mx-auto mt-2 block max-w-[20ch] text-sub font-bold">{% translate "Plannings successfully delivered by our team" %}</span>
+    </div>
+    <div>
+      <span class="block text-num font-black">{% translate "+700" %}</span>
+      <span class="mx-auto mt-2 block max-w-[20ch] text-sub font-bold">{% translate "Satisfied Customers" %}</span>
+    </div>
+  </div>
+</section>

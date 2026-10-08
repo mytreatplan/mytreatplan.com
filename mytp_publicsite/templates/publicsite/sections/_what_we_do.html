@@ -1,0 +1,43 @@
+{% load i18n static %}
+{# Banner pulls up over the hero, as on mytreatplan.ae. #}
+<section id="what-we-do" class="relative z-2 mt-[calc(-1*clamp(140px,20vw,320px))]">
+  <img class="block min-h-[130px] w-full object-cover"
+       src="{% static 'img/Cabecera_What.webp' %}"
+       srcset="{% static 'img/Cabecera_What-480.webp' %} 480w, {% static 'img/Cabecera_What-768.webp' %} 768w, {% static 'img/Cabecera_What-1200.webp' %} 1200w, {% static 'img/Cabecera_What.webp' %} 1980w"
+       sizes="(min-width: 1440px) 1440px, 100vw" width="1980" height="918" alt="" loading="lazy">
+  <h2 class="absolute right-gutter bottom-[clamp(14px,3vw,40px)] text-h2 font-black text-white">{% translate "What we do" %}</h2>
+</section>
+
+<section class="relative">
+  <img class="block min-h-[220px] w-full object-cover"
+       src="{% static 'img/Img_What.webp' %}"
+       srcset="{% static 'img/Img_What-480.webp' %} 480w, {% static 'img/Img_What-768.webp' %} 768w, {% static 'img/Img_What-1200.webp' %} 1200w, {% static 'img/Img_What.webp' %} 1980w"
+       sizes="(min-width: 1440px) 1440px, 100vw" width="1980" height="794" alt="" loading="lazy">
+  <div class="absolute inset-x-gutter bottom-[clamp(16px,3vw,40px)] max-tablet:static max-tablet:px-gutter max-tablet:pt-[18px]">
+    <h2 class="text-h2 font-black">{% translate "High Quality" %}</h2>
+    <p class="mt-1 text-sub/[1.55] font-bold">{% translate "Premium Digital Orthodontics Services" %}</p>
+  </div>
+</section>
+
+<section class="px-gutter py-section">
+  <ul class="grid grid-cols-3 gap-grid max-tablet:grid-cols-1">
+    <li>
+      <h3 class="text-h3 font-black">{% translate "Tailored TPS" %}</h3>
+      <img class="my-[14px] block h-auto w-full rounded-10" src="{% static 'img/tailored-tps-treatment-planning.webp' %}" width="812" height="1086"
+           alt="{% translate 'Digital treatment plan in 3D showing bracket placement and tooth movement' %}" loading="lazy">
+      <p class="text-copy">{% blocktranslate %}with <strong>Mentoring and Clinical Support</strong>{% endblocktranslate %}</p>
+    </li>
+    <li>
+      <h3 class="text-h3 font-black">{% translate "VirtuaOrtho" %}</h3>
+      <img class="my-[14px] block h-auto w-full rounded-10" src="{% static 'img/virtuaortho-remote-orthodontist.webp' %}" width="812" height="1086"
+           alt="{% translate 'Orthodontist reviewing a clinical case remotely with digital planning tools' %}" loading="lazy">
+      <p class="text-copy">{% translate "Full remote VIRTUAL ORTHODONTIST support (case study review, diagnostic confirmation, treatment design assistance, digital planning, full online clinical support)" %}</p>
+    </li>
+    <li>
+      <h3 class="text-h3 font-black">{% translate "Education" %}</h3>
+      <img class="my-[14px] block h-auto w-full rounded-10" src="{% static 'img/orthodontics-education-masterclass.webp' %}" width="812" height="1086"
+           alt="{% translate 'Orthodontics masterclass with dental professionals' %}" loading="lazy">
+      <p class="text-copy">{% translate "One to one and workshops with a highly practical approach" %}</p>
+    </li>
+  </ul>
+</section>

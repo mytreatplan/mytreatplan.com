@@ -8,6 +8,8 @@
 @source "../../templates";
 @source "../../mytp_publicsite/templates";
 @source "../../accounts/templates";
+/* Only the scripts that build markup; htmx.min.js is deliberately not scanned. */
+@source "../../static/js/carousel.js";
 
 @theme {
   /* Breakpoint where the live site switches from the phone layout (<=700px). */
@@ -62,6 +64,9 @@
   --text-h3--letter-spacing: -0.03em;
   --text-lead: clamp(20px, 3.2vw, 30px);
   --text-lead--line-height: 1.2;
+  --text-num: clamp(38px, 8vw, 80px);
+  --text-num--line-height: 1;
+  --text-num--letter-spacing: -0.04em;
   --text-sub: clamp(15px, 2vw, 19px);
   --text-sub--line-height: 1.2;
   --text-nav: clamp(14px, 2.16vw, 18px);
@@ -112,5 +117,14 @@
 
   a:focus-visible {
     @apply rounded-2 outline-3 outline-offset-3 outline-green;
+  }
+}
+
+/* Horizontal scroll track (team carousel): keeps swipe/trackpad scrolling, hides the bar. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
   }
 }

@@ -1,6 +1,6 @@
 {% load i18n static %}<!DOCTYPE html>
 {% get_current_language as LANGUAGE_CODE %}
-<html lang="{{ LANGUAGE_CODE|slice:':2' }}">
+<html lang="{{ LANGUAGE_CODE|slice:':2' }}" class="scroll-smooth">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -13,6 +13,7 @@
   </style>
   <link rel="stylesheet" href="{% static 'css/site.css' %}">
   <script src="{% static 'js/htmx.min.js' %}" defer></script>
+  <script src="{% static 'js/menu.js' %}" defer></script>
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -24,19 +25,33 @@
            srcset="{% static 'img/Cabecera-480.webp' %} 480w, {% static 'img/Cabecera-768.webp' %} 768w, {% static 'img/Cabecera-1200.webp' %} 1200w, {% static 'img/Cabecera.webp' %} 2623w"
            sizes="(min-width: 1440px) 1440px, 100vw" width="2623" height="2674" alt="" fetchpriority="high">
       <div class="absolute inset-0 flex flex-col items-start px-gutter pt-10 tablet:items-center tablet:pt-[clamp(24px,4vw,50px)]">
-        <a href="{% url 'publicsite:home' %}" class="block">
-          <img class="block h-auto w-[clamp(128px,33vw,172px)] tablet:mb-[clamp(14px,2vw,22px)] tablet:w-[clamp(180px,24vw,300px)]"
-               src="{% static 'img/Logo_MyTreatPlan.webp' %}" width="461" height="88" alt="MyTreatPlan">
-        </a>
-        <nav class="hidden tablet:block" aria-label="{% translate 'Main' %}">
-          <ul class="flex flex-wrap justify-center gap-[clamp(10px,2.2vw,26px)]">
-            <li><a href="#home" class="text-nav font-black text-white" aria-current="page">{% translate "home" %}</a></li>
-            <li><a href="#what-we-do" class="text-nav font-semibold">{% translate "what we do" %}</a></li>
-            <li><a href="#about-us" class="text-nav font-semibold">{% translate "about us" %}</a></li>
-            <li><a href="#who-we-are" class="text-nav font-semibold">{% translate "who we are" %}</a></li>
-            <li><a href="#where-we-are" class="text-nav font-semibold">{% translate "where we are" %}</a></li>
-            <li><a href="#contact" class="text-nav font-semibold">{% translate "contact" %}</a></li>
+        <div class="flex w-full items-center justify-between tablet:justify-center">
+          <a href="{% url 'publicsite:home' %}" class="block">
+            <img class="block h-auto w-[clamp(128px,33vw,172px)] tablet:mb-[clamp(14px,2vw,22px)] tablet:w-[clamp(180px,24vw,300px)]"
+                 src="{% static 'img/Logo_MyTreatPlan.webp' %}" width="461" height="88" alt="MyTreatPlan">
+          </a>
+          {# Burger: phones only, and only once menu.js is running (it sets html.js). #}
+          <button id="site-menu-toggle" type="button" class="group relative z-60 hidden size-11 cursor-pointer flex-col justify-center gap-[6px] px-2 max-tablet:[.js_&]:flex"
+                  aria-label="{% translate 'Menu' %}" aria-expanded="false" aria-controls="site-menu">
+            <span class="block h-[3px] w-full rounded-2 bg-ink transition-transform duration-[220ms] group-aria-expanded:translate-y-[9px] group-aria-expanded:rotate-45 group-aria-expanded:bg-white"></span>
+            <span class="block h-[3px] w-full rounded-2 bg-ink transition-opacity duration-[160ms] group-aria-expanded:opacity-0"></span>
+            <span class="block h-[3px] w-full rounded-2 bg-ink transition-transform duration-[220ms] group-aria-expanded:-translate-y-[9px] group-aria-expanded:-rotate-45 group-aria-expanded:bg-white"></span>
+          </button>
+        </div>
+        {# One nav for every width. Above 700px it sits under the logo; at 700px and below, with JS, #}
+        {# it becomes the full-screen burger panel once menu.js has set html.js. If menu.js does not run, it stays in the flow, so links stay reachable. #}
+        <nav id="site-menu" aria-label="{% translate 'Main' %}"
+             class="max-tablet:mt-4 max-tablet:[.js_&]:fixed max-tablet:[.js_&]:inset-0 max-tablet:[.js_&]:z-50 max-tablet:[.js_&]:mt-0 max-tablet:[.js_&]:items-center max-tablet:[.js_&]:justify-center max-tablet:[.js_&]:bg-ink max-tablet:[.js_&]:not-data-open:hidden max-tablet:[.js_&]:data-open:flex">
+          {% with link="text-nav font-semibold max-tablet:[.js_&]:text-[22px] max-tablet:[.js_&]:font-medium max-tablet:[.js_&]:tracking-[-0.02em] max-tablet:[.js_&]:text-white" current="text-nav font-black text-white max-tablet:[.js_&]:text-[22px] max-tablet:[.js_&]:tracking-[-0.02em]" %}
+          <ul class="flex flex-wrap justify-center gap-[clamp(10px,2.2vw,26px)] max-tablet:justify-start max-tablet:[.js_&]:flex-col max-tablet:[.js_&]:items-center max-tablet:[.js_&]:gap-[26px]">
+            <li><a href="#home" class="{{ current }}" aria-current="page">{% translate "home" %}</a></li>
+            <li><a href="#what-we-do" class="{{ link }}">{% translate "what we do" %}</a></li>
+            <li><a href="#about-us" class="{{ link }}">{% translate "about us" %}</a></li>
+            <li><a href="#who-we-are" class="{{ link }}">{% translate "who we are" %}</a></li>
+            <li><a href="#where-we-are" class="{{ link }}">{% translate "where we are" %}</a></li>
+            <li><a href="#contact" class="{{ link }}">{% translate "contact" %}</a></li>
           </ul>
+          {% endwith %}
         </nav>
         {% block hero %}{% endblock %}
       </div>
