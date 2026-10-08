@@ -1,0 +1,165 @@
+# Entries of epic-client-portal-signup. Table order is the build order; ids are permanent.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Signup tracer bullet"
+description = "Creates the accounts app, the custom user model (email username, before any user migration), the pending-registration model with server-side step saving and the created/updated timestamps entry 10 purges by, a wizard step registry, URL name `signup`, step 1 with email and password only, a verification-provider interface with a console fake provider for email and mobile, account creation after the email code and auto-login to a welcome route; temporary until entry 7: only the email code is required, and until entry 2: fields are plaintext."
+verify = "Locally a person registers with email and password, reads the code from the console, enters it and lands logged in on the welcome route; tests pass."
+covers = ["CAP-1", "CAP-5", "CAP-7"]
+after = ["epic-landing-integration"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Encrypted personal data and blind index"
+description = "Adds AES-256-GCM field encryption behind a key-provider interface with an environment-key provider, an HMAC-SHA256 blind index for normalized email and phone, and Argon2id hashing, applied to the user and pending-registration models; entry 4's new fields and epic-login's lookups use them."
+verify = "DB rows show ciphertext for personal fields; a test finds a user by email through the blind index; passwords are Argon2id hashes."
+covers = ["CAP-1", "CAP-7"]
+after = [1]
+hitl = false
+risk = "high"
+references = ["spec-client-portal-signup/encryption-policy.md"]
+
+[[entry]]
+id = 3
+type = "story"
+title = "Signup event log"
+description = "Adds the encrypted per-attempt signup event log with an attempt-end timestamp and the API every step calls to record captured data and failure reasons, and logs the tracer's steps through it; epic-login reuses it for activity logging."
+verify = "A tracer signup is reconstructable step by step from the log; personal values in it are ciphertext."
+covers = ["CAP-10"]
+after = [2]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Complete step 1"
+description = "Adds every step-1 field and rule from signup-fields.md (title, names with optional middle name, country, prefix and mobile, how-found-us with mandatory Others text, password policy with breached-password and similarity checks and strength meter, disposable-email rejection) on entry 2's encrypted fields and phone blind index, with EN and ES strings on epic 1's i18n."
+verify = "Each invalid input from signup-fields.md is rejected with a message in the active language; a valid form saves the pending registration encrypted."
+covers = ["CAP-1", "CAP-11"]
+after = [3]
+hitl = false
+risk = "medium"
+unknown = "Breached-password source (Have I Been Pwned range API recommended) and the disposable-email domain list source."
+references = ["spec-client-portal-signup/signup-fields.md"]
+
+[[entry]]
+id = 5
+type = "story"
+title = "Duplicate checks and resume"
+description = "Blocks a registered email or mobile with a message linking to URL name `password_reset` (registered by epic-login), and for a pending match warns and offers resume after a code to the matched contact through the fake provider, restoring saved data and replacing the old registration; covers the page-closed scenario, and entry 8 reuses this resume flow."
+verify = "Tests for registered email, registered mobile, pending email, pending mobile and page-closed resume each follow registration-failure-policies.md."
+covers = ["CAP-2", "CAP-3", "CAP-11"]
+after = [4]
+hitl = false
+risk = "medium"
+references = ["spec-client-portal-signup/registration-failure-policies.md"]
+
+[[entry]]
+id = 6
+type = "story"
+title = "Legal acceptance and commercial consent"
+description = "Adds step 2 with versioned documents editable in admin (draft texts until the lawyer's arrive): Terms required, Conditions required, Ormco TPS contract unticked and optional, and commercial consent unticked and optional naming the three MyTPDSO companies and four channels; stores each choice with timestamp and version, with EN and ES strings."
+verify = "Step 2 fails if Terms or Conditions is unticked; unticked Ormco and consent pass; stored rows carry timestamp and version; a new text version applies without a deploy."
+covers = ["CAP-4", "CAP-13"]
+after = [5]
+hitl = false
+risk = "low"
+references = ["spec-client-portal-signup/signup-fields.md"]
+
+[[entry]]
+id = 7
+type = "story"
+title = "Mobile verification, resend limits and send failures"
+description = "Requires both codes before account creation and adds WhatsApp-first with SMS fallback, switch-to-SMS, edit contact (re-runs duplicate checks), support contact after repeated failure, our resend limits (60s, 3 per hour per contact) on Django's database cache, and the send-failure retry message, with EN and ES strings; format, validity and attempt counting belong to Twilio Verify, and the fake provider emulates them."
+verify = "Fake-provider tests cover WhatsApp failure falling back to SMS, resend limits, wrong-attempt invalidation, edit contact, send failure with retry, and account creation only after both codes."
+covers = ["CAP-5", "CAP-6", "CAP-11"]
+after = [6]
+hitl = false
+risk = "medium"
+references = ["spec-client-portal-signup/otp-verification.md"]
+
+[[entry]]
+id = 10
+type = "story"
+title = "Retention jobs"
+description = "Adds the purge/anonymize service and management commands for the 24h pending-registration purge (keeping reason and field name only), 30-day log anonymization by entry 3's attempt-end timestamp and 2-year deletion of anonymized entries; entry 8 reuses the service, and a person registers the commands on epic 1's cron host."
+verify = "Time-travel tests show each rule; the cron entries exist on staging."
+covers = ["CAP-9", "CAP-10"]
+after = [3]
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Cancel, idle timeout and connection loss"
+description = "Adds Cancel Registration with confirmation through entry 10's purge service, a 30-minute idle session end that resumes through entry 5's flow, and the HTMX connection-lost banner with retry, with EN and ES strings."
+verify = "Automated tests show cancel removes personal data but keeps an anonymized log, idle ends at 30 minutes and resumes via code, and an HTMX test shows the banner and a successful retry."
+covers = ["CAP-8", "CAP-11"]
+after = [7, 10]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Anti-abuse protections"
+description = "Adds an invisible CAPTCHA on step 1 and per-IP limits on signup starts and code sends on entry 7's database-cache rate limiting, with generic errors and logged reasons; waits on entry 8 because both change the step templates."
+verify = "Tests exceed each limit and see the generic error and the logged reason; a flagged CAPTCHA submission is blocked."
+covers = ["CAP-11"]
+after = [8]
+hitl = false
+risk = "medium"
+unknown = "CAPTCHA provider: Cloudflare Turnstile or Google reCAPTCHA v3."
+
+[[entry]]
+id = 11
+type = "story"
+title = "Twilio Verify integration"
+description = "Implements the Twilio Verify provider (email via SendGrid, WhatsApp, SMS) on entry 1's provider interface with credentials from environment configuration, EN and ES templates, Fraud Guard enabled and an ops alert on send-failure spikes; marketing supplies the account, Meta verification, WhatsApp template and EU DPA, and a person sets the credentials on staging and production."
+verify = "On staging real codes arrive by email and WhatsApp, and by SMS for a non-WhatsApp number; a forced provider failure triggers the alert."
+covers = ["CAP-5", "CAP-6", "CAP-11"]
+after = [7]
+hitl = true
+risk = "high"
+unknown = "Twilio account data, to be provided by marketing."
+references = ["spec-client-portal-signup/otp-verification.md"]
+
+[[entry]]
+id = 12
+type = "story"
+title = "KMS key provider"
+description = "Implements the key provider for the KMS of the hosting chosen in epic 1 (envelope encryption, key rotation) behind entry 2's interface; a person configures it on staging and production."
+verify = "On staging data keys are unwrapped through the KMS, and a key rotation leaves existing data readable."
+covers = []
+after = [2, "epic-landing-integration"]
+hitl = true
+risk = "medium"
+references = ["spec-client-portal-signup/encryption-policy.md"]
+
+[[entry]]
+id = 13
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
+verify = "The full test suite passes; deferred review findings are closed or recorded."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 10, 8, 9, 11, 12]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 14
+type = "story"
+title = "Signup end-to-end suite"
+description = "Browser tests with the fake provider for the spec's Success signal and every row of registration-failure-policies.md."
+verify = "The suite passes against a staging-like deployment."
+covers = ["CAP-1", "CAP-2", "CAP-3", "CAP-4", "CAP-5", "CAP-6", "CAP-7", "CAP-8", "CAP-9", "CAP-10", "CAP-11", "CAP-13"]
+after = [13]
+hitl = false
+risk = "medium"

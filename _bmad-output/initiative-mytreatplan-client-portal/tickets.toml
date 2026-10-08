@@ -1,0 +1,24 @@
+# Epics of initiative-mytreatplan-client-portal, in build order.
+
+[[epic]]
+id = 1
+slug = "epic-landing-integration"
+title = "Public site and platform baseline"
+covers = ["I1", "I2", "I5"]
+
+[[epic]]
+id = 2
+slug = "epic-client-portal-signup"
+title = "Doctors sign up for the client portal"
+covers = ["I3"]
+after = [{ epic = 1, needs = "base layout with Tailwind, HTMX, design tokens and EN/ES i18n; test runner and CI; staging; cron host; hosting and KMS decision" }]
+
+[[epic]]
+id = 3
+slug = "epic-login"
+title = "Doctors log in and recover access"
+covers = ["I4"]
+after = [
+  { epic = 2, needs = "user model and blind-index lookup (2.2), signup event log service (2.3), rate limits and CAPTCHA (2.9), welcome route (2.1)" },
+  { epic = 1, needs = "transactional email for password reset" },
+]
