@@ -1,0 +1,116 @@
+/*
+ * Tailwind entry point. Build with `npm run build:css` (output: static/css/site.css,
+ * not committed). Theme values come from the MyTreatPlan design system
+ * (design/tokens.json); fluid sizes match the mytreatplan.ae layout below 1440px.
+ */
+@import "tailwindcss";
+
+@source "../../templates";
+@source "../../mytp_publicsite/templates";
+@source "../../accounts/templates";
+
+@theme {
+  /* Breakpoint where the live site switches from the phone layout (<=700px). */
+  --breakpoint-tablet: 701px;
+
+  /* Colour tokens (design/tokens.json → color.tokens) */
+  --color-green: #7fb800;
+  --color-lime: #c3d600;
+  --color-green-deep: #4d7300;
+  --color-ink: #252525;
+  --color-ink-muted: #59636b;
+  --color-line: #e7ecea;
+  --color-surface: #ffffff;
+  --color-panel: #f6f8f7;
+  --color-field-border: #e2e8e5;
+  --color-field-border-hover: #cbd6d0;
+  --color-field-label: #8a949b;
+  --color-placeholder: #9aa3aa;
+  --color-footer: #5f5a6b;
+  --color-footer-text: #ffffffc7;
+  --color-footer-icon: #1a1a1a;
+  --color-notice-bg: #fff8d6;
+  --color-notice-border: #d4a900;
+  --color-notice-text: #6b5200;
+  --color-mist: #d9dfda;
+  --color-dot: #cfd8d3;
+  --color-dot-hover: #9fb08a;
+  --color-periwinkle: #89a6e1;
+  --color-violet: #706976;
+  --color-slate: #78909c;
+  --color-green-ui: #83cc00;
+  --color-green-tint: #d3e89f;
+  --color-card-grey: #e2e1e4;
+  --color-field-border-app: #dcdade;
+  --color-check-border: #c9c7cb;
+  --color-mint: #d5efec;
+  --color-sky: #d3e5fb;
+  --color-cornflower: #759dfe;
+
+  /* Type (design/tokens.json → type.families.sans) */
+  --font-sans: "Inter Variable", Inter, system-ui, sans-serif;
+
+  /* Fluid type scale of the live site below 1440px */
+  --text-hero: clamp(30px, 6.2vw, 62px);
+  --text-hero--line-height: 1.05;
+  --text-hero--letter-spacing: -0.03em;
+  --text-h2: clamp(26px, 5.4vw, 54px);
+  --text-h2--line-height: 1.05;
+  --text-h2--letter-spacing: -0.03em;
+  --text-h3: clamp(20px, 3.2vw, 30px);
+  --text-h3--line-height: 1.05;
+  --text-h3--letter-spacing: -0.03em;
+  --text-lead: clamp(20px, 3.2vw, 30px);
+  --text-lead--line-height: 1.2;
+  --text-sub: clamp(15px, 2vw, 19px);
+  --text-sub--line-height: 1.2;
+  --text-nav: clamp(14px, 2.16vw, 18px);
+  --text-nav--line-height: 1.2;
+  --text-copy: clamp(15px, 1.7vw, 17px);
+  --text-copy--line-height: 1.55;
+  --text-legal: clamp(11px, 1.3vw, 13px);
+  --text-legal--line-height: 1.5;
+
+  /* Radius (design/tokens.json → radius.tokens) */
+  --radius-2: 2px;
+  --radius-8: 8px;
+  --radius-10: 10px;
+  --radius-12: 12px;
+  --radius-14: 14px;
+  --radius-16: 16px;
+  --radius-24: 24px;
+  --radius-28: 28px;
+  --radius-56: 56px;
+  --radius-pill: 999px;
+
+  /* Shadow (design/tokens.json → shadow.tokens) */
+  --shadow-card: 0 20px 60px #25252517;
+  --shadow-arrow: 0 6px 18px #25252538;
+  --shadow-lift: 0 14px 28px #7fb80052;
+  --shadow-focus-field: 0 0 0 4px #7fb8002e;
+  --shadow-focus-pill: 0 0 0 4px #7fb80047;
+  --shadow-cookie: 0 -8px 30px #00000038;
+
+  /* Spacing tokens and the live site's fluid side gutter */
+  --spacing-gutter: clamp(20px, 5vw, 56px);
+  --spacing-section: clamp(32px, 6vw, 70px);
+  --spacing-grid: clamp(24px, 4vw, 44px);
+
+  /* Layout measures (design/tokens.json → size.tokens) */
+  --container-canvas: 1440px;
+  --container-legal: 760px;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-surface font-sans text-ink antialiased;
+  }
+
+  a:focus-visible {
+    @apply rounded-2 outline-3 outline-offset-3 outline-green;
+  }
+}
