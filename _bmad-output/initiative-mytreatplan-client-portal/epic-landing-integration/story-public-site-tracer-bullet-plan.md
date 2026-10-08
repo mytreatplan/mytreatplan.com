@@ -3,14 +3,14 @@ title: 'Public site tracer bullet'
 type: 'feature'
 ticket: '1'
 created: '2026-10-08'
-status: 'in-progress'
+status: 'built'
 baseline_revision: 'a9b5546a3e6f7f49c5f5a76c8e521aebcb30e7fa'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -93,12 +93,23 @@ context: []
 - Tests avoid DB access (Home is a `TemplateView`; migration check uses `MigrationAutodetector`), so they run locally even though the dev role `mytp_db` lacks CREATEDB. CI runs `makemigrations --check` and `migrate` against Postgres 16 as well.
 - Local npm needs `npm_config_cache` outside `~/.npm` inside the sandbox (root-owned files in `~/.npm`).
 
+- 2026-10-08 (review patch, commit 2dec93d): the High Quality section and the three service cards, with their images, were removed from home.html. They belong to the landing's What we do section, which story 1.2 ports whole, so earlier notes about the card images are superseded. The footer copyright year is now computed at render time.
+
 ## Plan Change Log
 
 - 2026-10-08 (dev): `capas/Imagen_0*.webp` are not used by the live site and show different photos than the service cards; the cards use the live images (`tailored-tps-treatment-planning.webp`, `virtuaortho-remote-orthodontist.webp`, `orthodontics-education-masterclass.webp`, 812x1086 only). Responsive `srcset` applies to the hero (`Cabecera-480/768/1200`); no smaller service-card variants exist in the source.
 - 2026-10-08 (dev): Dev DB reset not done: the drop of the existing default Django tables was refused by the agent permission classifier. Needs the user to run it (see Verification).
 
 ## Review Triage Log
+
+Pass 1 (quick lens, 2026-10-08): high 0, medium 1, low 2, false 1, maybe-false 0.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | home.html `what-we-do` section half-ports the live What we do section (no `Cabecera_What` banner, no `Img_What` photo, no "What we do" heading) | medium | patch | Confirmed in uae_landing fluid layout: "High Quality" and the cards sit inside `#f-what-we-do` under the banner and photo. That section belongs to story 1.2. Patch: remove the section and its three card images from 1.1. |
+| 2 | AC1/AC3 not shown met while status is in-review; dev DB `migrate` fails | false | — | `in-review` is the correct status during review. CI needs a push, the visual check needs a human, and the dev DB reset needs the user (classifier refused it for the agent). These are carried to the presentation step as human checks, not code defects. |
+| 3 | Nav links `#about-us`, `#who-we-are`, `#where-we-are`, `#contact` have no targets | low | rejected | Out of scope by intent: the frozen Never list assigns other sections to stories 1.2–1.10, which add the targets. |
+| 4 | Footer copyright year is the literal 2026 | low | patch | Real from 2027. One-line fix: compute the year at render time. |
 
 ## Verification
 
