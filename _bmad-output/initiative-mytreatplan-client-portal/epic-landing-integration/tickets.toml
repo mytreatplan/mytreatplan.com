@@ -55,7 +55,7 @@ covers = ["E6"]
 after = []
 hitl = true
 risk = "high"
-unknown = "Hosting provider; the user is deciding."
+unknown = "OVHcloud Public Cloud (France) chosen 2026-10-08; the staging and production projects are not opened yet."
 
 [[entry]]
 id = 8
