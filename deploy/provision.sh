@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Idempotent server setup for the MyTreatplan staging host (Debian 13).
 #
-# Run on the server as the login user (debian), from a checkout or copy of deploy/:
+# Run on the server as the login user (debian), from a checkout or copy of deploy/
+# (run it again after changing deploy/jobs.conf):
 #
 #     bash deploy/provision.sh dev.mytpdso.com <htpasswd-user>
 #
@@ -40,6 +41,11 @@ CHANGES=0
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
+trim() {
+    local v=$1
+    v=${v#"${v%%[![:space:]]*}"}
+    printf '%s' "${v%"${v##*[![:space:]]}"}"
+}
 changed() { CHANGES=$((CHANGES + 1)); echo "  changed: $*"; }
 step() { echo "==> $*"; }
 
@@ -163,6 +169,71 @@ elif ((units_changed)); then
     sudo systemctl stop mytp-gunicorn.service mytp-gunicorn.socket
     sudo systemctl start mytp-gunicorn.socket
 fi
+
+# --- Scheduled jobs (deploy/jobs.conf) ----------------------------------------
+# One mytp-job@<name>.timer per line of jobs.conf, firing mytp-job@<name>.service.
+# Timers no longer listed are stopped and removed.
+step "Scheduled jobs"
+jobs_changed=0
+if install_file "$DEPLOY_DIR/systemd/mytp-job@.service" /etc/systemd/system/mytp-job@.service 0644 root:root; then
+    jobs_changed=1
+fi
+timer_template=$(<"$DEPLOY_DIR/systemd/mytp-job.timer.template")
+job_names=()
+changed_timers=()
+while IFS='|' read -r name _command schedule extra || [[ -n $name ]]; do
+    name=$(trim "$name")
+    [[ -z $name || $name == \#* ]] && continue
+    schedule=$(trim "$schedule")
+    [[ $name =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo "jobs.conf: invalid job name '$name'" >&2; exit 1; }
+    [[ -n $schedule && -z $extra ]] || { echo "jobs.conf: expected 'name | command | schedule' for '$name'" >&2; exit 1; }
+    for existing in "${job_names[@]}"; do
+        [[ $existing != "$name" ]] || { echo "jobs.conf: duplicate job '$name'" >&2; exit 1; }
+    done
+    job_names+=("$name")
+    timer=${timer_template//__NAME__/"$name"}
+    timer=${timer//__SCHEDULE__/"$schedule"}
+    printf '%s\n' "$timer" >"$WORK/mytp-job@$name.timer"
+    if install_file "$WORK/mytp-job@$name.timer" "/etc/systemd/system/mytp-job@$name.timer" 0644 root:root; then
+        jobs_changed=1
+        changed_timers+=("$name")
+    fi
+done <"$DEPLOY_DIR/jobs.conf"
+for path in /etc/systemd/system/mytp-job@*.timer; do
+    [[ -e $path ]] || continue
+    name=${path#/etc/systemd/system/mytp-job@}
+    name=${name%.timer}
+    listed=0
+    for wanted in "${job_names[@]}"; do
+        [[ $wanted == "$name" ]] && listed=1
+    done
+    if ((!listed)); then
+        sudo systemctl disable --now "mytp-job@$name.timer" >/dev/null 2>&1 || true
+        sudo rm -f "$path"
+        jobs_changed=1
+        changed "removed mytp-job@$name.timer"
+    fi
+done
+if ((jobs_changed)); then
+    sudo systemctl daemon-reload
+fi
+# The jobs.conf these timers came from; `manage.py runjob` takes the Sentry monitor
+# schedules from it, and release.sh warns when a release's copy differs.
+install_file "$DEPLOY_DIR/jobs.conf" "$APP_HOME/shared/jobs.conf" 0644 "$APP_USER:$APP_USER" || true
+for name in "${job_names[@]}"; do
+    timer=mytp-job@$name.timer
+    if ! systemctl is-enabled --quiet "$timer"; then
+        sudo systemctl enable "$timer" >/dev/null 2>&1
+        changed "$timer enabled"
+    fi
+    if ! systemctl is-active --quiet "$timer"; then
+        sudo systemctl start "$timer"
+        changed "$timer started"
+    elif [[ " ${changed_timers[*]} " == *" $name "* ]]; then
+        # Pick up a new schedule.
+        sudo systemctl restart "$timer"
+    fi
+done
 
 # --- Basic auth --------------------------------------------------------------
 step "Basic auth"

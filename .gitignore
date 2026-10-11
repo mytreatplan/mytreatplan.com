@@ -7,6 +7,9 @@ settings.env
 # Django settings hold no secrets and must be tracked (overrides global ignores)
 !mytreatplan/settings.py
 
+# Release SHA, written on the server by deploy/release.sh
+/REVISION
+
 # Logs
 *.log
 

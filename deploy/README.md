@@ -16,13 +16,20 @@ team password (basic auth) and sends `X-Robots-Tag: noindex, nofollow`.
 | Web server | Nginx, `/etc/nginx/sites-available/mytp.conf`, password file `/etc/nginx/mytp.htpasswd` |
 | Certificate | Let's Encrypt via certbot; renewed by `certbot.timer` |
 | Firewall | ufw: 22, 80, 443 only |
+| Scheduled jobs | `mytp-job@<name>.timer` → `mytp-job@<name>.service`, one per line of `jobs.conf` |
+| Health URL | `https://dev.mytpdso.com/healthz` (no password), watched by UptimeRobot |
+| Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
 
 Files in this folder:
 
 - `provision.sh`: idempotent server setup (packages, SSH hardening, firewall, `mytp` user
-  and directories, systemd units, sudoers, basic auth, Nginx, certificate).
+  and directories, systemd units, scheduled job timers, sudoers, basic auth, Nginx,
+  certificate).
 - `release.sh`: installs one release; CI copies it to the server and runs it.
-- `nginx/mytp.conf.template`, `systemd/*`, `sudoers/mytp-deploy`: installed by `provision.sh`.
+- `jobs.conf`: the scheduled jobs (name, `manage.py` command, schedule).
+- `run-job.sh`: runs one job in the live release (started by `mytp-job@.service`).
+- `nginx/mytp.conf.template`, `systemd/*` (including `mytp-job.timer.template`),
+  `sudoers/mytp-deploy`: installed by `provision.sh`.
 - `staging.env.example`: template for `shared/settings.env`.
 
 ## First-time setup (human steps)
@@ -69,7 +76,8 @@ sudo -u mytp nano /srv/mytp/shared/settings.env
 ```
 
 Fill in `SECRET_KEY` (e.g. `python3 -c "import secrets; print(secrets.token_urlsafe(50))"`)
-and `DATABASE_URL` (from step 2). Leave the other values as they are.
+and `DATABASE_URL` (from step 2), and `SENTRY_DSN` once step 8 gives you one (empty
+leaves Sentry off). Leave the other values as they are.
 
 ### 5. Deploy key and host key
 
@@ -122,6 +130,77 @@ curl -sI http://dev.mytpdso.com/.well-known/acme-challenge/test  # 404, not 401
 
 Open the site in a browser: valid certificate, password prompt, pages render with styles.
 
+```sh
+curl -s https://dev.mytpdso.com/healthz                  # ok (no password needed)
+```
+
+### 8. Sentry (errors and scheduled jobs)
+
+1. In Sentry, use (or create) an organisation whose **data storage region is EU**
+   (Germany). The region is chosen when the organisation is created and cannot change.
+2. Create a project: platform **Django**, name `mytreatplan`. Copy its DSN from Project
+   Settings → Client Keys. It must point at `*.de.sentry.io`
+   (`https://<key>@o<org>.ingest.de.sentry.io/<project>`).
+3. Project Settings → Security & Privacy: turn on **Data Scrubber** and
+   **Prevent Storing of IP Addresses** (the app already strips personal data before
+   sending; this is a second layer).
+4. Alerts → Create Alert → Issues, with the conditions "A new issue is created" **or**
+   "The issue changes state from resolved to unresolved" (a regression), environment
+   `staging` → send an email to **devops@mytreatplan.com**. Add the address as a team member or use
+   Settings → Notifications so it can receive mail.
+5. Crons: nothing to create by hand. The first run of each job creates its monitor
+   (`mytp-staging-<name>`, schedule taken from `jobs.conf`, 30 min margin, 60 min max
+   runtime). After the first run, open Crons → the monitor → Edit and set
+   **Notify** to devops@mytreatplan.com (failed, missed and timed-out check-ins).
+6. On the server, put the DSN in `/srv/mytp/shared/settings.env`:
+
+   ```sh
+   sudo -u mytp nano /srv/mytp/shared/settings.env   # SENTRY_DSN=https://...ingest.de.sentry.io/...
+   sudo systemctl restart mytp-gunicorn
+   ```
+
+   `SENTRY_ENVIRONMENT=staging` is already there. The release is the git SHA (each
+   release's `REVISION` file, written by `release.sh`).
+7. Check: force an error and see it arrive (no personal data) and the email go out:
+
+   ```sh
+   cd /srv/mytp/current
+   sudo -u mytp ./venv/bin/python manage.py shell -c "import sentry_sdk
+   try:
+       1 / 0
+   except ZeroDivisionError:
+       sentry_sdk.capture_exception()
+   sentry_sdk.flush()"
+   ```
+
+   Then check the jobs (after `provision.sh` has installed the timers):
+
+   ```sh
+   sudo systemctl start mytp-job@clearsessions          # Sentry Crons: ok check-in
+   # A failing run (unreachable database; the env var beats settings.env):
+   sudo -u mytp DATABASE_URL=postgres://x@127.0.0.1:1/x ./venv/bin/python manage.py runjob clearsessions
+   ```
+
+   The second command exits non-zero and Sentry records an error check-in plus an issue;
+   devops@mytreatplan.com gets the alert. The next scheduled run turns the monitor ok again.
+
+Personal data never goes to Sentry: `mytreatplan/sentry.py` sets `send_default_pii=False`,
+sends no request bodies or local variables, and strips cookies, headers, query strings,
+user email and IP in `before_send`. Locally and in CI `SENTRY_DSN` is unset, so nothing is sent.
+
+### 9. UptimeRobot
+
+1. Sign in to UptimeRobot with (or add as alert contact) **devops@mytreatplan.com**;
+   verify the address.
+2. New monitor: type **HTTP(s)**, URL `https://dev.mytpdso.com/healthz`, interval 5 min,
+   alert contact devops@mytreatplan.com. Optionally a **Keyword** monitor for `ok`.
+3. Check: `sudo systemctl stop mytp-gunicorn.service mytp-gunicorn.socket` → a down
+   alert within a few minutes; `sudo systemctl start mytp-gunicorn.socket` (the service
+   starts on the next request) → an up alert.
+
+`/healthz` answers `ok` (200) when the app can run `SELECT 1` on the database, else
+`unavailable` (503). It reveals nothing else, and is the only path without the password.
+
 ## How a deploy works
 
 1. CI (`test`) passes on a push to `master`. Pull requests and other branches never deploy.
@@ -146,6 +225,47 @@ push's tests finish last.
 Note: migrations run before the switch, so the previous release briefly runs against the
 new schema, and a failed health check does not undo migrations. Keep migrations
 backwards-compatible.
+
+## Scheduled jobs
+
+Jobs are listed in `deploy/jobs.conf`, one per line: `name | manage.py command | schedule`.
+The schedule is a systemd `OnCalendar` in UTC, e.g. `*-*-* 03:30:00 UTC` (daily) or
+`Mon *-*-* 02:00 UTC` (weekly); `mytp_publicsite/jobs.py` lists the forms supported
+(they must also map to the Sentry monitor's crontab, and the tests check every line).
+
+`provision.sh` installs the timers and a copy of the `jobs.conf` it used at
+`/srv/mytp/shared/jobs.conf`. `runjob` reads the job list and schedules from that copy
+(falling back to the release's own file only when it is missing, e.g. locally), so the
+Sentry monitors always match the timers. A deploy that changes `jobs.conf` does not change
+the timers: `release.sh` prints a warning, and you must re-run `provision.sh`.
+
+Each job runs as `mytp` in `/srv/mytp/current` via `deploy/run-job.sh <name>` →
+`manage.py runjob <name>`, which sends Sentry cron check-ins (in progress, then ok or
+error). A missed run (host down, timer gone) shows as a missed check-in in Sentry; a
+failed run exits non-zero, so the unit is marked failed. Timers are `Persistent=true`:
+a run missed while the host was down happens at boot.
+
+To add a job:
+
+1. Add a line to `jobs.conf` (the command must exist in the app) and merge it.
+2. On the server, from a copy of the merged `deploy/`, run `bash ~/deploy/provision.sh
+   dev.mytpdso.com <htpasswd-user>`. It installs and starts the new timer, updates
+   changed schedules and removes timers no longer listed.
+3. After its first run, set the Sentry monitor's notifications (step 8.5).
+
+To remove a job: delete its line, merge, re-run `provision.sh` (it stops and removes the
+timer), then in Sentry → Crons delete (or disable) the monitor `mytp-staging-<name>`;
+otherwise it keeps raising missed check-in alerts.
+
+Run a job by hand / read its logs:
+
+```sh
+systemctl list-timers 'mytp-job@*'             # next and last run of each job
+sudo systemctl start mytp-job@clearsessions    # run now (waits until it finishes)
+systemctl status mytp-job@clearsessions        # last result
+sudo journalctl -u mytp-job@clearsessions -n 100
+systemctl list-units --failed 'mytp-job@*'
+```
 
 ## Rollback
 
@@ -179,8 +299,9 @@ update `STAGING_SSH_KEY`. If the server is rebuilt, also refresh `STAGING_KNOWN_
 
 ```sh
 sudo journalctl -u mytp-gunicorn -n 200    # app (Gunicorn) logs
+sudo journalctl -u 'mytp-job@*' -n 200     # scheduled jobs
 sudo tail -f /var/log/nginx/error.log
 ```
 
-Out of scope here: production (story 1.12); backups, monitoring and cron jobs (story 1.9);
+Out of scope here: production (story 1.12); backups (story 1.14); KMS (story 1.15);
 email (story 1.5).

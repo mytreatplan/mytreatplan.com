@@ -4,8 +4,8 @@
 #
 #     bash release.sh <git-sha> <tarball>
 #
-# Flow: unpack to releases/<sha>, build its venv, compilemessages, collectstatic,
-# migrate, createcachetable. Only then switch `current`, restart Gunicorn and check
+# Flow: unpack to releases/<sha> (with a REVISION file holding the SHA), build its
+# venv, compilemessages, collectstatic, migrate, createcachetable. Only then switch `current`, restart Gunicorn and check
 # health through the socket. If the check fails, switch back, restart, exit non-zero.
 # Keeps the last 5 releases.
 set -euo pipefail
@@ -97,6 +97,13 @@ mkdir -p "$RELEASE"
 tar -xzf "$TARBALL" -C "$RELEASE"
 [[ -f $RELEASE/static/css/site.css ]] || die "tarball has no built static/css/site.css"
 ln -s "$SHARED/settings.env" "$RELEASE/settings.env"
+# The git SHA, read by settings as Sentry's `release` (RELEASE_SHA in the env wins).
+echo "$SHA" >"$RELEASE/REVISION"
+# Timers (and Sentry monitor schedules) follow the provisioned jobs.conf, not the release's.
+if ! cmp -s "$RELEASE/deploy/jobs.conf" "$SHARED/jobs.conf"; then
+    echo "WARNING: deploy/jobs.conf in this release differs from $SHARED/jobs.conf (or that is" >&2
+    echo "WARNING: missing). Scheduled jobs keep the old timers until you re-run deploy/provision.sh." >&2
+fi
 
 log "Building venv"
 python3 -m venv "$RELEASE/venv"
