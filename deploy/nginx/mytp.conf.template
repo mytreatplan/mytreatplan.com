@@ -1,0 +1,65 @@
+# Rendered by deploy/provision.sh to /etc/nginx/sites-available/mytp.conf
+# (__DOMAIN__ is replaced with the site domain, e.g. dev.mytpdso.com).
+# Until the Let's Encrypt certificate exists, only the part above the
+# __HTTPS_BEGIN__ marker is installed, so certbot can answer the HTTP challenge.
+
+upstream mytp_gunicorn {
+    server unix:/run/mytp-gunicorn.sock fail_timeout=0;
+}
+
+# HTTP: ACME challenges only; everything else goes to HTTPS.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name __DOMAIN__;
+
+    location /.well-known/acme-challenge/ {
+        auth_basic off;
+        root /var/www/letsencrypt;
+    }
+
+    location / {
+        return 301 https://__DOMAIN__$request_uri;
+    }
+}
+
+# __HTTPS_BEGIN__
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    http2 on;
+    server_name __DOMAIN__;
+
+    ssl_certificate /etc/letsencrypt/live/__DOMAIN__/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/__DOMAIN__/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:mytp_ssl:10m;
+    ssl_session_timeout 1d;
+
+    client_max_body_size 10m;
+
+    # Staging: the whole site is behind the team password.
+    auth_basic "MyTreatplan staging";
+    auth_basic_user_file /etc/nginx/mytp.htpasswd;
+
+    location /.well-known/acme-challenge/ {
+        auth_basic off;
+        root /var/www/letsencrypt;
+    }
+
+    location /static/ {
+        alias /srv/mytp/current/static_root/;
+        expires 1h;
+        add_header X-Robots-Tag "noindex, nofollow" always;
+    }
+
+    location / {
+        proxy_pass http://mytp_gunicorn;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_redirect off;
+        proxy_read_timeout 60s;
+    }
+}

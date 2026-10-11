@@ -71,3 +71,90 @@ jobs:
 
       - name: Run tests
         run: pytest
+
+  # Every push to master that passes `test` goes live on https://dev.mytpdso.com.
+  # Server setup and the secrets are described in deploy/README.md.
+  deploy-staging:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: https://dev.mytpdso.com
+    # One deploy at a time; a newer push waits for the running one (never cancels it).
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+
+    env:
+      SHA: ${{ github.sha }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Build CSS
+        run: npm ci && npm run build:css
+
+      - name: Build release tarball
+        # The tracked files at this commit plus the built CSS (git-ignored).
+        run: |
+          git archive --format=tar -o release.tar "$SHA"
+          tar --append -f release.tar static/css/site.css
+          gzip -9 release.tar
+
+      - name: Configure SSH
+        # The host key comes only from STAGING_KNOWN_HOSTS (no trust on first use).
+        env:
+          STAGING_HOST: ${{ secrets.STAGING_HOST }}
+          STAGING_SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          STAGING_KNOWN_HOSTS: ${{ secrets.STAGING_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$STAGING_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$STAGING_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+          cat > ~/.ssh/config <<CONFIG
+          Host staging
+            HostName $STAGING_HOST
+            User mytp
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            BatchMode yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+          CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Check this is still the tip of master
+        # Deploys queue, but not in push order: an older push whose tests finish later
+        # must not replace a newer release. A newer push will deploy itself.
+        id: tip
+        run: |
+          tip=$(git ls-remote origin refs/heads/master | cut -f1)
+          if [ "$tip" = "$SHA" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "latest=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Skipping deploy of $SHA: master is now at $tip, a newer push supersedes it."
+          fi
+
+      - name: Upload release
+        if: steps.tip.outputs.latest == 'true'
+        run: |
+          scp release.tar.gz "staging:/srv/mytp/incoming/$SHA.tar.gz"
+          scp deploy/release.sh "staging:/srv/mytp/incoming/$SHA-release.sh"
+
+      - name: Release
+        if: steps.tip.outputs.latest == 'true'
+        run: |
+          ssh staging bash "/srv/mytp/incoming/$SHA-release.sh" "$SHA" "/srv/mytp/incoming/$SHA.tar.gz"
+
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

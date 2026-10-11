@@ -1,0 +1,3 @@
+# Installed by deploy/provision.sh to /etc/sudoers.d/mytp-deploy (0440, checked with visudo -c).
+# The deploy user may restart the app service and nothing else.
+mytp ALL=(root) NOPASSWD: /usr/bin/systemctl restart mytp-gunicorn
