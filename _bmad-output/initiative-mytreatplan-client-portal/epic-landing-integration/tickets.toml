@@ -60,11 +60,22 @@ unknown = "OVHcloud Public Cloud chosen; staging opened 2026-10-11 (b2-7, GRA11,
 [[entry]]
 id = 8
 type = "story"
-title = "Staging environment and deploys"
-description = "Provisions staging at https://dev.mytpdso.com on the OVHcloud GRA11 project (instance mytp-staging-1, Debian 13) with Managed PostgreSQL over TLS on the private network, HTTPS, environment secrets, HTTP basic auth plus noindex, Gunicorn under systemd behind Nginx, a per-environment switch that turns portal features on or off (signup entry 2.1 registers behind it; on in staging), and a GitHub Actions deploy to staging on every push to master running the Tailwind build, compilemessages, collectstatic, migrate and createcachetable; entry 12 reuses it for production."
-verify = "A push to master deploys to https://dev.mytpdso.com over HTTPS behind the team password; the DB connection uses TLS; the portal switch is on; responses carry noindex."
+title = "Staging-ready app settings"
+description = "Makes the app safe to run on staging and production: security settings when DEBUG is off (secure cookies, proxy SSL header, CSRF_TRUSTED_ORIGINS and ALLOWED_HOSTS from env, short HSTS on staging), DB TLS from env with a deploy check that refuses a non-TLS database, a ROBOTS_NOINDEX switch (X-Robots-Tag header plus disallow-all robots.txt), the PORTAL_ENABLED switch that signup entry 2.1 registers behind, and pinned gunicorn; entry 13 deploys it."
+verify = "Tests show the security settings with DEBUG off, the noindex header and robots.txt, the portal switch on and off, and the DB TLS check failing without TLS."
 covers = ["E6"]
 after = [4]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 13
+type = "story"
+title = "Staging provisioning and deploy pipeline"
+description = "Provisions https://dev.mytpdso.com on the OVHcloud GRA11 instance mytp-staging-1 (Debian 13) with an idempotent deploy/provision.sh the user runs over SSH (app user, Gunicorn under systemd behind Nginx, Let's Encrypt, HTTP basic auth, firewall), Managed PostgreSQL over TLS with an IP allowlist, a release.sh that switches releases only when migrations succeed, a GitHub Actions staging deploy on every push to master, and a runbook for the human steps and rollback; entry 12 reuses it for production."
+verify = "A push to master deploys to https://dev.mytpdso.com over HTTPS behind the team password; a failed migration leaves the previous release serving; running provision.sh twice changes nothing."
+covers = ["E6"]
+after = [8]
 hitl = true
 risk = "high"
 
@@ -75,7 +86,7 @@ title = "Contact form"
 description = "Adds the contact form with the existing fields and limits, the anti-spam checks from enviar.php (honeypot, JS flag, minimum fill time, per-sender hourly limit on Django's database cache), HTMX submission in EN and ES, storage with admin listing, and email to the company inbox through SendGrid as Django's email backend from environment secrets (epic 3's password reset reuses it); marketing provides the SendGrid credentials and the inbox address."
 verify = "Tests show valid submissions are stored and emailed (locmem backend) and each anti-spam rule silently drops the bot case; on staging a real message reaches the inbox."
 covers = ["E5"]
-after = [4, 8]
+after = [4, 13]
 hitl = true
 risk = "medium"
 unknown = "SendGrid credentials and the inbox address, from marketing."
@@ -87,7 +98,7 @@ title = "Operations: backups, monitoring, cron and KMS"
 description = "Adds off-region automated PostgreSQL backups with a tested restore, uptime and error monitoring with alerts (signup entry 2.11's send-failure alert and entry 6's failures report through it), a cron host running Django management commands on each environment (signup entry 2.10 and entry 6 register jobs there), and provisions the KMS that signup entry 2.12 uses."
 verify = "A restore of last night's backup succeeds on a scratch DB; a forced error alerts; a test command runs from cron on staging; a KMS key is reachable from staging."
 covers = ["E6"]
-after = [8]
+after = [13]
 hitl = true
 risk = "medium"
 
@@ -107,10 +118,10 @@ unknown = "CRM choice; Zoho is likely."
 id = 12
 type = "story"
 title = "Production environment and promotion"
-description = "Provisions production on its own OVHcloud GRA11 project with entry 8's setup (Managed PostgreSQL over TLS, HTTPS, secrets, Gunicorn/systemd/Nginx, no basic auth, indexable), the portal switch off until epic 3, entry 9's backups, monitoring, cron and KMS applied to production, and a manual-approval GitHub Actions job that promotes the exact build already deployed to staging."
+description = "Provisions production on its own OVHcloud GRA11 project with entry 13's setup (Managed PostgreSQL over TLS, HTTPS, secrets, Gunicorn/systemd/Nginx, no basic auth, indexable), the portal switch off until epic 3, entry 9's backups, monitoring, cron and KMS applied to production, and a manual-approval GitHub Actions job that promotes the exact build already deployed to staging."
 verify = "A manual approval deploys the staging build to production over HTTPS; the DB connection uses TLS; the portal switch is off; backups, monitoring and cron run on production."
 covers = ["E6"]
-after = [7, 8, 9]
+after = [7, 9, 13]
 hitl = true
 risk = "high"
 
@@ -133,6 +144,6 @@ title = "Refactor sweep"
 description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
 verify = "The full test suite passes; deferred review findings are closed or recorded."
 covers = []
-after = [1, 2, 3, 4, 7, 8, 5, 9, 6, 10, 12]
+after = [1, 2, 3, 4, 7, 8, 5, 9, 6, 10, 12, 13]
 hitl = false
 risk = "low"
