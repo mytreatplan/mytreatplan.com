@@ -36,3 +36,12 @@ skills-lock.json
 
 # BMad rendered workflow cache
 _bmad/render/
+
+# SSH keys and certificates: never commit (keys live in ~/.ssh)
+id_*
+*.pem
+*.key
+*_staging
+*_staging.pub
+*_production
+*_production.pub
