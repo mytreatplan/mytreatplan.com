@@ -90,7 +90,7 @@ title = "Retention jobs"
 description = "Adds the purge/anonymize service and management commands for the 24h pending-registration purge (keeping reason and field name only), 30-day log anonymization by entry 3's attempt-end timestamp and 2-year deletion of anonymized entries; entry 8 reuses the service, and a person registers the commands on epic 1's cron host."
 verify = "Time-travel tests show each rule; the cron entries exist on staging."
 covers = ["CAP-9", "CAP-10"]
-after = [3]
+after = [3, "1.9"]
 hitl = true
 risk = "medium"
 
@@ -137,7 +137,7 @@ title = "KMS key provider"
 description = "Implements the key provider for the KMS of the hosting chosen in epic 1 (envelope encryption, key rotation) behind entry 2's interface; a person configures it on staging and production."
 verify = "On staging data keys are unwrapped through the KMS, and a key rotation leaves existing data readable."
 covers = []
-after = [2, "1.9"]
+after = [2, "1.15"]
 hitl = true
 risk = "medium"
 references = ["spec-client-portal-signup/encryption-policy.md"]

@@ -94,9 +94,31 @@ unknown = "SendGrid credentials and the inbox address, from marketing."
 [[entry]]
 id = 9
 type = "story"
-title = "Operations: backups, monitoring, cron and KMS"
-description = "Adds off-region automated PostgreSQL backups with a tested restore, uptime and error monitoring with alerts (signup entry 2.11's send-failure alert and entry 6's failures report through it), a cron host running Django management commands on each environment (signup entry 2.10 and entry 6 register jobs there), and provisions the KMS that signup entry 2.12 uses."
-verify = "A restore of last night's backup succeeds on a scratch DB; a forced error alerts; a test command runs from cron on staging; a KMS key is reachable from staging."
+title = "Scheduled jobs, monitoring and alerts"
+description = "Adds systemd timers on the staging server that run Django management commands in the live release as mytp (first job: daily clearsessions; signup entry 2.10 and entry 6 register theirs the same way), Sentry error monitoring in its EU region with personal data scrubbed and missed-job (cron) monitoring, an unauthenticated lightweight health URL that Nginx serves outside basic auth, and hosted uptime checks with email alerts (signup entry 2.11's send-failure alert and entry 6's failures report through Sentry); entry 12 applies the same to production."
+verify = "A forced error reaches Sentry without personal data; clearsessions runs from its timer and a missed run alerts; stopping Gunicorn triggers an uptime alert; the health URL answers without the team password."
+covers = ["E6"]
+after = [13]
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 14
+type = "story"
+title = "Off-region database backups and restore test"
+description = "Keeps OVHcloud Managed PostgreSQL's automatic backups and adds a nightly encrypted pg_dump of the staging database to OVHcloud Object Storage in another region (e.g. Strasbourg), run by entry 9's timers, with retention, failure alerts through Sentry and a documented, tested restore into a scratch database; entry 12 applies it to production."
+verify = "A nightly dump appears encrypted in the other region's bucket; a restore from it into a scratch database succeeds; a failed dump alerts."
+covers = ["E6"]
+after = [9]
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 15
+type = "story"
+title = "OVHcloud KMS provisioning"
+description = "Provisions OVHcloud KMS for the project (an encryption key for staging, access credentials stored only on the server), verifies the staging server can wrap and unwrap a test data key, and documents key rotation and access; signup entry 2.12 implements the key provider on it; entry 12 provisions production's key."
+verify = "From the staging server a test data key is wrapped and unwrapped through OVHcloud KMS; the credentials are only on the server; rotation is documented."
 covers = ["E6"]
 after = [13]
 hitl = true
@@ -118,10 +140,10 @@ unknown = "CRM choice; Zoho is likely."
 id = 12
 type = "story"
 title = "Production environment and promotion"
-description = "Provisions production on its own OVHcloud GRA11 project with entry 13's setup (Managed PostgreSQL over TLS, HTTPS, secrets, Gunicorn/systemd/Nginx, no basic auth, indexable), the portal switch off until epic 3, entry 9's backups, monitoring, cron and KMS applied to production, and a manual-approval GitHub Actions job that promotes the exact build already deployed to staging."
+description = "Provisions production on its own OVHcloud GRA11 project with entry 13's setup (Managed PostgreSQL over TLS, HTTPS, secrets, Gunicorn/systemd/Nginx, no basic auth, indexable), the portal switch off until epic 3, entry 9's timers and monitoring, entry 14's backups and entry 15's KMS applied to production, and a manual-approval GitHub Actions job that promotes the exact build already deployed to staging."
 verify = "A manual approval deploys the staging build to production over HTTPS; the DB connection uses TLS; the portal switch is off; backups, monitoring and cron run on production."
 covers = ["E6"]
-after = [7, 9, 13]
+after = [7, 9, 13, 14, 15]
 hitl = true
 risk = "high"
 
@@ -144,6 +166,6 @@ title = "Refactor sweep"
 description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
 verify = "The full test suite passes; deferred review findings are closed or recorded."
 covers = []
-after = [1, 2, 3, 4, 7, 8, 5, 9, 6, 10, 12, 13]
+after = [1, 2, 3, 4, 7, 8, 5, 9, 6, 10, 12, 13, 14, 15]
 hitl = false
 risk = "low"
