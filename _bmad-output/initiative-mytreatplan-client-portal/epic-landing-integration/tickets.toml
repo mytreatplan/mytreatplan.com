@@ -60,11 +60,11 @@ unknown = "OVHcloud Public Cloud chosen; staging opened 2026-10-11 (b2-7, GRA11,
 [[entry]]
 id = 8
 type = "story"
-title = "Staging and production environments with deploys"
-description = "Provisions staging and production on the chosen host with managed PostgreSQL over TLS, disk encryption, HTTPS and environment secrets, a per-environment switch that turns portal features on or off (signup entry 2.1 registers behind it; on in staging, off in production until epic 3), and a GitHub Actions deploy (staging on every push to master, production on manual approval) running the Tailwind build, compilemessages, collectstatic, migrate and createcachetable."
-verify = "A push deploys to staging over HTTPS; a manual approval deploys the same build to production; the DB connection uses TLS; the portal switch is on in staging and off in production."
+title = "Staging environment and deploys"
+description = "Provisions staging at https://dev.mytpdso.com on the OVHcloud GRA11 project (instance mytp-staging-1, Debian 13) with Managed PostgreSQL over TLS on the private network, HTTPS, environment secrets, HTTP basic auth plus noindex, Gunicorn under systemd behind Nginx, a per-environment switch that turns portal features on or off (signup entry 2.1 registers behind it; on in staging), and a GitHub Actions deploy to staging on every push to master running the Tailwind build, compilemessages, collectstatic, migrate and createcachetable; entry 12 reuses it for production."
+verify = "A push to master deploys to https://dev.mytpdso.com over HTTPS behind the team password; the DB connection uses TLS; the portal switch is on; responses carry noindex."
 covers = ["E6"]
-after = [4, 7]
+after = [4]
 hitl = true
 risk = "high"
 
@@ -104,13 +104,24 @@ risk = "medium"
 unknown = "CRM choice; Zoho is likely."
 
 [[entry]]
+id = 12
+type = "story"
+title = "Production environment and promotion"
+description = "Provisions production on its own OVHcloud GRA11 project with entry 8's setup (Managed PostgreSQL over TLS, HTTPS, secrets, Gunicorn/systemd/Nginx, no basic auth, indexable), the portal switch off until epic 3, entry 9's backups, monitoring, cron and KMS applied to production, and a manual-approval GitHub Actions job that promotes the exact build already deployed to staging."
+verify = "A manual approval deploys the staging build to production over HTTPS; the DB connection uses TLS; the portal switch is off; backups, monitoring and cron run on production."
+covers = ["E6"]
+after = [7, 8, 9]
+hitl = true
+risk = "high"
+
+[[entry]]
 id = 10
 type = "story"
 title = "Public site go-live"
 description = "Points mytreatplan.com DNS to production with TLS and releases the public site with portal features off; mytreatplan.ae stays on its current hosting unchanged."
 verify = "mytreatplan.com loads over HTTPS in EN and ES; the contact form delivers in production; Sign up and Login links are hidden in production."
 covers = ["E1", "E6"]
-after = [4, 6, 9]
+after = [4, 6, 9, 12]
 hitl = true
 risk = "medium"
 unknown = "Final mytreatplan.com legal texts (Privacy and Terms, EN and ES) from the lawyer; until then LEGAL_TEXTS_FINAL stays False and check --deploy fails (story 1.4)."
@@ -122,6 +133,6 @@ title = "Refactor sweep"
 description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
 verify = "The full test suite passes; deferred review findings are closed or recorded."
 covers = []
-after = [1, 2, 3, 4, 7, 8, 5, 9, 6, 10]
+after = [1, 2, 3, 4, 7, 8, 5, 9, 6, 10, 12]
 hitl = false
 risk = "low"
