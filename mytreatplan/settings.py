@@ -71,6 +71,23 @@ if SENTRY_DSN:
     from mytreatplan.sentry import init_sentry
     init_sentry(SENTRY_DSN, SENTRY_ENVIRONMENT, SENTRY_RELEASE)
 
+# Off-region database backups (story 1.14): `manage.py backupdb` dumps the database,
+# encrypts it with `age` for BACKUP_AGE_RECIPIENT (a public key; the private identity
+# never reaches the server) and uploads it to an S3-compatible bucket in another region
+# (OVHcloud Object Storage SBG). All empty by default; the command refuses to run and
+# names the first missing key. BACKUP_PREFIX is the object key prefix, e.g. `staging/`.
+# See deploy/README.md, "Backups and restore".
+BACKUP_S3_ENDPOINT = config('BACKUP_S3_ENDPOINT', default='')
+BACKUP_S3_REGION = config('BACKUP_S3_REGION', default='')
+BACKUP_S3_BUCKET = config('BACKUP_S3_BUCKET', default='')
+BACKUP_S3_ACCESS_KEY = config('BACKUP_S3_ACCESS_KEY', default='')
+BACKUP_S3_SECRET_KEY = config('BACKUP_S3_SECRET_KEY', default='')
+BACKUP_PREFIX = config('BACKUP_PREFIX', default='')
+BACKUP_AGE_RECIPIENT = config('BACKUP_AGE_RECIPIENT', default='')
+# Where the encrypted dump is written before the upload: a 0700 directory owned by the
+# app user (deploy/provision.sh creates it). Only ciphertext is ever written there.
+BACKUP_TMP_DIR = config('BACKUP_TMP_DIR', default='/srv/mytp/shared/backup-tmp')
+
 # Application definition
 
 INSTALLED_APPS = [

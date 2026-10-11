@@ -18,6 +18,7 @@ team password (basic auth) and sends `X-Robots-Tag: noindex, nofollow`.
 | Firewall | ufw: 22, 80, 443 only |
 | Scheduled jobs | `mytp-job@<name>.timer` → `mytp-job@<name>.service`, one per line of `jobs.conf` |
 | Health URL | `https://dev.mytpdso.com/healthz` (no password), watched by UptimeRobot |
+| Off-region backups | nightly `backupdb` job → Object Storage SBG (`age`-encrypted); restore test: `restore-db.sh` |
 | Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -28,6 +29,7 @@ Files in this folder:
 - `release.sh`: installs one release; CI copies it to the server and runs it.
 - `jobs.conf`: the scheduled jobs (name, `manage.py` command, schedule).
 - `run-job.sh`: runs one job in the live release (started by `mytp-job@.service`).
+- `restore-db.sh`: the restore test for the off-region backups (run on a team Mac).
 - `nginx/mytp.conf.template`, `systemd/*` (including `mytp-job.timer.template`),
   `sudoers/mytp-deploy`: installed by `provision.sh`.
 - `staging.env.example`: template for `shared/settings.env`.
@@ -201,6 +203,109 @@ user email and IP in `before_send`. Locally and in CI `SENTRY_DSN` is unset, so 
 `/healthz` answers `ok` (200) when the app can run `SELECT 1` on the database, else
 `unavailable` (503). It reveals nothing else, and is the only path without the password.
 
+### 10. Off-region backups
+
+Two layers: OVHcloud's managed backups (same region as the database, GRA) and a nightly
+encrypted `pg_dump` to Object Storage in **SBG** (`manage.py backupdb`). See
+[Backups and restore](#backups-and-restore) for how they work.
+
+1. **Managed backups.** OVHcloud Control Panel → Public Cloud → Databases → the
+   PostgreSQL service → *Backups*: check that daily backups are listed, and note the
+   retention and the backup location shown for the plan. Write both in the table under
+   "Backups and restore" (they depend on the plan; nothing here changes them).
+2. **Bucket.** Public Cloud → Object Storage → *Create object container*: S3 API, region
+   **SBG** (Strasbourg), private, name e.g. `mytp-backups-staging`. Copy its S3
+   endpoint (e.g. `https://s3.sbg.io.cloud.ovh.net`) and region (`sbg`).
+3. **Retention: 30 daily dumps.** Add a lifecycle rule that expires objects after 30
+   days. From your machine, with an *admin* S3 user's keys in `AWS_ACCESS_KEY_ID` /
+   `AWS_SECRET_ACCESS_KEY` (never the server's user):
+
+   ```sh
+   export AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+   aws --endpoint-url https://s3.sbg.io.cloud.ovh.net --region sbg s3api put-bucket-lifecycle-configuration \
+       --bucket mytp-backups-staging --lifecycle-configuration '{"Rules": [{
+         "ID": "expire-dumps-30d", "Status": "Enabled", "Filter": {"Prefix": "staging/"},
+         "Expiration": {"Days": 30},
+         "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 2}}]}'
+   aws --endpoint-url https://s3.sbg.io.cloud.ovh.net --region sbg s3api get-bucket-lifecycle-configuration \
+       --bucket mytp-backups-staging
+   ```
+
+   **If SBG refuses the rule or does not support expiration, stop here and raise it with
+   the team** before going on: `backupdb` never deletes, so without the rule the bucket
+   grows forever, and the server's key must not get delete rights to work around it.
+4. **S3 user for the server (write and read, no delete).** Public Cloud → Users & Roles →
+   add a user (role *ObjectStore operator*), then Object Storage → *S3 users* → generate
+   its S3 credentials and *import* this policy (replace the bucket name):
+
+   ```json
+   {
+     "Statement": [{
+       "Sid": "BackupWriteReadNoDelete",
+       "Effect": "Allow",
+       "Action": [
+         "s3:PutObject", "s3:GetObject", "s3:ListBucket", "s3:GetBucketLocation",
+         "s3:ListBucketMultipartUploads", "s3:ListMultipartUploadParts",
+         "s3:AbortMultipartUpload"
+       ],
+       "Resource": ["arn:aws:s3:::mytp-backups-staging", "arn:aws:s3:::mytp-backups-staging/*"]
+     }]
+   }
+   ```
+
+   No `s3:DeleteObject`. This does not make old dumps safe from the server: `s3:PutObject`
+   can still overwrite an existing object. Bucket versioning or object lock would close
+   that; decide on it for production (story 1.12). Keep the access and secret key in the team password manager
+   (they go on the server in step 6). Restore tests may use the same keys from the
+   password manager, or a separate read-only user.
+5. **Encryption key (age).** On a team Mac (`brew install age`):
+
+   ```sh
+   age-keygen -o mytp-backup-staging.key     # prints "Public key: age1..."
+   ```
+
+   Store the **whole file** (it holds the private identity) in the team password manager
+   as "MyTreatplan staging backup key (age)", then delete the local file
+   (`rm mytp-backup-staging.key`). The private key never goes to the server: without it no
+   dump can be read, and if it is lost every dump is useless, so check the password
+   manager entry before deleting the file. The `age1...` public key is
+   `BACKUP_AGE_RECIPIENT`.
+6. **Settings and provision.** On the server, fill in the `BACKUP_*` keys in
+   `/srv/mytp/shared/settings.env` (see `deploy/staging.env.example`):
+
+   ```sh
+   sudo -u mytp nano /srv/mytp/shared/settings.env
+   ```
+
+   Then, from a copy of the merged `deploy/`, re-run
+   `bash ~/deploy/provision.sh dev.mytpdso.com <htpasswd-user>`: it installs
+   `postgresql-client` and `age`, creates `/srv/mytp/shared/backup-tmp` (0700, `mytp`)
+   and the `mytp-job@backupdb.timer` (02:30 UTC). Check `pg_dump --version` says 17 (the
+   managed service's major version; `backupdb` refuses an older client).
+7. **First backup by hand.**
+
+   ```sh
+   sudo systemctl start mytp-job@backupdb           # waits until it finishes
+   sudo journalctl -u mytp-job@backupdb -n 20       # "backupdb: uploaded staging/mytreatplan-...dump.age"
+   ```
+
+   The object appears in the SBG container. Downloaded, it starts with
+   `age-encryption.org/v1` and is unreadable without the key. In Sentry, Crons now has
+   `mytp-staging-backupdb` with an ok check-in: set its **Notify** to
+   devops@mytreatplan.com (step 8.5).
+8. **Alert check.** A run with wrong bucket credentials must fail and alert (the env var
+   beats `settings.env`):
+
+   ```sh
+   cd /srv/mytp/current
+   sudo -u mytp BACKUP_S3_SECRET_KEY=wrong ./venv/bin/python manage.py runjob backupdb
+   ```
+
+   It exits non-zero; Sentry shows an error check-in and an issue (without the keys), and
+   devops@mytreatplan.com gets the alert. The next nightly run turns the monitor ok again.
+9. **First restore test**: follow "Restore test" under
+   [Backups and restore](#backups-and-restore) and record it.
+
 ## How a deploy works
 
 1. CI (`test`) passes on a push to `master`. Pull requests and other branches never deploy.
@@ -267,6 +372,83 @@ sudo journalctl -u mytp-job@clearsessions -n 100
 systemctl list-units --failed 'mytp-job@*'
 ```
 
+## Backups and restore
+
+| Layer | Where | Retention | Who restores |
+|-------|-------|-----------|--------------|
+| OVHcloud managed backups | same provider region as the database (GRA) | per plan; record it here: _fill in (step 10.1)_ | OVHcloud panel (restore or fork the service) |
+| Nightly `backupdb` dump | Object Storage **SBG**, `staging/mytreatplan-<UTC>.dump.age` | 30 daily dumps (bucket lifecycle rule) | `deploy/restore-db.sh` |
+
+The managed backups cover everyday mistakes; the SBG dumps cover losing the GRA region or
+the managed service, or a managed backup that does not restore.
+
+**Nightly job.** `backupdb | backupdb | *-*-* 02:30:00 UTC` in `jobs.conf`, so it runs via
+`runjob` with Sentry check-ins (a failed or missed run alerts devops@mytreatplan.com).
+`manage.py backupdb`:
+
+1. stops with the missing key's name if any `BACKUP_*` setting is empty, and fails if
+   `pg_dump` is older (major version) than the server;
+2. runs `pg_dump --format=custom --no-owner --no-privileges` over TLS (`DB_SSLMODE`,
+   `DB_SSLROOTCERT`), with the password only in its environment, piped straight into
+   `age -r $BACKUP_AGE_RECIPIENT`; only ciphertext is written, in
+   `/srv/mytp/shared/backup-tmp` (0700, `mytp`);
+3. uploads it as `<BACKUP_PREFIX>mytreatplan-<yyyymmddThhmmssZ>.dump.age`, checks the object
+   exists with the same size, and removes the temp file whatever happened.
+
+It never deletes anything; old dumps expire through the lifecycle rule (step 10.3). Its key
+cannot delete, but it can still overwrite an existing object (no versioning or object lock
+yet; to decide for production, story 1.12). Its
+error messages never contain the database password or the S3 keys.
+
+```sh
+sudo systemctl start mytp-job@backupdb          # back up now
+sudo journalctl -u mytp-job@backupdb -n 50      # last runs
+```
+
+### Restore test (quarterly)
+
+Proves the dumps can be restored. On a team Mac, never on the server, into a local,
+empty database. Needs `age`, PostgreSQL 17 client tools (`pg_restore`, `psql`), a local
+PostgreSQL, and either the `aws` CLI with the S3 keys or a dump downloaded by hand:
+
+```sh
+brew install age postgresql@17 awscli
+export PATH="$(brew --prefix postgresql@17)/bin:$PATH"   # keg-only formula
+brew services start postgresql@17
+createdb mytp_restore_test
+# The bucket keys from the password manager, in the environment (never as arguments):
+export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
+export BACKUP_S3_ENDPOINT=https://s3.sbg.io.cloud.ovh.net BACKUP_S3_REGION=sbg BACKUP_S3_BUCKET=mytp-backups-staging BACKUP_PREFIX=staging/
+# The private key from the password manager, saved to a file only for the run:
+bash deploy/restore-db.sh --identity ./mytp-backup-staging.key --latest
+#   or --object staging/mytreatplan-<...>.dump.age, or --file <downloaded>.dump.age
+#   --dry-run runs every check without restoring.
+rm ./mytp-backup-staging.key
+```
+
+The script refuses any target whose name does not end in `_restore_test` (default
+`mytp_restore_test`), any target that is not empty, and a non-local `PGHOST`. It decrypts
+in a pipe straight into `pg_restore --single-transaction` (no plaintext file), then prints
+the number of applied migrations and of users. Compare them with staging:
+
+```sh
+cd /srv/mytp/current
+sudo -u mytp ./venv/bin/python manage.py shell -c "from django.db.migrations.recorder import MigrationRecorder; from django.contrib.auth import get_user_model; print(MigrationRecorder.Migration.objects.count(), get_user_model().objects.count())"
+```
+
+(Anything that changed on staging after the dump was taken shows up as a difference;
+run `backupdb` by hand just before the test to compare like with like.) Afterwards:
+`dropdb mytp_restore_test`. Record the test below in a pull request.
+
+| Date | Object restored | Migrations / users (dump vs staging) | By |
+|------|-----------------|--------------------------------------|----|
+| _none yet_ | | | |
+
+To recover for real (region lost): restore the latest dump the same way, by hand,
+into the new database service with `age --decrypt -i <key> <dump> | pg_restore --no-owner
+--no-privileges -d <new database>`; `restore-db.sh` only restores into `*_restore_test`
+on purpose.
+
 ## Rollback
 
 On the server as `debian`:
@@ -303,5 +485,5 @@ sudo journalctl -u 'mytp-job@*' -n 200     # scheduled jobs
 sudo tail -f /var/log/nginx/error.log
 ```
 
-Out of scope here: production (story 1.12); backups (story 1.14); KMS (story 1.15);
+Out of scope here: production (story 1.12); KMS (story 1.15);
 email (story 1.5).
