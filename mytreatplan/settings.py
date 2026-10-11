@@ -57,6 +57,20 @@ ROBOTS_NOINDEX = config('ROBOTS_NOINDEX', default=False, cast=bool)
 # `portal_patterns` in mytreatplan/urls.py.
 PORTAL_ENABLED = config('PORTAL_ENABLED', default=False, cast=bool)
 
+# Error reporting and job monitoring (Sentry, EU region: the DSN host is *.de.sentry.io).
+# Off unless SENTRY_DSN is set, so local development and CI send nothing. The release
+# is the git SHA: RELEASE_SHA from the environment, else the REVISION file release.sh
+# writes into each release directory. See mytreatplan/sentry.py for the scrubbing.
+SENTRY_DSN = config('SENTRY_DSN', default='')
+SENTRY_ENVIRONMENT = config('SENTRY_ENVIRONMENT', default='development')
+_revision_file = BASE_DIR / 'REVISION'
+SENTRY_RELEASE = config(
+    'RELEASE_SHA',
+    default=_revision_file.read_text().strip() if _revision_file.is_file() else '')
+if SENTRY_DSN:
+    from mytreatplan.sentry import init_sentry
+    init_sentry(SENTRY_DSN, SENTRY_ENVIRONMENT, SENTRY_RELEASE)
+
 # Application definition
 
 INSTALLED_APPS = [

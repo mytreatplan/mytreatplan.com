@@ -54,6 +54,18 @@ server {
         add_header X-Robots-Tag "noindex, nofollow" always;
     }
 
+    # Uptime probe (UptimeRobot): no password. Django answers only `ok`/`unavailable`
+    # and adds X-Robots-Tag like on every other response.
+    location = /healthz {
+        auth_basic off;
+        proxy_pass http://mytp_gunicorn;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_redirect off;
+        proxy_read_timeout 15s;
+    }
+
     location / {
         proxy_pass http://mytp_gunicorn;
         proxy_set_header Host $host;

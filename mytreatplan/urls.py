@@ -21,7 +21,7 @@ from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path
 
 from mytp_publicsite.sitemaps import PublicPagesSitemap
-from mytp_publicsite.views import robots_txt
+from mytp_publicsite.views import healthz, robots_txt
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -29,6 +29,8 @@ urlpatterns = [
     path('robots.txt', robots_txt, name='robots_txt'),
     path('sitemap.xml', sitemap, {'sitemaps': {'pages': PublicPagesSitemap}},
          name='django.contrib.sitemaps.views.sitemap'),
+    # Uptime probe; Nginx serves it without basic auth. Not in the sitemap.
+    path('healthz', healthz, name='healthz'),
 ]
 
 # Portal routes (signup, login, ...). Signup (story 2.1) registers its routes here.

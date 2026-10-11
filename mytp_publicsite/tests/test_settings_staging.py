@@ -27,6 +27,7 @@ BASELINE_ENV = {
     'DB_SSLROOTCERT': '',
     'ROBOTS_NOINDEX': 'False',
     'PORTAL_ENABLED': 'False',
+    'SENTRY_DSN': '',
 }
 
 

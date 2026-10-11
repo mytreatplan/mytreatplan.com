@@ -4,4 +4,5 @@ Django==6.1.1
 gunicorn==26.2.0
 psycopg==3.3.6
 python-decouple==3.8
+sentry-sdk==2.71.0
 sqlparse==0.6.0
