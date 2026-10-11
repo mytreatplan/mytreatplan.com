@@ -1,0 +1,14 @@
+# Installed by deploy/provision.sh to /etc/systemd/system/mytp-gunicorn.socket.
+# systemd owns the socket, so Gunicorn restarts (deploys) queue requests instead of
+# dropping them. Owner mytp (release.sh health check), group www-data (Nginx).
+[Unit]
+Description=MyTreatplan Gunicorn socket
+
+[Socket]
+ListenStream=/run/mytp-gunicorn.sock
+SocketUser=mytp
+SocketGroup=www-data
+SocketMode=0660
+
+[Install]
+WantedBy=sockets.target
