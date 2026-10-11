@@ -103,6 +103,10 @@ class TermsView(LegalPageView):
 
 @require_safe
 def robots_txt(request):
+    if getattr(settings, 'ROBOTS_NOINDEX', False):
+        # Staging: disallow everything and advertise no sitemap.
+        lines = ['User-agent: *', 'Disallow: /']
+        return HttpResponse('\n'.join(lines) + '\n', content_type='text/plain; charset=utf-8')
     lines = [
         'User-agent: *',
         'Allow: /',

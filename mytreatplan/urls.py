@@ -14,6 +14,7 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf import settings
 from django.conf.urls.i18n import i18n_patterns
 from django.contrib import admin
 from django.contrib.sitemaps.views import sitemap
@@ -30,9 +31,21 @@ urlpatterns = [
          name='django.contrib.sitemaps.views.sitemap'),
 ]
 
+# Portal routes (signup, login, ...). Signup (story 2.1) registers its routes here.
+# They are served, under the language prefixes, only when PORTAL_ENABLED is True; the
+# nav's Sign up / Login links appear once `signup` and `login` resolve.
+portal_patterns = []
+
+
+def portal_urlpatterns():
+    """The portal routes when PORTAL_ENABLED is on, otherwise none."""
+    return list(portal_patterns) if settings.PORTAL_ENABLED else []
+
+
 # Public pages live under /en/ and /es/. A bare / is redirected by LocaleMiddleware
 # to the visitor's language (Accept-Language), falling back to English.
 urlpatterns += i18n_patterns(
     path('', include('mytp_publicsite.urls')),
+    *portal_urlpatterns(),
     prefix_default_language=True,
 )

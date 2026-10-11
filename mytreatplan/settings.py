@@ -34,6 +34,8 @@ SECRET_KEY = config('SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='', cast=Csv())
+# Origins (scheme + host) trusted for unsafe requests over HTTPS, e.g. https://dev.mytpdso.com.
+CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='', cast=Csv())
 
 # Public address of the site, without a trailing slash. Canonical, Open Graph, hreflang,
 # sitemap and robots.txt URLs are built from it (never from the request host), so a
@@ -46,6 +48,14 @@ SITE_URL = config('SITE_URL', default='https://mytreatplan.com').rstrip('/')
 # replacing mytp_publicsite/templates/publicsite/legal/_privacy_body.html and _terms_body.html
 # and adding the Spanish texts as _privacy_body_es.html and _terms_body_es.html.
 LEGAL_TEXTS_FINAL = False
+
+# Staging: keep crawlers out. When True every response carries
+# `X-Robots-Tag: noindex, nofollow` and robots.txt disallows everything.
+ROBOTS_NOINDEX = config('ROBOTS_NOINDEX', default=False, cast=bool)
+
+# Portal features (signup, login, ...) are routed only when this is True. See
+# `portal_patterns` in mytreatplan/urls.py.
+PORTAL_ENABLED = config('PORTAL_ENABLED', default=False, cast=bool)
 
 # Application definition
 
@@ -62,6 +72,8 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # First, so the noindex header also lands on redirects and errors from the rest.
+    'mytp_publicsite.middleware.RobotsNoindexMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.locale.LocaleMiddleware',
@@ -98,6 +110,16 @@ WSGI_APPLICATION = 'mytreatplan.wsgi.application'
 DATABASES = {
     'default': dj_database_url.parse(config('DATABASE_URL')),
 }
+
+# TLS to PostgreSQL. With DEBUG off, `check --deploy` requires DB_SSLMODE to be
+# verify-full or verify-ca (mytp_publicsite.E002). DB_SSLROOTCERT is the CA file path.
+DB_SSLMODE = config('DB_SSLMODE', default='')
+DB_SSLROOTCERT = config('DB_SSLROOTCERT', default='')
+_db_options = DATABASES['default'].setdefault('OPTIONS', {})
+if DB_SSLMODE:
+    _db_options['sslmode'] = DB_SSLMODE
+if DB_SSLROOTCERT:
+    _db_options['sslrootcert'] = DB_SSLROOTCERT
 
 
 # Custom user model (accounts.User). Must be set before the first migration.
@@ -150,6 +172,19 @@ USE_TZ = True
 STATIC_URL = 'static/'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATIC_ROOT = BASE_DIR / 'static_root'
+
+# HTTPS behind the reverse proxy (Nginx terminates TLS and sets X-Forwarded-Proto).
+# Only with DEBUG off, so local development over plain HTTP is unchanged.
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SESSION_COOKIE_HTTPONLY = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = config('SECURE_SSL_REDIRECT', default=True, cast=bool)
+    # Staging uses a short value (e.g. 3600). No preload.
+    SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS', default=0, cast=int)
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
