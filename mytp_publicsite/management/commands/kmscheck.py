@@ -50,8 +50,10 @@ class Command(BaseCommand):
         key_id = settings.KMS_SERVICE_KEY_ID.strip()
         try:
             info = client.get_service_key(key_id)
+            # The KMS returns the state under `attributes` (OKMS REST API 2.20).
+            state = (info.get('attributes') or {}).get('state', 'unknown')
             self.stdout.write(f'kmscheck: service key {kms.safe_text(info.get("id", key_id))} '
-                              f'state {kms.safe_text(info.get("state", "unknown"))}')
+                              f'state {kms.safe_text(state)}')
             wrapped, plaintext = client.generate_data_key(key_id, DATA_KEY_NAME, DATA_KEY_BITS)
             unwrapped = client.decrypt_data_key(key_id, wrapped)
         except kms.KMSError as exc:

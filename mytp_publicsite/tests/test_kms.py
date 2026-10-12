@@ -86,7 +86,7 @@ class FakeKMS:
             raise failure
         if op == 'get':
             return _Response({'id': KEY_ID, 'name': 'mytp-staging', 'type': 'oct',
-                              'size': 256, 'state': self.state})
+                              'size': 256, 'attributes': {'state': self.state}})
         if op == 'generate':
             return _Response({'key': WRAPPED, 'plaintext': PLAINTEXT_B64})
         assert body == {'key': WRAPPED}
