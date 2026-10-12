@@ -1,0 +1,8 @@
+{
+  "Statement": [{
+    "Sid": "BackupBucketAdmin",
+    "Effect": "Allow",
+    "Action": ["s3:*"],
+    "Resource": ["arn:aws:s3:::mytp-backups-staging", "arn:aws:s3:::mytp-backups-staging/*"]
+  }]
+}

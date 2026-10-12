@@ -3,7 +3,7 @@ title: 'Off-region database backups and restore test'
 type: 'feature'
 ticket: '14'
 created: '2026-10-12'
-status: 'built'
+status: 'done'
 baseline_revision: '0d5835642b34a11be05ba4d52cfc0c5b2b0f84c0'
 route: 'full'
 route_source: 'auto'
@@ -129,7 +129,13 @@ Pass 1 (quick lens, 2026-10-12): high 0, medium 3, low 4, false 0, maybe-false 0
 
 ## Verification
 
-Done locally (2026-10-12) after the review patches: `pytest` 209 passed, 6 skipped (PyYAML workflow tests, run in CI); `python manage.py check` no issues; `bash -n deploy/*.sh` ok. Implementer's end-to-end run: real `pg_dump` from the local PostgreSQL 17 dev DB, a stand-in `age`, a fake S3, then `restore-db.sh` into a scratch `*_restore_test` DB: counts matched (19 migrations, 1 user). Staging checks pending (need the merge and runbook step 10).
+Done locally (2026-10-12) after the review patches: `pytest` 209 passed, 6 skipped (PyYAML workflow tests, run in CI); `python manage.py check` no issues; `bash -n deploy/*.sh` ok. Implementer's end-to-end run: real `pg_dump` from the local PostgreSQL 17 dev DB, a stand-in `age`, a fake S3, then `restore-db.sh` into a scratch `*_restore_test` DB: counts matched (19 migrations, 1 user). Staging (2026-10-12, after the merge, `provision.sh` re-run and runbook step 10):
+- Managed backups: 2 days' retention, stored in Gravelines and Strasbourg (recorded in the runbook).
+- The SBG lifecycle rule (30 days on `staging/`) is in place. It needed the admin user linked as bucket owner (`AccessDenied` otherwise); runbook step 10.2 now says so.
+- The server's S3 user can upload, and gets `AccessDenied` on delete.
+- `mytp-job@backupdb` uploaded `staging/mytreatplan-20261012T155153Z.dump.age`. The first run failed because comments after the values in `settings.env` were read as part of the keys; runbook step 10.6 now warns about it.
+- A run with a wrong S3 secret failed, and the Sentry alert reached devops@mytreatplan.com.
+- Restore test on a team Mac (`restore-db.sh --latest`): 19 migrations / 0 users, matching staging (19 / 0).
 
 **Commands:**
 - `pytest` -- expected: all pass

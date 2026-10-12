@@ -218,12 +218,18 @@ encrypted `pg_dump` to Object Storage in **SBG** (`manage.py backupdb`). See
    PostgreSQL service → *Backups*: check that daily backups are listed, and note the
    retention and the backup location shown for the plan. Write both in the table under
    "Backups and restore" (they depend on the plan; nothing here changes them).
-2. **Bucket.** Public Cloud → Object Storage → *Create object container*: S3 API, region
-   **SBG** (Strasbourg), private, name e.g. `mytp-backups-staging`. Copy its S3
-   endpoint (e.g. `https://s3.sbg.io.cloud.ovh.net`) and region (`sbg`).
+2. **Admin S3 user and bucket.** Public Cloud → Users & Roles → add a user, e.g.
+   `mytp-backup-admin` (role *ObjectStore operator*); Object Storage → *S3 users* →
+   generate its S3 credentials and keep them in the team password manager (they set the
+   lifecycle rule; never put them on the server). Then Object Storage → *Create object
+   container*: S3 API, region **SBG** (Strasbourg), private, name e.g.
+   `mytp-backups-staging`, and **link `mytp-backup-admin` as its owner** in the wizard.
+   Only the bucket owner can set its lifecycle rule: with another user linked, step 3
+   fails with `AccessDenied` even under an `s3:*` policy. Copy the S3 endpoint
+   (e.g. `https://s3.sbg.io.cloud.ovh.net`) and region (`sbg`).
 3. **Retention: 30 daily dumps.** Add a lifecycle rule that expires objects after 30
-   days. From your machine, with an *admin* S3 user's keys in `AWS_ACCESS_KEY_ID` /
-   `AWS_SECRET_ACCESS_KEY` (never the server's user):
+   days. In your own terminal (keys never pasted into chats or tickets), with the admin
+   user's keys in `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (never the server's user):
 
    ```sh
    export AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
@@ -276,7 +282,9 @@ encrypted `pg_dump` to Object Storage in **SBG** (`manage.py backupdb`). See
    manager entry before deleting the file. The `age1...` public key is
    `BACKUP_AGE_RECIPIENT`.
 6. **Settings and provision.** On the server, fill in the `BACKUP_*` keys in
-   `/srv/mytp/shared/settings.env` (see `deploy/staging.env.example`):
+   `/srv/mytp/shared/settings.env` (see `deploy/staging.env.example`). One `KEY=value`
+   per line with **no comment after the value**: the settings loader keeps a trailing
+   `# ...` as part of the value, and the upload then fails (`S3UploadFailedError`).
 
    ```sh
    sudo -u mytp nano /srv/mytp/shared/settings.env
@@ -381,7 +389,7 @@ systemctl list-units --failed 'mytp-job@*'
 
 | Layer | Where | Retention | Who restores |
 |-------|-------|-----------|--------------|
-| OVHcloud managed backups | same provider region as the database (GRA) | per plan; record it here: _fill in (step 10.1)_ | OVHcloud panel (restore or fork the service) |
+| OVHcloud managed backups | same provider region as the database (GRA) | 2 days (staging plan, checked 2026-10-12; stored in Gravelines and Strasbourg) | OVHcloud panel (restore or fork the service) |
 | Nightly `backupdb` dump | Object Storage **SBG**, `staging/mytreatplan-<UTC>.dump.age` | 30 daily dumps (bucket lifecycle rule) | `deploy/restore-db.sh` |
 
 The managed backups cover everyday mistakes; the SBG dumps cover losing the GRA region or
@@ -424,11 +432,13 @@ createdb mytp_restore_test
 # The bucket keys from the password manager, in the environment (never as arguments):
 export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
 export BACKUP_S3_ENDPOINT=https://s3.sbg.io.cloud.ovh.net BACKUP_S3_REGION=sbg BACKUP_S3_BUCKET=mytp-backups-staging BACKUP_PREFIX=staging/
-# The private key from the password manager, saved to a file only for the run:
-bash deploy/restore-db.sh --identity ./mytp-backup-staging.key --latest
+# The private key from the password manager, in a temp file only for the run. Never
+# inside the repository folder or another synced folder (Google Drive, iCloud):
+KEY=$(mktemp) && nano "$KEY"     # paste the whole key entry
+bash deploy/restore-db.sh --identity "$KEY" --latest
 #   or --object staging/mytreatplan-<...>.dump.age, or --file <downloaded>.dump.age
 #   --dry-run runs every check without restoring.
-rm ./mytp-backup-staging.key
+rm "$KEY"; unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 ```
 
 The script refuses any target whose name does not end in `_restore_test` (default
@@ -447,7 +457,7 @@ run `backupdb` by hand just before the test to compare like with like.) Afterwar
 
 | Date | Object restored | Migrations / users (dump vs staging) | By |
 |------|-----------------|--------------------------------------|----|
-| _none yet_ | | | |
+| 2026-10-12 | `staging/mytreatplan-20261012T155153Z.dump.age` | 19 / 0 vs 19 / 0 | devops |
 
 To recover for real (region lost): restore the latest dump the same way, by hand,
 into the new database service with `age --decrypt -i <key> <dump> | pg_restore --no-owner

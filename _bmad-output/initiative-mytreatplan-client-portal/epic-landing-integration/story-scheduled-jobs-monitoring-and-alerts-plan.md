@@ -117,7 +117,7 @@ Pass 1 (quick lens, 2026-10-11): high 0, medium 2, low 4, false 0, maybe-false 0
 Done locally (2026-10-11): `pytest` 151 passed, 6 skipped (PyYAML-dependent workflow tests; PyYAML not installed locally); `python manage.py check` no issues (also with a dummy `SENTRY_DSN`); `bash -n deploy/*.sh` ok; `python manage.py runjob clearsessions` ok against the dev DB. Mutation check: disabling `scrub_event` makes the WSGI-level scrubbing test fail. Staging (2026-10-12, after the merge of PR #8, `provision.sh` re-run and runbook steps 8-9):
 - `/healthz` returned 200 without the password, and 502 with Gunicorn stopped.
 - `clearsessions` ran from its 03:30 UTC timer; Sentry Crons shows the ok check-in and the next run.
-- The forced `ZeroDivisionError` and the failing `runjob clearsessions` (unreachable DB) both appear as issues in the Sentry Django project.
+- The forced `ZeroDivisionError` and the failing `runjob clearsessions` (unreachable DB) both appear as issues in the Sentry Django project, and the alert email for both reached devops@mytreatplan.com.
 - UptimeRobot (HTTP(s) monitor on `/healthz`) sent the down email to devops@mytreatplan.com. The first attempt sent nothing because no UptimeRobot account or monitor existed yet; runbook step 9 now says to keep Gunicorn stopped at least 10 minutes and to use an HTTP(s) monitor.
 
 **Commands:**
