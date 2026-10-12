@@ -3,7 +3,7 @@ title: 'OVHcloud KMS provisioning'
 type: 'feature'
 ticket: '15'
 created: '2026-10-12'
-status: 'built'
+status: 'done'
 baseline_revision: '8d3c70517221554e83e8b42071af62a9ce24f375'
 route: 'full'
 route_source: 'auto'
@@ -100,13 +100,15 @@ context: []
 
 ## Implementation Notes
 
-- IAM actions in the runbook come from OVHcloud's "OKMS authentication methods" guide: `okms:apikms:serviceKey/get`, `serviceKey/dataKey/create`, `serviceKey/dataKey/decrypt`. The access certificate is issued from a CSR made on the server (key born there); its backup copy goes to the password manager.
+- IAM actions in the runbook come from OVHcloud's "OKMS authentication methods" guide: `okms:apikms:serviceKey/get`, `serviceKey/dataKey/create`, `serviceKey/dataKey/decrypt`. The access certificate is issued from a CSR made on the server (key born there); it has no backup copy (decision at review).
 - Step names in errors: settings, cert, connect, auth, get, generate, unwrap, mismatch. `auth` also covers a certificate/key that cannot be loaded and a TLS alert refusing the client certificate, besides HTTP 401/403. HTTP error bodies are never echoed; only `error_code` and `request_id` when they look like identifiers.
 - Extra guards: KMS ids must be UUID-like (path safety), `KMS_ENDPOINT` must be a bare https origin, the private key file must not be group/other-accessible, an encrypted private key fails instead of prompting.
 - Real mTLS round trip checked locally against a throwaway HTTPS server requiring client certificates (not committed).
 - Rotation note for 2.12: keys re-wrapped with `encrypt` are unwrapped with `decrypt`, not `datakey/decrypt`; the provider must record how each data key was wrapped and the policy then needs `serviceKey/encrypt` and `serviceKey/decrypt`.
 
 ## Plan Change Log
+
+- 2026-10-12, at staging setup: the frozen runbook item "encrypt/decrypt operations" was not enough. Data keys need the service key's `wrapKey`/`unwrapKey` operations (`generate` failed with HTTP 400 otherwise), and operations cannot be changed after creation, so the staging key was recreated. Runbook step 11.2 now lists wrapKey, unwrapKey, encrypt and decrypt (follow-up PR #11).
 
 ## Review Triage Log
 
@@ -123,7 +125,12 @@ Pass 1 (quick lens, 2026-10-12): high 0, medium 1, low 5, false 0, maybe-false 0
 
 ## Verification
 
-Done locally (2026-10-12) after the review patches: `pytest` 272 passed, 6 skipped (PyYAML workflow tests, run in CI); `python manage.py check` no issues; `bash -n deploy/*.sh` ok. Implementer's run of `kmscheck` against a local mTLS test server: round trip ok; untrusted certificate and missing CA failed as expected. Staging checks pending (need the merge and runbook step 11).
+Done locally (2026-10-12) after the review patches: `pytest` 272 passed, 6 skipped (PyYAML workflow tests, run in CI); `python manage.py check` no issues; `bash -n deploy/*.sh` ok. Implementer's run of `kmscheck` against a local mTLS test server: round trip ok; untrusted certificate and missing CA failed as expected. Staging (2026-10-12, after the merges of PRs #10 and #11, `provision.sh` re-run and runbook step 11):
+- KMS domain in GRA (`eu-west-gra.okms.ovh.net`); staging service key `mytp-staging`, SOFTWARE, with wrapKey/unwrapKey/encrypt/decrypt (recreated, see the change log).
+- Access certificate `mytp-kms-staging` made from a CSR on the server; the key and certificate are only in `/srv/mytp/shared/` (mode 600, owner `mytp`). Expires 2027-10-12 17:07 UTC.
+- The IAM policy needed to be created at account level with the product type Key Management Service and the KMS as its resource; runbook steps 11.3-11.4 now say so.
+- `kmscheck` printed `state unknown` at first because the API returns the state under `attributes`; fixed in PR #11.
+- `mytp-job@kmscheck` (timer daily at 04:00 UTC): round trip ok. Sentry Crons monitor `mytp-staging-kmscheck` has its check-in, and notifications go to devops@mytreatplan.com.
 
 **Commands:**
 - `pytest` -- expected: all pass
