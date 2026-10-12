@@ -190,13 +190,18 @@ user email and IP in `before_send`. Locally and in CI `SENTRY_DSN` is unset, so 
 
 ### 9. UptimeRobot
 
-1. Sign in to UptimeRobot with (or add as alert contact) **devops@mytreatplan.com**;
-   verify the address.
-2. New monitor: type **HTTP(s)**, URL `https://dev.mytpdso.com/healthz`, interval 5 min,
-   alert contact devops@mytreatplan.com. Optionally a **Keyword** monitor for `ok`.
-3. Check: `sudo systemctl stop mytp-gunicorn.service mytp-gunicorn.socket` → a down
-   alert within a few minutes; `sudo systemctl start mytp-gunicorn.socket` (the service
-   starts on the next request) → an up alert.
+1. Create the UptimeRobot account with **devops@mytreatplan.com** (or add it as an alert
+   contact) and confirm the address from the email it sends; keep the login in the team
+   password manager.
+2. New monitor: type **HTTP(s)** (not Ping or Port: those stay green when only Gunicorn is
+   down), URL `https://dev.mytpdso.com/healthz`, interval 5 min, alert contact
+   devops@mytreatplan.com. Optionally a **Keyword** monitor for `ok`. Wait until it shows Up.
+3. Check: `sudo systemctl stop mytp-gunicorn.service mytp-gunicorn.socket`, then confirm
+   from your machine that `curl -s -o /dev/null -w '%{http_code}\n'
+   https://dev.mytpdso.com/healthz` prints `502`. Keep it stopped for **at least 10
+   minutes** (two check intervals plus UptimeRobot's re-check) until the down alert
+   arrives; then `sudo systemctl start mytp-gunicorn.socket` (the service starts on the
+   next request) → an up alert. Staging is unavailable to the team meanwhile.
 
 `/healthz` answers `ok` (200) when the app can run `SELECT 1` on the database, else
 `unavailable` (503). It reveals nothing else, and is the only path without the password.

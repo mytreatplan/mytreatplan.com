@@ -3,7 +3,7 @@ title: 'Scheduled jobs, monitoring and alerts'
 type: 'feature'
 ticket: '9'
 created: '2026-10-11'
-status: 'built'
+status: 'done'
 baseline_revision: '6b27169cc0f014905d7dbfe73335ef7aa2123d26'
 route: 'full'
 route_source: 'auto'
@@ -114,7 +114,11 @@ Pass 1 (quick lens, 2026-10-11): high 0, medium 2, low 4, false 0, maybe-false 0
 
 ## Verification
 
-Done locally (2026-10-11): `pytest` 151 passed, 6 skipped (PyYAML-dependent workflow tests; PyYAML not installed locally); `python manage.py check` no issues (also with a dummy `SENTRY_DSN`); `bash -n deploy/*.sh` ok; `python manage.py runjob clearsessions` ok against the dev DB. Mutation check: disabling `scrub_event` makes the WSGI-level scrubbing test fail. Manual staging checks below are pending (need the merge and the runbook steps 8-9).
+Done locally (2026-10-11): `pytest` 151 passed, 6 skipped (PyYAML-dependent workflow tests; PyYAML not installed locally); `python manage.py check` no issues (also with a dummy `SENTRY_DSN`); `bash -n deploy/*.sh` ok; `python manage.py runjob clearsessions` ok against the dev DB. Mutation check: disabling `scrub_event` makes the WSGI-level scrubbing test fail. Staging (2026-10-12, after the merge of PR #8, `provision.sh` re-run and runbook steps 8-9):
+- `/healthz` returned 200 without the password, and 502 with Gunicorn stopped.
+- `clearsessions` ran from its 03:30 UTC timer; Sentry Crons shows the ok check-in and the next run.
+- The forced `ZeroDivisionError` and the failing `runjob clearsessions` (unreachable DB) both appear as issues in the Sentry Django project.
+- UptimeRobot (HTTP(s) monitor on `/healthz`) sent the down email to devops@mytreatplan.com. The first attempt sent nothing because no UptimeRobot account or monitor existed yet; runbook step 9 now says to keep Gunicorn stopped at least 10 minutes and to use an HTTP(s) monitor.
 
 **Commands:**
 - `pytest` -- expected: all pass
