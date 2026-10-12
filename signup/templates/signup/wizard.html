@@ -1,0 +1,33 @@
+{% extends "portal_base.html" %}
+{% load i18n %}
+{% comment %}
+Frame shared by every signup step: progress, heading, the step's form and the back link.
+Each step template (named in signup.steps) fills `intro` and `fields`, and may add `extra`.
+{% endcomment %}
+
+{% block title %}{{ step.title }} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<p class="text-[12px] font-extrabold uppercase leading-[1.4] tracking-[0.09em] text-field-label">
+  {% blocktranslate with current=step_number total=step_count %}Step {{ current }} of {{ total }}{% endblocktranslate %}
+</p>
+<h1 class="mt-2 text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{{ step.title }}</h1>
+<div class="mt-3 text-copy text-ink-muted">{% block intro %}{% endblock %}</div>
+
+<form method="post" class="mt-8 flex flex-col gap-5" novalidate>
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+  <ul class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert">
+    {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% block fields %}{% endblock %}
+  <button type="submit" class="mt-2 min-h-[52px] cursor-pointer rounded-pill bg-ink px-8 text-[16px] font-black leading-none tracking-[-0.01em] text-white transition hover:-translate-y-[2px] hover:bg-green hover:text-ink hover:shadow-lift focus-visible:shadow-focus-pill focus-visible:outline-none">
+    {% block submit_label %}{% translate "Continue" %}{% endblock %}
+  </button>
+</form>
+{% block extra %}{% endblock %}
+{% if back_url %}
+<p class="mt-8 text-[15px]"><a href="{{ back_url }}" class="font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Back" %}</a></p>
+{% endif %}
+{% endblock %}

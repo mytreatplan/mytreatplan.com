@@ -1,0 +1,10 @@
+{% extends "signup/wizard.html" %}
+{% load i18n %}
+
+{% block intro %}<p>{% translate "Your email address will be your username." %}</p>{% endblock %}
+
+{% block fields %}
+{% include "includes/_form_field.html" with field=form.email %}
+{% include "includes/_form_field.html" with field=form.password1 %}
+{% include "includes/_form_field.html" with field=form.password2 %}
+{% endblock %}

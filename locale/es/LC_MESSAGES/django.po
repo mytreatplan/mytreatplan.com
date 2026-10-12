@@ -5,7 +5,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: mytreatplan.com\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-10-08 20:10+0200\n"
+"POT-Creation-Date: 2026-10-13 00:04+0200\n"
 "PO-Revision-Date: 2026-10-08 20:00+0200\n"
 "Last-Translator: Claude draft, pending team review\n"
 "Language-Team: MyTreatPlan <sayhi@mytreatplan.com>\n"
@@ -16,6 +16,37 @@ msgstr ""
 "Plural-Forms: nplurals=3; plural=n == 1 ? 0 : n != 0 && n % 1000000 == 0 ? "
 "1 : 2;\n"
 
+#: accounts/admin.py:35
+msgid "Personal info"
+msgstr "Información personal"
+
+#: accounts/admin.py:36
+msgid "Permissions"
+msgstr "Permisos"
+
+#: accounts/admin.py:38
+msgid "Important dates"
+msgstr "Fechas importantes"
+
+#: accounts/models.py:12
+msgid "email address"
+msgstr "dirección de correo electrónico"
+
+#: accounts/templates/accounts/welcome.html:6
+msgid "Welcome"
+msgstr "Bienvenida"
+
+#: accounts/templates/accounts/welcome.html:9
+msgid "Welcome to MyTreatPlan"
+msgstr "Le damos la bienvenida a MyTreatPlan"
+
+#: accounts/templates/accounts/welcome.html:10
+#, python-format
+msgid ""
+"Your account is ready. You are signed in as <strong class=\"text-"
+"ink\">%(email)s</strong>."
+msgstr "Su cuenta está lista. Ha iniciado sesión como <strong class=\"text-ink\">%(email)s</strong>."
+
 #: mytp_publicsite/templates/publicsite/home.html:12
 msgid "Digital Orthodontics"
 msgstr "Ortodoncia Digital"
@@ -24,20 +55,23 @@ msgstr "Ortodoncia Digital"
 msgid "Made Simple"
 msgstr "Sin complicaciones"
 
-#: mytp_publicsite/templates/publicsite/legal/base_legal.html:14
+#: mytp_publicsite/templates/publicsite/legal/base_legal.html:15
+#: templates/portal_base.html:14
 msgid "MyTreatPlan home"
 msgstr "Inicio de MyTreatPlan"
 
-#: mytp_publicsite/templates/publicsite/legal/base_legal.html:18
-#: templates/base.html:62
+#: mytp_publicsite/templates/publicsite/legal/base_legal.html:19
+#: templates/base.html:62 templates/portal_base.html:18
 msgid "Main"
 msgstr "Principal"
 
-#: mytp_publicsite/templates/publicsite/legal/base_legal.html:32
+#: mytp_publicsite/templates/publicsite/legal/base_legal.html:33
 msgid ""
 "The version of this document in your language is being prepared. In the "
 "meantime, the English version is shown below."
-msgstr "La versión en español de este documento se está preparando. Mientras tanto, se muestra a continuación la versión en inglés."
+msgstr ""
+"La versión en español de este documento se está preparando. Mientras tanto, "
+"se muestra a continuación la versión en inglés."
 
 #: mytp_publicsite/templates/publicsite/privacy.html:4
 #: mytp_publicsite/templates/publicsite/privacy.html:6
@@ -50,7 +84,9 @@ msgstr "Política de privacidad"
 msgid ""
 "How MyTreatPlan collects, uses, stores and shares personal data through this "
 "website."
-msgstr "Cómo MyTreatPlan recoge, utiliza, conserva y comparte datos personales a través de este sitio web."
+msgstr ""
+"Cómo MyTreatPlan recoge, utiliza, conserva y comparte datos personales a "
+"través de este sitio web."
 
 #: mytp_publicsite/templates/publicsite/sections/_about_us.html:7
 msgid "About us"
@@ -362,7 +398,7 @@ msgstr "Términos y condiciones del sitio web"
 msgid "Terms governing access to and use of the MyTreatPlan website."
 msgstr "Términos que regulan el acceso al sitio web de MyTreatPlan y su uso."
 
-#: mytp_publicsite/views.py:26 templates/base.html:8 templates/base.html:16
+#: mytp_publicsite/views.py:30 templates/base.html:8 templates/base.html:16
 msgid ""
 "Treatment planning services, remote virtual orthodontist support and "
 "education for orthodontic practices. Offices in Dublin, Dubai and Madrid."
@@ -370,6 +406,86 @@ msgstr ""
 "Servicios de planificación de tratamientos, soporte de ortodoncista virtual "
 "a distancia y formación para clínicas de ortodoncia. Oficinas en Dublín, "
 "Dubái y Madrid."
+
+#: signup/forms.py:35
+msgid "This email address is already registered."
+msgstr "Esta dirección de correo electrónico ya está registrada."
+
+#: signup/forms.py:36
+msgid "The two passwords do not match."
+msgstr "Las dos contraseñas no coinciden."
+
+#: signup/forms.py:40
+msgid "Email"
+msgstr "Correo electrónico"
+
+#: signup/forms.py:45
+msgid "Password"
+msgstr "Contraseña"
+
+#: signup/forms.py:48
+msgid "At least 12 characters."
+msgstr "Al menos 12 caracteres."
+
+#: signup/forms.py:51
+msgid "Repeat password"
+msgstr "Repita la contraseña"
+
+#: signup/forms.py:85
+msgid "This code is not correct. Check it, or send a new one."
+msgstr "Este código no es correcto. Revíselo o solicite uno nuevo."
+
+#: signup/forms.py:89
+msgid "Code"
+msgstr "Código"
+
+#: signup/steps.py:51
+msgid "Create your account"
+msgstr "Cree su cuenta"
+
+#: signup/steps.py:70
+msgid "Check your email"
+msgstr "Revise su correo electrónico"
+
+#: signup/steps.py:85
+msgid "We have sent you a new code."
+msgstr "Le hemos enviado un código nuevo."
+
+#: signup/templates/signup/step_account.html:4
+msgid "Your email address will be your username."
+msgstr "Su dirección de correo electrónico será su nombre de usuario."
+
+#: signup/templates/signup/step_verify_email.html:4
+#, python-format
+msgid ""
+"We have sent a 6-digit code to <strong class=\"text-ink\">%(email)s</"
+"strong>. Enter it below to confirm your email address."
+msgstr "Hemos enviado un código de 6 dígitos a <strong class=\"text-ink\">%(email)s</strong>. Introdúzcalo a continuación para confirmar su dirección de correo electrónico."
+
+#: signup/templates/signup/step_verify_email.html:10
+msgid "Create account"
+msgstr "Crear cuenta"
+
+#: signup/templates/signup/step_verify_email.html:15
+msgid "Didn't get it?"
+msgstr "¿No lo ha recibido?"
+
+#: signup/templates/signup/step_verify_email.html:16
+msgid "Send a new code"
+msgstr "Enviar un código nuevo"
+
+#: signup/templates/signup/wizard.html:12
+#, python-format
+msgid "Step %(current)s of %(total)s"
+msgstr "Paso %(current)s de %(total)s"
+
+#: signup/templates/signup/wizard.html:26
+msgid "Continue"
+msgstr "Continuar"
+
+#: signup/templates/signup/wizard.html:31
+msgid "Back"
+msgstr "Atrás"
 
 #: templates/base.html:7 templates/base.html:15 templates/base.html:24
 msgid "Digital Orthodontics Made Simple"
@@ -423,7 +539,9 @@ msgstr "Términos y condiciones"
 #, python-format
 msgid ""
 "Copyright &copy; %(year)s <strong>MyTreatPlan</strong>. All Rights Reserved"
-msgstr "Copyright &copy; %(year)s <strong>MyTreatPlan</strong>. Todos los derechos reservados"
+msgstr ""
+"Copyright &copy; %(year)s <strong>MyTreatPlan</strong>. Todos los derechos "
+"reservados"
 
 #: templates/includes/_language_switcher.html:2
 msgid "Language"

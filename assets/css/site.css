@@ -8,6 +8,9 @@
 @source "../../templates";
 @source "../../mytp_publicsite/templates";
 @source "../../accounts/templates";
+@source "../../signup/templates";
+/* Field classes are set on the form widgets. */
+@source "../../signup/forms.py";
 /* Only the scripts that build markup; htmx.min.js is deliberately not scanned. */
 @source "../../static/js/carousel.js";
 

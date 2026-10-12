@@ -10,7 +10,8 @@ import pytest
 import sentry_sdk
 from django.conf import settings as django_settings
 from django.core.management import CommandError, call_command, get_commands
-from django.db import IntegrityError, OperationalError
+from django.core.signals import request_finished, request_started
+from django.db import IntegrityError, OperationalError, close_old_connections
 from django.core.wsgi import get_wsgi_application
 from django.test import override_settings
 from django.urls import path
@@ -229,7 +230,16 @@ def test_request_error_reaches_sentry_scrubbed(sentry_capture):
         'wsgi.run_once': False,
     }
     statuses = []
-    b''.join(get_wsgi_application()(environ, lambda status, headers, *a: statuses.append(status)))
+    # Like Django's test client: the handler must not close database connections that
+    # earlier (database) tests opened, which pytest-django blocks in this test.
+    request_started.disconnect(close_old_connections)
+    request_finished.disconnect(close_old_connections)
+    try:
+        b''.join(get_wsgi_application()(environ,
+                                        lambda status, headers, *a: statuses.append(status)))
+    finally:
+        request_started.connect(close_old_connections)
+        request_finished.connect(close_old_connections)
     sentry_sdk.flush()
 
     assert statuses[0].startswith('500')
@@ -274,6 +284,37 @@ def test_error_messages_and_logs_reach_sentry_redacted(sentry_capture):
     for secret in ('ana@example.com', 'bob@example.org', '203.0.113.9', '2001:db8::7',
                    '198.51.100.7'):
         assert secret not in text
+
+
+def test_verification_codes_never_reach_sentry(sentry_capture):
+    """The fake provider's code line is neither a breadcrumb nor an event (signup 2.1)."""
+    from signup.verification import FakeVerificationProvider
+
+    code_logger = logging.getLogger('signup.verification')
+    seen = []
+    handler = logging.Handler()
+    handler.emit = seen.append
+    code_logger.addHandler(handler)
+    try:
+        FakeVerificationProvider().send('email', 'ana@example.com', 'signup', 'en')
+        code_logger.error('an error on the code logger')
+    finally:
+        code_logger.removeHandler(handler)
+    code = re.search(r'(\d{6})$', seen[0].getMessage()).group(1)
+    try:
+        raise ValueError('later error in the same request')
+    except ValueError:
+        sentry_sdk.capture_exception()
+    sentry_sdk.flush()
+
+    assert any(e.get('exception') for e in sentry_capture.events)
+    # Everything except stack frames, whose source context is this test's own code.
+    text = json.dumps([
+        {**e, 'exception': [{k: v for k, v in x.items() if k != 'stacktrace'}
+                            for x in (e.get('exception') or {}).get('values', [])]}
+        for e in sentry_capture.events])
+    assert 'Verification code' not in text and 'an error on the code logger' not in text
+    assert code not in text
 
 
 # --- Jobs: jobs.conf and the runner ---------------------------------------------------

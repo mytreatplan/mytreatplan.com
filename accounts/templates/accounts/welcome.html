@@ -1,0 +1,10 @@
+{% extends "portal_base.html" %}
+{% load i18n %}
+{% comment %}Placeholder: the welcome / onboarding content comes with the onboarding spec.{% endcomment %}
+
+{% block title %}{% translate "Welcome" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Welcome to MyTreatPlan" %}</h1>
+<p class="mt-3 text-copy text-ink-muted">{% blocktranslate with email=user.email %}Your account is ready. You are signed in as <strong class="text-ink">{{ email }}</strong>.{% endblocktranslate %}</p>
+{% endblock %}

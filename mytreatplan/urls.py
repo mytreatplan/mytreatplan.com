@@ -33,10 +33,13 @@ urlpatterns = [
     path('healthz', healthz, name='healthz'),
 ]
 
-# Portal routes (signup, login, ...). Signup (story 2.1) registers its routes here.
-# They are served, under the language prefixes, only when PORTAL_ENABLED is True; the
-# nav's Sign up / Login links appear once `signup` and `login` resolve.
-portal_patterns = []
+# Portal routes (signup, login, ...). They are served, under the language prefixes, only
+# when PORTAL_ENABLED is True; the nav's Sign up / Login links appear once `signup` and
+# `login` resolve.
+portal_patterns = [
+    path('', include('signup.urls')),
+    path('', include('accounts.urls')),
+]
 
 
 def portal_urlpatterns():
