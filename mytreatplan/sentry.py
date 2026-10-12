@@ -18,6 +18,9 @@ _REQUEST_KEYS_KEPT = {'method', 'url'}
 _USER_KEYS_KEPT = {'id'}
 
 
+# Loggers whose records carry verification codes (signup.verification.FakeVerificationProvider).
+CODE_LOGGERS = ('signup.verification',)
+
 REDACTED = '[redacted]'
 _EMAIL_RE = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}')
 # Candidates only; each is confirmed with `ipaddress`, so times like 03:30:00 stay.
@@ -95,6 +98,13 @@ def scrub_event(event, hint=None):
 def init_sentry(dsn, environment, release=None):
     """Turn on Sentry. Called from settings only when SENTRY_DSN is set."""
     from sentry_sdk.integrations.django import DjangoIntegration
+    from sentry_sdk.integrations.logging import ignore_logger, ignore_logger_for_sentry_logs
+
+    # The fake verification provider logs signup codes; they stay on the server
+    # (no breadcrumbs, events or Sentry Logs).
+    for logger_name in CODE_LOGGERS:
+        ignore_logger(logger_name)
+        ignore_logger_for_sentry_logs(logger_name)
 
     sentry_sdk.init(
         dsn=dsn,

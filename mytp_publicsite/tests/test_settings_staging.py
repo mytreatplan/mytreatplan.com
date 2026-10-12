@@ -10,7 +10,7 @@ from django.conf import settings as django_settings
 from django.core.checks import run_checks
 from django.http import HttpResponse
 from django.test import override_settings
-from django.urls import Resolver404, clear_url_caches, path, resolve
+from django.urls import NoReverseMatch, Resolver404, clear_url_caches, path, resolve, reverse
 from django.utils import translation
 
 import mytreatplan.urls
@@ -190,8 +190,30 @@ def stub_portal_patterns(monkeypatch):
                         [path('signup/', _stub, name='signup')])
 
 
-def test_portal_patterns_list_is_empty_for_now():
-    assert mytreatplan.urls.portal_patterns == []
+def _fresh_urlconf():
+    """A fresh copy of mytreatplan.urls, built with the current PORTAL_ENABLED, without
+    touching the real URLconf module."""
+    module = types.ModuleType('mytp_publicsite.tests._portal_urlconf')
+    module.__file__ = mytreatplan.urls.__file__
+    source = Path(module.__file__).read_text()
+    exec(compile(source, module.__file__, 'exec'), module.__dict__)
+    return module
+
+
+PORTAL_URL_NAMES = ['signup', 'signup_step', 'welcome']
+
+
+def test_portal_patterns_hold_the_signup_routes(settings):
+    settings.PORTAL_ENABLED = True
+    urlconf = _fresh_urlconf()
+    try:
+        with translation.override('en'):
+            assert reverse('signup', urlconf) == '/en/signup/'
+            assert reverse('signup_step', urlconf, args=['verify-email']) == \
+                '/en/signup/verify-email/'
+            assert reverse('welcome', urlconf) == '/en/welcome/'
+    finally:
+        clear_url_caches()
 
 
 @override_settings(PORTAL_ENABLED=True)
@@ -215,51 +237,57 @@ def reload_urlconf():
     clear_url_caches()
 
 
-def _urlconf_with_stub_portal_route():
-    """A fresh copy of mytreatplan.urls whose `portal_patterns` holds a stub `portal-stub`
-    route, built with the current PORTAL_ENABLED. Proves the hook is wired into
-    i18n_patterns without touching the real URLconf."""
-    source = Path(mytreatplan.urls.__file__).read_text()
-    assert source.count('portal_patterns = []') == 1
-    source = source.replace(
-        'portal_patterns = []',
-        'from mytp_publicsite.tests.test_settings_staging import STUB_PORTAL_PATTERNS\n'
-        'portal_patterns = STUB_PORTAL_PATTERNS')
-    module = types.ModuleType('mytp_publicsite.tests._portal_urlconf')
-    module.__file__ = mytreatplan.urls.__file__
-    exec(compile(source, module.__file__, 'exec'), module.__dict__)
-    return module
-
-
-STUB_PORTAL_PATTERNS = [path('portal-stub/', _stub, name='portal_stub')]
-
-
 @pytest.mark.parametrize('enabled', [True, False])
 def test_portal_hook_is_wired_into_language_patterns(settings, enabled):
     settings.PORTAL_ENABLED = enabled
-    urlconf = _urlconf_with_stub_portal_route()
+    urlconf = _fresh_urlconf()
     try:
         for lang in ['en', 'es']:
             with translation.override(lang):  # the prefix matches the active language
-                if enabled:
-                    assert resolve(f'/{lang}/portal-stub/', urlconf).url_name == 'portal_stub'
-                else:
-                    with pytest.raises(Resolver404):
-                        resolve(f'/{lang}/portal-stub/', urlconf)
-        with pytest.raises(Resolver404):
-            resolve('/portal-stub/', urlconf)  # only under the language prefixes
+                for url, name in [(f'/{lang}/signup/', 'signup'),
+                                  (f'/{lang}/signup/verify-email/', 'signup_step'),
+                                  (f'/{lang}/welcome/', 'welcome')]:
+                    if enabled:
+                        assert resolve(url, urlconf).url_name == name
+                    else:
+                        with pytest.raises(Resolver404):
+                            resolve(url, urlconf)
+                if not enabled:
+                    for name in PORTAL_URL_NAMES:
+                        with pytest.raises(NoReverseMatch):
+                            reverse(name, urlconf, args=['x'] if name == 'signup_step' else [])
+        for url in ['/signup/', '/welcome/']:
+            with pytest.raises(Resolver404):
+                resolve(url, urlconf)  # only under the language prefixes
         assert resolve('/en/', urlconf).url_name == 'home'
     finally:
         clear_url_caches()
 
 
+@pytest.mark.django_db
 @pytest.mark.parametrize('enabled', [True, False])
 def test_urlconf_loads_with_portal_switch(settings, reload_urlconf, client, enabled):
+    """The real URLconf, rebuilt with the switch: signup is served and linked from the
+    nav only when it is on (the Log in link waits for epic-login)."""
     settings.PORTAL_ENABLED = enabled
     reload_urlconf()
 
-    assert resolve('/en/').url_name == 'home'
-    assert client.get('/en/').status_code == 200
+    with translation.override('en'):  # an earlier /es/ request may have left Spanish active
+        assert resolve('/en/').url_name == 'home'
+    home = client.get('/en/')
+    assert home.status_code == 200
+    html = home.content.decode()
+    assert ('href="/en/signup/"' in html) is enabled
+    assert 'data-portal-link="login"' not in html
+    assert client.get('/en/signup/').status_code == (200 if enabled else 404)
+    assert client.get('/es/signup/').status_code == (200 if enabled else 404)
+
+
+@pytest.mark.django_db
+def test_portal_routes_do_not_leak_after_reload(client):
+    """Runs after the reloads above: reload_urlconf's teardown put the switch-off URLconf back."""
+    assert not django_settings.PORTAL_ENABLED
+    assert client.get('/en/signup/').status_code == 404
     assert 'href="/en/signup/"' not in client.get('/en/').content.decode()
 
 

@@ -57,6 +57,13 @@ ROBOTS_NOINDEX = config('ROBOTS_NOINDEX', default=False, cast=bool)
 # `portal_patterns` in mytreatplan/urls.py.
 PORTAL_ENABLED = config('PORTAL_ENABLED', default=False, cast=bool)
 
+# Sends and checks the signup codes (email, later mobile): a dotted path to a class with
+# send(channel, contact, purpose, language) and check(channel, contact, purpose, code).
+# The default fake writes each code to the log (the console locally, the server journal on
+# staging) and stores nothing; Twilio Verify replaces it in signup entry 11.
+VERIFICATION_PROVIDER = config('VERIFICATION_PROVIDER',
+                               default='signup.verification.FakeVerificationProvider')
+
 # Error reporting and job monitoring (Sentry, EU region: the DSN host is *.de.sentry.io).
 # Off unless SENTRY_DSN is set, so local development and CI send nothing. The release
 # is the git SHA: RELEASE_SHA from the environment, else the REVISION file release.sh
@@ -114,6 +121,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django.contrib.sitemaps',
     'accounts.apps.AccountsConfig',
+    'signup.apps.SignupConfig',
     'mytp_publicsite.apps.MytpPublicsiteConfig',
 ]
 
@@ -179,7 +187,9 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
     },
     {
+        # Minimum 12 characters, no composition rules (signup-fields.md).
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+        'OPTIONS': {'min_length': 12},
     },
     {
         'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
@@ -188,6 +198,10 @@ AUTH_PASSWORD_VALIDATORS = [
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
 ]
+
+# Where @login_required sends anonymous visitors. There is no login page yet (epic-login
+# points this at `login`), so they go to signup.
+LOGIN_URL = 'signup'
 
 
 # Internationalization
@@ -238,5 +252,24 @@ if not DEBUG:
 MAILERS = {
     'default': {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
+    },
+}
+
+# Logging
+# Django's defaults, plus the fake verification provider's code line at INFO on the
+# console (stderr: the server journal on staging). That logger is kept out of Sentry
+# (see mytreatplan/sentry.py), so codes never leave the server.
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'handlers': {
+        'console': {'class': 'logging.StreamHandler'},
+    },
+    'loggers': {
+        'signup.verification': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
     },
 }

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% load i18n static %}
+{% comment %}
+Layout for portal pages (signup, welcome, ...): a light header with the logo and the
+language switcher, a narrow column for the page, and the shared footer.
+Portal pages are not for search engines.
+{% endcomment %}
+
+{% block head %}<meta name="robots" content="noindex, nofollow">{% endblock %}
+
+{% block header %}
+<header class="border-b border-line px-gutter py-[clamp(24px,4vw,40px)]">
+  <div class="flex flex-col items-center gap-4">
+    <a href="{% url 'publicsite:home' %}" class="block" aria-label="{% translate 'MyTreatPlan home' %}">
+      <img class="block h-auto w-[clamp(150px,22vw,210px)]"
+           src="{% static 'img/Logo_MyTreatPlan.webp' %}" width="461" height="88" alt="MyTreatPlan">
+    </a>
+    <nav aria-label="{% translate 'Main' %}" class="flex flex-wrap items-center justify-center gap-x-[clamp(14px,2.2vw,26px)] gap-y-2 text-nav">
+      {% include "includes/_language_switcher.html" with ul_class="flex gap-[clamp(10px,1.6vw,18px)]" link="font-semibold text-ink-muted underline-offset-4 hover:underline" current="font-black text-ink" %}
+    </nav>
+  </div>
+</header>
+{% endblock %}
+
+{% block content %}
+<div class="mx-auto max-w-[480px] px-gutter pt-[clamp(32px,6vw,64px)] pb-[clamp(48px,8vw,90px)]">
+  {% if messages %}
+  <ul class="mb-6 space-y-2">
+    {% for message in messages %}
+    <li class="rounded-12 border border-line bg-panel px-5 py-3 text-[15px] leading-[1.5]" role="status">{{ message }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% block portal_content %}{% endblock %}
+</div>
+{% endblock %}
