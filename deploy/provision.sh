@@ -35,7 +35,8 @@ APP_HOME=/srv/mytp
 HTPASSWD_FILE=/etc/nginx/mytp.htpasswd
 NGINX_SITE=/etc/nginx/sites-available/mytp.conf
 CERT_FILE=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
-PACKAGES=(nginx certbot python3-certbot-nginx python3-venv python3-pip gettext libpq5 ufw apache2-utils curl)
+PACKAGES=(nginx certbot python3-certbot-nginx python3-venv python3-pip gettext libpq5 ufw apache2-utils curl
+    postgresql-client age)
 
 CHANGES=0
 WORK=$(mktemp -d)
@@ -132,6 +133,8 @@ ensure_dir "$APP_HOME" 0755 "$APP_USER:$APP_USER"
 ensure_dir "$APP_HOME/releases" 0755 "$APP_USER:$APP_USER"
 ensure_dir "$APP_HOME/shared" 0750 "$APP_USER:$APP_USER"
 ensure_dir "$APP_HOME/incoming" 0700 "$APP_USER:$APP_USER"
+# manage.py backupdb writes the encrypted dump here before uploading it (story 1.14).
+ensure_dir "$APP_HOME/shared/backup-tmp" 0700 "$APP_USER:$APP_USER"
 ensure_dir "$APP_HOME/.ssh" 0700 "$APP_USER:$APP_USER"
 if ! sudo test -f "$APP_HOME/.ssh/authorized_keys"; then
     sudo install -m 0600 -o "$APP_USER" -g "$APP_USER" /dev/null "$APP_HOME/.ssh/authorized_keys"
