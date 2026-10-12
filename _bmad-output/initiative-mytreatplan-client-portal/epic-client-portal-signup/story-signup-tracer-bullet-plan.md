@@ -3,7 +3,7 @@ title: 'Signup tracer bullet'
 type: 'feature'
 ticket: '1'
 created: '2026-10-12'
-status: 'built'
+status: 'done'
 baseline_revision: 'd291eea2488c353efb81f35736cfc670b003bc36'
 route: 'full'
 route_source: 'auto'
@@ -155,7 +155,7 @@ Pass 1 (quick lens, 2026-10-13): high 0, medium 2, low 2, false 0, maybe-false 0
 
 ## Verification
 
-Done locally (2026-10-13) after the review patches: `pytest` 348 passed, 6 skipped (PyYAML workflow tests, run in CI), on SQLite because the local Postgres role cannot create a test database (CI runs them on Postgres 16); `makemigrations --check` no changes; `manage.py check` no issues. Implementer's run of the full flow on the local Postgres DB in `/en/` and `/es/`: code in the console, wrong code kept the step, right code landed logged in on welcome; no table held the password or the code; admin login by email works. Staging checks pending (the merge deploys signup there).
+Done locally (2026-10-13) after the review patches: `pytest` 348 passed, 6 skipped (PyYAML workflow tests, run in CI), on SQLite because the local Postgres role cannot create a test database (CI runs them on Postgres 16); `makemigrations --check` no changes; `manage.py check` no issues. Implementer's run of the full flow on the local Postgres DB in `/en/` and `/es/`: code in the console, wrong code kept the step, right code landed logged in on welcome; no table held the password or the code; admin login by email works. Staging (2026-10-13, after the merge and deploy): a person registered at https://dev.mytpdso.com/en/signup/ with email and password, read the code from the `mytp-gunicorn` journal, entered it and landed logged in on the welcome page.
 
 **Commands:**
 - `pytest` (local DB user needs CREATEDB) -- expected: all pass
