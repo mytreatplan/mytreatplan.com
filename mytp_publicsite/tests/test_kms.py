@@ -2,6 +2,7 @@
 kmscheck` with the KMS HTTP calls replaced by a fake, the certificate expiry check, the
 job and the deploy files. No database and no network are needed."""
 import base64
+import errno
 import io
 import json
 import shutil
@@ -274,7 +275,7 @@ def test_short_data_key_is_a_mismatch(kms_env, capsys):
      'TLS error'),
     (urllib.error.URLError(TimeoutError()), 'timed out'),
     (TimeoutError(), 'timed out'),
-    (ConnectionResetError(54, 'Connection reset by peer'), 'ECONNRESET'),
+    (ConnectionResetError(errno.ECONNRESET, 'Connection reset by peer'), 'ECONNRESET'),
 ])
 def test_unreachable_is_connect_step(kms_env, capsys, failure, detail):
     kms_env.fail['get'] = failure
