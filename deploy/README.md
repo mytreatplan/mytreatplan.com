@@ -334,12 +334,17 @@ only this server an access certificate for it, and proves the server can use it 
    `https://eu-west-gra.okms.ovh.net`, and copy the domain's **URN** (for the policy in
    step 4).
 2. **Staging service key.** In the domain → *Encryption keys* → generate a key: name
-   `mytp-staging`, type **`oct`** (symmetric), size **256**, operations
-   **encrypt** and **decrypt** only, protection level **`SOFTWARE`** (production, story
-   1.12, may choose `HSM`). Copy its **key id** (a UUID). Never delete or deactivate it
+   `mytp-staging`, type **`oct`** (symmetric), size **256**, operations **wrapKey**,
+   **unwrapKey**, **encrypt** and **decrypt**, protection level **`SOFTWARE`**
+   (production, story 1.12, may choose `HSM`). Creating and unwrapping data keys needs
+   `wrapKey`/`unwrapKey`: a key with only `encrypt`/`decrypt` makes `kmscheck` fail at
+   `generate` with HTTP 400, and a key's operations cannot be changed later (replace the
+   key while nothing uses it). `encrypt`/`decrypt` are for re-wrapping during rotation. Copy its **key id** (a UUID). Never delete or deactivate it
    from here on without following "Rotate the service key".
-3. **Server identity and access certificate.** *Identity and Access Management* →
-   *Identities* → add a local user `mytp-kms-staging` (no console login needed; it is
+3. **Server identity and access certificate.** IAM is at account level, not in the
+   Public Cloud project (its *Users & Roles* is something else): account menu (top
+   right) → *Identity and Access Management (IAM)* → *Identities* (or *My account* →
+   *Users management*) → add a local user `mytp-kms-staging` (no console login needed; it is
    only the certificate's identity). Then create the private key and a CSR **on the
    server**, so the key is born there:
 
@@ -368,9 +373,14 @@ only this server an access certificate for it, and proves the server can use it 
    "MyTreatplan staging KMS" with the expiry date, domain id, endpoint and key id (none
    of them secret). Delete any local copy of the certificate. The credential files live
    only in `/srv/mytp/shared/` (owner `mytp`, mode 600), never in the repo.
-4. **IAM policy.** *Identity and Access Management* → *Policies* → create
-   `mytp-kms-staging-datakeys`: identity `mytp-kms-staging`; resource: **this KMS
-   domain only** (its URN); actions **only**:
+4. **IAM policy.** *Identity, Security & Operations* → *Policies*
+   (https://www.ovh.com/manager/#/iam/policy) → *Create a policy*
+   `mytp-kms-staging-datakeys`: identity `mytp-kms-staging`; product type **Key
+   Management Service** first (the resource list is filtered by it, and a policy without
+   a resource grants nothing: the KMS then answers "Domain was not found or no actions
+   have been granted for your identity"); resource: **this KMS domain only**
+   (`urn:v1:eu:resource:okms:<domain id>`); actions **only**, typed in by hand with
+   "Authorise all actions" off:
 
    - `okms:apikms:serviceKey/get`
    - `okms:apikms:serviceKey/dataKey/create`
@@ -571,8 +581,8 @@ on purpose.
 | What | Value |
 |------|-------|
 | KMS domain | OVHcloud KMS, region **GRA** (`eu-west-gra`), endpoint `https://eu-west-gra.okms.ovh.net`, domain id in `KMS_OKMS_ID` |
-| Staging service key | `mytp-staging`: `oct`, 256 bits, encrypt/decrypt, `SOFTWARE`; id in `KMS_SERVICE_KEY_ID` |
-| Server credential | access certificate (mTLS) for IAM identity `mytp-kms-staging`, `/srv/mytp/shared/kms-client.crt` + `.key` (mode 600); expires `<record>` |
+| Staging service key | `mytp-staging`: `oct`, 256 bits, wrapKey/unwrapKey/encrypt/decrypt, `SOFTWARE`; id in `KMS_SERVICE_KEY_ID` |
+| Server credential | access certificate (mTLS) for IAM identity `mytp-kms-staging`, `/srv/mytp/shared/kms-client.crt` + `.key` (mode 600); expires 2027-10-12 17:07 UTC |
 | IAM policy | `mytp-kms-staging-datakeys`: `serviceKey/get`, `serviceKey/dataKey/create`, `serviceKey/dataKey/decrypt` on this domain only |
 | Backup of the credential | none (private key never leaves the server); if lost, issue a new certificate. Reference entry (no secrets) "MyTreatplan staging KMS" in the team password manager |
 | Production | separate domain/key/certificate, story 1.12 (may use `HSM`) |
@@ -645,7 +655,7 @@ re-wrapping. Rotation changes which key wraps the data keys; it never re-encrypt
 data itself.
 
 1. **New key.** In the KMS domain, generate a new service key with the same settings
-   (`oct`, 256, encrypt/decrypt, `SOFTWARE`), e.g. `mytp-staging-2`. The IAM policy
+   (`oct`, 256, wrapKey/unwrapKey/encrypt/decrypt, `SOFTWARE`), e.g. `mytp-staging-2`. The IAM policy
    covers the whole domain, so the server can use it at once.
 2. **Switch.** Point `KMS_SERVICE_KEY_ID` in `/srv/mytp/shared/settings.env` at the new
    key id and `sudo systemctl restart mytp-gunicorn`. New data keys are now wrapped by the
