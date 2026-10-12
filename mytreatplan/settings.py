@@ -88,6 +88,21 @@ BACKUP_AGE_RECIPIENT = config('BACKUP_AGE_RECIPIENT', default='')
 # app user (deploy/provision.sh creates it). Only ciphertext is ever written there.
 BACKUP_TMP_DIR = config('BACKUP_TMP_DIR', default='/srv/mytp/shared/backup-tmp')
 
+# OVHcloud KMS (story 1.15): data keys for field encryption are wrapped by a service key
+# in an OKMS domain in France (encryption policy; the key provider itself is story 2.12).
+# KMS_ENDPOINT is the regional REST endpoint, https://<region>.okms.ovh.net (the region
+# lives only here). The server authenticates with an access certificate (mutual TLS):
+# KMS_CLIENT_CERT and KMS_CLIENT_KEY are paths to PEM files in /srv/mytp/shared/ (mode
+# 600); KMS_CA_FILE is optional (default: system CAs). All empty by default; `manage.py
+# kmscheck` refuses to run and names the first missing key. See deploy/README.md,
+# "Keys (KMS)".
+KMS_ENDPOINT = config('KMS_ENDPOINT', default='')
+KMS_OKMS_ID = config('KMS_OKMS_ID', default='')
+KMS_SERVICE_KEY_ID = config('KMS_SERVICE_KEY_ID', default='')
+KMS_CLIENT_CERT = config('KMS_CLIENT_CERT', default='')
+KMS_CLIENT_KEY = config('KMS_CLIENT_KEY', default='')
+KMS_CA_FILE = config('KMS_CA_FILE', default='')
+
 # Application definition
 
 INSTALLED_APPS = [
