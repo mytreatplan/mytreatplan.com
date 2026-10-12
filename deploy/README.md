@@ -19,6 +19,7 @@ team password (basic auth) and sends `X-Robots-Tag: noindex, nofollow`.
 | Scheduled jobs | `mytp-job@<name>.timer` → `mytp-job@<name>.service`, one per line of `jobs.conf` |
 | Health URL | `https://dev.mytpdso.com/healthz` (no password), watched by UptimeRobot |
 | Off-region backups | nightly `backupdb` job → Object Storage SBG (`age`-encrypted); restore test: `restore-db.sh` |
+| Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp/shared/kms-client.*`; daily `kmscheck` job |
 | Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -319,6 +320,107 @@ encrypted `pg_dump` to Object Storage in **SBG** (`manage.py backupdb`). See
 9. **First restore test**: follow "Restore test" under
    [Backups and restore](#backups-and-restore) and record it.
 
+### 11. KMS (OVHcloud Key Management Service)
+
+Field encryption (signup, story 2.12) wraps its data keys with a **service key** in an
+OVHcloud KMS domain in France. This step creates the domain and the staging key, gives
+only this server an access certificate for it, and proves the server can use it with
+`manage.py kmscheck`. See [Keys (KMS)](#keys-kms) for how it works, renewal and rotation.
+
+1. **KMS domain.** OVHcloud Control Panel → *Identity, Security & Operations* → *Key
+   Management Service* → order a KMS in region **GRA** (`eu-west-gra`, Gravelines, the
+   same region as the server and database). On the domain's *General information* tab,
+   copy the **domain id** (`okmsId`, a UUID), check the **REST endpoint** is
+   `https://eu-west-gra.okms.ovh.net`, and copy the domain's **URN** (for the policy in
+   step 4).
+2. **Staging service key.** In the domain → *Encryption keys* → generate a key: name
+   `mytp-staging`, type **`oct`** (symmetric), size **256**, operations
+   **encrypt** and **decrypt** only, protection level **`SOFTWARE`** (production, story
+   1.12, may choose `HSM`). Copy its **key id** (a UUID). Never delete or deactivate it
+   from here on without following "Rotate the service key".
+3. **Server identity and access certificate.** *Identity and Access Management* →
+   *Identities* → add a local user `mytp-kms-staging` (no console login needed; it is
+   only the certificate's identity). Then create the private key and a CSR **on the
+   server**, so the key is born there:
+
+   ```sh
+   sudo -u mytp sh -c 'umask 077 && openssl req -new -newkey rsa:3072 -nodes \
+       -subj "/CN=mytp-kms-staging" \
+       -keyout /srv/mytp/shared/kms-client.key -out /srv/mytp/shared/kms-client.csr'
+   sudo cat /srv/mytp/shared/kms-client.csr
+   ```
+
+   In the KMS domain → *Generate an access certificate*: validity **365 days** (or the
+   maximum offered), paste the CSR, and link **only** the identity `mytp-kms-staging`
+   (never the account's root identity: it would bypass the IAM policy). Download the
+   certificate (PEM) and copy it to the server:
+
+   ```sh
+   scp kms-client.crt debian@<instance-ip>:/tmp/kms-client.crt
+   ssh debian@<instance-ip> 'sudo install -m 600 -o mytp -g mytp /tmp/kms-client.crt /srv/mytp/shared/kms-client.crt && rm /tmp/kms-client.crt && sudo rm /srv/mytp/shared/kms-client.csr'
+   ```
+
+   **No backup copy of the private key:** it is created on the server and never leaves
+   it (not to a laptop, the password manager, chats or tickets). If it is lost, for
+   example when the server is rebuilt, issue a new certificate ("Renew the access
+   certificate" below); the data stays readable, because what protects it is the service
+   key inside the KMS. In the team password manager, keep only a reference entry
+   "MyTreatplan staging KMS" with the expiry date, domain id, endpoint and key id (none
+   of them secret). Delete any local copy of the certificate. The credential files live
+   only in `/srv/mytp/shared/` (owner `mytp`, mode 600), never in the repo.
+4. **IAM policy.** *Identity and Access Management* → *Policies* → create
+   `mytp-kms-staging-datakeys`: identity `mytp-kms-staging`; resource: **this KMS
+   domain only** (its URN); actions **only**:
+
+   - `okms:apikms:serviceKey/get`
+   - `okms:apikms:serviceKey/dataKey/create`
+   - `okms:apikms:serviceKey/dataKey/decrypt`
+
+   Nothing that creates, updates, imports, activates, deactivates or deletes keys, and
+   no `okms:apiovh:*` actions. The server can then make and unwrap data keys but cannot
+   manage keys.
+5. **Settings.** Fill in the `KMS_*` keys in `/srv/mytp/shared/settings.env` (see
+   `deploy/staging.env.example`; no comment after a value):
+
+   ```sh
+   sudo -u mytp nano /srv/mytp/shared/settings.env
+   # KMS_ENDPOINT=https://eu-west-gra.okms.ovh.net
+   # KMS_OKMS_ID=<domain id>
+   # KMS_SERVICE_KEY_ID=<key id>
+   # KMS_CLIENT_CERT=/srv/mytp/shared/kms-client.crt
+   # KMS_CLIENT_KEY=/srv/mytp/shared/kms-client.key
+   # KMS_CA_FILE stays empty (system CAs):
+   # KMS_CA_FILE=
+   sudo ls -l /srv/mytp/shared/kms-client.*     # -rw------- mytp mytp, both files
+   ```
+
+6. **Check by hand.**
+
+   ```sh
+   cd /srv/mytp/current
+   sudo -u mytp ./venv/bin/python manage.py kmscheck
+   # kmscheck: client certificate expires 2027-10-.. ..:.. UTC (364 days)
+   # kmscheck: service key <key id> state active
+   # kmscheck: round trip ok
+   ```
+
+   A failure names its step: `settings` (a key is missing or a file unreadable/not
+   600), `cert` (expiry unreadable), `connect` (DNS, TLS, timeout), `auth` (the
+   certificate or key could not be loaded, the KMS refused the certificate in the TLS
+   handshake, or HTTP 401/403: check the identity and the IAM policy),
+   `get`/`generate`/`unwrap` (HTTP status, e.g. 404 unknown key, 400 deactivated key),
+   `mismatch`.
+7. **Daily job.** From a copy of the merged `deploy/`, re-run
+   `bash ~/deploy/provision.sh dev.mytpdso.com <htpasswd-user>`; it installs
+   `mytp-job@kmscheck.timer` (04:00 UTC). Then:
+
+   ```sh
+   systemctl list-timers 'mytp-job@*'          # lists kmscheck
+   sudo systemctl start mytp-job@kmscheck      # Sentry Crons: mytp-staging-kmscheck ok
+   ```
+
+   Set the monitor's **Notify** to devops@mytreatplan.com (step 8.5).
+
 ## How a deploy works
 
 1. CI (`test`) passes on a push to `master`. Pull requests and other branches never deploy.
@@ -464,6 +566,108 @@ into the new database service with `age --decrypt -i <key> <dump> | pg_restore -
 --no-privileges -d <new database>`; `restore-db.sh` only restores into `*_restore_test`
 on purpose.
 
+## Keys (KMS)
+
+| What | Value |
+|------|-------|
+| KMS domain | OVHcloud KMS, region **GRA** (`eu-west-gra`), endpoint `https://eu-west-gra.okms.ovh.net`, domain id in `KMS_OKMS_ID` |
+| Staging service key | `mytp-staging`: `oct`, 256 bits, encrypt/decrypt, `SOFTWARE`; id in `KMS_SERVICE_KEY_ID` |
+| Server credential | access certificate (mTLS) for IAM identity `mytp-kms-staging`, `/srv/mytp/shared/kms-client.crt` + `.key` (mode 600); expires `<record>` |
+| IAM policy | `mytp-kms-staging-datakeys`: `serviceKey/get`, `serviceKey/dataKey/create`, `serviceKey/dataKey/decrypt` on this domain only |
+| Backup of the credential | none (private key never leaves the server); if lost, issue a new certificate. Reference entry (no secrets) "MyTreatplan staging KMS" in the team password manager |
+| Production | separate domain/key/certificate, story 1.12 (may use `HSM`) |
+
+**Envelope encryption** (`encryption-policy.md`): the app asks the KMS for a data key
+(`POST .../servicekey/<keyId>/datakey`), gets it both plain and wrapped by the service
+key, encrypts with the plain one in memory and stores only the wrapped one next to the
+data. To read, it sends the wrapped key to `POST .../datakey/decrypt`. The service key
+never leaves the KMS. `mytp_publicsite/kms.py` is the client (standard library only);
+story 2.12 builds the key provider on it.
+
+**Daily check.** `kmscheck | kmscheck | *-*-* 04:00:00 UTC` in `jobs.conf`, so it runs via
+`runjob` with Sentry check-ins. `manage.py kmscheck` gets the service key, generates a
+256-bit data key, unwraps it and compares the bytes; it prints the key id and state, the
+result and the certificate's expiry, and never the data key, the wrapped key or the
+credential. It **fails 30 days before the certificate expires** (after still doing the
+round trip), so Sentry alerts devops@mytreatplan.com in time to renew.
+
+```sh
+sudo systemctl start mytp-job@kmscheck          # check now
+sudo journalctl -u mytp-job@kmscheck -n 50      # last runs
+```
+
+### Renew the access certificate
+
+Do it when `kmscheck` reports "client certificate expires ..., within 30 days" (or
+earlier). The new certificate goes in beside the old one, so nothing breaks meanwhile:
+
+1. On the server, a new key and CSR (`-new` names, so the live files stay untouched):
+
+   ```sh
+   sudo -u mytp sh -c 'umask 077 && openssl req -new -newkey rsa:3072 -nodes \
+       -subj "/CN=mytp-kms-staging" \
+       -keyout /srv/mytp/shared/kms-client-new.key -out /srv/mytp/shared/kms-client-new.csr'
+   sudo cat /srv/mytp/shared/kms-client-new.csr
+   ```
+
+2. KMS domain → *Generate an access certificate* with that CSR, validity 365 days,
+   identity `mytp-kms-staging` only (the IAM policy applies to the identity, so it needs
+   no change). Copy it to `/srv/mytp/shared/kms-client-new.crt` (`install -m 600 -o mytp
+   -g mytp`, as in step 11.3).
+3. Test the new pair without touching `settings.env` (env vars beat the file):
+
+   ```sh
+   cd /srv/mytp/current
+   sudo -u mytp KMS_CLIENT_CERT=/srv/mytp/shared/kms-client-new.crt \
+       KMS_CLIENT_KEY=/srv/mytp/shared/kms-client-new.key ./venv/bin/python manage.py kmscheck
+   ```
+
+4. When it prints "round trip ok" with the new expiry, swap the files in:
+
+   ```sh
+   sudo -u mytp mv /srv/mytp/shared/kms-client-new.crt /srv/mytp/shared/kms-client.crt
+   sudo -u mytp mv /srv/mytp/shared/kms-client-new.key /srv/mytp/shared/kms-client.key
+   sudo rm /srv/mytp/shared/kms-client-new.csr
+   sudo systemctl restart mytp-gunicorn            # once the app uses the KMS (2.12)
+   sudo systemctl start mytp-job@kmscheck
+   ```
+
+5. Update the expiry in the password manager reference entry and in the table above. Then delete the old certificate in the KMS panel (*Access certificates*),
+   so the old private key no longer works anywhere.
+
+If the private key may have leaked: do the same at once, and delete the old certificate
+in the panel first.
+
+### Rotate the service key
+
+For story 2.12 to implement; until then no data is encrypted, so nothing needs
+re-wrapping. Rotation changes which key wraps the data keys; it never re-encrypts the
+data itself.
+
+1. **New key.** In the KMS domain, generate a new service key with the same settings
+   (`oct`, 256, encrypt/decrypt, `SOFTWARE`), e.g. `mytp-staging-2`. The IAM policy
+   covers the whole domain, so the server can use it at once.
+2. **Switch.** Point `KMS_SERVICE_KEY_ID` in `/srv/mytp/shared/settings.env` at the new
+   key id and `sudo systemctl restart mytp-gunicorn`. New data keys are now wrapped by the
+   new key; `sudo systemctl start mytp-job@kmscheck` must show the new id, state active.
+   Old wrapped keys still name (or are stored with) the old key id and still unwrap.
+3. **Re-wrap old data keys.** For each stored wrapped data key that the old key wrapped:
+   unwrap it with the old key (`datakey/decrypt` on the old key id), then wrap the same
+   plaintext with the new key (`encrypt` on the new key id), and store the new wrapped
+   key and the new key id in place of the old ones, in one transaction per record. The
+   data encrypted with that data key is untouched. A key wrapped with `encrypt` is
+   unwrapped with `decrypt` (not `datakey/decrypt`), so 2.12 must record how each data
+   key was wrapped, and the IAM policy then also needs `okms:apikms:serviceKey/encrypt`
+   and `okms:apikms:serviceKey/decrypt`. 2.12 provides this as a management command;
+   until every record is done, both keys stay active.
+4. **Deactivate the old key only once nothing uses it**: no stored record and no job
+   refers to it any more, and every backup taken before step 3 has expired (the SBG
+   dumps keep 30 days, so wait at least 30 days after step 3). Deactivate it in the
+   panel, never from code. **Never delete it** while any data, including a backup,
+   might still need it: a deleted key makes every data key it wrapped, and so that
+   data, unreadable for good.
+5. Update the table above (current key) and the password manager entry.
+
 ## Rollback
 
 On the server as `debian`:
@@ -500,5 +704,5 @@ sudo journalctl -u 'mytp-job@*' -n 200     # scheduled jobs
 sudo tail -f /var/log/nginx/error.log
 ```
 
-Out of scope here: production (story 1.12); KMS (story 1.15);
-email (story 1.5).
+Out of scope here: production (story 1.12); the field encryption key provider (story
+2.12); email (story 1.5).

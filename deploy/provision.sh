@@ -36,7 +36,7 @@ HTPASSWD_FILE=/etc/nginx/mytp.htpasswd
 NGINX_SITE=/etc/nginx/sites-available/mytp.conf
 CERT_FILE=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
 PACKAGES=(nginx certbot python3-certbot-nginx python3-venv python3-pip gettext libpq5 ufw apache2-utils curl
-    postgresql-client age)
+    postgresql-client age openssl)
 
 CHANGES=0
 WORK=$(mktemp -d)
