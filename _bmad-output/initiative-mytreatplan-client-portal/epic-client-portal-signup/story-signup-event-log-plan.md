@@ -3,7 +3,7 @@ title: 'Signup event log'
 type: 'feature'
 ticket: '3'
 created: '2026-10-13'
-status: 'built'
+status: 'done'
 baseline_revision: 'a73a4735df4a9db7a799dd2c55f7529fe638518c'
 route: 'full'
 route_source: 'auto'
@@ -129,7 +129,9 @@ context: []
 - `DATABASE_URL="sqlite:///$TMPDIR/x.sqlite3" ../.venv/bin/python -m pytest -q` -- expected: only the known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check` (with test keys) -- expected: no changes.
 
-Done locally (2026-10-13) after the review patch, on SQLite: `pytest` 436 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. The implementer's run on a throwaway PostgreSQL 17 passed all 438 tests before the patch. `makemigrations --check` reports no changes; `check` reports no issues (1 silenced). Staging check pending (after the merge).
+Done locally (2026-10-13) after the review patch, on SQLite: `pytest` 436 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. The implementer's run on a throwaway PostgreSQL 17 passed all 438 tests before the patch. `makemigrations --check` reports no changes; `check` reports no issues (1 silenced). CI on PostgreSQL 16 (PR #14): 445 passed.
+
+Staging (2026-10-13): the merge deployed and ran migrations `eventlog.0001` and `signup.0005`. A person completed a signup at https://dev.mytpdso.com/en/signup/ and opened its attempt in the admin (Eventlog → Attempts): `step_saved`, `code_sent`, `code_accepted` and `completed` appeared in order, with outcome `completed`.
 
 **Manual checks:**
 - After the merge, run a signup on staging and open the attempt in the admin. The steps, code sends and outcome should be listed.
