@@ -1,9 +1,11 @@
 """The signup wizard. Generic over signup.steps.STEPS: no step is named here.
 
-Plus the resume page (signup entry 5): when step 1's email or mobile belongs to another
-active pending registration, the person can take it over with a code sent to that
-registration's email or mobile.
+Plus the resume flow (signup entry 5): when step 1's email belongs to another active
+pending registration (checked as soon as the email field is left, `check_email`, or on
+Continue without JavaScript), the person can take it over with a code sent to that email.
+The code also verifies the email; the saved data comes back into step 1 for review.
 """
+from django import forms
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
@@ -13,29 +15,27 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import translation
 from django.utils.translation import gettext as _
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 
 from eventlog import service as eventlog
 from eventlog.models import Attempt
 
 from .forms import (EMAIL_EXISTS, EMAIL_PENDING, EMAIL_REGISTERED_MESSAGE, PHONE_EXISTS,
-                    PHONE_PENDING, PHONE_REGISTERED_MESSAGE, REGISTERED_CODES, ResumeCodeForm,
-                    email_is_registered, failure_reason, phone_is_registered)
+                    PHONE_REGISTERED_MESSAGE, REGISTERED_CODES, ResumeCodeForm,
+                    email_is_registered, failure_reason, normalize_email, phone_is_registered)
 from .models import PendingRegistration
 from .steps import STEPS, get_step
-from .verification import EMAIL, MOBILE, PURPOSE_RESUME, get_provider
+from .verification import EMAIL, PURPOSE_RESUME, get_provider
 
 # The session holds only the pending registration's id, and the event log attempt's id.
 SESSION_KEY = 'signup_pending_id'
 ATTEMPT_SESSION_KEY = 'signup_attempt_id'
-# While a resume is offered: {'id': the matched row's id, 'channel': email or mobile,
-# 'sent': whether a code was sent}. Never a contact: the page reads it from the row.
+# While a resume is offered: {'id': the matched row's id, 'sent': whether a code was
+# sent}. Never a contact: the page reads it from the row.
 RESUME_SESSION_KEY = 'signup_resume'
 
 # The resume page's step name in the event log.
 RESUME_STEP = 'resume'
-# The contact of each channel: the row's field, and the field and reason logged on a match.
-CHANNEL_FIELDS = {EMAIL: ('email', EMAIL_PENDING), MOBILE: ('phone', PHONE_PENDING)}
 
 
 def step_url(index):
@@ -97,24 +97,19 @@ def _log_unavailable_checks(request, attempt, step, form):
                         field=field, reason=check, data=data)
 
 
-def find_pending_match(email, phone, exclude=None):
-    """(row, channel) of another active pending registration with this email, else with
-    this mobile (email first), or (None, None). `exclude` is the session's own row."""
+def find_pending_match(email, exclude=None):
+    """The latest other active pending registration with this email, or None. `exclude`
+    is the session's own row. A mobile in another signup is allowed: that signup is
+    removed when an account is created (`_create_account`)."""
     rows = PendingRegistration.objects.active()
     if exclude is not None:
         rows = rows.exclude(pk=exclude.pk)
-    for channel, matching in ((EMAIL, rows.matching_email(email)),
-                              (MOBILE, rows.matching_phone(phone))):
-        row = matching.order_by('-created_at').first()
-        if row is not None:
-            return row, channel
-    return None, None
+    return rows.matching_email(email).order_by('-created_at').first()
 
 
-def start_resume(request, row, channel):
-    """Offer to resume `row` through `channel` (the resume page takes over)."""
-    request.session[RESUME_SESSION_KEY] = {'id': str(row.pk), 'channel': channel,
-                                           'sent': False}
+def start_resume(request, row):
+    """Offer to resume `row` (the resume page takes over)."""
+    request.session[RESUME_SESSION_KEY] = {'id': str(row.pk), 'sent': False}
 
 
 def clear_resume(request):
@@ -125,7 +120,7 @@ def _resume_state(request):
     """(state, row) of the resume on offer, or (None, None) if there is none, or its row
     is gone or no longer active (the state is then cleared)."""
     state = request.session.get(RESUME_SESSION_KEY)
-    if not isinstance(state, dict) or state.get('channel') not in CHANNEL_FIELDS:
+    if not isinstance(state, dict) or not state.get('id'):
         clear_resume(request)
         return None, None
     try:
@@ -136,10 +131,6 @@ def _resume_state(request):
         clear_resume(request)
         return None, None
     return state, row
-
-
-def _contact(row, channel):
-    return getattr(row, CHANNEL_FIELDS[channel][0])
 
 
 def _registered_error(form):
@@ -191,32 +182,35 @@ def signup(request, slug=None):
         return _render(request, index, step, form, pending)
 
     if index == 0:
-        # Another active signup with this email or mobile: offer to resume it. What was
-        # typed here is not stored (only logged, without the password).
-        row, channel = find_pending_match(form.cleaned_data.get('email'),
-                                          form.cleaned_data.get('phone'), exclude=pending)
+        # Another active signup with this email: the same offer as the live check
+        # (`check_email`), shown under the email. What was typed here is not stored
+        # (only logged, without the password).
+        row = find_pending_match(form.cleaned_data.get('email'), exclude=pending)
         if row is not None:
-            field, reason = CHANNEL_FIELDS[channel]
             eventlog.record(attempt, 'pending_found', request=request, step=step.slug,
-                            field=field, reason=reason, data=step.log_data(form))
-            start_resume(request, row, channel)
-            return redirect('signup_resume')
+                            field='email', reason=EMAIL_PENDING, data=step.log_data(form))
+            start_resume(request, row)
+            return _render(request, index, step, form, pending, email_check='pending')
         clear_resume(request)
 
     pending = step.save(request, pending, form)
     eventlog.record(attempt, step.saved_event, request=request, step=step.slug,
                     data=step.log_data(form))
-    if index + 1 == len(STEPS):
-        return _create_account(request, index, step, form, pending, attempt)
-
-    next_step = STEPS[index + 1]
-    pending.step = next_step.slug
+    # The next step not done yet (e.g. the email code is skipped once the email is
+    # verified); with none left, the account is created.
+    next_index = index + 1
+    while next_index < len(STEPS) and STEPS[next_index].is_done(pending):
+        next_index += 1
+    pending.step = STEPS[min(next_index, len(STEPS) - 1)].slug
     if attempt is not None and pending.attempt_id is None:
         pending.attempt = attempt
     pending.save()
     request.session[SESSION_KEY] = str(pending.pk)
-    next_step.enter(request, pending)
-    return redirect(step_url(index + 1))
+    if next_index == len(STEPS):
+        return _create_account(request, index, step, form, pending, attempt)
+
+    STEPS[next_index].enter(request, pending)
+    return redirect(step_url(next_index))
 
 
 class _AlreadyRegistered(Exception):
@@ -235,9 +229,11 @@ _REGISTERED = {
 
 
 def _create_account(request, index, step, form, pending, attempt):
-    """After the last step: create the user with the stored hash, drop the pending
-    registration and log the user in, all in one transaction."""
+    """Once no step is left: create the user with the stored hash, drop the pending
+    registration and every other one with its email or mobile, and log the user in, all
+    in one transaction. The attempts of the other registrations end `abandoned`."""
     user_model = get_user_model()
+    other_attempt_ids = []
     try:
         with transaction.atomic():
             pending = PendingRegistration.objects.select_for_update().get(pk=pending.pk)
@@ -250,6 +246,12 @@ def _create_account(request, index, step, form, pending, attempt):
                 name: getattr(pending, name) for name in PendingRegistration.USER_FIELDS})
             user.save()
             pending.delete()
+            # Any other signup (active or not) with this email or mobile.
+            others = (PendingRegistration.objects.matching_email(pending.email)
+                      | PendingRegistration.objects.matching_phone(pending.phone))
+            other_attempt_ids = [pk for pk in others.values_list('attempt_id', flat=True)
+                                 if pk is not None]
+            others.delete()
             request.session.pop(SESSION_KEY, None)
             request.session.pop(ATTEMPT_SESSION_KEY, None)
             login(request, user)
@@ -270,10 +272,22 @@ def _create_account(request, index, step, form, pending, attempt):
     # Logged after the commit: the attempt outlives the pending registration.
     eventlog.record(attempt, 'completed', request=request, step=step.slug)
     eventlog.end_attempt(attempt, 'completed')
+    _abandon_attempts(other_attempt_ids, keep=attempt)
     return redirect('welcome')
 
 
-def _render(request, index, step, form, pending):
+def _abandon_attempts(attempt_ids, keep=None):
+    """End the open attempts among `attempt_ids` (but `keep`) with outcome `abandoned`."""
+    keep_id = getattr(keep, 'pk', keep)
+    for attempt_id in set(attempt_ids):
+        if keep_id is not None and attempt_id == keep_id:
+            continue
+        other = eventlog.get_attempt(attempt_id)
+        if other is not None and other.ended_at is None:
+            eventlog.end_attempt(other, 'abandoned')
+
+
+def _render(request, index, step, form, pending, email_check=None):
     return render(request, step.template_name, {
         'step': step,
         'form': form,
@@ -282,17 +296,50 @@ def _render(request, index, step, form, pending):
         'step_count': len(STEPS),
         'back_url': step_url(index - 1) if index > 0 else None,
         'show_recovery': _registered_error(form),
+        # The offer under the email (signup/_email_check.html): 'pending' or None.
+        'email_check': email_check,
     })
+
+
+@require_POST
+def check_email(request):
+    """The live check of step 1's email (htmx, when the field is left): the recovery note
+    for a registered email, the resume offer for an email in another active signup
+    (logged `pending_found`), nothing otherwise. Reveals nothing of the matched signup.
+    Returns the partial signup/_email_check.html."""
+    try:
+        email = normalize_email(forms.EmailField(max_length=254).clean(
+            request.POST.get('email', '')))
+    except ValidationError:
+        email = None
+    email_check = None
+    if email and email_is_registered(email):
+        email_check = 'registered'
+        clear_resume(request)
+    elif email:
+        pending = _pending_registration(request)
+        row = find_pending_match(email, exclude=pending)
+        if row is not None:
+            attempt = _attempt(request, pending, 0)
+            eventlog.record(attempt, 'pending_found', request=request, step=STEPS[0].slug,
+                            field='email', reason=EMAIL_PENDING, data={'email': email})
+            start_resume(request, row)
+            email_check = 'pending'
+        else:
+            clear_resume(request)
+    return render(request, 'signup/_email_check.html', {'email_check': email_check})
 
 
 @require_http_methods(['GET', 'HEAD', 'POST'])
 def resume(request):
-    """Offer, send and check the code that resumes another signup in progress.
+    """Offer, send and check the code (to the email) that resumes another signup in
+    progress.
 
     Until the code is correct nothing of the matched registration is shown but its
-    contact, which is what the person typed. A correct code moves its data to a new
-    pending registration of this signup (new id, this attempt); the matched row is
-    deleted and its attempt ends `abandoned`. Outside the step loop of `signup`.
+    email, which is what the person typed. A correct code moves its data to a new
+    pending registration of this signup (new id, this attempt, email verified); the
+    matched row is deleted and its attempt ends `abandoned`. Step 1 then shows the saved
+    data for review. Outside the step loop of `signup`.
     """
     if 'cancel' in request.GET:  # "Use different details"
         clear_resume(request)
@@ -300,25 +347,23 @@ def resume(request):
     state, row = _resume_state(request)
     if state is None:
         return redirect('signup')
-    channel = state['channel']
-    contact = _contact(row, channel)
+    contact = row.email
     attempt = eventlog.get_attempt(request.session.get(ATTEMPT_SESSION_KEY))
     if attempt is not None and attempt.ended_at is not None:
         attempt = None
 
     if request.method != 'POST':
-        return _render_resume(request, state, contact, ResumeCodeForm(
-            channel=channel, contact=contact))
+        return _render_resume(request, state, contact, ResumeCodeForm(email=contact))
 
     action = request.POST.get('action')
     if action in ('send', 'resend'):
-        _send_resume_code(request, attempt, channel, contact, resend=action == 'resend')
+        _send_resume_code(request, attempt, contact, resend=action == 'resend')
         request.session[RESUME_SESSION_KEY] = {**state, 'sent': True}
         if action == 'resend':
             messages.success(request, _('We have sent you a new code.'))
         return redirect('signup_resume')
 
-    form = ResumeCodeForm(request.POST, channel=channel, contact=contact)
+    form = ResumeCodeForm(request.POST, email=contact)
     if not form.is_valid():
         for errors in form.errors.as_data().values():
             for error in errors:
@@ -328,22 +373,23 @@ def resume(request):
     return _take_over(request, row.pk, attempt)
 
 
-def _send_resume_code(request, attempt, channel, contact, resend=False):
-    get_provider().send(channel, contact, PURPOSE_RESUME, translation.get_language())
-    data = {CHANNEL_FIELDS[channel][0]: contact, 'channel': channel,
-            'purpose': PURPOSE_RESUME}
+def _send_resume_code(request, attempt, email, resend=False):
+    get_provider().send(EMAIL, email, PURPOSE_RESUME, translation.get_language())
+    data = {'email': email, 'channel': EMAIL, 'purpose': PURPOSE_RESUME}
     if resend:
         data['resend'] = True
     eventlog.record(attempt, 'code_sent', request=request, step=RESUME_STEP, data=data)
 
 
 def _take_over(request, matched_pk, attempt):
-    """Move the matched row's data into a new pending registration of this signup."""
+    """Move the matched row's data into a new pending registration of this signup, with
+    the email verified (the code went to it), and go to step 1 for review."""
     own = _pending_registration(request)
     try:
         with transaction.atomic():
             old = PendingRegistration.objects.active().select_for_update().get(pk=matched_pk)
-            new = old.copy_to_new_row(attempt=attempt)
+            # Step 1 is next (review); the old row's later steps are not reachable.
+            new = old.copy_to_new_row(attempt=attempt, step=STEPS[0].slug)
             old_attempt_id = old.attempt_id
             old.delete()
             if own is not None and own.pk != old.pk:
@@ -357,23 +403,19 @@ def _take_over(request, matched_pk, attempt):
     if attempt is not None:
         request.session[ATTEMPT_SESSION_KEY] = str(attempt.pk)
     # Logged after the commit: the attempts outlive the rows.
-    old_attempt = eventlog.get_attempt(old_attempt_id)
-    if (old_attempt is not None and old_attempt.ended_at is None
-            and (attempt is None or old_attempt.pk != attempt.pk)):
-        eventlog.end_attempt(old_attempt, 'abandoned')
+    if old_attempt_id is not None:
+        _abandon_attempts([old_attempt_id], keep=attempt)
     eventlog.record(attempt, 'resumed', request=request, step=RESUME_STEP,
                     data={'attempt': str(old_attempt_id) if old_attempt_id else ''})
-    # The old row's next unsaved step (step 1 stays reachable with Back).
-    index = _current_index(new)
-    if index > 0:
-        STEPS[index].enter(request, new)
-    return redirect(step_url(index))
+    # Step 1 with the saved data; on Continue the verified email's step is skipped.
+    messages.success(request, _('We have restored your registration. Review your details '
+                                'and continue.'))
+    return redirect(step_url(0))
 
 
 def _render_resume(request, state, contact, form):
     return render(request, 'signup/resume.html', {
         'form': form,
-        'channel': state['channel'],
         'contact': contact,
         'sent': state.get('sent', False),
         'cancel_url': reverse('signup_resume') + '?cancel',

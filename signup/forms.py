@@ -1,6 +1,7 @@
 import phonenumbers
 from django import forms
 from django.contrib.auth import get_user_model, password_validation
+from django.urls import reverse_lazy
 from django.utils.translation import gettext_lazy as _
 from django_countries import countries
 
@@ -9,8 +10,7 @@ from accounts.models import HOW_FOUND_OTHER_MAX_LENGTH, HowFound, Title
 from accounts.password_validation import BREACHED_PASSWORD_CHECK, collect_unavailable_checks
 
 from .checks import DISPOSABLE_EMAIL_CHECK, email_domain, is_disposable_domain
-from .verification import (CHANNELS, CODE_LENGTH, EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP,
-                           get_provider)
+from .verification import CODE_LENGTH, EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP, get_provider
 
 
 # Text-field classes (design tokens: field-border, radius-14, shadow-focus-field).
@@ -46,14 +46,12 @@ FAILURE_REASONS = {
     'email_registered': 'email exists',
     'phone_registered': 'phone exists',
     'email_pending': 'email pending',
-    'phone_pending': 'phone pending',
     'email_disposable': 'email disposable',
     'invalid_code': 'OTP verification failed',
 }
 EMAIL_EXISTS = FAILURE_REASONS['email_registered']
 PHONE_EXISTS = FAILURE_REASONS['phone_registered']
 EMAIL_PENDING = FAILURE_REASONS['email_pending']
-PHONE_PENDING = FAILURE_REASONS['phone_pending']
 
 
 def failure_reason(code):
@@ -128,6 +126,10 @@ def national_number(e164):
 class AccountForm(StyledForm):
     """Step 1: personal, contact and login data (signup-fields.md; the CAPTCHA is entry 9).
 
+    With `has_password` (the pending registration has a saved hash: Back, or a resumed
+    signup) the passwords may stay empty, which keeps that hash; once either is filled in
+    every password rule applies.
+
     External checks (breached password, disposable domain) that could not be made are
     listed in `unavailable_checks` as (field, check) pairs; the view logs them.
     """
@@ -142,10 +144,26 @@ class AccountForm(StyledForm):
         'how_found_other_required': _('Please tell us how you found out about us.'),
     }
 
+    # First, and checked as soon as it is left (htmx, signup.views.check_email): an
+    # email in another signup in progress offers to resume it. Only the email and the
+    # CSRF token are sent.
+    email = forms.EmailField(
+        label=_('Email'),
+        max_length=254,
+        widget=forms.EmailInput(attrs={
+            'autocomplete': 'email',
+            'autofocus': True,
+            'hx-post': reverse_lazy('signup_check_email'),
+            'hx-trigger': 'change',
+            'hx-target': '#email-check',
+            'hx-swap': 'innerHTML',
+            'hx-params': 'email,csrfmiddlewaretoken',
+        }),
+    )
     title = forms.ChoiceField(
         label=_('Title / Treatment'),
         choices=BLANK_CHOICE + Title.choices,
-        widget=forms.Select(attrs={'autofocus': True, 'autocomplete': 'honorific-prefix'}),
+        widget=forms.Select(attrs={'autocomplete': 'honorific-prefix'}),
     )
     first_name = forms.CharField(
         label=_('Name'),
@@ -167,11 +185,6 @@ class AccountForm(StyledForm):
         label=_('Country / Region'),
         choices=country_choices,
         widget=forms.Select(attrs={'autocomplete': 'country'}),
-    )
-    email = forms.EmailField(
-        label=_('Email'),
-        max_length=254,
-        widget=forms.EmailInput(attrs={'autocomplete': 'email'}),
     )
     password1 = forms.CharField(
         label=_('Password'),
@@ -205,9 +218,16 @@ class AccountForm(StyledForm):
         help_text=_('Only if you chose "Others".'),
     )
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, has_password=False, **kwargs):
         super().__init__(*args, **kwargs)
         self.unavailable_checks = []
+        self.has_password = has_password
+        if has_password:
+            for name in ('password1', 'password2'):
+                self.fields[name].required = False
+            self.fields['password1'].help_text = _(
+                'Leave both password fields empty to keep the password you chose before. '
+                'A new one needs at least 12 characters.')
 
     def clean_email(self):
         email = normalize_email(self.cleaned_data['email'])
@@ -252,7 +272,12 @@ class AccountForm(StyledForm):
         cleaned_data = super().clean()
         password1 = cleaned_data.get('password1')
         password2 = cleaned_data.get('password2')
-        if password1 and password2 and password1 != password2:
+        if self.has_password and bool(password1) != bool(password2):
+            # Optional passwords: once one is filled in, both are needed.
+            empty = 'password2' if password1 else 'password1'
+            self.add_error(empty, forms.ValidationError(
+                self.fields[empty].error_messages['required'], code='required'))
+        elif password1 and password2 and password1 != password2:
             self.add_error('password2', forms.ValidationError(
                 self.error_messages['password_mismatch'], code='password_mismatch'))
         elif password1:
@@ -302,7 +327,7 @@ class EmailCodeForm(StyledForm):
 
 class ResumeCodeForm(StyledForm):
     """The code that resumes a signup in progress, sent to the matched registration's
-    email or mobile (`channel`, `contact`), for the purpose `resume`."""
+    email, for the purpose `resume`. It also proves control of that email."""
 
     error_messages = {
         'invalid_code': _('This code is not correct. Check it, or send a new one.'),
@@ -318,16 +343,13 @@ class ResumeCodeForm(StyledForm):
         }),
     )
 
-    def __init__(self, *args, channel, contact, **kwargs):
-        if channel not in CHANNELS:
-            raise ValueError(f'Unknown verification channel: {channel!r}')
-        self.channel = channel
-        self.contact = contact
+    def __init__(self, *args, email, **kwargs):
+        self.email = email
         super().__init__(*args, **kwargs)
 
     def clean_code(self):
         code = self.cleaned_data['code'].replace(' ', '')
-        if not get_provider().check(self.channel, self.contact, PURPOSE_RESUME, code):
+        if not get_provider().check(EMAIL, self.email, PURPOSE_RESUME, code):
             raise forms.ValidationError(self.error_messages['invalid_code'],
                                         code='invalid_code')
         return code

@@ -11,11 +11,11 @@ All fields are mandatory unless marked optional.
 | Middle name or initial | text | **Optional** |
 | Surname(s) | text | One or more surnames |
 | Country / Region | select | |
-| Email | email | Username. Not a disposable domain. Unique across registered users (CAP-2) and pending registrations (CAP-3) |
+| Email | email | Username. Not a disposable domain. Unique across registered users (CAP-2) and pending registrations: a match offers to resume with a code to the email, which also verifies it (CAP-3) |
 | Password | password | Min 12 chars; no composition rules; rejected if in a breached-password list or too similar to name/email; strength meter shown |
 | Repeat password | password | Must equal Password |
 | International prefix | select | |
-| Mobile phone number | tel | Unique across registered users (CAP-2) and pending registrations (CAP-3) |
+| Mobile phone number | tel | Unique across registered users (CAP-2). A mobile in another pending registration is allowed; that registration is removed when an account is created (CAP-3) |
 | How did you find out about us? | select | Search Engine (e.g. Google); Social Media (Instagram, Facebook); LinkedIn; WhatsApp; e-mail; Telephone Call; Conference or Congress; Others |
 | Others: please specify | text | Shown and mandatory only when "Others" is selected |
 | CAPTCHA | invisible | Challenge only when the risk check flags the attempt |

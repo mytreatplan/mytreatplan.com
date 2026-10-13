@@ -755,11 +755,7 @@ msgstr "Recuperar su contraseña"
 msgid "Registration in progress"
 msgstr "Registro en curso"
 
-#: signup/templates/signup/resume.html
-msgid "A registration with this mobile phone number is already in progress."
-msgstr "Ya hay un registro en curso con este número de teléfono móvil."
-
-#: signup/templates/signup/resume.html
+#: signup/templates/signup/resume.html signup/templates/signup/_email_check.html
 msgid "A registration with this email address is already in progress."
 msgstr "Ya hay un registro en curso con esta dirección de correo electrónico."
 
@@ -770,11 +766,7 @@ msgid ""
 "strong>. Enter it below to continue that registration."
 msgstr "Hemos enviado un código de 6 dígitos a <strong class=\"text-ink\">%(contact)s</strong>. Introdúzcalo a continuación para continuar ese registro."
 
-#: signup/templates/signup/resume.html
-msgid "To continue it, we will send a code to this mobile phone number."
-msgstr "Para continuarlo, le enviaremos un código a este número de teléfono móvil."
-
-#: signup/templates/signup/resume.html
+#: signup/templates/signup/resume.html signup/templates/signup/_email_check.html
 msgid "To continue it, we will send a code to this email address."
 msgstr "Para continuarlo, le enviaremos un código a esta dirección de correo electrónico."
 
@@ -785,3 +777,17 @@ msgstr "Enviar código"
 #: signup/templates/signup/resume.html
 msgid "Use different details"
 msgstr "Usar otros datos"
+
+#: signup/templates/signup/_email_check.html
+msgid "Resume"
+msgstr "Reanudar"
+
+#: signup/forms.py
+msgid ""
+"Leave both password fields empty to keep the password you chose before. A new "
+"one needs at least 12 characters."
+msgstr "Deje vacíos los dos campos de contraseña para conservar la que eligió antes. Una nueva necesita al menos 12 caracteres."
+
+#: signup/views.py
+msgid "We have restored your registration. Review your details and continue."
+msgstr "Hemos recuperado su registro. Revise sus datos y continúe."
