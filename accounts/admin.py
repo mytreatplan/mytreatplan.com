@@ -58,7 +58,10 @@ class UserAdmin(BaseUserAdmin):
     add_form = UserCreationAdminForm
     fieldsets = (
         (None, {'fields': ('email', 'password')}),
-        (_('Personal info'), {'fields': ('first_name', 'last_name')}),
+        (_('Personal info'), {'fields': ('title', 'first_name', 'middle_name', 'last_name',
+                                         'country')}),
+        (_('Contact'), {'fields': ('phone',)}),
+        (_('Signup'), {'fields': ('how_found', 'how_found_other')}),
         (_('Permissions'), {'fields': ('is_active', 'is_staff', 'is_superuser',
                                        'groups', 'user_permissions')}),
         (_('Important dates'), {'fields': ('last_login', 'date_joined')}),
@@ -69,7 +72,10 @@ class UserAdmin(BaseUserAdmin):
             'fields': ('email', 'usable_password', 'password1', 'password2'),
         }),
     )
-    list_display = ('email', 'first_name', 'last_name', 'is_staff')
+    # The mobile is validated and stored in E.164 form by signup step 1 (signup.forms), so
+    # it is shown here but not edited.
+    readonly_fields = ('phone',)
+    list_display = ('email', 'first_name', 'last_name', 'country', 'is_staff')
     # Email and names are encrypted: the database can neither sort nor search them.
     sortable_by = ('is_staff',)
     ordering = ('id',)

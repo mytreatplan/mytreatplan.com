@@ -113,6 +113,8 @@ context: []
 - `test_data_migration_encrypts_existing_rows_and_reverses` now reads the user with `.only()`, because the current model has columns that don't exist at 0005.
 - Spanish choices to review: Ms → "Srta.", Mrs → "Sra.", Dr. → "Dr./Dra.", Prof. → "Prof./Prof.ª", Eng. → "Ing.".
 
+- Added after the build at the user's request (2026-10-13): the user admin shows title, middle name, country, mobile and how-found-us (with the Others text). The mobile is read-only, since signup step 1 validates it and stores it in E.164 form. `accounts/admin.py`, test `test_admin_shows_the_step1_details`, and the Spanish label "Registro". The user confirmed the Spanish titles (Sr., Sra., Srta., Dr./Dra., Prof./Prof.ª, Ing.).
+
 ## Plan Change Log
 
 ## Review Triage Log
@@ -135,7 +137,7 @@ context: []
 - `DATABASE_URL="sqlite:///$TMPDIR/x.sqlite3" ../.venv/bin/python -m pytest -q` (with test keys) -- expected: only the known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check` and `manage.py compilemessages` -- expected: no changes; compiles.
 
-Done locally (2026-10-13) after the review patches, on SQLite: `pytest` 506 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. The implementer's run on a throwaway PostgreSQL passed all 507 tests before the patches. `makemigrations --check` reports no changes; `check` reports no issues (1 silenced); `compilemessages` is up to date. Pending: the Spanish browser check, and the staging check against the live HIBP and Debounce APIs.
+Done locally (2026-10-13) after the review patches, on SQLite: `pytest` 507 passed (after the admin addition), 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. The implementer's run on a throwaway PostgreSQL passed all 507 tests before the patches. `makemigrations --check` reports no changes; `check` reports no issues (1 silenced); `compilemessages` is up to date. Pending: the Spanish browser check, and the staging check against the live HIBP and Debounce APIs.
 
 **Manual checks:**
 - Fill step 1 in `/es/signup/` with invalid input: every message is in Spanish.
