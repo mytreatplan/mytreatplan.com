@@ -28,6 +28,20 @@ def normalize_email(email):
 EMAIL_REGISTERED_MESSAGE = _('This email address is already registered.')
 
 
+# Failure reasons for the event log, in the wording of registration-failure-policies.md.
+# Any other validation failure is logged with its form error code.
+FAILURE_REASONS = {
+    'email_registered': 'email exists',
+    'invalid_code': 'OTP verification failed',
+}
+EMAIL_EXISTS = FAILURE_REASONS['email_registered']
+
+
+def failure_reason(code):
+    """The logged reason for a form error code."""
+    return FAILURE_REASONS.get(code, code or 'invalid')
+
+
 def email_is_registered(email):
     """Whatever its case; through the blind index, since the email is encrypted."""
     return get_user_model().objects.by_email(email).exists()

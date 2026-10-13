@@ -134,6 +134,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'django.contrib.sitemaps',
     'accounts.apps.AccountsConfig',
+    'eventlog.apps.EventlogConfig',
     'signup.apps.SignupConfig',
     'mytp_publicsite.apps.MytpPublicsiteConfig',
 ]
