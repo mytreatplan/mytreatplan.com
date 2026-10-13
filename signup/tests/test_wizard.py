@@ -79,21 +79,52 @@ def test_user_gets_the_pending_registrations_hash(client, caplog):
     assert User.objects.get().password == stored_hash
 
 
-def test_no_table_holds_the_plaintext_password_or_the_code(client, caplog):
+def _assert_no_plaintext_anywhere(*plaintexts):
+    with connection.cursor() as cursor:
+        for table in connection.introspection.table_names():
+            cursor.execute(f'SELECT * FROM {connection.ops.quote_name(table)}')
+            dump = repr(cursor.fetchall()).lower()
+            for plaintext in plaintexts:
+                assert plaintext.lower() not in dump, table
+
+
+ENCRYPTED = re.compile(r'^enc:v1:[\w-]+:[A-Za-z0-9+/=]+$')
+
+
+def test_no_table_holds_the_plaintext_password_email_or_code(client, caplog):
     _step1(client)
     pending_hash = PendingRegistration.objects.get().password
     assert pending_hash != PASSWORD and check_password(PASSWORD, pending_hash)
     code = _code_from_log(caplog)
+    _assert_no_plaintext_anywhere(PASSWORD, NORMALIZED, f"'{code}'")
     client.post('/en/signup/verify-email/', {'code': code})
     assert User.objects.exists()
 
+    # The code is 6 digits, so only look for it as a whole value in text columns.
+    _assert_no_plaintext_anywhere(PASSWORD, NORMALIZED, f"'{code}'")
+
+
+def test_rows_hold_ciphertext_index_and_argon2id(client, caplog):
+    """Story 2.2: raw rows show `enc:v1:...` for the email and names, a hex blind index,
+    and an Argon2id password hash; never the plaintext."""
+    from accounts.crypto import email_index
+
+    _step1(client)
     with connection.cursor() as cursor:
-        for table in connection.introspection.table_names():
-            cursor.execute(f'SELECT * FROM {connection.ops.quote_name(table)}')
-            dump = repr(cursor.fetchall())
-            assert PASSWORD not in dump, table
-            # The code is 6 digits, so only look for it as a whole value in text columns.
-            assert f"'{code}'" not in dump, table
+        cursor.execute('SELECT email, email_index, password FROM signup_pendingregistration')
+        email, index, password = cursor.fetchone()
+    assert ENCRYPTED.match(email)
+    assert index == email_index(NORMALIZED) and re.fullmatch(r'[0-9a-f]{64}', index)
+    assert password.startswith('argon2$argon2id$')
+
+    client.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT email, first_name, last_name, email_index, password '
+                       'FROM accounts_user')
+        email, first_name, last_name, index, password = cursor.fetchone()
+    assert all(ENCRYPTED.match(value) for value in (email, first_name, last_name))
+    assert index == email_index(NORMALIZED)
+    assert password.startswith('argon2$argon2id$')
 
 
 def test_session_holds_only_the_pending_id(client):

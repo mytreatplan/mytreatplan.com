@@ -33,6 +33,9 @@ jobs:
       SECURE_SSL_REDIRECT: 'False'
       ALLOWED_HOSTS: localhost,127.0.0.1,testserver
       DATABASE_URL: postgres://mytp:mytp@localhost:5432/mytreatplan
+      # Fixed non-secret field keys (the same as conftest.py), for `check` and `migrate`.
+      FIELD_ENCRYPTION_KEYS: test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=
+      BLIND_INDEX_KEY: dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=
 
     steps:
       - uses: actions/checkout@v4

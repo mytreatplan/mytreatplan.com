@@ -1,5 +1,7 @@
 from django.contrib.auth.base_user import BaseUserManager
 
+from .crypto import email_index
+
 
 class UserManager(BaseUserManager):
     """Manager for `accounts.User`, whose username is the email address."""
@@ -11,9 +13,14 @@ class UserManager(BaseUserManager):
         """Strip surrounding spaces and lowercase the domain (the local part keeps its case)."""
         return super().normalize_email((email or '').strip())
 
+    def by_email(self, email):
+        """Users with this email whatever its case, found through the blind index
+        (the email itself is encrypted and cannot be queried)."""
+        return self.filter(email_index=email_index(email))
+
     def get_by_natural_key(self, username):
         """Log in by email whatever its case (signup treats case variants as the same address)."""
-        return self.get(**{f'{self.model.USERNAME_FIELD}__iexact': username})
+        return self.by_email(username).get()
 
     def _create_user(self, email, password, **extra_fields):
         if not email:

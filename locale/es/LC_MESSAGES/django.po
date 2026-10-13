@@ -28,9 +28,21 @@ msgstr "Permisos"
 msgid "Important dates"
 msgstr "Fechas importantes"
 
-#: accounts/models.py:12
+#: accounts/admin.py
+msgid "Search by the exact email address."
+msgstr "Busque por la dirección de correo electrónico exacta."
+
+#: accounts/models.py
 msgid "email address"
 msgstr "dirección de correo electrónico"
+
+#: accounts/models.py
+msgid "first name"
+msgstr "nombre"
+
+#: accounts/models.py
+msgid "last name"
+msgstr "apellidos"
 
 #: accounts/templates/accounts/welcome.html:6
 msgid "Welcome"

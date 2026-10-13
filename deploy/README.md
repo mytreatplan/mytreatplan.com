@@ -19,6 +19,7 @@ team password (basic auth) and sends `X-Robots-Tag: noindex, nofollow`.
 | Scheduled jobs | `mytp-job@<name>.timer` → `mytp-job@<name>.service`, one per line of `jobs.conf` |
 | Health URL | `https://dev.mytpdso.com/healthz` (no password), watched by UptimeRobot |
 | Off-region backups | nightly `backupdb` job → Object Storage SBG (`age`-encrypted); restore test: `restore-db.sh` |
+| Field keys | `FIELD_ENCRYPTION_KEYS`, `BLIND_INDEX_KEY` in `shared/settings.env`; copy in the team password manager (step 12) |
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp/shared/kms-client.*`; daily `kmscheck` job |
 | Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
 
@@ -431,6 +432,99 @@ only this server an access certificate for it, and proves the server can use it 
 
    Set the monitor's **Notify** to devops@mytreatplan.com (step 8.5).
 
+### 12. Field encryption keys (before merging story 2.2)
+
+From story 2.2 the app encrypts personal fields (the users' email and names, the pending
+registrations' email) with AES-256-GCM, and finds emails through a blind index
+(HMAC-SHA256). It needs two keys in `/srv/mytp/shared/settings.env`:
+
+- `FIELD_ENCRYPTION_KEYS`: `<key_id>:<base64 32-byte key>` entries, comma-separated. The
+  first encrypts; the others only decrypt (during a rotation).
+- `BLIND_INDEX_KEY`: its own base64 32-byte key.
+
+Do this **before the merge**: the deploy runs `migrate`, which refuses to run without
+valid keys (check errors `accounts.E001` / `accounts.E002`, naming the setting), and
+whose data migration encrypts the existing users and pending registrations in place. A
+deploy without the keys fails at `migrate` and the previous release stays live.
+
+1. **Generate the keys on the server**, straight into the settings file, so they never
+   show on a screen, a laptop or a chat (the release before 2.2 has no
+   `generate_field_keys` yet; this is the same thing):
+
+   ```sh
+   sudo -u mytp sh -c 'umask 077
+   k() { python3 -c "import base64, os; print(base64.b64encode(os.urandom(32)).decode())"; }
+   printf "FIELD_ENCRYPTION_KEYS=k%s:%s\nBLIND_INDEX_KEY=%s\n" "$(date -u +%Y%m%dT%H%M)" "$(k)" "$(k)" \
+       >> /srv/mytp/shared/settings.env'
+   sudo grep -c -E '^(FIELD_ENCRYPTION_KEYS|BLIND_INDEX_KEY)=.' /srv/mytp/shared/settings.env   # 2
+   sudo ls -l /srv/mytp/shared/settings.env                                                    # -rw------- mytp mytp
+   ```
+
+   If the file already has empty `FIELD_ENCRYPTION_KEYS=` / `BLIND_INDEX_KEY=` lines, delete
+   them (`sudo -u mytp nano /srv/mytp/shared/settings.env`). Once 2.2 is live,
+   `manage.py generate_field_keys` prints new keys the same way (to the terminal only).
+2. **Copy them to the team password manager**, entry **"MyTreatplan staging field keys"**:
+   open the file with `sudo -u mytp nano /srv/mytp/shared/settings.env`, copy the two
+   lines into the entry, add the date and the key id (`k<UTC date>T<time>`, e.g. `k20261013T0812`), close without saving.
+   Nowhere else: not the repo, a ticket, a chat, Sentry or a local file. Record that it
+   was done in the pull request ("field keys in the password manager, <date>, <who>").
+3. **Merge**, let the deploy run, then check:
+
+   ```sh
+   cd /srv/mytp/current
+   sudo -u mytp ./venv/bin/python manage.py check                 # no issues
+   sudo -u mytp ./venv/bin/python manage.py shell -c "from accounts.models import User; print(User.objects.by_email('<staging user email>').exists())"   # True
+   ```
+
+**Rolling back past 2.2 needs the migrations reversed first.** Once `migrate` has run
+accounts 0003–0005 and signup 0002–0004, a pre-2.2 release reads ciphertext as emails and
+names and cannot create users (it does not set `email_index`). This includes
+`release.sh`'s automatic rollback after a failed health check. To go back, keep the keys
+set and, **from the 2.2 release** (it has the reverse migrations), decrypt first, then
+switch:
+
+```sh
+cd /srv/mytp/releases/<2.2 sha>
+sudo -u mytp ./venv/bin/python manage.py migrate accounts 0002
+sudo -u mytp ./venv/bin/python manage.py migrate signup 0001
+# then point `current` at the older release and restart (see "Rollback")
+```
+
+If an automatic rollback already switched back, run the same two commands from the 2.2
+release directory right away.
+
+**Losing a key makes the data unreadable.** AES-256-GCM has no back door: without the
+`FIELD_ENCRYPTION_KEYS` entry a value was encrypted with, nobody (us included) can read
+that value again, and a lost key cannot be reissued. Without `BLIND_INDEX_KEY` no one can
+log in or be found by email until every index is recomputed (which needs the encryption
+key). The password manager copy is the only backup of the keys until the KMS provider
+(story 2.12) wraps them.
+
+**Backups need the same keys.** The nightly `backupdb` dumps (and OVHcloud's managed
+backups) hold the ciphertext, not the plaintext. A restored database is readable only with
+the `FIELD_ENCRYPTION_KEYS` entries its values were encrypted with, and logins work only
+with the same `BLIND_INDEX_KEY`. So a key stays in the password manager for as long as any
+backup encrypted with it may be restored (30 days of dumps after a rotation), and a
+restore needs the keys as they were when the dump was taken.
+
+**Rotate the encryption key** (e.g. yearly, or at once if a key may have leaked):
+
+1. `cd /srv/mytp/current && sudo -u mytp ./venv/bin/python manage.py generate_field_keys --rotate`
+   prints one new entry. Put it **first** in `FIELD_ENCRYPTION_KEYS`, keeping the current
+   entries after it (comma-separated, no spaces), and add it to the password manager entry.
+2. `sudo -u mytp ./venv/bin/python manage.py check` (no issues: the edited list parses),
+   then `sudo systemctl restart mytp-gunicorn` (new values now use the new key; old ones
+   still decrypt). A bad key would stop Gunicorn from starting.
+3. `sudo -u mytp ./venv/bin/python manage.py reencrypt_fields` rewrites every encrypted
+   value with the new key (and recomputes the blind indexes). It prints row counts and key
+   ids only, and fails if any value is still on an older key.
+4. Remove the old entry from `settings.env` only once no backup encrypted with it can
+   still be needed (30 days); keep it in the password manager until then.
+
+`BLIND_INDEX_KEY` is not rotated routinely. If it must change (leak), change it and run
+`reencrypt_fields` right after the restart: until it finishes, email lookups and logins
+fail.
+
 ## How a deploy works
 
 1. CI (`test`) passes on a push to `master`. Pull requests and other branches never deploy.
@@ -506,6 +600,9 @@ systemctl list-units --failed 'mytp-job@*'
 
 The managed backups cover everyday mistakes; the SBG dumps cover losing the GRA region or
 the managed service, or a managed backup that does not restore.
+
+Both hold personal fields encrypted: a restored database is readable only with the field
+keys it was encrypted with (step 12, "Backups need the same keys").
 
 **Nightly job.** `backupdb | backupdb | *-*-* 02:30:00 UTC` in `jobs.conf`, so it runs via
 `runjob` with Sentry check-ins (a failed or missed run alerts devops@mytreatplan.com).

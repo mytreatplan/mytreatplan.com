@@ -29,7 +29,8 @@ EMAIL_REGISTERED_MESSAGE = _('This email address is already registered.')
 
 
 def email_is_registered(email):
-    return get_user_model().objects.filter(email__iexact=email).exists()
+    """Whatever its case; through the blind index, since the email is encrypted."""
+    return get_user_model().objects.by_email(email).exists()
 
 
 class AccountForm(StyledForm):
