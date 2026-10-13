@@ -6,7 +6,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password
 from django.db import connection
 
+from legal.models import LegalDocument
 from signup import steps as signup_steps
+from signup.forms import shown_document_ids
 from signup.models import PendingRegistration
 from signup.verification import EMAIL, FakeVerificationProvider
 from signup.views import SESSION_KEY
@@ -50,6 +52,27 @@ def _step1(client, lang='en', email=EMAIL_ADDRESS, password=PASSWORD, password2=
     })
 
 
+# The legal step: the required Terms and Conditions ticked (see _legal).
+LEGAL = {'terms': 'on', 'conditions': 'on'}
+
+
+def _legal(client, lang='en', **fields):
+    """Post the legal step with the Terms and the Conditions ticked, the optional ones
+    not, as shown with the current versions, with any field added or replaced through
+    `fields` (None leaves it out)."""
+    shown = shown_document_ids(LegalDocument.objects.current_by_kind().values())
+    data = {name: value for name, value in {**LEGAL, 'shown': shown, **fields}.items()
+            if value is not None}
+    return client.post(f'/{lang}/signup/legal/', data)
+
+
+def _to_code_step(client, lang='en', **fields):
+    """Steps 1 and 2 (legal): the email code is sent."""
+    response = _step1(client, lang=lang, **fields)
+    assert response.status_code == 302, response.context['form'].errors
+    return _legal(client, lang=lang)
+
+
 def _code_from_log(caplog):
     lines = [r.getMessage() for r in caplog.records if r.name == 'signup.verification']
     assert lines, 'no code was logged'
@@ -65,12 +88,18 @@ def _wrong(code):
 def test_happy_path(client, caplog):
     response = _step1(client)
     assert response.status_code == 302
-    assert response['Location'] == '/en/signup/verify-email/'
+    assert response['Location'] == '/en/signup/legal/'
 
     pending = PendingRegistration.objects.get()
     assert pending.email == NORMALIZED
-    assert pending.step == 'verify-email'
+    assert pending.step == 'legal'
     assert client.session[SESSION_KEY] == str(pending.pk)
+    assert not caplog.records  # no code before the legal step is saved
+
+    response = _legal(client)
+    assert response['Location'] == '/en/signup/verify-email/'
+    pending.refresh_from_db()
+    assert pending.step == 'verify-email'
     assert not User.objects.exists()
 
     page = client.get('/en/signup/verify-email/')
@@ -95,7 +124,7 @@ def test_happy_path(client, caplog):
 
 
 def test_user_gets_the_pending_registrations_hash(client, caplog):
-    _step1(client)
+    _to_code_step(client)
     stored_hash = PendingRegistration.objects.get().password
     client.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
 
@@ -115,7 +144,7 @@ ENCRYPTED = re.compile(r'^enc:v1:[\w-]+:[A-Za-z0-9+/=]+$')
 
 
 def test_no_table_holds_the_plaintext_password_email_names_mobile_or_code(client, caplog):
-    _step1(client)
+    _to_code_step(client)
     pending_hash = PendingRegistration.objects.get().password
     assert pending_hash != PASSWORD and check_password(PASSWORD, pending_hash)
     code = _code_from_log(caplog)
@@ -133,7 +162,7 @@ def test_rows_hold_ciphertext_index_and_argon2id(client, caplog):
     and an Argon2id password hash; never the plaintext."""
     from accounts.crypto import email_index
 
-    _step1(client)
+    _to_code_step(client)
     with connection.cursor() as cursor:
         cursor.execute('SELECT email, email_index, password FROM signup_pendingregistration')
         email, index, password = cursor.fetchone()
@@ -152,7 +181,7 @@ def test_rows_hold_ciphertext_index_and_argon2id(client, caplog):
 
 
 def test_session_holds_only_the_pending_id(client):
-    _step1(client)
+    _to_code_step(client)
     session = dict(client.session)
     assert session[SESSION_KEY] == str(PendingRegistration.objects.get().pk)
     assert PASSWORD not in repr(session)
@@ -204,7 +233,7 @@ def test_registered_email_is_refused(client, typed):
 
 
 def test_email_registered_meanwhile_is_refused_at_the_code_step(client, caplog):
-    _step1(client)
+    _to_code_step(client)
     User.objects.create_user(NORMALIZED, 'another-password-123')
 
     response = client.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
@@ -218,7 +247,7 @@ def test_email_registered_meanwhile_is_refused_at_the_code_step(client, caplog):
 # --- Wrong code ------------------------------------------------------------------------
 
 def test_wrong_code_keeps_the_step(client, caplog):
-    _step1(client)
+    _to_code_step(client)
     code = _code_from_log(caplog)
 
     response = client.post('/en/signup/verify-email/', {'code': _wrong(code)})
@@ -233,13 +262,13 @@ def test_wrong_code_keeps_the_step(client, caplog):
 
 
 def test_empty_code_is_a_field_error(client):
-    _step1(client)
+    _to_code_step(client)
     response = client.post('/en/signup/verify-email/', {'code': ''})
     assert response.status_code == 200 and response.context['form'].errors['code']
 
 
 def test_resend_sends_a_new_code(client, caplog):
-    _step1(client)
+    _to_code_step(client)
     caplog.clear()
 
     response = client.post('/en/signup/verify-email/', {'action': 'resend'})
@@ -256,7 +285,7 @@ def test_code_is_sent_to_the_pending_email_in_the_page_language(client, monkeypa
     sent = []
     monkeypatch.setattr(FakeVerificationProvider, 'send',
                         lambda self, *args: sent.append(args))
-    _step1(client, lang='es')
+    _to_code_step(client, lang='es')
     assert sent == [(EMAIL, NORMALIZED, 'signup', 'es')]
 
 
@@ -289,11 +318,12 @@ def test_first_step_slug_redirects_to_signup(client):
 
 
 def test_back_to_step1_keeps_the_email_and_resends(client, caplog):
-    _step1(client)
+    _to_code_step(client)
     page = client.get('/en/signup/')
     assert f'value="{NORMALIZED}"' in page.content.decode()
 
     caplog.clear()
+    # The legal step is done (current Terms and Conditions accepted): skipped.
     response = _step1(client, email='bea@example.com')
     assert response['Location'] == '/en/signup/verify-email/'
     pending = PendingRegistration.objects.get()
@@ -305,7 +335,7 @@ def test_back_to_step1_keeps_the_email_and_resends(client, caplog):
 # --- Step registry ---------------------------------------------------------------------
 
 def test_registry_order():
-    assert [s.slug for s in signup_steps.STEPS] == ['account', 'verify-email']
+    assert [s.slug for s in signup_steps.STEPS] == ['account', 'legal', 'verify-email']
     for step in signup_steps.STEPS:
         assert step.form_class and step.template_name and step.title
 
@@ -329,12 +359,14 @@ def test_steps_come_from_the_registry(client, caplog, monkeypatch):
 
     assert client.get('/en/signup/extra/')['Location'] == '/en/signup/'
     _step1(client)
+    assert client.get('/en/signup/extra/')['Location'] == '/en/signup/legal/'
+    _legal(client)
     assert client.get('/en/signup/extra/')['Location'] == '/en/signup/verify-email/'
     code = _code_from_log(caplog)
     response = client.post('/en/signup/verify-email/', {'code': code})
     assert response['Location'] == '/en/signup/extra/'
     assert not User.objects.exists()
-    assert 'Step 3 of 3' in client.get('/en/signup/extra/').content.decode()
+    assert 'Step 4 of 4' in client.get('/en/signup/extra/').content.decode()
     assert client.post('/en/signup/extra/', {'code': code})['Location'] == '/en/welcome/'
     assert User.objects.exists()
 
@@ -346,7 +378,7 @@ def test_step1_page(client):
     html = response.content.decode()
 
     assert response.status_code == 200
-    assert 'Step 1 of 2' in html
+    assert 'Step 1 of 3' in html
     assert 'autocomplete="new-password"' in html
     assert '<meta name="robots" content="noindex, nofollow">' in html
     assert 'href="/es/signup/"' in html  # language switcher
@@ -355,7 +387,7 @@ def test_step1_page(client):
 def test_spanish_wizard(client, caplog):
     html = client.get('/es/signup/').content.decode()
     assert '<html lang="es"' in html
-    assert 'Paso 1 de 2' in html
+    assert 'Paso 1 de 3' in html
     assert 'Cree su cuenta' in html
     assert 'Create your account' not in html
 
@@ -363,9 +395,18 @@ def test_spanish_wizard(client, caplog):
     assert 'Las dos contraseñas no coinciden.' in response.content.decode()
 
     response = _step1(client, lang='es')
+    assert response['Location'] == '/es/signup/legal/'
+    html = client.get('/es/signup/legal/').content.decode()
+    assert 'Términos y consentimiento' in html and 'Paso 2 de 3' in html
+    assert 'Términos de uso (borrador)' in html and 'Terms of Use' not in html
+
+    response = _legal(client, lang='es', conditions=None)
+    assert 'Debe aceptar las Condiciones para continuar.' in response.content.decode()
+
+    response = _legal(client, lang='es')
     assert response['Location'] == '/es/signup/verify-email/'
     html = client.get('/es/signup/verify-email/').content.decode()
-    assert 'Revise su correo' in html and 'Paso 2 de 2' in html
+    assert 'Revise su correo' in html and 'Paso 3 de 3' in html
 
     response = client.post('/es/signup/verify-email/', {'code': _code_from_log(caplog)})
     assert response['Location'] == '/es/welcome/'

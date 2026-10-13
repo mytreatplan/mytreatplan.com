@@ -10,6 +10,8 @@ django-countries==9.1.0
 Django==6.1.1
 gunicorn==26.2.0
 jmespath==1.1.0
+Markdown==3.11
+nh3==0.3.7
 phonenumbers==9.0.41
 psycopg==3.3.6
 pycparser==3.11

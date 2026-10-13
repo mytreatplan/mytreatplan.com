@@ -138,6 +138,8 @@ INSTALLED_APPS = [
     'accounts.apps.AccountsConfig',
     'eventlog.apps.EventlogConfig',
     'signup.apps.SignupConfig',
+    # Legal documents (versioned, English and Spanish) and the choices made on them.
+    'legal.apps.LegalConfig',
     'mytp_publicsite.apps.MytpPublicsiteConfig',
 ]
 
