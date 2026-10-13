@@ -110,6 +110,19 @@ KMS_CLIENT_CERT = config('KMS_CLIENT_CERT', default='')
 KMS_CLIENT_KEY = config('KMS_CLIENT_KEY', default='')
 KMS_CA_FILE = config('KMS_CA_FILE', default='')
 
+# Field encryption and blind index (story 2.2, accounts.crypto). Personal fields are
+# encrypted in the app with AES-256-GCM; email and phone are looked up by an HMAC-SHA256
+# blind index. FIELD_ENCRYPTION_KEYS lists `<key_id>:<base64 32-byte key>` entries,
+# comma-separated: the first encrypts, the others only decrypt (rotation: add the new
+# key first, then `manage.py reencrypt_fields`). BLIND_INDEX_KEY is its own base64
+# 32-byte key. Both are empty by default: `check` (and so `runserver` and `migrate`)
+# fails naming the missing setting; there is no fallback key. `manage.py
+# generate_field_keys` prints new keys. Losing them makes the data unreadable; see
+# deploy/README.md, step 12. The KMS provider replaces the environment one in story 2.12.
+FIELD_KEY_PROVIDER = config('FIELD_KEY_PROVIDER', default='accounts.crypto.EnvKeyProvider')
+FIELD_ENCRYPTION_KEYS = config('FIELD_ENCRYPTION_KEYS', default='')
+BLIND_INDEX_KEY = config('BLIND_INDEX_KEY', default='')
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -197,6 +210,25 @@ AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
+]
+
+# Argon2id first (encryption policy); the others stay so older hashes still verify, and
+# Django rehashes them with Argon2id at the next successful login.
+PASSWORD_HASHERS = [
+    'django.contrib.auth.hashers.Argon2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2PasswordHasher',
+    'django.contrib.auth.hashers.PBKDF2SHA1PasswordHasher',
+    'django.contrib.auth.hashers.BCryptSHA256PasswordHasher',
+    'django.contrib.auth.hashers.ScryptPasswordHasher',
+]
+
+# The email (USERNAME_FIELD) is encrypted, so it cannot be unique in the database; its
+# blind index `email_index` is. Django then needs a non-default backend.
+AUTHENTICATION_BACKENDS = ['accounts.backends.EmailBackend']
+SILENCED_SYSTEM_CHECKS = [
+    # "USERNAME_FIELD is not unique": uniqueness is on User.email_index, and
+    # UserManager.get_by_natural_key looks the user up by it.
+    'auth.W004',
 ]
 
 # Where @login_required sends anonymous visitors. There is no login page yet (epic-login

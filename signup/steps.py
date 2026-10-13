@@ -56,7 +56,8 @@ class AccountStep(Step):
     def save(self, request, pending, form):
         pending = pending or PendingRegistration()
         pending.email = form.cleaned_data['email']
-        # Only the hash is kept between steps; the user later gets this same hash.
+        # Only the hash (Argon2id, the first of PASSWORD_HASHERS) is kept between steps;
+        # the user later gets this same hash.
         pending.password = make_password(form.cleaned_data['password1'])
         return pending
 

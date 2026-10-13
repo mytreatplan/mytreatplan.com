@@ -12,7 +12,8 @@ def test_email_is_the_username():
     assert User.USERNAME_FIELD == 'email'
     assert User.REQUIRED_FIELDS == []
     assert 'username' not in {f.name for f in User._meta.get_fields()}
-    assert User._meta.get_field('email').unique
+    # The email is encrypted (each ciphertext differs): its blind index is what is unique.
+    assert User._meta.get_field('email_index').unique
 
 
 @pytest.mark.parametrize('raw, expected', [
@@ -62,7 +63,7 @@ def test_email_is_unique():
 
 @pytest.mark.django_db
 def test_email_case_variant_is_refused():
-    """A database constraint on lower(email): one address whatever its case."""
+    """The unique blind index of the lowercased email: one address whatever its case."""
     User.objects.create_user('Ana.Garcia@example.com', PASSWORD)
     with pytest.raises(IntegrityError):
         User.objects.create_user('ana.garcia@example.com', PASSWORD)
@@ -107,9 +108,11 @@ def test_admin_user_pages(admin_client):
     """The admin's fieldsets and forms work without `username`."""
     user = User.objects.create_user('ana@example.com', PASSWORD)
 
-    changelist = admin_client.get('/admin/accounts/user/?q=ana')
+    # Search: the exact email, whatever its case (through the blind index).
+    changelist = admin_client.get('/admin/accounts/user/?q=ANA@example.com')
     assert changelist.status_code == 200
     assert 'ana@example.com' in changelist.content.decode()
+    assert 'ana@example.com' not in admin_client.get('/admin/accounts/user/?q=ana').content.decode()
     assert admin_client.get(f'/admin/accounts/user/{user.pk}/change/').status_code == 200
     assert admin_client.get('/admin/accounts/user/add/').status_code == 200
 
@@ -118,7 +121,7 @@ def test_admin_user_pages(admin_client):
         'password1': PASSWORD, 'password2': PASSWORD,
     })
     assert response.status_code == 302, response.context['adminform'].form.errors
-    assert User.objects.get(email='Bea@example.com').check_password(PASSWORD)
+    assert User.objects.get_by_natural_key('Bea@example.com').check_password(PASSWORD)
 
     response = admin_client.post('/admin/accounts/user/add/', {
         'email': 'ANA@example.com', 'usable_password': 'true',
