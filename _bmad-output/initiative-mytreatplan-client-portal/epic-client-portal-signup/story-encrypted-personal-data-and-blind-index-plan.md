@@ -3,7 +3,7 @@ title: 'Encrypted personal data and blind index'
 type: 'feature'
 ticket: '2'
 created: '2026-10-13'
-status: 'built'
+status: 'done'
 baseline_revision: '3ed5399b3cd7a5aea030e3c09a61742b819bd168'
 route: 'full'
 route_source: 'auto'
@@ -152,7 +152,9 @@ Pass 1 (quick lens, 2026-10-13): high 0, medium 2, low 3, false 0, maybe-false 0
 
 ## Verification
 
-Done locally (2026-10-13) after the review patches, on SQLite: `pytest` 405 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL (`now()`, UUID parameters); they pass on Postgres per the implementer's run against a throwaway PostgreSQL 17 (403 passed before the patches) and run in CI. `makemigrations --check` no changes; `check` with keys no issues (W004 silenced), without keys errors naming the settings. Staging checks pending (runbook step 12 before the merge).
+Done locally (2026-10-13) after the review patches, on SQLite: `pytest` 405 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL (`now()`, UUID parameters); they pass on Postgres per the implementer's run against a throwaway PostgreSQL 17 (403 passed before the patches) and run in CI. `makemigrations --check` no changes; `check` with keys no issues (W004 silenced), without keys errors naming the settings. CI on PostgreSQL 16 (PR #13): 414 passed.
+
+Staging (2026-10-13): runbook step 12 done before the merge (keys in `/srv/mytp/shared/settings.env`, copy in the password manager). The deploy of `e3db6f0` applied accounts 0003–0005 and signup 0002–0004 and passed the health check. On the server `manage.py check` reported no issues (1 silenced). The existing 2.1 account logged in at https://dev.mytpdso.com/en/ (email lookup through the blind index, password still accepted), and a new signup completed with the code from the Gunicorn journal and landed on the welcome page.
 
 **Commands:**
 - `pytest` -- expected: all pass
