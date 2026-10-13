@@ -3,7 +3,7 @@ title: 'Duplicate checks and resume'
 type: 'feature'
 ticket: '5'
 created: '2026-10-13'
-status: 'built'
+status: 'done'
 baseline_revision: '52bce13188b3852d37f79770f8a51c42ba8a22f5'
 route: 'full'
 route_source: 'auto'
@@ -126,5 +126,7 @@ context: []
 - `DATABASE_URL="sqlite:///$TMPDIR/x.sqlite3" ../.venv/bin/python -m pytest -q` (with test keys) -- expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check`, `manage.py compilemessages` -- expected: no changes; compiles.
 
-Done locally (2026-10-13) after the review patch, on SQLite: `pytest` 532 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date. Pending: CI on PostgreSQL and the staging resume check.
+Done locally (2026-10-13) after the review patch, on SQLite: `pytest` 532 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date. CI on PostgreSQL 16 (PR #16): 541 passed, after a flaky absence check was fixed to ignore the random CSRF token.
+
+Staging (2026-10-13): the merge deployed with no migration. A registered mobile was refused with `phone exists`. A signup closed at the email code step was resumed from a private window: after step 1 was filled in in full with the same email, the warning appeared, the resume code worked, and the person landed on the email code step. The check passed, but the user rejected the flow as confusing. The returning Doctor has to type all their data again, and gets two codes (resume, then email). With the mobile code there would be three. Decision (user, 2026-10-13): rework as the email-first flow in `story-duplicate-checks-and-resume-2-plan.md`. Email goes first and is checked when the field is left. The resume code also verifies the email, the saved data is reloaded into step 1 for review, and verified contacts are not asked again. A mobile in another signup in progress is allowed, and that signup is removed when this account is created.
 
