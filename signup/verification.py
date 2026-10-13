@@ -22,6 +22,8 @@ CHANNELS = (EMAIL, MOBILE)
 
 # What a code is for; part of the code derivation, so a code for one purpose fails another.
 PURPOSE_SIGNUP = 'signup'
+# Resuming a signup in progress (signup entry 5): a signup code does not work here.
+PURPOSE_RESUME = 'resume'
 
 CODE_LENGTH = 6
 

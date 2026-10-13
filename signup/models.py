@@ -1,11 +1,34 @@
 import uuid
+from datetime import timedelta
 
 from django.db import models
+from django.utils import timezone
 from django_countries.fields import CountryField
 
-from accounts.crypto import BLIND_INDEX_LENGTH, EncryptedCharField, EncryptedEmailField, email_index
+from accounts.crypto import (BLIND_INDEX_LENGTH, EncryptedCharField, EncryptedEmailField,
+                             email_index, phone_index)
 from accounts.models import (HOW_FOUND_OTHER_MAX_LENGTH, PHONE_MAX_LENGTH, HowFound, Title,
                              phone_index_or_blank)
+
+# How long a pending registration counts as active (warned about, resumable), from its
+# `created_at`. The purge job (signup entry 10) uses the same window through `active()`.
+ACTIVE_FOR = timedelta(hours=24)
+
+
+class PendingRegistrationQuerySet(models.QuerySet):
+    def active(self, now=None):
+        """Rows created less than ACTIVE_FOR ago."""
+        return self.filter(created_at__gt=(now or timezone.now()) - ACTIVE_FOR)
+
+    def matching_email(self, email):
+        """Rows with this email whatever its case (through the blind index)."""
+        return self.filter(email_index=email_index(email))
+
+    def matching_phone(self, phone):
+        """Rows with this mobile (E.164; through the blind index). None without a phone."""
+        if not phone:
+            return self.none()
+        return self.filter(phone_index=phone_index(phone))
 
 
 class PendingRegistration(models.Model):
@@ -44,9 +67,15 @@ class PendingRegistration(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    objects = PendingRegistrationQuerySet.as_manager()
+
     # Copied to the new user at account creation (signup.views).
     USER_FIELDS = ('title', 'first_name', 'middle_name', 'last_name', 'country', 'phone',
                    'how_found', 'how_found_other')
+
+    # Copied into the new row when a signup is resumed (signup entry 5): the user-facing
+    # data, the password hash, the prefix region and the next unsaved step.
+    RESUMED_FIELDS = ('email', *USER_FIELDS, 'password', 'phone_region', 'step')
 
     def __str__(self):
         return f'Pending registration {self.pk}'
@@ -63,3 +92,15 @@ class PendingRegistration(models.Model):
             kwargs['update_fields'] = {*update_fields,
                                        *(extra[f] for f in update_fields if f in extra)}
         super().save(*args, **kwargs)
+
+    def copy_to_new_row(self, **fields):
+        """A new saved row (new id) holding this row's RESUMED_FIELDS, plus `fields` (e.g.
+        the resuming attempt). It keeps this row's `created_at`, so a resume never extends
+        the 24 h window of `active()` and the purge. This row is left as it is."""
+        new = PendingRegistration(
+            **{name: getattr(self, name) for name in self.RESUMED_FIELDS}, **fields)
+        new.save()
+        # auto_now_add sets the save time; carry the original over.
+        PendingRegistration.objects.filter(pk=new.pk).update(created_at=self.created_at)
+        new.created_at = self.created_at
+        return new

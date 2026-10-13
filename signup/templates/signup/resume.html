@@ -1,0 +1,45 @@
+{% extends "portal_base.html" %}
+{% load i18n %}
+{% comment %}
+Resume a signup in progress (signup.views.resume). Styled as signup/wizard.html. Before the
+code is correct, nothing of the matched registration is shown but its contact, which is
+what the person typed at step 1.
+{% endcomment %}
+
+{% block title %}{% translate "Registration in progress" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Registration in progress" %}</h1>
+<div class="mt-3 text-copy text-ink-muted">
+  <p role="status">{% if channel == "mobile" %}{% translate "A registration with this mobile phone number is already in progress." %}{% else %}{% translate "A registration with this email address is already in progress." %}{% endif %}</p>
+  {% if sent %}
+  <p class="mt-3">{% blocktranslate %}We have sent a 6-digit code to <strong class="text-ink">{{ contact }}</strong>. Enter it below to continue that registration.{% endblocktranslate %}</p>
+  {% else %}
+  <p class="mt-3">{% if channel == "mobile" %}{% translate "To continue it, we will send a code to this mobile phone number." %}{% else %}{% translate "To continue it, we will send a code to this email address." %}{% endif %}</p>
+  {% endif %}
+</div>
+
+{% if sent %}
+<form method="post" class="mt-8 flex flex-col gap-5" novalidate>
+  {% csrf_token %}
+  {% include "includes/_form_field.html" with field=form.code %}
+  <button type="submit" class="mt-2 min-h-[52px] cursor-pointer rounded-pill bg-ink px-8 text-[16px] font-black leading-none tracking-[-0.01em] text-white transition hover:-translate-y-[2px] hover:bg-green hover:text-ink hover:shadow-lift focus-visible:shadow-focus-pill focus-visible:outline-none">
+    {% translate "Continue" %}
+  </button>
+</form>
+<form method="post" class="mt-6">
+  {% csrf_token %}
+  <p class="text-[15px] text-ink-muted">{% translate "Didn't get it?" %}
+    <button type="submit" name="action" value="resend" class="cursor-pointer font-semibold text-ink underline underline-offset-4 hover:text-green-deep">{% translate "Send a new code" %}</button>
+  </p>
+</form>
+{% else %}
+<form method="post" class="mt-8 flex flex-col gap-5">
+  {% csrf_token %}
+  <button type="submit" name="action" value="send" class="min-h-[52px] cursor-pointer rounded-pill bg-ink px-8 text-[16px] font-black leading-none tracking-[-0.01em] text-white transition hover:-translate-y-[2px] hover:bg-green hover:text-ink hover:shadow-lift focus-visible:shadow-focus-pill focus-visible:outline-none">
+    {% translate "Send code" %}
+  </button>
+</form>
+{% endif %}
+<p class="mt-8 text-[15px]"><a href="{{ cancel_url }}" class="font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Use different details" %}</a></p>
+{% endblock %}
