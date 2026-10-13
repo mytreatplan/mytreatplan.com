@@ -3,7 +3,7 @@ title: 'Complete step 1'
 type: 'feature'
 ticket: '4'
 created: '2026-10-13'
-status: 'built'
+status: 'done'
 baseline_revision: '1aa2a4073458dd0bf1c7c09fdf1ff5248711d1c6'
 route: 'full'
 route_source: 'auto'
@@ -137,7 +137,9 @@ context: []
 - `DATABASE_URL="sqlite:///$TMPDIR/x.sqlite3" ../.venv/bin/python -m pytest -q` (with test keys) -- expected: only the known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check` and `manage.py compilemessages` -- expected: no changes; compiles.
 
-Done locally (2026-10-13) after the review patches, on SQLite: `pytest` 507 passed (after the admin addition), 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. The implementer's run on a throwaway PostgreSQL passed all 507 tests before the patches. `makemigrations --check` reports no changes; `check` reports no issues (1 silenced); `compilemessages` is up to date. Pending: the Spanish browser check, and the staging check against the live HIBP and Debounce APIs.
+Done locally (2026-10-13) after the review patches, on SQLite: `pytest` 507 passed (after the admin addition), 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. The implementer's run on a throwaway PostgreSQL passed all 507 tests before the patches. `makemigrations --check` reports no changes; `check` reports no issues (1 silenced); `compilemessages` is up to date. CI on PostgreSQL 16 (PR #15): 516 passed.
+
+Staging (2026-10-13): the merge deployed and ran migrations `accounts.0006` and `signup.0006`. On https://dev.mytpdso.com a person completed step 1 with real data and moved on to the code step. The live HIBP API refused `password12345` as breached, and the live Debounce API refused a `@mailinator.com` address as disposable. At `/es/signup/` every label and error was in Spanish. After the signup, the user admin showed the title, country, mobile and how-found-us.
 
 **Manual checks:**
 - Fill step 1 in `/es/signup/` with invalid input: every message is in Spanish.
