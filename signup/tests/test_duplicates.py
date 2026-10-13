@@ -1,6 +1,7 @@
 """Signup entry 5: duplicate checks and resume. Every row of the plan's I/O matrix, plus
 the event sequence on both attempts."""
 import json
+import re
 from datetime import timedelta
 
 import pytest
@@ -34,6 +35,12 @@ RESUME_URL = '/en/signup/resume/'
 urlpatterns = list(urls_portal.urlpatterns) + [
     path('password-reset/', lambda request: HttpResponse(), name='password_reset'),
 ]
+
+
+def _without_csrf_tokens(html):
+    """The page without its CSRF tokens: they are random, and may contain a short value
+    checked as absent (e.g. "PT")."""
+    return re.sub(r'name="csrfmiddlewaretoken" value="[^"]*"', '', html)
 
 
 def _code(channel, contact, purpose=PURPOSE_RESUME):
@@ -134,7 +141,7 @@ def test_pending_email(first):
     assert 'A registration with this email address is already in progress.' in text
     assert 'value="send"' in text
     for value in (*OLD.values(), MOBILE_E164, '622'):
-        assert value not in text  # nothing of the matched registration
+        assert value not in _without_csrf_tokens(text)  # nothing of the matched registration
 
 
 def test_pending_mobile(first, caplog):
@@ -240,7 +247,7 @@ def test_wrong_code_reveals_nothing(first):
         'code': ['This code is not correct. Check it, or send a new one.']}
     text = response.content.decode()
     for value in (*OLD.values(), MOBILE_E164):
-        assert value not in text
+        assert value not in _without_csrf_tokens(text)
     assert PendingRegistration.objects.get() == first
     assert first.attempt.ended_at is None
 
