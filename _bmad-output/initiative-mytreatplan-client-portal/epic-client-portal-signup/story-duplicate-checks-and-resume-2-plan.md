@@ -3,7 +3,7 @@ title: 'Email-first resume'
 type: 'feature'
 ticket: '5'
 created: '2026-10-13'
-status: 'built'
+status: 'done'
 baseline_revision: '4d3e58b601035a5f077425cf8fce5b63810f916d'
 route: 'full'
 route_source: 'auto'
@@ -126,4 +126,10 @@ context: []
 - `DATABASE_URL="sqlite:///$TMPDIR/x.sqlite3" ../.venv/bin/python -m pytest -q` (with test keys) -- expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check`, `manage.py compilemessages` -- expected: no changes; compiles.
 
-Done locally (2026-10-13) after the review patches, on SQLite: `pytest` 544 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date. Pending: CI on PostgreSQL, and the staging check, which also confirms that htmx sends the CSRF token in a real browser.
+Done locally (2026-10-13) after the review patches, on SQLite: `pytest` 544 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date. CI on PostgreSQL 16 (PR #17): 553 passed.
+
+Staging (2026-10-13): the merge deployed and ran migration `signup.0007`. The checks:
+- A signup closed at the code screen was found from a private window as soon as the email field was left, so htmx sent the CSRF token.
+- One resume code brought the saved data back into step 1, with the password fields empty.
+- Continue created the account and logged the person in with no second code.
+- In the admin, the old attempt was `abandoned`, and the new one showed `pending_found`, `code_sent`, `resumed`, `step_saved` and `completed`.
