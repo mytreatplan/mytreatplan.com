@@ -133,6 +133,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'django.contrib.sitemaps',
+    # Countries and their names in English and Spanish (signup step 1).
+    'django_countries',
     'accounts.apps.AccountsConfig',
     'eventlog.apps.EventlogConfig',
     'signup.apps.SignupConfig',
@@ -198,7 +200,9 @@ AUTH_USER_MODEL = 'accounts.User'
 
 AUTH_PASSWORD_VALIDATORS = [
     {
+        # Too similar to the name, middle name, surnames or email (signup-fields.md).
         'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+        'OPTIONS': {'user_attributes': ('first_name', 'middle_name', 'last_name', 'email')},
     },
     {
         # Minimum 12 characters, no composition rules (signup-fields.md).
@@ -211,7 +215,25 @@ AUTH_PASSWORD_VALIDATORS = [
     {
         'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
     },
+    {
+        # Have I Been Pwned (k-anonymity range API); accepts the password if it is down.
+        'NAME': 'accounts.password_validation.BreachedPasswordValidator',
+    },
 ]
+
+# External checks of signup step 1 (accounts.password_validation, signup.checks). Only the
+# first 5 hex characters of the password's SHA-1 go to Have I Been Pwned, and only the
+# email's domain to Debounce. EXTERNAL_CHECK_TIMEOUT (seconds) is urllib's socket timeout:
+# it applies to each socket operation (the connect, each read), not to the whole call, and
+# the DNS lookup has none. A check that times out or fails lets the value through and is
+# logged as unavailable.
+# Tests never reach them (conftest.py).
+PWNED_PASSWORDS_API_URL = config('PWNED_PASSWORDS_API_URL',
+                                 default='https://api.pwnedpasswords.com/range/')
+DISPOSABLE_EMAIL_API_URL = config('DISPOSABLE_EMAIL_API_URL',
+                                  default='https://disposable.debounce.io/')
+EXTERNAL_CHECK_TIMEOUT = config('EXTERNAL_CHECK_TIMEOUT', default=3, cast=float)
+EXTERNAL_CHECK_USER_AGENT = 'MyTreatPlan-signup (+https://mytreatplan.com)'
 
 # Argon2id first (encryption policy); the others stay so older hashes still verify, and
 # Django rehashes them with Argon2id at the next successful login.

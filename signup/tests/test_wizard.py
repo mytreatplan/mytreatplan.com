@@ -20,10 +20,33 @@ NORMALIZED = 'ana.garcia@example.com'
 PASSWORD = 'violet-orbit-canyon-42'
 
 
-def _step1(client, lang='en', email=EMAIL_ADDRESS, password=PASSWORD, password2=None):
+FIRST_NAME = 'Anabel'
+LAST_NAME = 'Garcia-Montenegro'
+MOBILE = '622 918 374'  # Spain
+MOBILE_E164 = '+34622918374'
+
+# A valid step 1, without the email and passwords (see _step1).
+STEP1 = {
+    'title': 'dr',
+    'first_name': FIRST_NAME,
+    'middle_name': '',
+    'last_name': LAST_NAME,
+    'country': 'ES',
+    'phone_prefix': 'ES',
+    'phone': MOBILE,
+    'how_found': 'linkedin',
+    'how_found_other': '',
+}
+
+
+def _step1(client, lang='en', email=EMAIL_ADDRESS, password=PASSWORD, password2=None,
+           **fields):
+    """Post a valid step 1, with any field replaced through `fields`."""
     return client.post(f'/{lang}/signup/', {
+        **STEP1,
         'email': email, 'password1': password,
         'password2': password if password2 is None else password2,
+        **fields,
     })
 
 
@@ -91,17 +114,18 @@ def _assert_no_plaintext_anywhere(*plaintexts):
 ENCRYPTED = re.compile(r'^enc:v1:[\w-]+:[A-Za-z0-9+/=]+$')
 
 
-def test_no_table_holds_the_plaintext_password_email_or_code(client, caplog):
+def test_no_table_holds_the_plaintext_password_email_names_mobile_or_code(client, caplog):
     _step1(client)
     pending_hash = PendingRegistration.objects.get().password
     assert pending_hash != PASSWORD and check_password(PASSWORD, pending_hash)
     code = _code_from_log(caplog)
-    _assert_no_plaintext_anywhere(PASSWORD, NORMALIZED, f"'{code}'")
+    personal = (FIRST_NAME, LAST_NAME, MOBILE_E164)
+    _assert_no_plaintext_anywhere(PASSWORD, NORMALIZED, f"'{code}'", *personal)
     client.post('/en/signup/verify-email/', {'code': code})
     assert User.objects.exists()
 
     # The code is 6 digits, so only look for it as a whole value in text columns.
-    _assert_no_plaintext_anywhere(PASSWORD, NORMALIZED, f"'{code}'")
+    _assert_no_plaintext_anywhere(PASSWORD, NORMALIZED, f"'{code}'", *personal)
 
 
 def test_rows_hold_ciphertext_index_and_argon2id(client, caplog):

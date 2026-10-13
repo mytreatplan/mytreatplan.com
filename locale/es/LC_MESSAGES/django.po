@@ -570,3 +570,169 @@ msgstr "Iniciar sesión"
 #: templates/includes/_portal_links.html:7
 msgid "Sign up"
 msgstr "Registrarse"
+
+# --- Signup step 1 (story 2.4) ---
+
+#: accounts/models.py
+msgid "Dr."
+msgstr "Dr./Dra."
+
+#: accounts/models.py
+msgid "Prof."
+msgstr "Prof./Prof.ª"
+
+#: accounts/models.py
+msgid "Mr"
+msgstr "Sr."
+
+#: accounts/models.py
+msgid "Mrs"
+msgstr "Sra."
+
+#: accounts/models.py
+msgid "Ms"
+msgstr "Srta."
+
+#: accounts/models.py
+msgid "Eng."
+msgstr "Ing."
+
+#: accounts/models.py
+msgid "Search Engine (e.g. Google)"
+msgstr "Buscador (p. ej., Google)"
+
+#: accounts/models.py
+msgid "Social Media (Instagram, Facebook)"
+msgstr "Redes sociales (Instagram, Facebook)"
+
+#: accounts/models.py
+msgid "LinkedIn"
+msgstr "LinkedIn"
+
+#: accounts/models.py
+msgid "WhatsApp"
+msgstr "WhatsApp"
+
+#: accounts/models.py
+msgid "E-mail"
+msgstr "Correo electrónico"
+
+#: accounts/models.py
+msgid "Telephone Call"
+msgstr "Llamada telefónica"
+
+#: accounts/models.py
+msgid "Conference or Congress"
+msgstr "Conferencia o congreso"
+
+#: accounts/models.py
+msgid "Others"
+msgstr "Otros"
+
+#: accounts/models.py
+msgid "title"
+msgstr "tratamiento"
+
+#: accounts/models.py
+msgid "middle name or initial"
+msgstr "segundo nombre o inicial"
+
+#: accounts/models.py
+msgid "country / region"
+msgstr "país / región"
+
+#: accounts/models.py
+msgid "mobile phone number"
+msgstr "número de teléfono móvil"
+
+#: accounts/models.py
+msgid "how they found out about us"
+msgstr "cómo nos conoció"
+
+#: accounts/models.py
+msgid "how they found out about us (others)"
+msgstr "cómo nos conoció (otros)"
+
+#: accounts/password_validation.py
+msgid "This password has appeared in a data breach, so it is not safe to use. Please choose another one."
+msgstr "Esta contraseña ha aparecido en una filtración de datos, por lo que no es segura. Elija otra."
+
+#: accounts/password_validation.py
+msgid "Your password must not appear in a known data breach."
+msgstr "Su contraseña no debe aparecer en ninguna filtración de datos conocida."
+
+#: signup/forms.py
+msgid "Please use your professional email address: disposable email addresses are not accepted."
+msgstr "Utilice su dirección de correo electrónico profesional: no se aceptan direcciones de correo desechables."
+
+#: signup/forms.py
+msgid "Enter a valid mobile phone number for the selected prefix."
+msgstr "Introduzca un número de teléfono móvil válido para el prefijo seleccionado."
+
+#: signup/forms.py
+msgid "Please tell us how you found out about us."
+msgstr "Indíquenos cómo nos conoció."
+
+#: signup/forms.py
+msgid "Title / Treatment"
+msgstr "Tratamiento"
+
+#: signup/forms.py
+msgid "Name"
+msgstr "Nombre"
+
+#: signup/forms.py
+msgid "Middle name or initial (optional)"
+msgstr "Segundo nombre o inicial (opcional)"
+
+#: signup/forms.py
+msgid "Surname(s)"
+msgstr "Apellido(s)"
+
+#: signup/forms.py
+msgid "Country / Region"
+msgstr "País / Región"
+
+#: signup/forms.py
+msgid "International prefix"
+msgstr "Prefijo internacional"
+
+#: signup/forms.py
+msgid "Mobile phone number"
+msgstr "Número de teléfono móvil"
+
+#: signup/forms.py
+msgid "How did you find out about us?"
+msgstr "¿Cómo nos conoció?"
+
+#: signup/forms.py
+msgid "Others: please specify"
+msgstr "Otros: especifique"
+
+#: signup/forms.py
+msgid "Only if you chose \"Others\"."
+msgstr "Solo si eligió «Otros»."
+
+#: signup/templates/signup/step_account.html
+msgid "Strength: very weak"
+msgstr "Seguridad: muy débil"
+
+#: signup/templates/signup/step_account.html
+msgid "Strength: weak"
+msgstr "Seguridad: débil"
+
+#: signup/templates/signup/step_account.html
+msgid "Strength: fair"
+msgstr "Seguridad: aceptable"
+
+#: signup/templates/signup/step_account.html
+msgid "Strength: strong"
+msgstr "Seguridad: fuerte"
+
+#: signup/templates/signup/step_account.html
+msgid "Strength: very strong"
+msgstr "Seguridad: muy fuerte"
+
+#: accounts/admin.py
+msgid "Signup"
+msgstr "Registro"

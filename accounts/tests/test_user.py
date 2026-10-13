@@ -153,3 +153,23 @@ def test_welcome_for_a_signed_in_user(client, lang, text):
     assert response.status_code == 200
     html = response.content.decode()
     assert text in html and 'ana@example.com' in html
+
+
+@pytest.mark.django_db
+def test_admin_shows_the_step1_details(admin_client):
+    """Title, middle name, country, mobile and how-found-us appear on the change page; the
+    mobile (E.164, validated by signup step 1) is read-only."""
+    user = User.objects.create_user(
+        'carla@example.com', PASSWORD, title='dr', first_name='Carla', middle_name='M.',
+        last_name='Ruiz Soto', country='ES', phone='+34612345678', how_found='others',
+        how_found_other='A colleague at the clinic')
+
+    page = admin_client.get(f'/admin/accounts/user/{user.pk}/change/').content.decode()
+
+    for name in ('title', 'middle_name', 'country', 'how_found', 'how_found_other'):
+        assert f'name="{name}"' in page
+    assert 'M.' in page and 'A colleague at the clinic' in page
+    assert '+34612345678' in page
+    assert 'name="phone"' not in page
+    changelist = admin_client.get('/admin/accounts/user/').content.decode()
+    assert 'Spain' in changelist

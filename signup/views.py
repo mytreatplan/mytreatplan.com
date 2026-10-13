@@ -66,6 +66,18 @@ def _log_rejected(request, attempt, step, form):
                             reason=failure_reason(error.code), data=data)
 
 
+def _log_unavailable_checks(request, attempt, step, form):
+    """One `check_unavailable` event per external check the form could not make (the
+    value was let through): the field, the check, and the step's loggable values."""
+    checks = getattr(form, 'unavailable_checks', ())
+    if not checks:
+        return
+    data = step.log_data(form)
+    for field, check in checks:
+        eventlog.record(attempt, 'check_unavailable', request=request, step=step.slug,
+                        field=field, reason=check, data=data)
+
+
 def _current_index(pending):
     """Index of the first step not yet saved."""
     if pending is None:
@@ -102,7 +114,9 @@ def signup(request, slug=None):
         return redirect(step_url(index))
 
     form = step.form_class(request.POST, **step.get_form_kwargs(pending))
-    if not form.is_valid():
+    valid = form.is_valid()
+    _log_unavailable_checks(request, attempt, step, form)
+    if not valid:
         _log_rejected(request, attempt, step, form)
         return _render(request, index, step, form, pending)
 
@@ -131,7 +145,8 @@ def _create_account(request, index, step, form, pending, attempt):
             pending = PendingRegistration.objects.select_for_update().get(pk=pending.pk)
             if email_is_registered(pending.email):
                 raise IntegrityError('email already registered')
-            user = user_model(email=pending.email, password=pending.password)
+            user = user_model(email=pending.email, password=pending.password, **{
+                name: getattr(pending, name) for name in PendingRegistration.USER_FIELDS})
             user.save()
             pending.delete()
             request.session.pop(SESSION_KEY, None)

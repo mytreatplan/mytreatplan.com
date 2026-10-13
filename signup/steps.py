@@ -10,6 +10,8 @@ wizard creates the account (signup.views.create_account).
 Every step is logged in the event log (eventlog.service) by the views: its rejected
 fields, and `saved_event` once saved, with the values `log_fields` names. A step lists
 there only fields whose values may be logged: never a password or a verification code.
+A form may also list external checks it could not make in `unavailable_checks`, as
+(field, check) pairs; each is logged as `check_unavailable`.
 """
 from django.contrib import messages
 from django.contrib.auth.hashers import make_password
@@ -18,7 +20,7 @@ from django.utils.translation import gettext_lazy as _
 
 from eventlog import service as eventlog
 
-from .forms import AccountForm, EmailCodeForm
+from .forms import AccountForm, EmailCodeForm, national_number
 from .models import PendingRegistration
 from .verification import EMAIL, PURPOSE_SIGNUP, get_provider
 
@@ -65,20 +67,34 @@ class Step:
 
 
 class AccountStep(Step):
-    """Step 1: email and password. Creates (or updates) the pending registration."""
+    """Step 1: personal, contact and login data. Creates (or updates) the pending
+    registration."""
 
     slug = 'account'
     form_class = AccountForm
     template_name = 'signup/step_account.html'
     title = _('Create your account')
-    log_fields = ('email',)  # never the passwords
+    # Stored on the pending registration (and later the user) as cleaned.
+    stored_fields = ('title', 'first_name', 'middle_name', 'last_name', 'country', 'email',
+                     'phone', 'how_found', 'how_found_other')
+    # Every field but the passwords.
+    log_fields = ('title', 'first_name', 'middle_name', 'last_name', 'country', 'email',
+                  'phone_prefix', 'phone', 'how_found', 'how_found_other')
 
     def get_initial(self, pending):
-        return {'email': pending.email} if pending else {}
+        if not pending:
+            return {}
+        initial = {name: getattr(pending, name) for name in self.stored_fields}
+        initial['country'] = pending.country.code if pending.country else ''
+        initial['phone_prefix'] = pending.phone_region
+        initial['phone'] = national_number(pending.phone) if pending.phone else ''
+        return initial
 
     def save(self, request, pending, form):
         pending = pending or PendingRegistration()
-        pending.email = form.cleaned_data['email']
+        for name in self.stored_fields:
+            setattr(pending, name, form.cleaned_data[name])
+        pending.phone_region = form.cleaned_data['phone_prefix']
         # Only the hash (Argon2id, the first of PASSWORD_HASHERS) is kept between steps;
         # the user later gets this same hash.
         pending.password = make_password(form.cleaned_data['password1'])

@@ -9,9 +9,14 @@ from eventlog.models import Attempt, Event
 from signup.models import PendingRegistration
 from signup.views import ATTEMPT_SESSION_KEY
 
-from .test_wizard import EMAIL_ADDRESS, ENCRYPTED, NORMALIZED, PASSWORD, _code_from_log, _step1, _wrong
+from .test_wizard import (EMAIL_ADDRESS, ENCRYPTED, FIRST_NAME, LAST_NAME, MOBILE_E164,
+                          NORMALIZED, PASSWORD, _code_from_log, _step1, _wrong)
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
+
+# Step 1's logged fields: every field but the passwords.
+STEP1_LOGGED = {'title', 'first_name', 'middle_name', 'last_name', 'country', 'email',
+                'phone_prefix', 'phone', 'how_found', 'how_found_other'}
 
 User = get_user_model()
 
@@ -68,6 +73,8 @@ def test_happy_path(client, caplog):
         ('completed', 'verify-email', '', ''),
     ]
     assert events[0].data['email'] == NORMALIZED
+    assert set(events[0].data) == {*STEP1_LOGGED, 'ip', 'user_agent'}
+    assert (events[0].data['first_name'], events[0].data['phone']) == (FIRST_NAME, MOBILE_E164)
     assert events[1].data['email'] == NORMALIZED and events[1].data['channel'] == 'email'
     assert 'resend' not in events[1].data
     for event in events:
@@ -143,7 +150,7 @@ def test_weak_password_logs_one_event_per_error(client):
         'password_entirely_numeric', 'password_too_common', 'password_too_short']
     for event in events:
         _assert_no_secret(event, '12345678')
-        assert set(event.data) == {'email', 'ip', 'user_agent'}
+        assert set(event.data) == {*STEP1_LOGGED, 'ip', 'user_agent'}
 
 
 def test_invalid_email_logs_the_value_received(client):
@@ -248,7 +255,8 @@ def test_raw_rows_hold_ciphertext(client, caplog):
     assert len(rows) == 4
     for stored in rows:
         assert ENCRYPTED.match(stored)
-        for plaintext in (NORMALIZED, CLIENT_IP, 'EventLogTest'):
+        for plaintext in (NORMALIZED, CLIENT_IP, 'EventLogTest', FIRST_NAME, LAST_NAME,
+                          MOBILE_E164):
             assert plaintext not in stored
 
 
