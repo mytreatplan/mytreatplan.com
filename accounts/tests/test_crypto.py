@@ -447,7 +447,8 @@ def test_data_migration_encrypts_existing_rows_and_reverses():
         assert all(ENC_RE.match(v) for v in (email, first, last, pending_email))
         assert index == crypto.email_index('devops@mytreatplan.com')
         assert pending_index == crypto.email_index('ana@example.com')
-        user = User.objects.get_by_natural_key('devops@mytreatplan.com')
+        # Only columns that exist at `after` (later migrations add more).
+        user = User.objects.by_email('devops@mytreatplan.com').only('email', 'first_name').get()
         assert (user.email, user.first_name) == ('devops@MyTreatPlan.com', 'Dev')
 
         executor = MigrationExecutor(connection)

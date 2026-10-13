@@ -1,14 +1,17 @@
 {
   "name": "mytreatplan-com",
   "private": true,
-  "description": "Front-end build for the mytreatplan.com Django project (Tailwind CSS and vendored HTMX).",
+  "description": "Front-end build for the mytreatplan.com Django project (Tailwind CSS, vendored HTMX and zxcvbn-ts).",
   "scripts": {
     "build:css": "tailwindcss -i assets/css/site.css -o static/css/site.css --minify",
     "watch:css": "tailwindcss -i assets/css/site.css -o static/css/site.css --watch",
-    "vendor:htmx": "cp node_modules/htmx.org/dist/htmx.min.js static/js/htmx.min.js"
+    "vendor:htmx": "cp node_modules/htmx.org/dist/htmx.min.js static/js/htmx.min.js",
+    "vendor:zxcvbn": "cp node_modules/@zxcvbn-ts/core/dist/zxcvbn-ts.js static/js/zxcvbn-ts-core.js && cp node_modules/@zxcvbn-ts/language-common/dist/zxcvbn-ts.js static/js/zxcvbn-ts-common.js"
   },
   "devDependencies": {
     "@tailwindcss/cli": "4.3.3",
+    "@zxcvbn-ts/core": "4.2.0",
+    "@zxcvbn-ts/language-common": "4.1.3",
     "htmx.org": "2.0.11",
     "tailwindcss": "4.3.3"
   }

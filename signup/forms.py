@@ -1,7 +1,13 @@
+import phonenumbers
 from django import forms
 from django.contrib.auth import get_user_model, password_validation
 from django.utils.translation import gettext_lazy as _
+from django_countries import countries
 
+from accounts.models import HOW_FOUND_OTHER_MAX_LENGTH, HowFound, Title
+from accounts.password_validation import BREACHED_PASSWORD_CHECK, collect_unavailable_checks
+
+from .checks import DISPOSABLE_EMAIL_CHECK, email_domain, is_disposable_domain
 from .verification import CODE_LENGTH, EMAIL, PURPOSE_SIGNUP, get_provider
 
 
@@ -32,6 +38,7 @@ EMAIL_REGISTERED_MESSAGE = _('This email address is already registered.')
 # Any other validation failure is logged with its form error code.
 FAILURE_REASONS = {
     'email_registered': 'email exists',
+    'email_disposable': 'email disposable',
     'invalid_code': 'OTP verification failed',
 }
 EMAIL_EXISTS = FAILURE_REASONS['email_registered']
@@ -47,18 +54,104 @@ def email_is_registered(email):
     return get_user_model().objects.by_email(email).exists()
 
 
+# The empty first option of the step 1 selects (so nothing is chosen by default).
+BLANK_CHOICE = [('', '---------')]
+
+# phonenumbers types accepted as a mobile number. Some plans (e.g. +1) cannot tell
+# mobile from fixed lines, so FIXED_LINE_OR_MOBILE is accepted too.
+MOBILE_TYPES = {phonenumbers.PhoneNumberType.MOBILE,
+                phonenumbers.PhoneNumberType.FIXED_LINE_OR_MOBILE}
+
+
+def country_choices():
+    """Countries by name in the current language (django-countries)."""
+    return BLANK_CHOICE + list(countries)
+
+
+def phone_prefix_choices():
+    """One option per country with a calling code: the region code, shown as
+    "Spain (+34)", by name in the current language."""
+    choices = []
+    for code, name in countries:
+        calling_code = phonenumbers.country_code_for_region(code)
+        if calling_code:
+            choices.append((code, f'{name} (+{calling_code})'))
+    return BLANK_CHOICE + choices
+
+
+def parse_mobile(number, region):
+    """The mobile number in E.164 form, or None if it is not a valid mobile for the
+    prefix of `region`."""
+    if any(char.isalpha() for char in number):
+        # Letters ("ext 5", a stray "x", vanity letters) would be dropped or converted.
+        return None
+    try:
+        parsed = phonenumbers.parse(number, region)
+    except phonenumbers.NumberParseException:
+        return None
+    if (parsed.extension  # E.164 would silently drop it
+            or parsed.country_code != phonenumbers.country_code_for_region(region)
+            or not phonenumbers.is_valid_number(parsed)
+            or phonenumbers.number_type(parsed) not in MOBILE_TYPES):
+        return None
+    return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.E164)
+
+
+def national_number(e164):
+    """An E.164 number as the person would type it after the prefix (to refill step 1)."""
+    try:
+        parsed = phonenumbers.parse(e164, None)
+    except phonenumbers.NumberParseException:
+        return e164
+    return phonenumbers.format_number(parsed, phonenumbers.PhoneNumberFormat.NATIONAL)
+
+
 class AccountForm(StyledForm):
-    """Step 1: email (the username) and password, typed twice."""
+    """Step 1: personal, contact and login data (signup-fields.md; the CAPTCHA is entry 9).
+
+    External checks (breached password, disposable domain) that could not be made are
+    listed in `unavailable_checks` as (field, check) pairs; the view logs them.
+    """
 
     error_messages = {
         'email_registered': EMAIL_REGISTERED_MESSAGE,
+        'email_disposable': _('Please use your professional email address: disposable email '
+                              'addresses are not accepted.'),
         'password_mismatch': _('The two passwords do not match.'),
+        'phone_invalid': _('Enter a valid mobile phone number for the selected prefix.'),
+        'how_found_other_required': _('Please tell us how you found out about us.'),
     }
 
+    title = forms.ChoiceField(
+        label=_('Title / Treatment'),
+        choices=BLANK_CHOICE + Title.choices,
+        widget=forms.Select(attrs={'autofocus': True, 'autocomplete': 'honorific-prefix'}),
+    )
+    first_name = forms.CharField(
+        label=_('Name'),
+        max_length=150,
+        widget=forms.TextInput(attrs={'autocomplete': 'given-name'}),
+    )
+    middle_name = forms.CharField(
+        label=_('Middle name or initial (optional)'),
+        max_length=150,
+        required=False,
+        widget=forms.TextInput(attrs={'autocomplete': 'additional-name'}),
+    )
+    last_name = forms.CharField(
+        label=_('Surname(s)'),
+        max_length=150,
+        widget=forms.TextInput(attrs={'autocomplete': 'family-name'}),
+    )
+    country = forms.ChoiceField(
+        label=_('Country / Region'),
+        choices=country_choices,
+        widget=forms.Select(attrs={'autocomplete': 'country'}),
+    )
     email = forms.EmailField(
         label=_('Email'),
         max_length=254,
-        widget=forms.EmailInput(attrs={'autocomplete': 'email', 'autofocus': True}),
+        widget=forms.EmailInput(attrs={'autocomplete': 'email'}),
     )
     password1 = forms.CharField(
         label=_('Password'),
@@ -71,6 +164,30 @@ class AccountForm(StyledForm):
         strip=False,
         widget=forms.PasswordInput(attrs={'autocomplete': 'new-password'}),
     )
+    phone_prefix = forms.ChoiceField(
+        label=_('International prefix'),
+        choices=phone_prefix_choices,
+    )
+    phone = forms.CharField(
+        label=_('Mobile phone number'),
+        max_length=32,
+        widget=forms.TextInput(attrs={'type': 'tel', 'autocomplete': 'tel-national',
+                                      'inputmode': 'tel'}),
+    )
+    how_found = forms.ChoiceField(
+        label=_('How did you find out about us?'),
+        choices=BLANK_CHOICE + HowFound.choices,
+    )
+    how_found_other = forms.CharField(
+        label=_('Others: please specify'),
+        max_length=HOW_FOUND_OTHER_MAX_LENGTH,
+        required=False,
+        help_text=_('Only if you chose "Others".'),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.unavailable_checks = []
 
     def clean_email(self):
         email = normalize_email(self.cleaned_data['email'])
@@ -78,7 +195,36 @@ class AccountForm(StyledForm):
             # Signup entry 5 adds the recovery link.
             raise forms.ValidationError(self.error_messages['email_registered'],
                                         code='email_registered')
+        # Only the domain goes to the disposable-email check.
+        disposable = is_disposable_domain(email_domain(email))
+        if disposable is None:
+            self.unavailable_checks.append(('email', DISPOSABLE_EMAIL_CHECK))
+        elif disposable:
+            raise forms.ValidationError(self.error_messages['email_disposable'],
+                                        code='email_disposable')
         return email
+
+    def clean_phone(self):
+        """The mobile in E.164 form, valid for the chosen prefix."""
+        phone = self.cleaned_data['phone']
+        region = self.cleaned_data.get('phone_prefix')
+        if not region:
+            return phone  # the prefix has its own error
+        e164 = parse_mobile(phone, region)
+        if e164 is None:
+            raise forms.ValidationError(self.error_messages['phone_invalid'],
+                                        code='phone_invalid')
+        return e164
+
+    def clean_how_found_other(self):
+        """Required only with "Others"; ignored (not stored) otherwise."""
+        text = self.cleaned_data['how_found_other']
+        if self.cleaned_data.get('how_found') != HowFound.OTHERS:
+            return ''
+        if not text:
+            raise forms.ValidationError(self.error_messages['how_found_other_required'],
+                                        code='required')
+        return text
 
     def clean(self):
         cleaned_data = super().clean()
@@ -88,12 +234,18 @@ class AccountForm(StyledForm):
             self.add_error('password2', forms.ValidationError(
                 self.error_messages['password_mismatch'], code='password_mismatch'))
         elif password1:
-            # Django's validators (min. 12, common passwords, numeric, similarity to the email).
-            user = get_user_model()(email=cleaned_data.get('email') or '')
-            try:
-                password_validation.validate_password(password1, user)
-            except forms.ValidationError as error:
-                self.add_error('password1', error)
+            # AUTH_PASSWORD_VALIDATORS: min. 12, common, numeric, similarity to the names
+            # and email, and breached (Have I Been Pwned).
+            user = get_user_model()(**{
+                name: cleaned_data.get(name) or ''
+                for name in ('email', 'first_name', 'middle_name', 'last_name')})
+            with collect_unavailable_checks() as unavailable:
+                try:
+                    password_validation.validate_password(password1, user)
+                except forms.ValidationError as error:
+                    self.add_error('password1', error)
+            if BREACHED_PASSWORD_CHECK in unavailable:
+                self.unavailable_checks.append(('password1', BREACHED_PASSWORD_CHECK))
         return cleaned_data
 
 

@@ -1,10 +1,38 @@
 {% extends "signup/wizard.html" %}
-{% load i18n %}
+{% load i18n static %}
+
+{% block head %}{{ block.super }}
+{# Step 1 only: the password strength meter (zxcvbn-ts, vendored) and the "Others" toggle. #}
+<script src="{% static 'js/zxcvbn-ts-core.js' %}" defer></script>
+<script src="{% static 'js/zxcvbn-ts-common.js' %}" defer></script>
+<script src="{% static 'js/signup-account.js' %}" defer></script>
+{% endblock %}
 
 {% block intro %}<p>{% translate "Your email address will be your username." %}</p>{% endblock %}
 
 {% block fields %}
+{% include "includes/_form_field.html" with field=form.title %}
+{% include "includes/_form_field.html" with field=form.first_name %}
+{% include "includes/_form_field.html" with field=form.middle_name %}
+{% include "includes/_form_field.html" with field=form.last_name %}
+{% include "includes/_form_field.html" with field=form.country %}
 {% include "includes/_form_field.html" with field=form.email %}
 {% include "includes/_form_field.html" with field=form.password1 %}
+{# Filled in by signup-account.js; a hint only: the server-side rules decide. #}
+<div id="password-strength" class="-mt-2 flex flex-col gap-1" aria-live="polite" hidden
+     data-user-inputs="{{ form.first_name.auto_id }} {{ form.middle_name.auto_id }} {{ form.last_name.auto_id }} {{ form.email.auto_id }}"
+     data-label-0="{% translate 'Strength: very weak' %}" data-label-1="{% translate 'Strength: weak' %}"
+     data-label-2="{% translate 'Strength: fair' %}" data-label-3="{% translate 'Strength: strong' %}"
+     data-label-4="{% translate 'Strength: very strong' %}">
+  <meter id="password-strength-meter" class="h-2 w-full" min="0" max="4" low="2" high="3" optimum="4" value="0" aria-labelledby="password-strength-label"></meter>
+  <p id="password-strength-label" class="text-[13px] leading-[1.45] text-ink-muted"></p>
+</div>
 {% include "includes/_form_field.html" with field=form.password2 %}
+{% include "includes/_form_field.html" with field=form.phone_prefix %}
+{% include "includes/_form_field.html" with field=form.phone %}
+{% include "includes/_form_field.html" with field=form.how_found %}
+{# Shown only when "Others" is chosen (signup-account.js); without JavaScript it stays visible. #}
+<div data-show-if-field="{{ form.how_found.auto_id }}" data-show-if-value="others">
+{% include "includes/_form_field.html" with field=form.how_found_other %}
+</div>
 {% endblock %}
