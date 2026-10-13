@@ -19,6 +19,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from eventlog import service as eventlog
 from eventlog.models import Attempt
+from legal.models import LegalChoice
 
 from .forms import (EMAIL_EXISTS, EMAIL_PENDING, EMAIL_REGISTERED_MESSAGE, PHONE_EXISTS,
                     PHONE_REGISTERED_MESSAGE, REGISTERED_CODES, ResumeCodeForm,
@@ -229,9 +230,10 @@ _REGISTERED = {
 
 
 def _create_account(request, index, step, form, pending, attempt):
-    """Once no step is left: create the user with the stored hash, drop the pending
-    registration and every other one with its email or mobile, and log the user in, all
-    in one transaction. The attempts of the other registrations end `abandoned`."""
+    """Once no step is left: create the user with the stored hash, move the legal choices
+    to it, drop the pending registration and every other one with its email or mobile,
+    and log the user in, all in one transaction. The attempts of the other registrations
+    end `abandoned`."""
     user_model = get_user_model()
     other_attempt_ids = []
     try:
@@ -245,6 +247,10 @@ def _create_account(request, index, step, form, pending, attempt):
             user = user_model(email=pending.email, password=pending.password, **{
                 name: getattr(pending, name) for name in PendingRegistration.USER_FIELDS})
             user.save()
+            # The legal choices become the user's (same versions and times), before
+            # the pending registration (and its CASCADE) goes.
+            LegalChoice.objects.filter(pending_registration=pending).update(
+                pending_registration=None, user=user)
             pending.delete()
             # Any other signup (active or not) with this email or mobile.
             others = (PendingRegistration.objects.matching_email(pending.email)
@@ -336,10 +342,10 @@ def resume(request):
     progress.
 
     Until the code is correct nothing of the matched registration is shown but its
-    email, which is what the person typed. A correct code moves its data to a new
-    pending registration of this signup (new id, this attempt, email verified); the
-    matched row is deleted and its attempt ends `abandoned`. Step 1 then shows the saved
-    data for review. Outside the step loop of `signup`.
+    email, which is what the person typed. A correct code moves its data (and its legal
+    choices) to a new pending registration of this signup (new id, this attempt, email
+    verified); the matched row is deleted and its attempt ends `abandoned`. Step 1 then
+    shows the saved data for review. Outside the step loop of `signup`.
     """
     if 'cancel' in request.GET:  # "Use different details"
         clear_resume(request)
@@ -390,6 +396,8 @@ def _take_over(request, matched_pk, attempt):
             old = PendingRegistration.objects.active().select_for_update().get(pk=matched_pk)
             # Step 1 is next (review); the old row's later steps are not reachable.
             new = old.copy_to_new_row(attempt=attempt, step=STEPS[0].slug)
+            # The legal choices too: a legal step done before is skipped on Continue.
+            old.legal_choices.all().copy_to(pending_registration=new)
             old_attempt_id = old.attempt_id
             old.delete()
             if own is not None and own.pk != old.pk:
@@ -407,7 +415,8 @@ def _take_over(request, matched_pk, attempt):
         _abandon_attempts([old_attempt_id], keep=attempt)
     eventlog.record(attempt, 'resumed', request=request, step=RESUME_STEP,
                     data={'attempt': str(old_attempt_id) if old_attempt_id else ''})
-    # Step 1 with the saved data; on Continue the verified email's step is skipped.
+    # Step 1 with the saved data; on Continue the steps already done (the legal step,
+    # the verified email) are skipped.
     messages.success(request, _('We have restored your registration. Review your details '
                                 'and continue.'))
     return redirect(step_url(0))

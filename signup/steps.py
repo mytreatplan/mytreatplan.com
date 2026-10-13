@@ -23,7 +23,9 @@ from eventlog import service as eventlog
 
 from accounts.crypto import email_index
 
-from .forms import AccountForm, EmailCodeForm, national_number
+from legal.models import LegalChoice, LegalDocument
+
+from .forms import AccountForm, EmailCodeForm, LegalForm, national_number
 from .models import PendingRegistration
 from .verification import EMAIL, PURPOSE_SIGNUP, get_provider
 
@@ -117,8 +119,73 @@ class AccountStep(Step):
         return pending
 
 
+class LegalStep(Step):
+    """Step 2: accept the Terms and the Conditions (required), the Ormco TPS contract and
+    the commercial consent (optional), each in its current version (legal.models).
+
+    Saving replaces the pending registration's choices: one LegalChoice per document,
+    ticked or not, with the version shown and the time. They move to the user at account
+    creation (signup.views._create_account) and are copied by a resume (_take_over).
+    """
+
+    slug = 'legal'
+    form_class = LegalForm
+    template_name = 'signup/step_legal.html'
+    title = _('Terms and consent')
+
+    def get_form_kwargs(self, pending):
+        # Read on every request: a version published in the admin applies at once.
+        return {'documents': LegalDocument.objects.current_by_kind()}
+
+    def get_initial(self, pending):
+        """Back refills the Terms and the Conditions accepted in their current version.
+        The Ormco TPS contract and the commercial consent always start unticked."""
+        if not pending:
+            return {}
+        current = LegalDocument.objects.current_by_kind()
+        initial = {}
+        for kind in LegalDocument.REQUIRED_KINDS:
+            document = current.get(kind)
+            if document and pending.legal_choices.filter(document=document,
+                                                         accepted=True).exists():
+                initial[kind] = True
+        return initial
+
+    def is_done(self, pending):
+        """Done when the Terms and the Conditions are accepted in their current versions."""
+        if pending._state.adding:
+            return False  # step 1 of a new signup, not saved yet: no choices
+        current = LegalDocument.objects.current_by_kind()
+        documents = [current.get(kind) for kind in LegalDocument.REQUIRED_KINDS]
+        if not all(documents):
+            return False
+        accepted = pending.legal_choices.filter(document__in=documents, accepted=True)
+        return accepted.values('document').distinct().count() == len(documents)
+
+    def save(self, request, pending, form):
+        decided_at = timezone.now()
+        pending.legal_choices.all().delete()
+        LegalChoice.objects.bulk_create([
+            LegalChoice(pending_registration=pending, document=form.documents[kind],
+                        accepted=accepted, decided_at=decided_at)
+            for kind, accepted in form.choices().items()])
+        return pending
+
+    def log_data(self, form):
+        """Per kind: the version shown and whether it was ticked. No personal data."""
+        cleaned = getattr(form, 'cleaned_data', {})
+        data = {}
+        for kind, document in form.documents.items():
+            if kind in cleaned:
+                accepted = bool(cleaned[kind])
+            else:
+                accepted = bool(form.is_bound and form[kind].value())
+            data[kind] = {'version': document.version, 'accepted': accepted}
+        return data
+
+
 class EmailCodeStep(Step):
-    """Step 2: the code sent to the email address."""
+    """Step 3: the code sent to the email address."""
 
     slug = 'verify-email'
     form_class = EmailCodeForm
@@ -155,7 +222,7 @@ class EmailCodeStep(Step):
                         data=data)
 
 
-STEPS = [AccountStep(), EmailCodeStep()]
+STEPS = [AccountStep(), LegalStep(), EmailCodeStep()]
 
 
 def get_step(slug):

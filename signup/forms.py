@@ -8,6 +8,8 @@ from django_countries import countries
 from accounts.crypto import phone_index
 from accounts.models import HOW_FOUND_OTHER_MAX_LENGTH, HowFound, Title
 from accounts.password_validation import BREACHED_PASSWORD_CHECK, collect_unavailable_checks
+from legal.models import LegalDocument
+from legal.rendering import render_markdown
 
 from .checks import DISPOSABLE_EMAIL_CHECK, email_domain, is_disposable_domain
 from .verification import CODE_LENGTH, EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP, get_provider
@@ -294,6 +296,88 @@ class AccountForm(StyledForm):
             if BREACHED_PASSWORD_CHECK in unavailable:
                 self.unavailable_checks.append(('password1', BREACHED_PASSWORD_CHECK))
         return cleaned_data
+
+
+CHECKBOX_CLASSES = 'mt-[3px] h-5 w-5 shrink-0 cursor-pointer accent-green-deep'
+
+# The legal step's checkbox label for each kind of document (its title is the current
+# version's, in the page language).
+LEGAL_LABELS = {
+    LegalDocument.Kind.TERMS: _('I have read and accept the %(title)s.'),
+    LegalDocument.Kind.CONDITIONS: _('I have read and accept the %(title)s.'),
+    LegalDocument.Kind.ORMCO_TPS: _('I accept the %(title)s (optional).'),
+    LegalDocument.Kind.COMMERCIAL_CONSENT: _(
+        'I agree to receive commercial communications from the MyTPDSO group, as '
+        'described above (optional).'),
+}
+LEGAL_REQUIRED_MESSAGES = {
+    LegalDocument.Kind.TERMS: _('You must accept the Terms to continue.'),
+    LegalDocument.Kind.CONDITIONS: _('You must accept the Conditions to continue.'),
+}
+
+
+def shown_document_ids(documents):
+    """The hidden `shown` value: the ids of the documents on the page, e.g. "3,4,7,9"."""
+    return ','.join(str(document.pk) for document in documents)
+
+
+class LegalForm(forms.Form):
+    """The legal step: one checkbox per current document (`documents`, {kind: version},
+    legal.models.LegalDocument.objects.current_by_kind), named by its kind. Terms and
+    Conditions must be ticked (error code `required`); the Ormco TPS contract and the
+    commercial consent are optional. None starts ticked but by `initial`.
+
+    The hidden `shown` field carries the ids of the versions on the page. If any is no
+    longer current when the form is sent (a version was published meanwhile), the form
+    is refused (`documents_changed`), unticked, and shows the current versions again."""
+
+    error_messages = {
+        'documents_changed': _('The documents have been updated. Please review them '
+                               'again.'),
+    }
+
+    shown = forms.CharField(required=False, widget=forms.HiddenInput)
+
+    def __init__(self, *args, documents, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.documents = {kind: documents[kind] for kind in LegalDocument.Kind.values
+                          if kind in documents}
+        self.shown_ids = shown_document_ids(self.documents.values())
+        self.fields['shown'].initial = self.shown_ids
+        for kind, document in self.documents.items():
+            required = kind in LegalDocument.REQUIRED_KINDS
+            field = forms.BooleanField(
+                # The consent label names no title: a missing key is ignored.
+                label=LEGAL_LABELS[kind] % {'title': document.title},
+                required=required,
+                widget=forms.CheckboxInput(attrs={'class': CHECKBOX_CLASSES}))
+            if required:
+                field.error_messages['required'] = LEGAL_REQUIRED_MESSAGES[kind]
+            self.fields[kind] = field
+
+    def clean(self):
+        submitted = set(filter(None, self.cleaned_data.get('shown', '').split(',')))
+        if submitted != set(self.shown_ids.split(',')):
+            # Nothing ticked on an older version counts: show the current ones, unticked.
+            data = self.data.copy()
+            for kind in self.documents:
+                self._errors.pop(kind, None)
+                self.cleaned_data.pop(kind, None)
+                data.pop(kind, None)
+            data['shown'] = self.shown_ids
+            self.data = data
+            raise forms.ValidationError(self.error_messages['documents_changed'],
+                                        code='documents_changed')
+        return self.cleaned_data
+
+    def rows(self):
+        """(bound field, document, body as safe HTML) per document, in order."""
+        return [(self[kind], document, render_markdown(document.body))
+                for kind, document in self.documents.items()]
+
+    def choices(self):
+        """{kind: accepted} of the valid form."""
+        return {kind: bool(self.cleaned_data.get(kind)) for kind in self.documents}
 
 
 class EmailCodeForm(StyledForm):

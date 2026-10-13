@@ -20,7 +20,7 @@ from signup.checks import fetch_disposable, is_disposable_domain
 from signup.models import PendingRegistration
 
 from .test_wizard import (ENCRYPTED, FIRST_NAME, LAST_NAME, MOBILE_E164, NORMALIZED, PASSWORD,
-                          _code_from_log, _step1)
+                          _code_from_log, _legal, _step1, _to_code_step)
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 
@@ -212,7 +212,6 @@ def test_hibp_down_accepts_the_password_and_logs_it(client, external_checks, err
     assert [(e.event, e.field, e.reason) for e in events] == [
         ('check_unavailable', 'password1', 'breached_password'),
         ('step_saved', '', ''),
-        ('code_sent', '', ''),
     ]
     assert PASSWORD not in json.dumps(events[0].data)
 
@@ -316,7 +315,7 @@ def test_spanish_labels_and_errors(client, external_checks):
 # --- Account created ---------------------------------------------------------------------
 
 def test_account_gets_the_step1_details(client, caplog):
-    _step1(client, middle_name='J.', how_found='others', how_found_other='A colleague')
+    _to_code_step(client, middle_name='J.', how_found='others', how_found_other='A colleague')
     client.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
 
     user = User.objects.get()
@@ -354,6 +353,9 @@ def test_step1_page_loads_the_strength_meter_and_the_others_toggle(client):
 
 def test_strength_meter_is_loaded_on_step1_only(client):
     _step1(client)
+    html = client.get('/en/signup/legal/').content.decode()
+    assert 'zxcvbn' not in html and 'signup-account.js' not in html
+    _legal(client)
     html = client.get('/en/signup/verify-email/').content.decode()
     assert 'zxcvbn' not in html and 'signup-account.js' not in html
 

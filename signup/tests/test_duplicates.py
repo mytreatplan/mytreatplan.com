@@ -17,7 +17,8 @@ from signup.tests import urls_portal
 from signup.verification import EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP, FakeVerificationProvider
 from signup.views import ATTEMPT_SESSION_KEY, RESUME_SESSION_KEY, SESSION_KEY
 
-from .test_wizard import EMAIL_ADDRESS, MOBILE_E164, NORMALIZED, PASSWORD, _step1, _wrong
+from .test_wizard import (EMAIL_ADDRESS, MOBILE_E164, NORMALIZED, PASSWORD, _legal, _step1,
+                          _wrong)
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 
@@ -57,8 +58,10 @@ def _attempt_of(client):
 
 @pytest.fixture
 def first(client):
-    """A signup in progress (step 1 saved) by another browser, with its own names."""
+    """A signup in progress (step 1 and the legal step saved, at the email code) by
+    another browser, with its own names."""
     assert _step1(client, **OLD).status_code == 302
+    assert _legal(client).status_code == 302
     return PendingRegistration.objects.get()
 
 
@@ -230,7 +233,8 @@ def test_mobile_in_another_pending_registration_is_allowed(first, caplog):
     account is created that signup is removed and its attempt ends `abandoned`."""
     second = Client()
     assert 'data-resume-offer' not in _check(second, email=OTHER_EMAIL).content.decode()
-    response = _step1(second, email=OTHER_EMAIL)
+    assert _step1(second, email=OTHER_EMAIL)['Location'] == '/en/signup/legal/'
+    response = _legal(second)
     assert response['Location'] == '/en/signup/verify-email/'
     assert PendingRegistration.objects.count() == 2
     assert 'pending_found' not in [e[0] for e in _events(_attempt_of(second))]
@@ -250,6 +254,7 @@ def test_account_creation_removes_other_registrations_with_its_email(client, fir
     PendingRegistration.objects.update(created_at=timezone.now() - timedelta(hours=25))
     second = Client()
     _step1(second)  # not a match: the other one is stale
+    _legal(second)
     other = PendingRegistration.objects.exclude(pk=first.pk).get()
     second.post('/en/signup/verify-email/',
                 {'code': _code(EMAIL, NORMALIZED, PURPOSE_SIGNUP)})
@@ -302,6 +307,9 @@ def test_correct_code_replaces_the_old_registration(client, first, caplog):
     assert RESUME_SESSION_KEY not in second.session
     for name in (*PendingRegistration.USER_FIELDS, 'email', 'password', 'phone_region'):
         assert getattr(new, name) == getattr(first, name), name
+    # The legal choices are copied (same versions, decisions and times).
+    copied = [(c.document_id, c.accepted, c.decided_at) for c in new.legal_choices.all()]
+    assert len(copied) == 4 and sum(accepted for _d, accepted, _t in copied) == 2
 
     # Old attempt: ended `abandoned`. New one: found, code sent, resumed; no email code.
     old_attempt.refresh_from_db()
@@ -494,7 +502,7 @@ def test_stale_pending_is_ignored(first):
     PendingRegistration.objects.update(created_at=timezone.now() - timedelta(hours=25))
     second = Client()
     response = _step1(second)
-    assert response['Location'] == '/en/signup/verify-email/'
+    assert response['Location'] == '/en/signup/legal/'
     assert PendingRegistration.objects.count() == 2
     assert 'pending_found' not in [e[0] for e in _events(_attempt_of(second))]
 

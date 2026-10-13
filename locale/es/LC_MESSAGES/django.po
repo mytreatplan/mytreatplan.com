@@ -791,3 +791,47 @@ msgstr "Deje vacíos los dos campos de contraseña para conservar la que eligió
 #: signup/views.py
 msgid "We have restored your registration. Review your details and continue."
 msgstr "Hemos recuperado su registro. Revise sus datos y continúe."
+
+#: signup/steps.py
+msgid "Terms and consent"
+msgstr "Términos y consentimiento"
+
+#: signup/forms.py
+#, python-format
+msgid "I have read and accept the %(title)s."
+msgstr "He leído y acepto: %(title)s."
+
+#: signup/forms.py
+#, python-format
+msgid "I accept the %(title)s (optional)."
+msgstr "Acepto: %(title)s (opcional)."
+
+#: signup/forms.py
+msgid ""
+"I agree to receive commercial communications from the MyTPDSO group, as "
+"described above (optional)."
+msgstr "Acepto recibir comunicaciones comerciales del grupo MyTPDSO, tal como se describe arriba (opcional)."
+
+#: signup/forms.py
+msgid "You must accept the Terms to continue."
+msgstr "Debe aceptar los Términos para continuar."
+
+#: signup/forms.py
+msgid "You must accept the Conditions to continue."
+msgstr "Debe aceptar las Condiciones para continuar."
+
+#: signup/templates/signup/step_legal.html
+msgid ""
+"Read the documents below. You must accept the Terms and the Conditions to "
+"create your account; the Ormco TPS contract and commercial communications are "
+"optional."
+msgstr "Lea los documentos siguientes. Para crear su cuenta debe aceptar los Términos y las Condiciones; el contrato Ormco TPS y las comunicaciones comerciales son opcionales."
+
+#: signup/templates/signup/step_legal.html
+#, python-format
+msgid "version %(version)s"
+msgstr "versión %(version)s"
+
+#: signup/forms.py
+msgid "The documents have been updated. Please review them again."
+msgstr "Los documentos se han actualizado. Revíselos de nuevo."
