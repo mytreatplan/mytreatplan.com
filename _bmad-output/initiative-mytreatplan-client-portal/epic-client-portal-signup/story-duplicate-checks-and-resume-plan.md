@@ -1,10 +1,10 @@
 ---
-title: 'Duplicate checks and resume'
+title: 'Email-first resume'
 type: 'feature'
 ticket: '5'
 created: '2026-10-13'
 status: 'done'
-baseline_revision: '52bce13188b3852d37f79770f8a51c42ba8a22f5'
+baseline_revision: '4d3e58b601035a5f077425cf8fce5b63810f916d'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
@@ -19,106 +19,106 @@ context: []
 
 ## Intent
 
-**Problem:** Step 1 only refuses a registered email, and shows no recovery link. A registered mobile gets through. A second signup with the email or mobile of a pending registration starts a duplicate, and a Doctor who closed the page can't get their saved data back (CAP-2, CAP-3, failure policies).
+**Problem:** The resume flow from 2.5 (staging, 2026-10-13) makes a returning Doctor do too much:
+- they fill in all of step 1 again before the resume is offered;
+- they then need two codes, one to resume and one for the email. With the mobile code (entry 7) that would be three.
 
 **Approach:**
-- Before step 1 is saved, block a registered email or mobile with a link to password recovery.
-- For a match in an active pending registration, warn and offer a resume code. The code goes to the matched contact (email, or mobile via the fake provider).
-- A correct code restores the saved data in a new pending registration that replaces the old one.
-- The same flow covers the page-closed case, and entry 8 reuses it.
+- Email moves to the top of step 1 and is checked as soon as the person leaves the field.
+- A match with a signup in progress offers a resume. One code to that email proves control, so it also marks the email verified.
+- The saved data is reloaded into step 1 for review. On Continue, contacts that are already verified aren't asked again.
 
 ## Boundaries & Constraints
 
 **Always:**
-- Reasons, in the policy wording: `email exists`, `phone exists`, `email pending`, `phone pending`. The replaced attempt ends with outcome `abandoned`.
-- Registered checks win over pending ones. Email is checked before mobile.
-- Pending checks run only when the rest of step 1 is valid, and never match the session's own pending row.
-- A pending row counts as active for 24 h from `created_at`, through one queryset that entry 10 reuses.
-- Without the correct code, nothing from the matched registration is shown, and no data is copied.
-- Resume codes have their own purpose (`resume`), so a signup code doesn't work for resume.
-- The session holds only the matched row's id and the channel, never a contact. The page reads the contact from the row.
-- The data typed in the new step 1 isn't stored. Its loggable values go in the `pending_found` event, never the password.
-- The recovery link uses the URL name `password_reset`, the way `_portal_links.html` handles `login`: the message always shows, and the link appears once epic-login registers the name.
-- English and Spanish strings for every new text.
-- Decision (user, 2026-10-13): a resumed signup lands on the old row's next unsaved step (today the email code step, which sends a new email code); step 1 stays reachable with Back.
-- Decision (user, 2026-10-13): the registered-mobile race is guarded by a check at account creation inside the transaction; no database constraint on `User.phone_index`.
-- Decision (user, 2026-10-13): the plan is kept whole, about 1,800 tokens.
+- Decision (user, 2026-10-13): email-first flow, replacing 2.5's step-1-submit resume.
+- Decision (user, 2026-10-13): the check runs when the email field is left, and the page updates in place (htmx). Without JavaScript, Continue runs the same check.
+- Decision (user, 2026-10-13): resume is by email only. A mobile that's in another signup in progress is allowed. When an account is created, every other pending registration with its email or mobile is deleted, and their open attempts end with outcome `abandoned`.
+- `PendingRegistration` records when the email was verified. The resume code sets it, and so does a correct email-step code. Saving step 1 with a different email clears it. A step whose contact is already verified is skipped; when no step is left, the account is created.
+- During review, the password fields may stay empty, which keeps the saved hash. When they're filled in, every password rule applies.
+- The live email check:
+  - **Registered email:** shows the recovery note.
+  - **Pending match:** shows the resume offer and logs `pending_found` (field `email`, reason `email pending`, the email in the encrypted data). An attempt is started if there is none.
+  - **No match:** shows nothing and logs nothing.
+- Nothing from the matched registration is shown until the code is correct. The session holds only the row id. A resume keeps the old row's `created_at`, as 2.5 does.
+- `registration-failure-policies.md`: the pending row now reads "Email in a pending registration: warn and offer to resume after a code to that email; the code also verifies it. A mobile in a pending registration is allowed; the other registration is removed when an account is created", with reason `email pending`. The page-closed row says the email starts the resume.
+- English and Spanish for every new or changed text.
 
 **Never:**
-- Resend limits, attempt limits, or a real WhatsApp/SMS send (entry 7). The 24 h purge job (entry 10). Idle timeout (entry 8).
-- Telling the user anything beyond "in progress" about the matched registration before the code.
+- Resume through a mobile code; `phone pending` is no longer used.
+- The mobile code, resend limits or attempt limits (entry 7). Rate limits (entry 9).
 
 ## I/O & Edge-Case Matrix
 
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |----------|--------------|---------------------------|----------------|
-| Registered email | Step 1 with a user's email, in any case | Error on email with the recovery link; `rejected`, reason `email exists` | No error expected |
-| Registered mobile | Step 1 with a user's mobile, typed in a different format | Error on mobile with the recovery link; `rejected`, reason `phone exists` | No error expected |
-| Pending email | Valid step 1; another active pending row has this email | Redirect to the resume page with the warning and a "Send code" button; `pending_found`, field `email`, reason `email pending` | No error expected |
-| Pending mobile | As above, the mobile matches | Same flow, code to the mobile; reason `phone pending` | No error expected |
-| Resume code correct | Code for the matched contact | A new pending row holds the old data with a new id and this attempt. The old row is deleted and its attempt ends `abandoned`. Then `resumed` and redirect to the old row's current step | No error expected |
-| Resume code wrong | Bad code | Error, nothing revealed; `rejected`, field `code`, reason `OTP verification failed` | No error expected |
-| Page closed | A fresh client enters the same email within 24 h | Resume flow; afterwards step 1 shows the old names, country and mobile | No error expected |
-| Stale pending | Matching row older than 24 h | No warning; step 1 saves as usual | No error expected |
-| Own pending | Back to step 1 and re-saved with the same email | Saves as today, no warning | No error expected |
-| Race at creation | Mobile registered while the attempt was in progress | `rejected`, reason `phone exists`, the recovery message | As with email |
+| Live match | Email of an active pending row typed, field left | Resume offer appears under the email, nothing else revealed; `pending_found` | No error expected |
+| Live registered | A user's email typed, field left | Recovery note appears | No error expected |
+| No JavaScript | Full step 1 with a pending email, Continue | Same offer page as the live match | No error expected |
+| Resume | Offer accepted, correct code | New row (old data, old `created_at`, email verified), old row deleted, its attempt `abandoned`. Step 1 shows the saved data, password fields empty | No error expected |
+| Review and continue | Resumed, nothing changed, Continue | No email code is sent; the account is created and the person is logged in | No error expected |
+| Email changed in review | Resumed, a new email typed, Continue | Email verified mark cleared; the email code step runs | No error expected |
+| New password in review | Password fields filled | Validated as usual; the new hash is stored | No error expected |
+| Wrong resume code | Bad code | Error; nothing revealed; `rejected`, reason `OTP verification failed` | No error expected |
+| Mobile in another pending | New email, mobile of an active pending row | Step 1 saves; at account creation that row is deleted and its attempt ends `abandoned` | No error expected |
+| Email step code | Normal signup, correct email code | Email marked verified; account created | No error expected |
 
 </frozen-after-approval>
 
 ## Code Map
 
-- `signup/forms.py` -- `AccountForm.clean_email` (add `phone_registered`, next to `email_registered`); `FAILURE_REASONS`; `email_is_registered` (add `phone_is_registered` through `User.phone_index`, `accounts.crypto.phone_index`). The resume code form follows the `EmailCodeForm` pattern, with a channel and a contact.
-- `signup/models.py` -- `PendingRegistration`: add a manager or queryset `active()` (24 h from `created_at`) and `matching_email`/`matching_phone` via `email_index`/`phone_index`. Also a method that copies the user-facing fields, password hash, `phone_region` and `step` into a new row.
-- `signup/views.py` -- `signup()`: after `form.is_valid()` on step 1 and before `step.save`, look for a pending match, log `pending_found` and redirect to the resume view. `_create_account`: add the phone race check next to the email one. Add the new `resume` view, which stays outside the generic step loop. Session keys go next to `SESSION_KEY`; the helpers can be reused by entry 8.
-- `signup/urls.py` -- `signup/resume/` (name `signup_resume`) **before** `signup/<slug:slug>/`.
-- `signup/verification.py` -- add `PURPOSE_RESUME`. `MOBILE` already works in the fake provider.
-- `signup/steps.py` -- `EmailCodeStep._send` shows the `code_sent` pattern. Resume sends log `code_sent` with `channel` and `purpose: resume`.
-- Templates: `signup/templates/signup/resume.html` (extends `portal_base.html`, styled as `wizard.html`). `step_account.html`, or `wizard.html` for the race non-field error, shows the recovery note with `{% url 'password_reset' as reset_url %}` when an error has code `email_registered`/`phone_registered`.
-- `eventlog/service.py` -- `record`, `end_attempt`, `get_attempt`. No changes.
-- `locale/es/LC_MESSAGES/django.po` -- the new strings.
-- Tests: new `signup/tests/test_duplicates.py`. The helpers in `test_step1.py` post a full step 1. The conftest `external_checks` fixture is used. Read codes with `FakeVerificationProvider._code` as the existing tests do.
+- `signup/views.py` (from 2.5) -- `signup()`:
+  - the step-1 pending check (`find_pending_match`) becomes email-only;
+  - after a step is saved, skip steps whose `is_done(pending)` is true, and create the account when none is left;
+  - the `resume` view, `_take_over` and `start_resume`/`clear_resume` are reused. After the code, redirect to step 1 (`step_url(0)`), not the next step, and set the email verified mark on the new row;
+  - `_create_account`: after `pending.delete()`, delete the other rows matching the email or phone, and end their attempts after the commit.
+- New view `signup/check-email/` (POST, htmx). It runs the email checks of `AccountForm.clean_email` (registered, disposable not needed) and `find_pending_match`, and returns a partial. Add its URL before `signup/<slug>/`.
+- `signup/steps.py` -- add `Step.is_done(pending)` (default False). `EmailCodeStep.is_done` is true when the email is verified, and its `save` sets the mark. In `AccountStep.save`, clear the mark when the email's index changes. Password fields are optional when `pending` has a hash (pass that as a form kwarg).
+- `signup/forms.py` -- in `AccountForm`, field order puts `email` first. Make the passwords optional when there is a saved hash (`clean()` validates only when filled). Remove the mobile channel from resume.
+- `signup/models.py` -- `email_verified_at` (null). `copy_to_new_row` sets it. Migration `signup/0007`.
+- Templates:
+  - `step_account.html`: email first. The email input gets `hx-post` to the check URL with `hx-trigger="change"`, a target div below it, and the CSRF token through `hx-headers` or the form.
+  - New partial `signup/_email_check.html`: the offer with a "Resume" button (POST `action=send` to `signup_resume`), or `_recovery_note.html`.
+  - `resume.html`: email only.
+- htmx is loaded by `templates/base.html` and is not yet used anywhere; vendored at `static/js/htmx.min.js`.
+- `spec-client-portal-signup/registration-failure-policies.md` -- update the two rows as stated above.
+- `locale/es/LC_MESSAGES/django.po` -- strings.
+- Tests: `signup/tests/test_duplicates.py` -- rewrite the mobile-resume and land-on-next-step tests to the new matrix. Keep the CSRF-token helper.
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `signup/models.py`, `signup/verification.py` -- active queryset, matching lookups, copy-to-new-row, resume purpose.
-- [x] `signup/forms.py` -- registered-mobile error, reasons, resume code form.
-- [x] `signup/views.py`, `signup/urls.py` -- pending detection, resume view (offer, send, resend, check, replace), phone race check.
-- [x] `signup/templates/signup/resume.html`, `step_account.html`/`wizard.html` -- warning, code form, "use different details" link back to step 1 (clears the resume state), recovery note.
-- [x] `locale/es/LC_MESSAGES/django.po` -- Spanish.
-- [x] `signup/tests/test_duplicates.py` -- every matrix row, plus the event sequence on both attempts.
+- [x] `signup/models.py`, migration -- email verified mark.
+- [x] `signup/steps.py`, `signup/forms.py`, `signup/views.py`, `signup/urls.py` -- skip verified steps, optional password in review, email check endpoint, email-only resume to step 1, clean-up at creation.
+- [x] Templates -- email first, live check partial, resume page.
+- [x] `registration-failure-policies.md`, `locale/es/LC_MESSAGES/django.po` -- policy rows, Spanish.
+- [x] `signup/tests/` -- every matrix row; update the 2.5 tests the new flow changes.
 
 **Acceptance Criteria:**
-- Given staging, when a person starts a signup, closes the browser, and starts again in a private window with the same email, then a code from the journal resumes it with the old data, and the admin shows the old attempt `abandoned` and the new one with `pending_found` and `resumed`.
+- Given staging with a signup closed at the email code step, when a person types the same email in a private window and leaves the field, then the resume offer appears. One code from the journal reloads the data into step 1, and Continue creates the account with no second code.
 - Given CI on PostgreSQL, when the suite runs, then every test passes.
 
 ## Implementation Notes
 
-- The resume session state also holds a `sent` flag (no contact) so the page shows the code form only after "Send code".
-- After the code, the page shows the contact read from the row; it is the value typed at step 1 (same blind index), so nothing new is revealed.
-- The recovery note is one include (`signup/_recovery_note.html`), shown by `wizard.html` whenever a form error has code `email_registered`/`phone_registered` (step 1 fields and the race's non-field error).
-- "Use different details" is `signup/resume/?cancel` (clears the resume state, back to step 1). A step 1 that saves also clears any stale resume state.
-- If the matched row was resumed elsewhere or went stale before the code, the code POST sends the person back to step 1.
-- Not done here: the staging acceptance check and CI on PostgreSQL. Run locally on SQLite only.
+- No JavaScript: Continue with a pending email re-renders step 1 with the same offer partial under the email (status 200), not a redirect to the resume page. The Resume button posts the step 1 form (with its CSRF token) to `signup_resume` via `formaction`, so it works with and without htmx.
+- The live check sends only `email` and `csrfmiddlewaretoken` (`hx-params`), never the passwords. It also clears an earlier resume offer when the email no longer matches.
+- After a resume, step 1 shows a "registration restored" message (new string, EN/ES). The password help text explains that empty fields keep the saved password.
+- The optional passwords also apply on Back from step 2, since that row has a saved hash too. Once one password field is filled in, both are required.
+- At account creation, every other pending row with the email or mobile is deleted, whether or not it is still active.
 
 ## Plan Change Log
 
 ## Review Triage Log
 
-**Pass 1 (quick lens, 2026-10-13):** high 0, medium 1, low 3, false 1, maybe-false 0. One patch; four findings rejected.
+**Pass 1 (quick lens, 2026-10-13):** high 0, medium 2, low 3, false 0, maybe-false 0. Three patches; two findings rejected.
 
 | # | Finding | Verdict | Route | Evidence |
 |---|---------|---------|-------|----------|
-| 1 | Both acceptance criteria (staging resume, PostgreSQL CI) unmet | false | rejected | Not a code defect: both criteria are checked after the push (CI) and after the merge (staging), as in every story of this epic. |
-| 2 | A resume gives the new row a fresh `created_at`, so each resume restarts the 24 h window and personal data can outlive the purge | medium | patch | Real: `copy_to_new_row` saves a new row and `auto_now_add` sets `created_at` to now. `active()` and the entry 10 purge count from it. Fix: the new row keeps the old row's `created_at`, with a test. |
-| 3 | A code POST is checked before "Send code", and a wrong one is then rendered without the code form | low | rejected | Needs a hand-made POST: the page shows no code field before the send. With Twilio (entry 11) an unsent code never checks. The fix adds a branch. |
-| 4 | Email and mobile both registered: both errors show and two `rejected` events are logged | low | rejected | Both errors are true statements about what the person typed, and the logs are correct. "Email before mobile" was written for the pending match. Changing it would add a cross-field branch. |
-| 5 | `_take_over` with no open attempt in the session makes a row without an attempt, and later events are dropped | low | rejected | Reachable only if another browser resumes this browser's own row while this browser sits on the resume page, or the attempt read fails. Step 1's POST always opens an attempt before the redirect. The fix adds a fallback branch. |
-
-## Design Notes
-
-- **Replace, not reuse:** the resumed data moves to a new row id, so a browser still pointing at the old row loses it on its next request (`_pending_registration` drops a missing id). This browser's own earlier pending row, if it had one, is deleted too.
-- **Events:** new attempt: `pending_found` → `code_sent` (resume) → `resumed` (data: the replaced attempt's id). Old attempt: `end_attempt(old, 'abandoned')`.
+| 1 | The Resume button in the offer becomes the step 1 form's default button, so Enter in any field sends a resume code | medium | patch | Real: it is a submit button inside the step 1 form, placed before Continue. Fix: a separate resume form outside step 1, which the button names with `form=`, plus a test. |
+| 2 | After a resume the new row keeps step `verify-email`, so `/signup/verify-email/` renders "we sent a code" with no code sent and the email already verified | low | patch | Real, reachable by URL. Direct correction: `_take_over` sets the new row to step 1, plus a test. |
+| 3 | Creating an account deletes other pending registrations by an unverified mobile | low | rejected | This is the user's decision 2a. The mobile is verified before account creation from entry 7, which closes the gap. |
+| 4 | The spec's CAP-3 and `signup-fields.md` still describe resume by mobile, and a mobile unique across pending registrations | medium | patch | Real: they contradict the updated policy row, and later entries read them. Fix: reword both to the user's decision. |
+| 5 | The live check and a fast Continue can log `pending_found` twice | low | rejected | A duplicate event is harmless for reconstructing the attempt. Fixing it needs request syncing or a guard. |
 
 ## Verification
 
@@ -126,7 +126,10 @@ context: []
 - `DATABASE_URL="sqlite:///$TMPDIR/x.sqlite3" ../.venv/bin/python -m pytest -q` (with test keys) -- expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check`, `manage.py compilemessages` -- expected: no changes; compiles.
 
-Done locally (2026-10-13) after the review patch, on SQLite: `pytest` 532 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date. CI on PostgreSQL 16 (PR #16): 541 passed, after a flaky absence check was fixed to ignore the random CSRF token.
+Done locally (2026-10-13) after the review patches, on SQLite: `pytest` 544 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date. CI on PostgreSQL 16 (PR #17): 553 passed.
 
-Staging (2026-10-13): the merge deployed with no migration. A registered mobile was refused with `phone exists`. A signup closed at the email code step was resumed from a private window: after step 1 was filled in in full with the same email, the warning appeared, the resume code worked, and the person landed on the email code step. The check passed, but the user rejected the flow as confusing. The returning Doctor has to type all their data again, and gets two codes (resume, then email). With the mobile code there would be three. Decision (user, 2026-10-13): rework as the email-first flow in `story-duplicate-checks-and-resume-2-plan.md`. Email goes first and is checked when the field is left. The resume code also verifies the email, the saved data is reloaded into step 1 for review, and verified contacts are not asked again. A mobile in another signup in progress is allowed, and that signup is removed when this account is created.
-
+Staging (2026-10-13): the merge deployed and ran migration `signup.0007`. The checks:
+- A signup closed at the code screen was found from a private window as soon as the email field was left, so htmx sent the CSRF token.
+- One resume code brought the saved data back into step 1, with the password fields empty.
+- Continue created the account and logged the person in with no second code.
+- In the admin, the old attempt was `abandoned`, and the new one showed `pending_found`, `code_sent`, `resumed`, `step_saved` and `completed`.
