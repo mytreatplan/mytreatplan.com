@@ -18,6 +18,7 @@ import base64
 import binascii
 import hashlib
 import hmac
+import json
 import os
 import re
 from functools import cache
@@ -26,6 +27,7 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from django.conf import settings
 from django.core.exceptions import FieldError, ImproperlyConfigured
+from django.core.serializers.json import DjangoJSONEncoder
 from django.core.signals import setting_changed
 from django.db import models
 from django.dispatch import receiver
@@ -292,6 +294,34 @@ class EncryptedCharField(EncryptedFieldMixin, models.CharField):
 
 class EncryptedEmailField(EncryptedFieldMixin, models.EmailField):
     pass
+
+
+class EncryptedJSONField(EncryptedFieldMixin, models.TextField):
+    """A JSON value (dict, list, str, number, bool), stored encrypted as one text value.
+
+    The whole JSON document is encrypted, so the database cannot query inside it. SQL
+    NULL (Python None) stays NULL, so clearing the field anonymizes the row.
+    """
+
+    def from_db_value(self, value, expression, connection):
+        if value is None:
+            return None
+        return json.loads(decrypt(value, self.associated_data))
+
+    def get_prep_value(self, value):
+        if value is None:
+            return None
+        return encrypt(json.dumps(value, cls=DjangoJSONEncoder, sort_keys=True),
+                       self.associated_data)
+
+    def to_python(self, value):
+        """JSON text (as value_to_string writes it, e.g. for loaddata) becomes its value."""
+        if isinstance(value, str):
+            return json.loads(value)
+        return value
+
+    def value_to_string(self, obj):
+        return json.dumps(self.value_from_object(obj), cls=DjangoJSONEncoder, sort_keys=True)
 
 
 def encrypted_fields(model):

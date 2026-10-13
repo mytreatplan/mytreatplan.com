@@ -13,6 +13,7 @@ class PendingRegistration(models.Model):
     The email is encrypted (accounts.crypto); `email_index` is its blind index, set on
     every save (not unique: two signups may be in progress for one address).
     `created_at` / `updated_at` let the purge job (signup entry 10) drop stale rows.
+    `attempt` is this signup's event log attempt (eventlog), kept after this row is gone.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -21,6 +22,8 @@ class PendingRegistration(models.Model):
     password = models.CharField(max_length=128)
     # Slug of the first step not yet saved (see signup.steps.STEPS).
     step = models.CharField(max_length=50)
+    attempt = models.ForeignKey('eventlog.Attempt', null=True, blank=True,
+                                on_delete=models.SET_NULL, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
