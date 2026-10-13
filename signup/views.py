@@ -5,7 +5,10 @@ pending registration (checked as soon as the email field is left, `check_email`,
 Continue without JavaScript), the person can take it over with a code sent to that email.
 The code also verifies the email; the saved data comes back into step 1 for review.
 """
+import math
+
 from django import forms
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
@@ -13,7 +16,6 @@ from django.db import IntegrityError, transaction
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from django.utils import translation
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods, require_POST
 
@@ -24,9 +26,11 @@ from legal.models import LegalChoice
 from .forms import (EMAIL_EXISTS, EMAIL_PENDING, EMAIL_REGISTERED_MESSAGE, PHONE_EXISTS,
                     PHONE_REGISTERED_MESSAGE, REGISTERED_CODES, ResumeCodeForm,
                     email_is_registered, failure_reason, normalize_email, phone_is_registered)
+from . import limits
 from .models import PendingRegistration
-from .steps import STEPS, get_step
-from .verification import EMAIL, PURPOSE_RESUME, get_provider
+from .steps import (CODE_STATE_SESSION_KEY, HOURLY, SENT, STEPS, CodeStep,
+                    MobileCodeStep, code_state, get_step, send_code)
+from .verification import CODE_TTL_SECONDS, EMAIL, PURPOSE_RESUME, SMS
 
 # The session holds only the pending registration's id, and the event log attempt's id.
 SESSION_KEY = 'signup_pending_id'
@@ -110,11 +114,20 @@ def find_pending_match(email, exclude=None):
 
 def start_resume(request, row):
     """Offer to resume `row` (the resume page takes over)."""
+    _clear_resume_code_state(request)
     request.session[RESUME_SESSION_KEY] = {'id': str(row.pk), 'sent': False}
 
 
 def clear_resume(request):
     request.session.pop(RESUME_SESSION_KEY, None)
+    _clear_resume_code_state(request)
+
+
+def _clear_resume_code_state(request):
+    states = request.session.get(CODE_STATE_SESSION_KEY)
+    if states and RESUME_STEP in states:
+        request.session[CODE_STATE_SESSION_KEY] = {
+            page: value for page, value in states.items() if page != RESUME_STEP}
 
 
 def _resume_state(request):
@@ -293,18 +306,71 @@ def _abandon_attempts(attempt_ids, keep=None):
             eventlog.end_attempt(other, 'abandoned')
 
 
+def _is_last(index, pending):
+    """True if no later step is left to do for `pending` (Continue creates the account)."""
+    if pending is None or pending._state.adding:
+        return False
+    return all(later.is_done(pending) for later in STEPS[index + 1:])
+
+
+def _code_help(request, page, form, contact, purpose, change_url=None, sms=False):
+    """The context of signup/_code_help.html for a code page: the state of its last send
+    (signup.steps.code_state), the one-time notice, whether the support contact shows
+    (the hourly limit, a failed send, or a code no longer valid), and whether a code
+    went to `contact` for `purpose` within its validity (`sent_recently`: only then
+    does the page say a code was sent)."""
+    state = code_state(request, page)
+    since = limits.seconds_since_last_send(contact, purpose)
+    expired = form.is_bound and any(
+        error.code == 'code_expired' for error in form.errors.as_data().get('code', ()))
+    notice = state.get('notice')
+    failed = bool(state.get('failed'))
+    return {
+        'page': page,
+        'channel': state.get('channel'),
+        'fallback': bool(state.get('fallback')),
+        'failed': failed,
+        'notice': notice,
+        'wait_seconds': state.get('wait') or 0,
+        'wait_minutes': math.ceil((state.get('wait') or 0) / 60),
+        'expired': expired,
+        'show_support': notice == HOURLY or failed or expired,
+        'support_email': settings.SIGNUP_SUPPORT_EMAIL,
+        'sent_recently': since is not None and since < CODE_TTL_SECONDS,
+        'change_url': change_url,
+        'sms': sms and state.get('channel') != SMS,
+    }
+
+
+def _back_index(index, pending):
+    """The step Back goes to: the previous one, skipping code steps already done (their
+    code is used up). Never skips the account or the legal step."""
+    back = index - 1
+    while (back > 0 and pending is not None and isinstance(STEPS[back], CodeStep)
+           and STEPS[back].is_done(pending)):
+        back -= 1
+    return back
+
+
 def _render(request, index, step, form, pending, email_check=None):
-    return render(request, step.template_name, {
+    context = {
         'step': step,
         'form': form,
         'pending': pending,
         'step_number': index + 1,
         'step_count': len(STEPS),
-        'back_url': step_url(index - 1) if index > 0 else None,
+        'back_url': step_url(_back_index(index, pending)) if index > 0 else None,
         'show_recovery': _registered_error(form),
         # The offer under the email (signup/_email_check.html): 'pending' or None.
         'email_check': email_check,
-    })
+        # The submit button reads "Create account" only on the last step left to do.
+        'is_last': _is_last(index, pending),
+    }
+    if isinstance(step, CodeStep):
+        context['code'] = _code_help(request, step.slug, form, step.contact(pending),
+                                     step.purpose, change_url=step_url(0),
+                                     sms=isinstance(step, MobileCodeStep))
+    return render(request, step.template_name, context)
 
 
 @require_POST
@@ -363,10 +429,17 @@ def resume(request):
 
     action = request.POST.get('action')
     if action in ('send', 'resend'):
-        _send_resume_code(request, attempt, contact, resend=action == 'resend')
-        request.session[RESUME_SESSION_KEY] = {**state, 'sent': True}
-        if action == 'resend':
-            messages.success(request, _('We have sent you a new code.'))
+        since = limits.seconds_since_last_send(contact, PURPOSE_RESUME)
+        if action == 'send' and since is not None and since < limits.COOLDOWN_SECONDS:
+            # A code went to this email moments ago and is still valid: no new send.
+            status = SENT
+        else:
+            status = _send_resume_code(request, attempt, contact,
+                                       resend=action == 'resend').status
+            if action == 'resend' and status == SENT:
+                messages.success(request, _('We have sent you a new code.'))
+        if status == SENT:  # sent now, or one sent within the cooldown is still valid
+            request.session[RESUME_SESSION_KEY] = {**state, 'sent': True}
         return redirect('signup_resume')
 
     form = ResumeCodeForm(request.POST, email=contact)
@@ -380,11 +453,10 @@ def resume(request):
 
 
 def _send_resume_code(request, attempt, email, resend=False):
-    get_provider().send(EMAIL, email, PURPOSE_RESUME, translation.get_language())
-    data = {'email': email, 'channel': EMAIL, 'purpose': PURPOSE_RESUME}
-    if resend:
-        data['resend'] = True
-    eventlog.record(attempt, 'code_sent', request=request, step=RESUME_STEP, data=data)
+    """Within the same limits, and with the same answer to a failed send, as the code
+    steps (signup.steps.send_code). Returns its SendOutcome."""
+    return send_code(request, attempt, RESUME_STEP, email, PURPOSE_RESUME, EMAIL,
+                     resend=resend)
 
 
 def _take_over(request, matched_pk, attempt):
@@ -423,9 +495,11 @@ def _take_over(request, matched_pk, attempt):
 
 
 def _render_resume(request, state, contact, form):
+    # "Use different details" (cancel_url) is this page's way to change the email.
     return render(request, 'signup/resume.html', {
         'form': form,
         'contact': contact,
         'sent': state.get('sent', False),
         'cancel_url': reverse('signup_resume') + '?cancel',
+        'code': _code_help(request, RESUME_STEP, form, contact, PURPOSE_RESUME),
     })

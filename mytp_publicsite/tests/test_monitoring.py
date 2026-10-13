@@ -286,6 +286,7 @@ def test_error_messages_and_logs_reach_sentry_redacted(sentry_capture):
         assert secret not in text
 
 
+@pytest.mark.django_db
 def test_verification_codes_never_reach_sentry(sentry_capture):
     """The fake provider's code line is neither a breadcrumb nor an event (signup 2.1)."""
     from signup.verification import FakeVerificationProvider
@@ -315,6 +316,28 @@ def test_verification_codes_never_reach_sentry(sentry_capture):
         for e in sentry_capture.events])
     assert 'Verification code' not in text and 'an error on the code logger' not in text
     assert code not in text
+
+
+@pytest.mark.django_db
+def test_failed_code_send_reaches_sentry_without_personal_data(sentry_capture):
+    """Signup entry 7: a failed send is an error event (Sentry alerts on spikes), naming
+    the channel and the purpose only."""
+    from django.contrib.sessions.backends.db import SessionStore
+    from django.test import RequestFactory
+
+    from signup.steps import FAILED, send_code
+    from signup.verification import FAKE_SEND_FAILS_NUMBER, WHATSAPP
+
+    request = RequestFactory().post('/en/signup/verify-mobile/')
+    request.session = SessionStore()
+    outcome = send_code(request, None, 'verify-mobile', FAKE_SEND_FAILS_NUMBER, 'signup',
+                        WHATSAPP)
+    sentry_sdk.flush()
+
+    assert outcome.status == FAILED
+    text = json.dumps(sentry_capture.events)
+    assert 'Signup code send failed' in text and 'whatsapp' in text
+    assert FAKE_SEND_FAILS_NUMBER not in text and FAKE_SEND_FAILS_NUMBER[1:] not in text
 
 
 # --- Jobs: jobs.conf and the runner ---------------------------------------------------

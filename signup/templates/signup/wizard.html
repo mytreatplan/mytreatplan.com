@@ -3,6 +3,7 @@
 {% comment %}
 Frame shared by every signup step: progress, heading, the step's form and the back link.
 Each step template (named in signup.steps) fills `intro` and `fields`, and may add `extra`.
+The button reads "Create account" on the last step left to do (`is_last`), else "Continue".
 {% endcomment %}
 
 {% block title %}{{ step.title }} &mdash; MyTreatPlan{% endblock %}
@@ -24,7 +25,7 @@ Each step template (named in signup.steps) fills `intro` and `fields`, and may a
   {% if show_recovery %}{% include "signup/_recovery_note.html" %}{% endif %}
   {% block fields %}{% endblock %}
   <button type="submit" class="mt-2 min-h-[52px] cursor-pointer rounded-pill bg-ink px-8 text-[16px] font-black leading-none tracking-[-0.01em] text-white transition hover:-translate-y-[2px] hover:bg-green hover:text-ink hover:shadow-lift focus-visible:shadow-focus-pill focus-visible:outline-none">
-    {% block submit_label %}{% translate "Continue" %}{% endblock %}
+    {% block submit_label %}{% if is_last %}{% translate "Create account" %}{% else %}{% translate "Continue" %}{% endif %}{% endblock %}
   </button>
 </form>
 {% block extra %}{% endblock %}

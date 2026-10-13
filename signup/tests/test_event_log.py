@@ -10,8 +10,8 @@ from signup.models import PendingRegistration
 from signup.views import ATTEMPT_SESSION_KEY
 
 from .test_wizard import (EMAIL_ADDRESS, ENCRYPTED, FIRST_NAME, LAST_NAME, MOBILE_E164,
-                          NORMALIZED, PASSWORD, _code_from_log, _legal, _step1,
-                          _to_code_step, _wrong)
+                          NORMALIZED, PASSWORD, _code_from_log, _complete, _legal,
+                          _mobile_code, _step1, _to_code_step, _to_mobile_step, _wrong)
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 
@@ -66,6 +66,8 @@ def test_happy_path(client, caplog):
     _legal(client)
     code = _code_from_log(caplog)
     client.post('/en/signup/verify-email/', {'code': code})
+    mobile_code = _code_from_log(caplog)
+    client.post('/en/signup/verify-mobile/', {'code': mobile_code})
 
     events = _events()
     assert _summary(events) == [
@@ -73,7 +75,9 @@ def test_happy_path(client, caplog):
         ('step_saved', 'legal', '', ''),
         ('code_sent', 'verify-email', '', ''),
         ('code_accepted', 'verify-email', '', ''),
-        ('completed', 'verify-email', '', ''),
+        ('code_sent', 'verify-mobile', '', ''),
+        ('code_accepted', 'verify-mobile', '', ''),
+        ('completed', 'verify-mobile', '', ''),
     ]
     assert events[0].data['email'] == NORMALIZED
     assert set(events[0].data) == {*STEP1_LOGGED, 'ip', 'user_agent'}
@@ -85,10 +89,12 @@ def test_happy_path(client, caplog):
         'commercial_consent': {'version': 1, 'accepted': False},
     }
     assert events[2].data['email'] == NORMALIZED and events[2].data['channel'] == 'email'
-    assert 'resend' not in events[2].data
+    assert 'resend' not in events[2].data and events[2].data['fallback'] is False
+    assert events[4].data['phone'] == MOBILE_E164 and events[4].data['channel'] == 'whatsapp'
+    assert events[4].data['fallback'] is False
     for event in events:
         _assert_request_data(event)
-        _assert_no_secret(event, PASSWORD, code)
+        _assert_no_secret(event, PASSWORD, code, mobile_code)
     assert [e.created_at for e in events] == sorted(e.created_at for e in events)
 
     attempt.refresh_from_db()
@@ -99,8 +105,7 @@ def test_happy_path(client, caplog):
 
 
 def test_a_new_signup_after_completion_is_a_new_attempt(client, caplog):
-    _to_code_step(client)
-    client.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
+    _complete(client)
     client.logout()
 
     _step1(client, email='bea@example.com')
@@ -113,6 +118,7 @@ def test_password_and_its_hash_are_never_logged(client, caplog):
     _to_code_step(client)
     pending_hash = PendingRegistration.objects.get().password
     client.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
+    _mobile_code(client)
     for event in Event.objects.all():
         _assert_no_secret(event, PASSWORD, 'a-different-password-1', pending_hash,
                           pending_hash.split('$')[-1])
@@ -183,8 +189,9 @@ def test_wrong_code(client, caplog):
     assert set(event.data) == {'ip', 'user_agent'}
 
 
-def test_resend(client):
+def test_resend(client, clock):
     _to_code_step(client)
+    clock.advance(60)
 
     client.post('/en/signup/verify-email/', {'action': 'resend'})
 
@@ -198,15 +205,15 @@ def test_resend(client):
 # --- Race at creation ------------------------------------------------------------------
 
 def test_email_registered_meanwhile(client, caplog):
-    _to_code_step(client)
+    _to_mobile_step(client)
     User.objects.create_user(NORMALIZED, 'another-password-123')
 
-    client.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
+    _mobile_code(client)
 
     events = _events()
     assert _summary(events[-2:]) == [
-        ('code_accepted', 'verify-email', '', ''),
-        ('rejected', 'verify-email', 'email', 'email exists'),
+        ('code_accepted', 'verify-mobile', '', ''),
+        ('rejected', 'verify-mobile', 'email', 'email exists'),
     ]
     assert events[-1].data['email'] == NORMALIZED
     assert Attempt.objects.get().ended_at is None
@@ -224,8 +231,7 @@ def test_signup_completes_when_the_log_cannot_be_written(client, caplog, monkeyp
 
     monkeypatch.setattr(Event.objects, 'create', fail)
 
-    _to_code_step(client)
-    response = client.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
+    response = _complete(client)
 
     assert response['Location'] == '/en/welcome/'
     assert User.objects.get().email == NORMALIZED
@@ -248,20 +254,19 @@ def test_signup_works_when_no_attempt_can_be_started(client, caplog, monkeypatch
     _to_code_step(client)
     assert PendingRegistration.objects.get().attempt is None
     assert ATTEMPT_SESSION_KEY not in client.session
-    response = client.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
-    assert response['Location'] == '/en/welcome/'
+    client.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
+    assert _mobile_code(client)['Location'] == '/en/welcome/'
 
 
 # --- Raw row ---------------------------------------------------------------------------
 
 def test_raw_rows_hold_ciphertext(client, caplog):
-    _to_code_step(client)
-    client.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
+    _complete(client)
 
     with connection.cursor() as cursor:
         cursor.execute('SELECT data FROM eventlog_event')
         rows = [row[0] for row in cursor.fetchall()]
-    assert len(rows) == 5
+    assert len(rows) == 7
     for stored in rows:
         assert ENCRYPTED.match(stored)
         for plaintext in (NORMALIZED, CLIENT_IP, 'EventLogTest', FIRST_NAME, LAST_NAME,

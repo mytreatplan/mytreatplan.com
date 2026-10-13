@@ -57,12 +57,30 @@ ROBOTS_NOINDEX = config('ROBOTS_NOINDEX', default=False, cast=bool)
 # `portal_patterns` in mytreatplan/urls.py.
 PORTAL_ENABLED = config('PORTAL_ENABLED', default=False, cast=bool)
 
-# Sends and checks the signup codes (email, later mobile): a dotted path to a class with
+# Sends and checks the signup codes (email, mobile, resume): a dotted path to a class with
 # send(channel, contact, purpose, language) and check(channel, contact, purpose, code).
 # The default fake writes each code to the log (the console locally, the server journal on
 # staging) and stores nothing; Twilio Verify replaces it in signup entry 11.
 VERIFICATION_PROVIDER = config('VERIFICATION_PROVIDER',
                                default='signup.verification.FakeVerificationProvider')
+
+# Where a person stuck in the signup codes is told to write: the hourly resend limit, a
+# code invalidated after too many wrong attempts, or a failed send (signup entry 7).
+SIGNUP_SUPPORT_EMAIL = config('SIGNUP_SUPPORT_EMAIL', default='sayhi@mytreatplan.com')
+
+# The database cache (table `django_cache`, created by `createcachetable` in
+# deploy/release.sh), shared by every Gunicorn worker. It holds the signup code resend
+# limits (signup.limits) and the fake verification provider's state, keyed by blind
+# indexes: never a code or a plain contact.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'django_cache',
+        # Django culls a third of the rows past MAX_ENTRIES (default 300), live ones
+        # included, which would lift the resend limits: set far above any hour's load.
+        'OPTIONS': {'MAX_ENTRIES': 100000},
+    },
+}
 
 # Error reporting and job monitoring (Sentry, EU region: the DSN host is *.de.sentry.io).
 # Off unless SENTRY_DSN is set, so local development and CI send nothing. The release

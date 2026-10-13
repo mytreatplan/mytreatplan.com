@@ -12,7 +12,8 @@ from legal.models import LegalDocument
 from legal.rendering import render_markdown
 
 from .checks import DISPOSABLE_EMAIL_CHECK, email_domain, is_disposable_domain
-from .verification import CODE_LENGTH, EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP, get_provider
+from .verification import (APPROVED, CODE_LENGTH, EMAIL, NO_CODE, PURPOSE_RESUME, PURPOSE_SIGNUP,
+                           SMS, get_provider)
 
 
 # Text-field classes (design tokens: field-border, radius-14, shadow-focus-field).
@@ -50,10 +51,15 @@ FAILURE_REASONS = {
     'email_pending': 'email pending',
     'email_disposable': 'email disposable',
     'invalid_code': 'OTP verification failed',
+    'code_expired': 'OTP verification failed',
+    'rate_limited': 'OTP rate limited',
+    'send_failed': 'OTP send failed',
 }
 EMAIL_EXISTS = FAILURE_REASONS['email_registered']
 PHONE_EXISTS = FAILURE_REASONS['phone_registered']
 EMAIL_PENDING = FAILURE_REASONS['email_pending']
+OTP_RATE_LIMITED = FAILURE_REASONS['rate_limited']
+OTP_SEND_FAILED = FAILURE_REASONS['send_failed']
 
 
 def failure_reason(code):
@@ -380,11 +386,17 @@ class LegalForm(forms.Form):
         return {kind: bool(self.cleaned_data.get(kind)) for kind in self.documents}
 
 
-class EmailCodeForm(StyledForm):
-    """Step 2: the code sent to the email address."""
+class CodeForm(StyledForm):
+    """A verification code for `contact`, checked with the provider (signup.verification)
+    over `channel` for `purpose`. A wrong code is `invalid_code`; no valid code (expired,
+    or invalidated after too many wrong attempts) is `code_expired`."""
+
+    channel = EMAIL
+    purpose = PURPOSE_SIGNUP
 
     error_messages = {
         'invalid_code': _('This code is not correct. Check it, or send a new one.'),
+        'code_expired': _('This code is no longer valid. Send a new code.'),
     }
 
     code = forms.CharField(
@@ -397,43 +409,40 @@ class EmailCodeForm(StyledForm):
         }),
     )
 
-    def __init__(self, *args, email, **kwargs):
-        self.email = email
+    def __init__(self, *args, contact, **kwargs):
+        self.contact = contact
         super().__init__(*args, **kwargs)
 
     def clean_code(self):
         code = self.cleaned_data['code'].replace(' ', '')
-        if not get_provider().check(EMAIL, self.email, PURPOSE_SIGNUP, code):
+        result = get_provider().check(self.channel, self.contact, self.purpose, code)
+        if result == NO_CODE:
+            raise forms.ValidationError(self.error_messages['code_expired'],
+                                        code='code_expired')
+        if result != APPROVED:
             raise forms.ValidationError(self.error_messages['invalid_code'],
                                         code='invalid_code')
         return code
 
 
-class ResumeCodeForm(StyledForm):
+class EmailCodeForm(CodeForm):
+    """The code sent to the email address."""
+
+    def __init__(self, *args, email, **kwargs):
+        super().__init__(*args, contact=email, **kwargs)
+
+
+class MobileCodeForm(CodeForm):
+    """The code sent to the mobile (by WhatsApp or SMS: the same code)."""
+
+    channel = SMS
+
+    def __init__(self, *args, phone, **kwargs):
+        super().__init__(*args, contact=phone, **kwargs)
+
+
+class ResumeCodeForm(EmailCodeForm):
     """The code that resumes a signup in progress, sent to the matched registration's
     email, for the purpose `resume`. It also proves control of that email."""
 
-    error_messages = {
-        'invalid_code': _('This code is not correct. Check it, or send a new one.'),
-    }
-
-    code = forms.CharField(
-        label=_('Code'),
-        max_length=CODE_LENGTH + 4,  # room for stray spaces; checked after stripping
-        widget=forms.TextInput(attrs={
-            'autocomplete': 'one-time-code',
-            'inputmode': 'numeric',
-            'autofocus': True,
-        }),
-    )
-
-    def __init__(self, *args, email, **kwargs):
-        self.email = email
-        super().__init__(*args, **kwargs)
-
-    def clean_code(self):
-        code = self.cleaned_data['code'].replace(' ', '')
-        if not get_provider().check(EMAIL, self.email, PURPOSE_RESUME, code):
-            raise forms.ValidationError(self.error_messages['invalid_code'],
-                                        code='invalid_code')
-        return code
+    purpose = PURPOSE_RESUME

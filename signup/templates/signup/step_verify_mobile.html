@@ -1,0 +1,10 @@
+{% extends "signup/wizard.html" %}
+{% load i18n %}
+
+{% block intro %}{% if code.failed %}<p>{% blocktranslate with phone=pending.phone %}We couldn't send a code to <strong class="text-ink">{{ phone }}</strong>.{% endblocktranslate %}</p>{% elif not code.sent_recently %}<p data-no-code>{% translate "Ask for a new code below to continue." %}</p>{% elif code.channel == "sms" %}{% if code.fallback %}<p data-sms-fallback>{% translate "WhatsApp is not available for this number, so we sent the code by SMS." %}</p>{% endif %}<p{% if code.fallback %} class="mt-3"{% endif %}>{% blocktranslate with phone=pending.phone %}We have sent a 6-digit code by SMS to <strong class="text-ink">{{ phone }}</strong>. Enter it below to confirm your mobile phone number.{% endblocktranslate %}</p>{% else %}<p>{% blocktranslate with phone=pending.phone %}We have sent a 6-digit code by WhatsApp to <strong class="text-ink">{{ phone }}</strong>. Enter it below to confirm your mobile phone number.{% endblocktranslate %}</p>{% endif %}{% endblock %}
+
+{% block fields %}
+{% include "includes/_form_field.html" with field=form.code %}
+{% endblock %}
+
+{% block extra %}{% include "signup/_code_help.html" with kind="mobile" %}{% endblock %}

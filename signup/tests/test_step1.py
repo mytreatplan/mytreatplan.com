@@ -20,7 +20,7 @@ from signup.checks import fetch_disposable, is_disposable_domain
 from signup.models import PendingRegistration
 
 from .test_wizard import (ENCRYPTED, FIRST_NAME, LAST_NAME, MOBILE_E164, NORMALIZED, PASSWORD,
-                          _code_from_log, _legal, _step1, _to_code_step)
+                          _code_from_log, _legal, _mobile_code, _step1, _to_code_step)
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 
@@ -317,6 +317,7 @@ def test_spanish_labels_and_errors(client, external_checks):
 def test_account_gets_the_step1_details(client, caplog):
     _to_code_step(client, middle_name='J.', how_found='others', how_found_other='A colleague')
     client.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
+    _mobile_code(client)
 
     user = User.objects.get()
     assert (user.title, user.first_name, user.middle_name, user.last_name) == (
