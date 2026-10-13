@@ -4,11 +4,13 @@ from django.contrib.auth import get_user_model, password_validation
 from django.utils.translation import gettext_lazy as _
 from django_countries import countries
 
+from accounts.crypto import phone_index
 from accounts.models import HOW_FOUND_OTHER_MAX_LENGTH, HowFound, Title
 from accounts.password_validation import BREACHED_PASSWORD_CHECK, collect_unavailable_checks
 
 from .checks import DISPOSABLE_EMAIL_CHECK, email_domain, is_disposable_domain
-from .verification import CODE_LENGTH, EMAIL, PURPOSE_SIGNUP, get_provider
+from .verification import (CHANNELS, CODE_LENGTH, EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP,
+                           get_provider)
 
 
 # Text-field classes (design tokens: field-border, radius-14, shadow-focus-field).
@@ -30,18 +32,28 @@ def normalize_email(email):
     return get_user_model().objects.normalize_email(email)
 
 
-# Shown when the email belongs to an existing user (step 1, and at account creation).
+# Shown when the email or the mobile belongs to an existing user (step 1, and at account
+# creation), with the recovery note (signup/_recovery_note.html).
 EMAIL_REGISTERED_MESSAGE = _('This email address is already registered.')
+PHONE_REGISTERED_MESSAGE = _('This mobile phone number is already registered.')
+# Error codes that show the recovery note.
+REGISTERED_CODES = ('email_registered', 'phone_registered')
 
 
 # Failure reasons for the event log, in the wording of registration-failure-policies.md.
 # Any other validation failure is logged with its form error code.
 FAILURE_REASONS = {
     'email_registered': 'email exists',
+    'phone_registered': 'phone exists',
+    'email_pending': 'email pending',
+    'phone_pending': 'phone pending',
     'email_disposable': 'email disposable',
     'invalid_code': 'OTP verification failed',
 }
 EMAIL_EXISTS = FAILURE_REASONS['email_registered']
+PHONE_EXISTS = FAILURE_REASONS['phone_registered']
+EMAIL_PENDING = FAILURE_REASONS['email_pending']
+PHONE_PENDING = FAILURE_REASONS['phone_pending']
 
 
 def failure_reason(code):
@@ -52,6 +64,13 @@ def failure_reason(code):
 def email_is_registered(email):
     """Whatever its case; through the blind index, since the email is encrypted."""
     return get_user_model().objects.by_email(email).exists()
+
+
+def phone_is_registered(phone):
+    """A mobile (E.164) of an existing user; through the blind index, since it is
+    encrypted."""
+    return bool(phone) and get_user_model().objects.filter(
+        phone_index=phone_index(phone)).exists()
 
 
 # The empty first option of the step 1 selects (so nothing is chosen by default).
@@ -115,6 +134,7 @@ class AccountForm(StyledForm):
 
     error_messages = {
         'email_registered': EMAIL_REGISTERED_MESSAGE,
+        'phone_registered': PHONE_REGISTERED_MESSAGE,
         'email_disposable': _('Please use your professional email address: disposable email '
                               'addresses are not accepted.'),
         'password_mismatch': _('The two passwords do not match.'),
@@ -192,7 +212,6 @@ class AccountForm(StyledForm):
     def clean_email(self):
         email = normalize_email(self.cleaned_data['email'])
         if email_is_registered(email):
-            # Signup entry 5 adds the recovery link.
             raise forms.ValidationError(self.error_messages['email_registered'],
                                         code='email_registered')
         # Only the domain goes to the disposable-email check.
@@ -205,7 +224,7 @@ class AccountForm(StyledForm):
         return email
 
     def clean_phone(self):
-        """The mobile in E.164 form, valid for the chosen prefix."""
+        """The mobile in E.164 form, valid for the chosen prefix and not registered."""
         phone = self.cleaned_data['phone']
         region = self.cleaned_data.get('phone_prefix')
         if not region:
@@ -214,6 +233,9 @@ class AccountForm(StyledForm):
         if e164 is None:
             raise forms.ValidationError(self.error_messages['phone_invalid'],
                                         code='phone_invalid')
+        if phone_is_registered(e164):
+            raise forms.ValidationError(self.error_messages['phone_registered'],
+                                        code='phone_registered')
         return e164
 
     def clean_how_found_other(self):
@@ -273,6 +295,39 @@ class EmailCodeForm(StyledForm):
     def clean_code(self):
         code = self.cleaned_data['code'].replace(' ', '')
         if not get_provider().check(EMAIL, self.email, PURPOSE_SIGNUP, code):
+            raise forms.ValidationError(self.error_messages['invalid_code'],
+                                        code='invalid_code')
+        return code
+
+
+class ResumeCodeForm(StyledForm):
+    """The code that resumes a signup in progress, sent to the matched registration's
+    email or mobile (`channel`, `contact`), for the purpose `resume`."""
+
+    error_messages = {
+        'invalid_code': _('This code is not correct. Check it, or send a new one.'),
+    }
+
+    code = forms.CharField(
+        label=_('Code'),
+        max_length=CODE_LENGTH + 4,  # room for stray spaces; checked after stripping
+        widget=forms.TextInput(attrs={
+            'autocomplete': 'one-time-code',
+            'inputmode': 'numeric',
+            'autofocus': True,
+        }),
+    )
+
+    def __init__(self, *args, channel, contact, **kwargs):
+        if channel not in CHANNELS:
+            raise ValueError(f'Unknown verification channel: {channel!r}')
+        self.channel = channel
+        self.contact = contact
+        super().__init__(*args, **kwargs)
+
+    def clean_code(self):
+        code = self.cleaned_data['code'].replace(' ', '')
+        if not get_provider().check(self.channel, self.contact, PURPOSE_RESUME, code):
             raise forms.ValidationError(self.error_messages['invalid_code'],
                                         code='invalid_code')
         return code

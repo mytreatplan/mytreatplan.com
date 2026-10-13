@@ -736,3 +736,52 @@ msgstr "Seguridad: muy fuerte"
 #: accounts/admin.py
 msgid "Signup"
 msgstr "Registro"
+
+#: signup/forms.py
+msgid "This mobile phone number is already registered."
+msgstr "Este número de teléfono móvil ya está registrado."
+
+#: signup/templates/signup/_recovery_note.html
+msgid ""
+"If this account is yours, you can recover access to it instead of signing up "
+"again."
+msgstr "Si esta cuenta es suya, puede recuperar el acceso en lugar de volver a registrarse."
+
+#: signup/templates/signup/_recovery_note.html
+msgid "Recover your password"
+msgstr "Recuperar su contraseña"
+
+#: signup/templates/signup/resume.html
+msgid "Registration in progress"
+msgstr "Registro en curso"
+
+#: signup/templates/signup/resume.html
+msgid "A registration with this mobile phone number is already in progress."
+msgstr "Ya hay un registro en curso con este número de teléfono móvil."
+
+#: signup/templates/signup/resume.html
+msgid "A registration with this email address is already in progress."
+msgstr "Ya hay un registro en curso con esta dirección de correo electrónico."
+
+#: signup/templates/signup/resume.html
+#, python-format
+msgid ""
+"We have sent a 6-digit code to <strong class=\"text-ink\">%(contact)s</"
+"strong>. Enter it below to continue that registration."
+msgstr "Hemos enviado un código de 6 dígitos a <strong class=\"text-ink\">%(contact)s</strong>. Introdúzcalo a continuación para continuar ese registro."
+
+#: signup/templates/signup/resume.html
+msgid "To continue it, we will send a code to this mobile phone number."
+msgstr "Para continuarlo, le enviaremos un código a este número de teléfono móvil."
+
+#: signup/templates/signup/resume.html
+msgid "To continue it, we will send a code to this email address."
+msgstr "Para continuarlo, le enviaremos un código a esta dirección de correo electrónico."
+
+#: signup/templates/signup/resume.html
+msgid "Send code"
+msgstr "Enviar código"
+
+#: signup/templates/signup/resume.html
+msgid "Use different details"
+msgstr "Usar otros datos"

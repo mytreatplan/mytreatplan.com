@@ -1,0 +1,9 @@
+{% load i18n %}{% comment %}
+Shown with an "already registered" error (email or mobile, at step 1 or at account
+creation). The message always shows; the link appears by itself once the password
+recovery page (epic 3, Login) registers the URL name `password_reset`.
+{% endcomment %}{% url 'password_reset' as reset_url %}
+<p class="rounded-12 border border-line bg-panel px-5 py-4 text-[15px] leading-[1.5]" data-recovery-note>
+  {% translate "If this account is yours, you can recover access to it instead of signing up again." %}
+  {% if reset_url %}<a href="{{ reset_url }}" class="font-semibold text-ink underline underline-offset-4 hover:text-green-deep" data-recovery-link>{% translate "Recover your password" %}</a>{% endif %}
+</p>
