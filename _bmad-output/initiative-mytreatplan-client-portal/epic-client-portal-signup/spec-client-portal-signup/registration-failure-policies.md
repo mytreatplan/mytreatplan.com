@@ -10,8 +10,8 @@ Wizard progress is saved server-side at each step. Once a registration is cancel
 | Registration unfinished after 24h | Purge automatically (CAP-9) | timeout |
 | Email already registered | Block; show a link to password recovery (CAP-2) | email exists |
 | Mobile already registered | Block; show a link to password recovery (CAP-2) | phone exists |
-| Email or mobile in a pending registration | Warn and offer to resume after a code sent to the matched contact; the new attempt replaces the old one (CAP-3) | email pending / phone pending |
-| User closes the page mid-wizard | Within 24h, re-entering the same email or mobile starts the resume flow, which restores the saved data | abandoned |
+| Email in a pending registration | Warn and offer to resume after a code to that email; the code also verifies it. A mobile in a pending registration is allowed; the other registration is removed when an account is created (CAP-3) | email pending |
+| User closes the page mid-wizard | Within 24h, re-entering the same email starts the resume flow, which restores the saved data | abandoned |
 | Idle for 30 minutes | Session ends; data stays saved; resume via code until the 24h purge | idle timeout |
 | Code not received | Resend, switch to SMS (mobile), edit contact, or contact support (`otp-verification.md`) | OTP not delivered |
 | Wrong code entered | 5 wrong attempts invalidate the code; the user requests a new one within resend limits | OTP verification failed |

@@ -42,6 +42,7 @@ class PendingRegistration(models.Model):
     checks them). Title, country, prefix region and how-found-us are codes.
     `created_at` / `updated_at` let the purge job (signup entry 10) drop stale rows.
     `attempt` is this signup's event log attempt (eventlog), kept after this row is gone.
+    `email_verified_at` is when control of the email was proven (signup entry 5).
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -64,6 +65,10 @@ class PendingRegistration(models.Model):
     step = models.CharField(max_length=50)
     attempt = models.ForeignKey('eventlog.Attempt', null=True, blank=True,
                                 on_delete=models.SET_NULL, related_name='+')
+    # When control of `email` was proven: a correct email-step code, or the resume code
+    # (sent to this email). Cleared when step 1 is saved with another email. A step whose
+    # contact is verified is skipped (signup.steps.Step.is_done).
+    email_verified_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -95,10 +100,13 @@ class PendingRegistration(models.Model):
 
     def copy_to_new_row(self, **fields):
         """A new saved row (new id) holding this row's RESUMED_FIELDS, plus `fields` (e.g.
-        the resuming attempt). It keeps this row's `created_at`, so a resume never extends
-        the 24 h window of `active()` and the purge. This row is left as it is."""
+        the resuming attempt). The resume code went to this row's email, so the new row's
+        email is marked verified (now) unless `fields` says otherwise. It keeps this row's
+        `created_at`, so a resume never extends the 24 h window of `active()` and the
+        purge. This row is left as it is."""
+        fields.setdefault('email_verified_at', timezone.now())
         new = PendingRegistration(
-            **{name: getattr(self, name) for name in self.RESUMED_FIELDS}, **fields)
+            **{**{name: getattr(self, name) for name in self.RESUMED_FIELDS}, **fields})
         new.save()
         # auto_now_add sets the save time; carry the original over.
         PendingRegistration.objects.filter(pk=new.pk).update(created_at=self.created_at)

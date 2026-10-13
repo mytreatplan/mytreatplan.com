@@ -4,8 +4,9 @@
 particular step: later signup entries add a step, or extend one (more fields in step 1,
 the legal step, the mobile code), by changing this module and its forms and templates.
 
-A step saves its data into the PendingRegistration. After the last step is saved, the
-wizard creates the account (signup.views.create_account).
+A step saves its data into the PendingRegistration. After a step is saved, the wizard
+skips the next steps that are already done (`is_done`, e.g. the email code once the email
+is verified); when none is left it creates the account (signup.views._create_account).
 
 Every step is logged in the event log (eventlog.service) by the views: its rejected
 fields, and `saved_event` once saved, with the values `log_fields` names. A step lists
@@ -15,10 +16,12 @@ A form may also list external checks it could not make in `unavailable_checks`, 
 """
 from django.contrib import messages
 from django.contrib.auth.hashers import make_password
-from django.utils import translation
+from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy as _
 
 from eventlog import service as eventlog
+
+from accounts.crypto import email_index
 
 from .forms import AccountForm, EmailCodeForm, national_number
 from .models import PendingRegistration
@@ -45,6 +48,10 @@ class Step:
 
     def get_initial(self, pending):
         return {}
+
+    def is_done(self, pending):
+        """True if the wizard can skip this step for `pending` (nothing left to ask)."""
+        return False
 
     def save(self, request, pending, form):
         """Store the valid form's data. Returns the PendingRegistration (created by step 1)."""
@@ -81,6 +88,10 @@ class AccountStep(Step):
     log_fields = ('title', 'first_name', 'middle_name', 'last_name', 'country', 'email',
                   'phone_prefix', 'phone', 'how_found', 'how_found_other')
 
+    def get_form_kwargs(self, pending):
+        # With a saved hash (Back, or a resumed signup) the passwords may stay empty.
+        return {'has_password': bool(pending and pending.password)}
+
     def get_initial(self, pending):
         if not pending:
             return {}
@@ -92,12 +103,17 @@ class AccountStep(Step):
 
     def save(self, request, pending, form):
         pending = pending or PendingRegistration()
+        if (pending.email_verified_at is not None
+                and email_index(form.cleaned_data['email']) != pending.email_index):
+            # Another email: it has to be verified again.
+            pending.email_verified_at = None
         for name in self.stored_fields:
             setattr(pending, name, form.cleaned_data[name])
         pending.phone_region = form.cleaned_data['phone_prefix']
         # Only the hash (Argon2id, the first of PASSWORD_HASHERS) is kept between steps;
-        # the user later gets this same hash.
-        pending.password = make_password(form.cleaned_data['password1'])
+        # the user later gets this same hash. Empty passwords keep the saved hash.
+        if form.cleaned_data.get('password1'):
+            pending.password = make_password(form.cleaned_data['password1'])
         return pending
 
 
@@ -115,7 +131,11 @@ class EmailCodeStep(Step):
     def get_form_kwargs(self, pending):
         return {'email': pending.email}
 
+    def is_done(self, pending):
+        return pending.email_verified_at is not None
+
     def save(self, request, pending, form):
+        pending.email_verified_at = timezone.now()
         return pending
 
     def enter(self, request, pending):

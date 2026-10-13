@@ -11,12 +11,15 @@
 {% block intro %}<p>{% translate "Your email address will be your username." %}</p>{% endblock %}
 
 {% block fields %}
+{# Email first: leaving it runs the live check (signup.views.check_email, htmx attributes #}
+{# from signup.forms.AccountForm), whose result goes in #email-check. #}
+{% include "includes/_form_field.html" with field=form.email %}
+<div id="email-check" aria-live="polite">{% include "signup/_email_check.html" %}</div>
 {% include "includes/_form_field.html" with field=form.title %}
 {% include "includes/_form_field.html" with field=form.first_name %}
 {% include "includes/_form_field.html" with field=form.middle_name %}
 {% include "includes/_form_field.html" with field=form.last_name %}
 {% include "includes/_form_field.html" with field=form.country %}
-{% include "includes/_form_field.html" with field=form.email %}
 {% include "includes/_form_field.html" with field=form.password1 %}
 {# Filled in by signup-account.js; a hint only: the server-side rules decide. #}
 <div id="password-strength" class="-mt-2 flex flex-col gap-1" aria-live="polite" hidden
@@ -35,4 +38,12 @@
 <div data-show-if-field="{{ form.how_found.auto_id }}" data-show-if-value="others">
 {% include "includes/_form_field.html" with field=form.how_found_other %}
 </div>
+{% endblock %}
+
+{% block extra %}
+{# Owns the offer's Resume button (signup/_email_check.html), outside the step 1 form. #}
+<form id="resume-form" method="post" action="{% url 'signup_resume' %}" hidden>
+  {% csrf_token %}
+  <input type="hidden" name="action" value="send">
+</form>
 {% endblock %}

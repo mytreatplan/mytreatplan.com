@@ -1,0 +1,14 @@
+{% load i18n %}{% comment %}
+Under step 1's email (signup/step_account.html, #email-check): filled in by the live check
+(signup.views.check_email, htmx) or, without JavaScript, by Continue. `email_check` is
+'pending' (another signup in progress has this email: the resume offer, which reveals
+nothing of it) or 'registered' (the recovery note). The Resume button belongs to
+#resume-form (outside the step 1 form, in step_account.html), so Enter in step 1 still
+submits Continue; that form posts `action=send` to the resume page.
+{% endcomment %}{% if email_check == "pending" %}
+<div class="flex flex-col gap-3 rounded-12 border border-line bg-panel px-5 py-4 text-[15px] leading-[1.5]" data-resume-offer>
+  <p>{% translate "A registration with this email address is already in progress." %}
+    {% translate "To continue it, we will send a code to this email address." %}</p>
+  <p><button type="submit" form="resume-form" class="min-h-[44px] cursor-pointer rounded-pill bg-ink px-6 text-[15px] font-black leading-none text-white transition hover:bg-green hover:text-ink focus-visible:shadow-focus-pill focus-visible:outline-none">{% translate "Resume" %}</button></p>
+</div>
+{% elif email_check == "registered" %}{% include "signup/_recovery_note.html" %}{% endif %}

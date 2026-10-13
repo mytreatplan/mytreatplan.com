@@ -26,8 +26,8 @@ Vision plus mandate. mytreatplan.com is the client portal where Doctors order My
   - **intent:** The system rejects an email or mobile number already belonging to a registered user.
   - **success:** Entering a registered email or mobile blocks progress and shows a message linking to password recovery.
 - **CAP-3**
-  - **intent:** A Doctor whose email or mobile is in a pending registration can resume it after proving control of that contact.
-  - **success:** A warning offers to resume. A correct code sent to the matched contact restores the data entered so far, and the new attempt replaces the old pending registration. Without the code nothing is revealed.
+  - **intent:** A Doctor whose email is in a pending registration can resume it after proving control of that email.
+  - **success:** A warning offers to resume. A correct code sent to that email restores the data entered so far into step 1 for review, verifies the email, and the new attempt replaces the old pending registration. Without the code nothing is revealed. A mobile in another pending registration is allowed; that registration is removed when an account is created.
 - **CAP-4**
   - **intent:** In step 2 the Doctor reviews and accepts the Terms and the Conditions, and may accept the Ormco TPS contract.
   - **success:** Step 2 cannot be completed without accepting Terms and Conditions. The Ormco TPS contract is always shown, unticked, and optional. Each acceptance is stored with the registration.
