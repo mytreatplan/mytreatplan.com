@@ -3,7 +3,7 @@ title: 'Legal acceptance and commercial consent'
 type: 'feature'
 ticket: '6'
 created: '2026-10-13'
-status: 'built'
+status: 'done'
 baseline_revision: '0f819dce1e0b12190236c6fe2214fdf25a2108a3'
 route: 'full'
 route_source: 'auto'
@@ -134,5 +134,12 @@ Verification run (2026-10-13): SQLite suite 586 passed, 3 failed (the known Post
 - `DATABASE_URL="sqlite:///$TMPDIR/x.sqlite3" ../.venv/bin/python -m pytest -q` (with test keys) -- expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check`, `manage.py compilemessages` -- expected: no changes; compiles.
 
-Done locally (2026-10-13) after the review patches, on SQLite: `pytest` 589 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. Before the patches, the implementer's run on a throwaway PostgreSQL 17 passed all 589 tests. `makemigrations --check` reports no changes; `compilemessages` is up to date. Pending: CI on PostgreSQL and the staging check (publish Terms v2 in the admin; the next signup shows it and stores it).
+Done locally (2026-10-13) after the review patches, on SQLite: `pytest` 589 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. Before the patches, the implementer's run on a throwaway PostgreSQL 17 passed all 589 tests. `makemigrations --check` reports no changes; `compilemessages` is up to date. CI on PostgreSQL 16 (PR #18): 598 passed.
+
+Staging (2026-10-13): the merge deployed and ran migrations `legal.0001`, `legal.0002` and `signup.0008`. The checks:
+- The legal step showed the four draft documents, with Ormco and consent unticked.
+- Continue with nothing ticked showed errors on Terms and Conditions.
+- Terms v1 was read-only in the admin, with no delete. A new Terms published now became v2, and the next signup showed it with no deploy.
+- The stored choices carried Terms v1 for the first user and v2 for the second, with Ormco and consent recorded as not accepted.
+- Kept as built: after Back, only Terms and Conditions come back ticked; the checkbox labels remain placeholder wording until the lawyer's texts.
 
