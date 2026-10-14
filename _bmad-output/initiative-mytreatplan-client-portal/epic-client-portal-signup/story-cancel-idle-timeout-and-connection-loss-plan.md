@@ -3,7 +3,7 @@ title: 'Cancel, idle timeout and connection loss'
 type: 'feature'
 ticket: '8'
 created: '2026-10-14'
-status: 'built'
+status: 'done'
 baseline_revision: '8c3861cfa5cf764ac18d921a1eb003372654e251'
 route: 'full'
 route_source: 'auto'
@@ -157,4 +157,11 @@ context: []
 - `DATABASE_URL="sqlite:///$TMPDIR/x.sqlite3" ../.venv/bin/python -m pytest -q` (with test keys) -- expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check`, `manage.py compilemessages` -- expected: no changes; compiles.
 
-Done locally (2026-10-14) after the review patches, on SQLite: `pytest` 696 passed, 7 skipped (PyYAML, and the browser test without Playwright), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date; `node --check` passes on both scripts. The browser test has not run yet. Pending: its first run in CI, CI on PostgreSQL, and the staging checks (cancel at the legal step; DevTools offline then back).
+Done locally (2026-10-14) after the review patches, on SQLite: `pytest` 696 passed, 7 skipped (PyYAML, and the browser test without Playwright), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date; `node --check` passes on both scripts. The browser test had not run yet.
+
+CI on PostgreSQL 16 (PR #21): the first run failed only in the browser test. The connection-lost and retry part passed, but the legal step had no documents, because an earlier transactional test flushes the tables and `serialized_rollback` restored nothing. After the fix (the browser test creates its own legal documents), 706 passed, including the browser test in Chromium.
+
+Staging (2026-10-14): the merge deployed.
+- Cancel at the legal step: "Keep my registration" returned to the step, and confirming cleared the registration and ended the attempt `cancelled`.
+- DevTools offline: the banner showed and the input stayed. Back online, the step was sent and the legal step followed.
+- The optional idle check (30 minutes) was still running when the story was closed.
