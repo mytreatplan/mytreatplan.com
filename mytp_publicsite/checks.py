@@ -3,9 +3,12 @@ import re
 from django.conf import settings
 from django.core.checks import Error, register
 
+from accounts.crypto import KMS_PROVIDER as KMS_KEY_PROVIDER
+
 DRAFT_LEGAL_TEXTS = 'mytp_publicsite.E001'
 INSECURE_DB_TLS = 'mytp_publicsite.E002'
 TURNSTILE_TEST_KEYS = 'mytp_publicsite.E003'
+PLAIN_FIELD_KEYS = 'mytp_publicsite.E004'
 
 SECURE_DB_SSLMODES = ('verify-full', 'verify-ca')
 
@@ -72,4 +75,24 @@ def check_turnstile_keys(app_configs, **kwargs):
         hint="Create a Turnstile site for this domain in the Cloudflare dashboard (Managed "
              "mode) and set TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY in settings.env.",
         id=TURNSTILE_TEST_KEYS,
+    )]
+
+
+@register('security', deploy=True)
+def check_field_key_provider(app_configs, **kwargs):
+    """Block a deploy whose field encryption keys sit in plain text in settings.env
+    (story 2.12): the encryption policy wants them wrapped by the KMS.
+
+    Runs only with `check --deploy`. Fails while DEBUG is off and FIELD_KEY_PROVIDER is
+    not the KMS provider.
+    """
+    provider = getattr(settings, 'FIELD_KEY_PROVIDER', '') or 'accounts.crypto.EnvKeyProvider'
+    if settings.DEBUG or provider == KMS_KEY_PROVIDER:
+        return []
+    return [Error(
+        f'FIELD_KEY_PROVIDER is {provider!r}: the field encryption keys are not wrapped by '
+        'the KMS.',
+        hint=f'Set FIELD_KEY_PROVIDER={KMS_KEY_PROVIDER} with FIELD_KMS_KEYS and '
+             'BLIND_INDEX_KMS_KEY (deploy/README.md, step 12, "Move to the KMS provider").',
+        id=PLAIN_FIELD_KEYS,
     )]

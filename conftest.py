@@ -32,6 +32,9 @@ def pytest_configure(config):
     settings.FIELD_ENCRYPTION_KEYS = TEST_FIELD_ENCRYPTION_KEYS
     settings.BLIND_INDEX_KEY = TEST_BLIND_INDEX_KEY
     settings.FIELD_KEY_PROVIDER = 'accounts.crypto.EnvKeyProvider'
+    # No KMS-wrapped keys either (a developer's settings.env must not make tests call a KMS).
+    settings.FIELD_KMS_KEYS = ''
+    settings.BLIND_INDEX_KMS_KEY = ''
     settings.PWNED_PASSWORDS_API_URL = TEST_PWNED_PASSWORDS_API_URL
     settings.DISPOSABLE_EMAIL_API_URL = TEST_DISPOSABLE_EMAIL_API_URL
     settings.TURNSTILE_VERIFY_URL = TEST_TURNSTILE_VERIFY_URL
