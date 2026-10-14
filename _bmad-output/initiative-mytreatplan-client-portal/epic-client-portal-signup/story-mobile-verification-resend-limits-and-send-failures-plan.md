@@ -73,6 +73,7 @@ context: []
 - Decision (user, 2026-10-13): the support contact is `sayhi@mytreatplan.com`, in the setting `SIGNUP_SUPPORT_EMAIL`.
 - Decision (user, 2026-10-13): "3 resends per hour" means the first send plus 3 resends, so 4 successful sends per contact per hour.
 - Decision (user, 2026-10-13): the plan is kept whole, above the size guideline.
+- Decision (user, 2026-10-14): the resend limits count per contact and per code type (signup or resume), so a resume code is not held back by a signup code's cooldown. An email can get at most 4 signup codes and 4 resume codes an hour.
 
 **Never:**
 - Twilio itself (entry 11). Rate limits per IP and the CAPTCHA (entry 9). Cancel and idle timeout (entry 8).
