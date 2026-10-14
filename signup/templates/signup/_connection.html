@@ -1,0 +1,10 @@
+{% load i18n %}{% comment %}
+Shown by signup-connection.js (hidden until then) when a boosted form could not be sent
+(network error or timeout): nothing else on the page changes, so what was typed stays.
+"Try again", or the connection coming back, sends the same form once more. hx-history="false"
+keeps htmx from storing these pages (they may hold personal data) in its history cache.
+{% endcomment %}
+<div class="mt-6 rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] leading-[1.5] text-notice-text" role="alert" hidden hx-history="false" data-connection-lost>
+  <p class="font-semibold">{% translate "Connection lost. We'll send your data again when you're back online." %}</p>
+  <button type="button" class="mt-3 min-h-[44px] cursor-pointer rounded-pill bg-ink px-6 text-[15px] font-black leading-none text-white transition hover:bg-green hover:text-ink focus-visible:shadow-focus-pill focus-visible:outline-none" data-connection-retry>{% translate "Try again" %}</button>
+</div>

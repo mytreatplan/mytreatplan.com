@@ -2,10 +2,11 @@
 {% load i18n static %}
 
 {% block head %}{{ block.super }}
-{# Step 1 only: the password strength meter (zxcvbn-ts, vendored) and the "Others" toggle. #}
+{# Step 1 only: the password strength meter's library (zxcvbn-ts, vendored). The meter #}
+{# and the "Others" toggle are signup-account.js (signup/_scripts.html), which loads #}
+{# these itself when step 1 arrives in a swapped page (#password-strength data-scripts). #}
 <script src="{% static 'js/zxcvbn-ts-core.js' %}" defer></script>
 <script src="{% static 'js/zxcvbn-ts-common.js' %}" defer></script>
-<script src="{% static 'js/signup-account.js' %}" defer></script>
 {% endblock %}
 
 {% block intro %}<p>{% translate "Your email address will be your username." %}</p>{% endblock %}
@@ -23,6 +24,7 @@
 {% include "includes/_form_field.html" with field=form.password1 %}
 {# Filled in by signup-account.js; a hint only: the server-side rules decide. #}
 <div id="password-strength" class="-mt-2 flex flex-col gap-1" aria-live="polite" hidden
+     data-scripts="{% static 'js/zxcvbn-ts-core.js' %} {% static 'js/zxcvbn-ts-common.js' %}"
      data-user-inputs="{{ form.first_name.auto_id }} {{ form.middle_name.auto_id }} {{ form.last_name.auto_id }} {{ form.email.auto_id }}"
      data-label-0="{% translate 'Strength: very weak' %}" data-label-1="{% translate 'Strength: weak' %}"
      data-label-2="{% translate 'Strength: fair' %}" data-label-3="{% translate 'Strength: strong' %}"
@@ -42,7 +44,8 @@
 
 {% block extra %}
 {# Owns the offer's Resume button (signup/_email_check.html), outside the step 1 form. #}
-<form id="resume-form" method="post" action="{% url 'signup_resume' %}" hidden>
+{# Boosted like the step form: the button's form="resume-form" submits it through htmx. #}
+<form id="resume-form" method="post" action="{% url 'signup_resume' %}" hidden hx-boost="true" hx-target="body">
   {% csrf_token %}
   <input type="hidden" name="action" value="send">
 </form>

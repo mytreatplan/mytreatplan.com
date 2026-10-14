@@ -4,8 +4,15 @@ Plus the resume flow (signup entry 5): when step 1's email belongs to another ac
 pending registration (checked as soon as the email field is left, `check_email`, or on
 Continue without JavaScript), the person can take it over with a code sent to that email.
 The code also verifies the email; the saved data comes back into step 1 for review.
+
+Plus cancel and the idle timeout (signup entry 8): "Cancel registration" (`cancel`)
+removes the session's pending registration; after IDLE_TIMEOUT without a signup request
+the signup session keys are cleared (`idle_check`), the pending registration stays and
+the email check offers the resume.
 """
+import functools
 import math
+import time
 
 from django import forms
 from django.conf import settings
@@ -28,6 +35,7 @@ from .forms import (EMAIL_EXISTS, EMAIL_PENDING, EMAIL_REGISTERED_MESSAGE, PHONE
                     email_is_registered, failure_reason, normalize_email, phone_is_registered)
 from . import limits
 from .models import PendingRegistration
+from .retention import remove_pending
 from .steps import (CODE_STATE_SESSION_KEY, HOURLY, SENT, STEPS, CodeStep,
                     MobileCodeStep, code_state, get_step, send_code)
 from .verification import CODE_TTL_SECONDS, EMAIL, PURPOSE_RESUME, SMS
@@ -41,6 +49,64 @@ RESUME_SESSION_KEY = 'signup_resume'
 
 # The resume page's step name in the event log.
 RESUME_STEP = 'resume'
+
+# The time (epoch seconds) of the last signup request, for the idle timeout.
+SEEN_SESSION_KEY = 'signup_seen_at'
+IDLE_TIMEOUT = 30 * 60  # seconds
+IDLE_EVENT = 'idle_timeout'
+IDLE_REASON = 'idle timeout'
+CANCELLED = 'cancelled'
+
+
+def _now():
+    """The current time (epoch seconds); a function so tests can move it."""
+    return time.time()
+
+
+def clear_signup_session(request):
+    """Forget this browser's signup (cancel, idle timeout): the pending registration's
+    id, the attempt, the resume on offer and the code pages' state. The rest of the
+    Django session (language, CSRF, a logged-in user) stays."""
+    for key in (SESSION_KEY, ATTEMPT_SESSION_KEY, RESUME_SESSION_KEY, CODE_STATE_SESSION_KEY):
+        request.session.pop(key, None)
+
+
+def _idle_timed_out(request):
+    """True if the session holds a signup in progress (a pending registration, an
+    attempt or a resume on offer) and the last signup request was more than IDLE_TIMEOUT
+    ago. Then the signup session keys are cleared, the session's open attempt gets an
+    `idle_timeout` event (it stays open: a resume ends it `abandoned`, else the hourly
+    purge `timeout`) and the idle message is queued for the next page. Without signup
+    state nothing is lost, so nothing times out. The time of this request is stored
+    either way."""
+    now = _now()
+    seen = request.session.get(SEEN_SESSION_KEY)
+    request.session[SEEN_SESSION_KEY] = now
+    if not isinstance(seen, (int, float)) or now - seen <= IDLE_TIMEOUT:
+        return False
+    if not any(key in request.session
+               for key in (SESSION_KEY, ATTEMPT_SESSION_KEY, RESUME_SESSION_KEY)):
+        return False
+    attempt = eventlog.get_attempt(request.session.get(ATTEMPT_SESSION_KEY))
+    if attempt is not None and attempt.ended_at is None:
+        eventlog.record(attempt, IDLE_EVENT, request=request, reason=IDLE_REASON)
+    clear_signup_session(request)
+    messages.info(request, _('Your session ended after 30 minutes without activity. '
+                             'Enter your email to continue where you left off.'))
+    return True
+
+
+def idle_check(view):
+    """Apply the idle timeout before a signup page. A request after the timeout is not
+    processed: it goes to an empty step 1 with the idle message. (The live email check
+    applies it itself: it answers with nothing, and the message shows on the next
+    page.)"""
+    @functools.wraps(view)
+    def wrapper(request, *args, **kwargs):
+        if _idle_timed_out(request):
+            return redirect('signup')
+        return view(request, *args, **kwargs)
+    return wrapper
 
 
 def step_url(index):
@@ -163,6 +229,7 @@ def _current_index(pending):
 
 
 @require_http_methods(['GET', 'HEAD', 'POST'])
+@idle_check
 def signup(request, slug=None):
     if slug is None:
         index, step = 0, STEPS[0]
@@ -379,7 +446,9 @@ def check_email(request):
     """The live check of step 1's email (htmx, when the field is left): the recovery note
     for a registered email, the resume offer for an email in another active signup
     (logged `pending_found`), nothing otherwise. Reveals nothing of the matched signup.
-    Returns the partial signup/_email_check.html."""
+    Returns the partial signup/_email_check.html (empty after the idle timeout)."""
+    if _idle_timed_out(request):
+        return render(request, 'signup/_email_check.html', {'email_check': None})
     try:
         email = normalize_email(forms.EmailField(max_length=254).clean(
             request.POST.get('email', '')))
@@ -404,6 +473,7 @@ def check_email(request):
 
 
 @require_http_methods(['GET', 'HEAD', 'POST'])
+@idle_check
 def resume(request):
     """Offer, send and check the code (to the email) that resumes another signup in
     progress.
@@ -502,5 +572,48 @@ def _render_resume(request, state, contact, form):
         'contact': contact,
         'sent': state.get('sent', False),
         'cancel_url': reverse('signup_resume') + '?cancel',
+        'cancel_registration_url': reverse('signup_cancel') + '?from=resume',
         'code': _code_help(request, RESUME_STEP, form, contact, PURPOSE_RESUME),
     })
+
+
+def _cancel_back_url(request, pending):
+    """Where "Keep my registration" goes: the page "Cancel registration" was chosen on
+    (`from`: a step slug, or `resume` while a resume is on offer), else the current
+    step."""
+    origin = request.GET.get('from', '')
+    current = _current_index(pending)
+    if origin == RESUME_STEP:
+        if _resume_state(request)[0] is not None:
+            return reverse('signup_resume')
+    elif origin:
+        index, _step = get_step(origin)
+        if index is not None and index <= current:
+            return step_url(index)
+    return step_url(current)
+
+
+@require_http_methods(['GET', 'HEAD', 'POST'])
+@idle_check
+def cancel(request):
+    """"Cancel registration" (CAP-8). GET asks for confirmation; POST removes the
+    session's pending registration (its legal choices go with it) through
+    signup.retention.remove_pending: its attempt gets `purged` (reason `cancelled`) and
+    ends `cancelled`. An open attempt with no row (step 1 never saved) ends `cancelled`
+    too. The signup session keys are cleared and step 1 starts empty. The event log
+    keeps its values until the 30-day anonymization (eventlog.retention)."""
+    pending = _pending_registration(request)
+    if request.method != 'POST':
+        return render(request, 'signup/cancel.html', {
+            'back_url': _cancel_back_url(request, pending)})
+
+    attempt = eventlog.get_attempt(request.session.get(ATTEMPT_SESSION_KEY))
+    if pending is not None:
+        remove_pending(pending, CANCELLED)
+    # The session's attempt if remove_pending did not end it (no row, or another one's).
+    attempt = eventlog.get_attempt(getattr(attempt, 'pk', None))
+    if attempt is not None and attempt.ended_at is None:
+        eventlog.end_attempt(attempt, CANCELLED)
+    clear_signup_session(request)
+    messages.success(request, _('Your registration was cancelled.'))
+    return redirect('signup')

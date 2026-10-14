@@ -54,6 +54,9 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements-dev.txt
 
+      - name: Install Chromium for the browser tests
+        run: python -m playwright install --with-deps chromium
+
       - name: Install gettext
         run: sudo apt-get update && sudo apt-get install -y gettext
 

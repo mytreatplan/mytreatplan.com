@@ -353,12 +353,17 @@ def test_step1_page_loads_the_strength_meter_and_the_others_toggle(client):
 
 
 def test_strength_meter_is_loaded_on_step1_only(client):
+    """zxcvbn-ts is loaded on step 1 only. signup-account.js is small and on every signup
+    page (signup entry 8): step 1 may arrive in an htmx-swapped page, where it sets the
+    meter up again and loads zxcvbn-ts itself."""
+    html = client.get('/en/signup/').content.decode()
+    assert 'js/zxcvbn-ts-core.js' in html and 'signup-account.js' in html
     _step1(client)
     html = client.get('/en/signup/legal/').content.decode()
-    assert 'zxcvbn' not in html and 'signup-account.js' not in html
+    assert 'zxcvbn' not in html and 'signup-account.js' in html
     _legal(client)
     html = client.get('/en/signup/verify-email/').content.decode()
-    assert 'zxcvbn' not in html and 'signup-account.js' not in html
+    assert 'zxcvbn' not in html and 'signup-account.js' in html
 
 
 def test_zxcvbn_is_vendored_and_pinned():

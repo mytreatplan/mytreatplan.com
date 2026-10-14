@@ -1,0 +1,8 @@
+{% load static %}{% comment %}
+In the head of the boosted signup pages (signup/wizard.html, resume.html). Loaded once per
+full page load: htmx swaps only the body, so every page reached by a swap must find here
+what it needs. signup-connection.js: the connection banner (signup/_connection.html) and
+the retry. signup-account.js: step 1's meter and "Others" toggle, set up again after a swap.
+{% endcomment %}
+<script src="{% static 'js/signup-connection.js' %}" defer></script>
+<script src="{% static 'js/signup-account.js' %}" defer></script>

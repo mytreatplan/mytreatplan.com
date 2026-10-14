@@ -2,3 +2,6 @@
 pytest==8.4.2
 pytest-django==4.11.1
 PyYAML==6.0.3
+# Browser tests (marker `browser`, signup/tests/browser/); CI installs Chromium for them.
+pytest-playwright==0.7.1
+playwright==1.55.0
