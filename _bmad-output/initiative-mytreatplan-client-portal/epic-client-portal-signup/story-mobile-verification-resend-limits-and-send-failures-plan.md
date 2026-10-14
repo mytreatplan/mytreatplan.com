@@ -3,7 +3,7 @@ title: 'Mobile verification, resend limits and send failures'
 type: 'feature'
 ticket: '7'
 created: '2026-10-13'
-status: 'built'
+status: 'done'
 baseline_revision: '33a7e70ad2600f8ded9a2fa2f62593416a577eed'
 route: 'full'
 route_source: 'auto'
@@ -184,4 +184,10 @@ context: []
 - `DATABASE_URL="sqlite:///$TMPDIR/x.sqlite3" ../.venv/bin/python -m pytest -q` (with test keys) -- expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check`, `manage.py compilemessages` -- expected: no changes; compiles.
 
-Done locally (2026-10-14) after the review patches, on SQLite: `pytest` 638 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date. Pending: CI on PostgreSQL and the staging check (a WhatsApp code in the journal for a normal number, SMS for `+34699000001`, the account created only after the mobile code).
+Done locally (2026-10-14) after the review patches, on SQLite: `pytest` 638 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date. CI on PostgreSQL 16 (PR #19): 647 passed.
+
+Staging (2026-10-14): the merge deployed and ran migration `signup.0009` and `createcachetable`. The checks:
+- After the email code the mobile page appeared, the journal showed a `whatsapp` code, and no account existed yet.
+- An immediate "Send a new code" was held by the 60 s cooldown.
+- The mobile code created the account and logged the person in.
+- `+34699000001` got its code by SMS, and `+34699000002` showed the failed-send message with retry, SMS and the support address.
