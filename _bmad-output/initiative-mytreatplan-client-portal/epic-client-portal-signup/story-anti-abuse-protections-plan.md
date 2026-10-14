@@ -3,7 +3,7 @@ title: 'Anti-abuse protections'
 type: 'feature'
 ticket: '9'
 created: '2026-10-14'
-status: 'built'
+status: 'done'
 baseline_revision: '3c1a871493871741f5fd568eab5bcaa374c3790d'
 route: 'full'
 route_source: 'auto'
@@ -154,4 +154,6 @@ A blocked request gets a generic error that reveals nothing, and the reason is l
 - `manage.py makemigrations --check`, `manage.py compilemessages` -- expected: no changes; compiles.
 - Don't download Chromium, or install anything else outside the sandbox. The browser test runs in CI.
 
-Done locally (2026-10-14) after the review patches, on SQLite: `pytest` 739 passed (745 with the deploy check), 7 skipped (PyYAML, and the browser test without Playwright), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date; `node --check` passes. The Turnstile JS has not run in a browser yet. Pending: the browser test in CI, CI on PostgreSQL, and the staging check with real Turnstile keys.
+Done locally (2026-10-14) after the review patches, on SQLite: `pytest` 739 passed (745 with the deploy check), 7 skipped (PyYAML, and the browser test without Playwright), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date; `node --check` passes. The Turnstile JS has not run in a browser yet. CI on PostgreSQL 16 (PR #22): 755 passed, including the browser test with the Turnstile stand-in.
+
+Staging (2026-10-14): the merge deployed. The real Turnstile keys for `dev.mytpdso.com` (site key `0x4AAAAAAFWhtGbhVkDfhtcq`, a public value; the secret only in `settings.env`) were added and the app restarted. The user reported the step 1 checks passed: a normal submit saved, and a tampered token got the generic error.
