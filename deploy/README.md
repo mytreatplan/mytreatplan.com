@@ -188,6 +188,24 @@ curl -s https://dev.mytpdso.com/healthz                  # ok (no password neede
    The second command exits non-zero and Sentry records an error check-in plus an issue;
    devops@mytreatplan.com gets the alert. The next scheduled run turns the monitor ok again.
 
+   The retention jobs (signup entry 10) are `purgepending` (hourly at :15, `manage.py
+   purge_pending_signups`: deletes signups left unfinished for 24 h, ends their event
+   log attempts as `timeout`, deletes expired cache rows) and `eventlogretention` (daily
+   at 03:45 UTC, `manage.py eventlog_retention`: clears the event log's personal values
+   30 days after an attempt ends, deletes attempts 2 years after they end). On a server
+   provisioned before them, run `provision.sh` again (see [Scheduled jobs](#scheduled-jobs))
+   to install their timers, then check:
+
+   ```sh
+   systemctl list-timers 'mytp-job@*'                # lists purgepending and eventlogretention
+   sudo systemctl start mytp-job@purgepending        # Sentry Crons: mytp-staging-purgepending ok
+   sudo systemctl start mytp-job@eventlogretention   # Sentry Crons: mytp-staging-eventlogretention ok
+   sudo journalctl -u mytp-job@purgepending -n 20    # counts only, no personal values
+   sudo journalctl -u mytp-job@eventlogretention -n 20
+   ```
+
+   Then set both monitors' notifications in Sentry → Crons (step 8.5).
+
 Personal data never goes to Sentry: `mytreatplan/sentry.py` sets `send_default_pii=False`,
 sends no request bodies or local variables, and strips cookies, headers, query strings,
 user email and IP in `before_send`. Locally and in CI `SENTRY_DSN` is unset, so nothing is sent.
