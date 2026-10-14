@@ -41,6 +41,10 @@ EMAIL_REGISTERED_MESSAGE = _('This email address is already registered.')
 PHONE_REGISTERED_MESSAGE = _('This mobile phone number is already registered.')
 # Error codes that show the recovery note.
 REGISTERED_CODES = ('email_registered', 'phone_registered')
+# Shown when the CAPTCHA fails or a per-IP limit blocks a request (signup entry 9): it
+# says nothing of which check, limit or reset time. A non-field error on step 1; the
+# `blocked` notice on the code pages (signup/_code_help.html).
+BLOCKED_MESSAGE = _("We couldn't process your request. Please try again later.")
 
 
 # Failure reasons for the event log, in the wording of registration-failure-policies.md.
@@ -54,12 +58,16 @@ FAILURE_REASONS = {
     'code_expired': 'OTP verification failed',
     'rate_limited': 'OTP rate limited',
     'send_failed': 'OTP send failed',
+    'captcha_failed': 'blocked: captcha',
+    'rate_limited_ip': 'blocked: rate limit',
 }
 EMAIL_EXISTS = FAILURE_REASONS['email_registered']
 PHONE_EXISTS = FAILURE_REASONS['phone_registered']
 EMAIL_PENDING = FAILURE_REASONS['email_pending']
 OTP_RATE_LIMITED = FAILURE_REASONS['rate_limited']
 OTP_SEND_FAILED = FAILURE_REASONS['send_failed']
+BLOCKED_CAPTCHA = FAILURE_REASONS['captcha_failed']
+BLOCKED_RATE_LIMIT = FAILURE_REASONS['rate_limited_ip']
 
 
 def failure_reason(code):

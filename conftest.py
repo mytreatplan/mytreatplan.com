@@ -14,6 +14,16 @@ TEST_BLIND_INDEX_KEY = 'dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU='
 # call that slipped past the guard below could not reach Have I Been Pwned or Debounce.
 TEST_PWNED_PASSWORDS_API_URL = 'https://pwned.test.invalid/range/'
 TEST_DISPOSABLE_EMAIL_API_URL = 'https://disposable.test.invalid/'
+TEST_TURNSTILE_VERIFY_URL = 'https://turnstile.test.invalid/siteverify'
+
+# Cloudflare's public Turnstile test keys: the site key whose widget always passes, and
+# the secrets siteverify always accepts or always refuses. The always-pass pair is the
+# settings default; tests use the always-fail secret for the blocked case.
+TURNSTILE_PASS_SITE_KEY = '1x00000000000000000000AA'
+TURNSTILE_PASS_SECRET = '1x0000000000000000000000000000000AA'
+TURNSTILE_FAIL_SECRET = '2x0000000000000000000000000000000AA'
+# The token the test site keys produce; test helpers post it as the widget would.
+TURNSTILE_TEST_TOKEN = 'XXXX.DUMMY.TOKEN.XXXX'
 
 
 def pytest_configure(config):
@@ -24,6 +34,9 @@ def pytest_configure(config):
     settings.FIELD_KEY_PROVIDER = 'accounts.crypto.EnvKeyProvider'
     settings.PWNED_PASSWORDS_API_URL = TEST_PWNED_PASSWORDS_API_URL
     settings.DISPOSABLE_EMAIL_API_URL = TEST_DISPOSABLE_EMAIL_API_URL
+    settings.TURNSTILE_VERIFY_URL = TEST_TURNSTILE_VERIFY_URL
+    settings.TURNSTILE_SITE_KEY = TURNSTILE_PASS_SITE_KEY
+    settings.TURNSTILE_SECRET_KEY = TURNSTILE_PASS_SECRET
 
 
 class NetworkAccessInTests(RuntimeError):
@@ -97,6 +110,37 @@ def external_checks(monkeypatch):
     fake = FakeExternalChecks()
     monkeypatch.setattr('accounts.password_validation.fetch_pwned_range', fake.pwned_range)
     monkeypatch.setattr('signup.checks.fetch_disposable', fake.debounce)
+    return fake
+
+
+class FakeTurnstile:
+    """Stands in for Cloudflare's siteverify, at its HTTP fetch function (so the answer's
+    parsing and the safe failure still run), as Cloudflare answers for its test secrets:
+    the always-fail secret refuses every token, any other accepts it. Set `error` to an
+    exception to make siteverify unreachable, or `answer` to force a reply. `calls`
+    records what was sent."""
+
+    def __init__(self):
+        self.error = None
+        self.answer = None
+        self.calls = []
+
+    def siteverify(self, data):
+        self.calls.append(dict(data))
+        if self.error:
+            raise self.error
+        if self.answer is not None:
+            return self.answer
+        if data.get('secret') == TURNSTILE_FAIL_SECRET:
+            return {'success': False, 'error-codes': ['invalid-input-response']}
+        return {'success': True, 'error-codes': [], 'hostname': 'example.com'}
+
+
+@pytest.fixture(autouse=True)
+def turnstile(monkeypatch):
+    """Every test gets the fake siteverify: with the default (test) keys it passes."""
+    fake = FakeTurnstile()
+    monkeypatch.setattr('signup.captcha.post_siteverify', fake.siteverify)
     return fake
 
 

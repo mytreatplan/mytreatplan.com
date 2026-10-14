@@ -959,3 +959,19 @@ msgstr "Mantener mi registro"
 #: signup/templates/signup/_connection.html
 msgid "Connection lost. We'll send your data again when you're back online."
 msgstr "Se ha perdido la conexión. Volveremos a enviar sus datos cuando vuelva a estar en línea."
+
+#: signup/forms.py
+msgid "We couldn't process your request. Please try again later."
+msgstr "No hemos podido procesar su solicitud. Inténtelo de nuevo más tarde."
+
+#: signup/templates/signup/step_account.html
+msgid ""
+"Our security check could not load. Please allow challenges.cloudflare.com or "
+"try another browser."
+msgstr ""
+"No se ha podido cargar nuestra comprobación de seguridad. Permita "
+"challenges.cloudflare.com o pruebe con otro navegador."
+
+#: signup/templates/signup/step_account.html
+msgid "Checking your browser…"
+msgstr "Comprobando su navegador…"

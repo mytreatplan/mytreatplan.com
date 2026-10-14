@@ -68,10 +68,30 @@ VERIFICATION_PROVIDER = config('VERIFICATION_PROVIDER',
 # code invalidated after too many wrong attempts, or a failed send (signup entry 7).
 SIGNUP_SUPPORT_EMAIL = config('SIGNUP_SUPPORT_EMAIL', default='sayhi@mytreatplan.com')
 
+# The CAPTCHA of signup step 1: Cloudflare Turnstile (signup.captcha). The defaults are
+# Cloudflare's public test keys (the widget always passes, siteverify always succeeds),
+# for development, CI and tests; staging and production set the real ones in
+# settings.env. The secret key lives there only. An empty value counts as unset (an
+# empty site key would render no widget and refuse every step 1).
+TURNSTILE_SITE_KEY = config('TURNSTILE_SITE_KEY', default='') or '1x00000000000000000000AA'
+TURNSTILE_SECRET_KEY = (config('TURNSTILE_SECRET_KEY', default='')
+                        or '1x0000000000000000000000000000000AA')
+TURNSTILE_VERIFY_URL = (config('TURNSTILE_VERIFY_URL', default='')
+                        or 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
+
+# Per-IP limits of the signup (signup.limits), per client IP and fixed one-hour window.
+# Sized for demand peaks where many people share one venue IP (conferences, congresses,
+# courses, webinars); change them in settings.env and restart, no deploy needed.
+SIGNUP_IP_LIMITS = {
+    'signup_starts': config('SIGNUP_IP_LIMIT_STARTS', default=60, cast=int),
+    'email_checks': config('SIGNUP_IP_LIMIT_EMAIL_CHECKS', default=180, cast=int),
+    'code_sends': config('SIGNUP_IP_LIMIT_CODE_SENDS', default=120, cast=int),
+}
+
 # The database cache (table `django_cache`, created by `createcachetable` in
 # deploy/release.sh), shared by every Gunicorn worker. It holds the signup code resend
-# limits (signup.limits) and the fake verification provider's state, keyed by blind
-# indexes: never a code or a plain contact.
+# limits and the per-IP limits (signup.limits) and the fake verification provider's
+# state, keyed by blind indexes and IP hashes: never a code, a plain contact or an IP.
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.db.DatabaseCache',

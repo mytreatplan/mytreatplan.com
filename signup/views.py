@@ -9,6 +9,11 @@ Plus cancel and the idle timeout (signup entry 8): "Cancel registration" (`cance
 removes the session's pending registration; after IDLE_TIMEOUT without a signup request
 the signup session keys are cleared (`idle_check`), the pending registration stays and
 the email check offers the resume.
+
+Plus the anti-abuse protections (signup entry 9): Cloudflare Turnstile on every step 1
+POST (signup.captcha), and the per-IP limits (signup.limits) on signup starts, live email
+checks and code sends (signup.steps.send_code). A blocked request gets the generic
+BLOCKED_MESSAGE, which reveals nothing, and is logged `rejected` with the reason.
 """
 import functools
 import math
@@ -20,6 +25,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 from django.db import IntegrityError, transaction
+from django.forms.utils import ErrorDict
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -30,10 +36,11 @@ from eventlog import service as eventlog
 from eventlog.models import Attempt
 from legal.models import LegalChoice
 
-from .forms import (EMAIL_EXISTS, EMAIL_PENDING, EMAIL_REGISTERED_MESSAGE, PHONE_EXISTS,
+from .forms import (BLOCKED_CAPTCHA, BLOCKED_MESSAGE, BLOCKED_RATE_LIMIT, EMAIL_EXISTS,
+                    EMAIL_PENDING, EMAIL_REGISTERED_MESSAGE, PHONE_EXISTS,
                     PHONE_REGISTERED_MESSAGE, REGISTERED_CODES, ResumeCodeForm,
                     email_is_registered, failure_reason, normalize_email, phone_is_registered)
-from . import limits
+from . import captcha, limits
 from .models import PendingRegistration
 from .retention import remove_pending
 from .steps import (CODE_STATE_SESSION_KEY, HOURLY, SENT, STEPS, CodeStep,
@@ -250,13 +257,35 @@ def signup(request, slug=None):
         form = step.form_class(initial=step.get_initial(pending), **step.get_form_kwargs(pending))
         return _render(request, index, step, form, pending)
 
+    form = step.form_class(request.POST, **step.get_form_kwargs(pending))
+    reservation = None
+    if index == 0:
+        # Before the attempt: a request blocked by an IP limit after its first logged
+        # block writes nothing to the event log.
+        blocked, reservation = _guard_step1(
+            request, lambda: _attempt(request, pending, index), step, form, pending)
+        if blocked:
+            return _render(request, index, step, form, pending)
+    saved = False
+    try:
+        response = _submit(request, index, step, form, pending)
+        # A start is saved once the session holds its new pending registration.
+        saved = bool(request.session.get(SESSION_KEY))
+        return response
+    finally:
+        if reservation is not None and not saved:
+            # Not started (invalid, the resume offer, an error): the count goes back.
+            limits.ip_refund(request, limits.SIGNUP_STARTS, reservation)
+
+
+def _submit(request, index, step, form, pending):
+    """A step's POST past the step 1 guard: its action, else its form."""
     attempt = _attempt(request, pending, index)
     action = request.POST.get('action')
     if action in step.actions:
         getattr(step, step.actions[action])(request, pending)
         return redirect(step_url(index))
 
-    form = step.form_class(request.POST, **step.get_form_kwargs(pending))
     valid = form.is_valid()
     _log_unavailable_checks(request, attempt, step, form)
     if not valid:
@@ -293,6 +322,53 @@ def signup(request, slug=None):
 
     STEPS[next_index].enter(request, pending)
     return redirect(step_url(next_index))
+
+
+def _log_ip_blocked(request, get_attempt, step, counter):
+    """A request refused by a per-IP limit: `rejected`, field `ip`, the counter's name;
+    only the first block of the IP and counter in the window (`get_attempt` is called,
+    and may start an attempt, only then)."""
+    if limits.first_block(request, counter):
+        eventlog.record(get_attempt(), 'rejected', request=request, step=step, field='ip',
+                        reason=BLOCKED_RATE_LIMIT, data={'counter': counter})
+
+
+def _refuse(form, code):
+    """Give the (unvalidated) form only the generic error: no field is validated, so no
+    external check runs and no field error tells anything."""
+    form._errors = ErrorDict()
+    form.cleaned_data = {}
+    form.add_error(None, ValidationError(BLOCKED_MESSAGE, code=code))
+
+
+def _guard_step1(request, get_attempt, step, form, pending):
+    """The CAPTCHA and the starts limit, before step 1's form is validated. Returns
+    (blocked, reservation). Blocked: the form (not validated, nothing saved) then holds
+    only the generic error. The token is used up either way; the page shown next renders
+    a new widget. When Turnstile cannot be reached the POST goes on (`check_unavailable`,
+    field `captcha`). Reservation: a POST that would start a signup reserves one of the
+    IP's starts (signup.limits.ip_reserve), which the caller refunds if nothing is
+    saved."""
+    result = captcha.verify_turnstile(request.POST.get(captcha.TOKEN_FIELD, ''),
+                                      eventlog.client_ip(request))
+    if result == captcha.FAILED:
+        eventlog.record(get_attempt(), 'rejected', request=request, step=step.slug,
+                        field='captcha', reason=BLOCKED_CAPTCHA, data=step.log_data(form))
+        _refuse(form, 'captcha_failed')
+        return True, None
+    if result == captcha.UNAVAILABLE:
+        eventlog.record(get_attempt(), 'check_unavailable', request=request, step=step.slug,
+                        field='captcha', reason=captcha.TURNSTILE_CHECK,
+                        data=step.log_data(form))
+    # A POST that would create a new pending registration (not a resave of this one).
+    if pending is None:
+        reservation = limits.ip_reserve(request, limits.SIGNUP_STARTS)
+        if reservation is None:
+            _log_ip_blocked(request, get_attempt, step.slug, limits.SIGNUP_STARTS)
+            _refuse(form, 'rate_limited_ip')
+            return True, None
+        return False, reservation
+    return False, None
 
 
 class _AlreadyRegistered(Exception):
@@ -407,6 +483,8 @@ def _code_help(request, page, form, contact, purpose, change_url=None, sms=False
         'sent_recently': since is not None and since < CODE_TTL_SECONDS,
         'change_url': change_url,
         'sms': sms and state.get('channel') != SMS,
+        # The `blocked` notice (the per-IP limit on code sends): the generic error.
+        'blocked_message': BLOCKED_MESSAGE,
     }
 
 
@@ -433,6 +511,7 @@ def _render(request, index, step, form, pending, email_check=None):
         'email_check': email_check,
         # The submit button reads "Create account" only on the last step left to do.
         'is_last': _is_last(index, pending),
+        **step.get_context(),
     }
     if isinstance(step, CodeStep):
         context['code'] = _code_help(request, step.slug, form, step.contact(pending),
@@ -446,8 +525,14 @@ def check_email(request):
     """The live check of step 1's email (htmx, when the field is left): the recovery note
     for a registered email, the resume offer for an email in another active signup
     (logged `pending_found`), nothing otherwise. Reveals nothing of the matched signup.
-    Returns the partial signup/_email_check.html (empty after the idle timeout)."""
+    Returns the partial signup/_email_check.html (empty after the idle timeout, and when
+    the IP's live email checks limit is reached)."""
     if _idle_timed_out(request):
+        return render(request, 'signup/_email_check.html', {'email_check': None})
+    if not _count_email_check(request):
+        # Nothing about the email, nor that a limit was hit.
+        _log_ip_blocked(request, lambda: _attempt(request, _pending_registration(request), 0),
+                        STEPS[0].slug, limits.EMAIL_CHECKS)
         return render(request, 'signup/_email_check.html', {'email_check': None})
     try:
         email = normalize_email(forms.EmailField(max_length=254).clean(
@@ -470,6 +555,12 @@ def check_email(request):
         else:
             clear_resume(request)
     return render(request, 'signup/_email_check.html', {'email_check': email_check})
+
+
+def _count_email_check(request):
+    """Count a live email check against the IP's limit. False if blocked (over the
+    limit, or the lock not got within the wait). The check always runs: no refund."""
+    return limits.ip_reserve(request, limits.EMAIL_CHECKS) is not None
 
 
 @require_http_methods(['GET', 'HEAD', 'POST'])
