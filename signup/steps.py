@@ -20,6 +20,7 @@ A form may also list external checks it could not make in `unavailable_checks`, 
 import logging
 from collections import namedtuple
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone, translation
@@ -33,13 +34,17 @@ from accounts.models import phone_index_or_blank
 from legal.models import LegalChoice, LegalDocument
 
 from . import limits
-from .forms import (OTP_RATE_LIMITED, OTP_SEND_FAILED, AccountForm, EmailCodeForm, LegalForm,
-                    MobileCodeForm, national_number)
+from .forms import (BLOCKED_RATE_LIMIT, OTP_RATE_LIMITED, OTP_SEND_FAILED, AccountForm,
+                    EmailCodeForm, LegalForm, MobileCodeForm, national_number)
 from .models import PendingRegistration
 from .verification import (EMAIL, PURPOSE_SIGNUP, SMS, WHATSAPP, ChannelUnavailable,
                            VerificationError, contact_kind, get_provider)
 
 logger = logging.getLogger(__name__)
+
+# Cloudflare's Turnstile script, explicit rendering (static/js/signup-account.js renders
+# each widget, after a full load and after every htmx swap).
+TURNSTILE_SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
 
 
 class Step:
@@ -61,6 +66,10 @@ class Step:
         return {}
 
     def get_initial(self, pending):
+        return {}
+
+    def get_context(self):
+        """Extra template context for the step's page."""
         return {}
 
     def is_done(self, pending):
@@ -101,6 +110,11 @@ class AccountStep(Step):
     # Every field but the passwords.
     log_fields = ('title', 'first_name', 'middle_name', 'last_name', 'country', 'email',
                   'phone_prefix', 'phone', 'how_found', 'how_found_other')
+
+    def get_context(self):
+        # The Turnstile widget (signup.captcha), rendered by signup-account.js.
+        return {'turnstile_site_key': settings.TURNSTILE_SITE_KEY,
+                'turnstile_script': TURNSTILE_SCRIPT_URL}
 
     def get_form_kwargs(self, pending):
         # With a saved hash (Back, or a resumed signup) the passwords may stay empty.
@@ -204,12 +218,15 @@ class LegalStep(Step):
 # signup.views.RESUME_STEP) in the session:
 # {'channel': the channel of the last code sent, 'fallback': whether it went by SMS
 #  because WhatsApp could not deliver, 'failed': whether the last send failed,
-#  'notice': a one-time notice ('cooldown' or 'hourly', with 'wait' in seconds)}.
+#  'notice': a one-time notice ('cooldown' or 'hourly', with 'wait' in seconds, or
+#  'blocked': the per-IP limit, shown as the generic error)}.
 # Never a contact or a code.
 CODE_STATE_SESSION_KEY = 'signup_code_state'
 
 SendOutcome = namedtuple('SendOutcome', 'status channel fallback wait_seconds')
 SENT, COOLDOWN, HOURLY, FAILED = 'sent', 'cooldown', 'hourly', 'failed'
+# Not sent: the per-IP limit on code sends (signup.limits.CODE_SENDS).
+BLOCKED = 'blocked'
 
 
 def code_state(request, page):
@@ -241,7 +258,8 @@ def send_code(request, attempt, page, contact, purpose, channel, resend=False):
 
     A mobile goes by `channel` (WhatsApp, or SMS when asked); if WhatsApp cannot deliver
     to the number the code goes by SMS at once (`fallback`). Returns a SendOutcome:
-    SENT; COOLDOWN or HOURLY (not sent; the hourly limit is logged `rejected`); or
+    SENT; COOLDOWN or HOURLY (not sent; the hourly limit is logged `rejected`); BLOCKED
+    (not sent: the per-IP limit on code sends, logged `rejected` with field `ip`); or
     FAILED (the provider failed: logged `code_send_failed` and reported to Sentry, with
     no personal data). The page's session state is updated (`code_state`). A short lock
     per contact and purpose makes parallel sends (a double click) answer COOLDOWN.
@@ -272,7 +290,33 @@ def _send_code_locked(request, attempt, page, contact, purpose, channel, resend,
         outcome = SendOutcome(status, channel, False, check.wait_seconds)
         _store_outcome(request, page, outcome)
         return outcome
+    # The per-IP limit: the send is counted first, and given back if it fails.
+    reservation = limits.ip_reserve(request, limits.CODE_SENDS)
+    if reservation is None:
+        return _ip_blocked(request, attempt, page, channel, log_data)
+    sent = False
+    try:
+        outcome = _send(request, attempt, page, contact, purpose, channel, resend, field,
+                        log_data)
+        sent = outcome.status == SENT
+        return outcome
+    finally:
+        if not sent:
+            limits.ip_refund(request, limits.CODE_SENDS, reservation)
 
+
+def _ip_blocked(request, attempt, page, channel, log_data):
+    """Not sent: the per-IP limit (or its lock not got). Logged once per IP and window."""
+    if limits.first_block(request, limits.CODE_SENDS):
+        eventlog.record(attempt, 'rejected', request=request, step=page, field='ip',
+                        reason=BLOCKED_RATE_LIMIT,
+                        data={**log_data, 'counter': limits.CODE_SENDS})
+    outcome = SendOutcome(BLOCKED, channel, False, 0)
+    _store_outcome(request, page, outcome)
+    return outcome
+
+
+def _send(request, attempt, page, contact, purpose, channel, resend, field, log_data):
     provider = get_provider()
     language = translation.get_language()
     fallback = False

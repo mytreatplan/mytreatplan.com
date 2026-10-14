@@ -6,12 +6,30 @@ the previous one, and at most HOURLY_SENDS sends (the first plus 3 resends) with
 WINDOW_SECONDS. Only successful sends count (`record_send`); switching a mobile to SMS is
 a send like any other. The times of the sends are kept in CACHES['default'] (the database
 cache), keyed by the contact's blind index, never the plain address or number.
+
+Plus the per-IP limits (signup entry 9, CAP-11), against one source cycling through
+contacts: signup starts, live email checks and code sends (every purpose, successful
+sends only), each at most SIGNUP_IP_LIMITS[counter] per client IP
+(eventlog.service.client_ip) in fixed one-hour windows. A send must pass both the contact
+and the IP limits. The counters are in the same cache, keyed by an HMAC of the IP with
+SECRET_KEY, never the plain IP; an IPv6 address counts as its /64 network (one client
+usually holds a whole /64). A request reserves its count first (`ip_reserve`: the
+read-check-increment under a per-IP-and-counter lock held for milliseconds, waited for
+up to a second), so parallel requests cannot overshoot, and gives it back if its action
+then fails (`ip_refund`). A block is logged once per IP, counter and window
+(`first_block`).
 """
+import hashlib
+import hmac
+import ipaddress
 import math
 import time
 from collections import namedtuple
 
+from django.conf import settings
 from django.core.cache import cache
+
+from eventlog.service import client_ip
 
 from .verification import EMAIL, MOBILE, contact_index
 
@@ -86,3 +104,116 @@ def seconds_since_last_send(contact, purpose):
     now = _now()
     sends = _sends(contact, purpose, now)
     return now - sends[-1] if sends else None
+
+
+# The per-IP counters (the keys of settings.SIGNUP_IP_LIMITS).
+SIGNUP_STARTS = 'signup_starts'
+EMAIL_CHECKS = 'email_checks'
+CODE_SENDS = 'code_sends'
+IP_COUNTERS = (SIGNUP_STARTS, EMAIL_CHECKS, CODE_SENDS)
+IP_WINDOW_SECONDS = 3600
+
+
+def _ip_subject(ip):
+    """What is counted for `ip`: an IPv4 address itself, an IPv6 address its /64
+    network; a value that is not an address, as is."""
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return ip
+    if address.version == 6:
+        if address.ipv4_mapped:
+            return str(address.ipv4_mapped)
+        return str(ipaddress.ip_network(f'{address}/64', strict=False))
+    return str(address)
+
+
+def _ip_hash(ip):
+    """HMAC-SHA256 of the IP (its /64 for IPv6) with SECRET_KEY, truncated: the key
+    never holds the IP."""
+    digest = hmac.new(settings.SECRET_KEY.encode(), _ip_subject(ip).encode(),
+                      hashlib.sha256)
+    return digest.hexdigest()[:32]
+
+
+def _ip_base(request, counter):
+    return f'signup:ip:{counter}:{_ip_hash(client_ip(request))}'
+
+
+def _ip_key(request, counter):
+    window = int(_now() // IP_WINDOW_SECONDS)
+    return f'{_ip_base(request, counter)}:{window}'
+
+
+def ip_allowed(request, counter):
+    """Whether the request's IP is still under `counter`'s limit in this hour's window."""
+    return (cache.get(_ip_key(request, counter)) or 0) < settings.SIGNUP_IP_LIMITS[counter]
+
+
+# A count's key lives a little over its window: the key names its window, so a later
+# one never reads it.
+IP_COUNT_TIMEOUT = IP_WINDOW_SECONDS + 60
+# The IP lock covers only a read-check-increment; a request that finds it held tries
+# again every IP_LOCK_PAUSE seconds, IP_LOCK_TRIES times (a second), then is blocked.
+IP_LOCK_SECONDS = 5
+IP_LOCK_PAUSE = 0.05
+IP_LOCK_TRIES = 20
+
+
+def _sleep(seconds):
+    time.sleep(seconds)
+
+
+def acquire_ip_lock(request, counter):
+    """Take the per-IP-and-counter lock (one try); False if another request holds it."""
+    return cache.add(_ip_base(request, counter) + ':lock', 1, timeout=IP_LOCK_SECONDS)
+
+
+def release_ip_lock(request, counter):
+    cache.delete(_ip_base(request, counter) + ':lock')
+
+
+def _wait_ip_lock(request, counter):
+    """The lock, waiting up to IP_LOCK_TRIES * IP_LOCK_PAUSE for it; False if not got."""
+    for attempt in range(IP_LOCK_TRIES + 1):
+        if acquire_ip_lock(request, counter):
+            return True
+        if attempt < IP_LOCK_TRIES:
+            _sleep(IP_LOCK_PAUSE)
+    return False
+
+
+def ip_reserve(request, counter):
+    """Count one `counter` for the request's IP in this hour's window, if under its limit.
+    Returns the reservation (for `ip_refund`), or None if blocked: over the limit, or
+    the lock not got within the wait."""
+    if not _wait_ip_lock(request, counter):
+        return None
+    try:
+        key = _ip_key(request, counter)
+        count = cache.get(key) or 0
+        if count >= settings.SIGNUP_IP_LIMITS[counter]:
+            return None
+        cache.set(key, count + 1, timeout=IP_COUNT_TIMEOUT)
+        return key
+    finally:
+        release_ip_lock(request, counter)
+
+
+def ip_refund(request, counter, reservation):
+    """Give back a reservation whose action failed (in the window it was made in). Best
+    effort: without the lock within the wait, the count stays one too high."""
+    if not _wait_ip_lock(request, counter):
+        return
+    try:
+        count = cache.get(reservation) or 0
+        if count > 0:
+            cache.set(reservation, count - 1, timeout=IP_COUNT_TIMEOUT)
+    finally:
+        release_ip_lock(request, counter)
+
+
+def first_block(request, counter):
+    """True for the first block of this IP and counter in this hour's window (it is
+    logged); later blocks in the window are not, so blocked traffic writes nothing."""
+    return cache.add(_ip_key(request, counter) + ':blocked', 1, timeout=IP_COUNT_TIMEOUT)

@@ -1,7 +1,7 @@
 {% load i18n %}{% comment %}
 Under a code form (signup/step_verify_email.html, step_verify_mobile.html, resume.html),
 outside it: the answer to a failed send (with a retry), the one-time notice of a blocked
-send (cooldown or hourly limit), the resend and "Send by SMS instead" buttons, the link
+send (cooldown or hourly limit, or the generic error of the per-IP limit), the resend and "Send by SMS instead" buttons, the link
 to change the contact (step 1) and the support contact. After a failed send, "Try again"
 retries the channel tried and, on the mobile page, SMS is offered unless that was SMS. `code` comes from
 signup.views._code_help; `kind` is "email" or "mobile". The forms are htmx-boosted, as the
@@ -22,6 +22,8 @@ page's own form.
   <p class="rounded-12 border border-line bg-panel px-5 py-3" role="status" data-cooldown>{% blocktranslate count seconds=code.wait_seconds %}You can ask for a new code in {{ seconds }} second.{% plural %}You can ask for a new code in {{ seconds }} seconds.{% endblocktranslate %}</p>
   {% elif code.notice == "hourly" %}
   <p class="rounded-12 border border-notice-border bg-notice-bg px-5 py-3 font-semibold text-notice-text" role="alert" data-hourly-limit>{% blocktranslate count minutes=code.wait_minutes %}You have asked for too many codes. You can ask for a new one in {{ minutes }} minute.{% plural %}You have asked for too many codes. You can ask for a new one in {{ minutes }} minutes.{% endblocktranslate %}</p>
+  {% elif code.notice == "blocked" %}
+  <p class="rounded-12 border border-notice-border bg-notice-bg px-5 py-3 font-semibold text-notice-text" role="alert" data-blocked>{{ code.blocked_message }}</p>
   {% endif %}
   {% if not code.failed %}
   <form method="post" hx-boost="true" hx-target="body">

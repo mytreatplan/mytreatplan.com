@@ -21,6 +21,8 @@ from eventlog.models import Event  # noqa: E402
 from legal.models import LegalDocument  # noqa: E402
 from signup.models import PendingRegistration  # noqa: E402
 
+from conftest import TURNSTILE_TEST_TOKEN  # noqa: E402
+
 from ..test_wizard import EMAIL_ADDRESS, FIRST_NAME, LAST_NAME, MOBILE, PASSWORD  # noqa: E402
 
 # Playwright's sync API runs an event loop in this thread, so Django's ORM (the test's
@@ -57,11 +59,44 @@ def legal_documents():
                 body_en='Test text.', body_es='Texto de prueba.', published_at=now)
 
 
+# Stands in for Cloudflare's Turnstile script (signup entry 9) in Chromium: its explicit
+# render puts the test token in the form and calls the widget's callback with it, as the
+# always-pass test site key would. The
+# test never depends on challenges.cloudflare.com; siteverify is faked in this process by
+# the autouse `turnstile` fixture (conftest.py), which live_server's thread shares.
+TURNSTILE_STUB = """
+window.turnstile = {
+  count: 0,
+  render(container, options) {
+    const token = '%s'
+    const input = document.createElement('input')
+    input.type = 'hidden'
+    input.name = 'cf-turnstile-response'
+    input.value = token
+    container.appendChild(input)
+    if (options && options.callback) setTimeout(() => options.callback(token), 0)
+    this.count += 1
+    return 'widget-' + this.count
+  },
+  remove() {},
+}
+""" % TURNSTILE_TEST_TOKEN
+
+
+@pytest.fixture(autouse=True)
+def turnstile_script(context):
+    context.route('https://challenges.cloudflare.com/**', lambda route: route.fulfill(
+        status=200, content_type='text/javascript', body=TURNSTILE_STUB))
+
+
 def _saved(step):
     return Event.objects.filter(event='step_saved', step=step).count()
 
 
 def _fill_step1(page):
+    # The CAPTCHA widget has put its token in the form.
+    expect(page.locator('input[name="cf-turnstile-response"]')).to_have_value(
+        TURNSTILE_TEST_TOKEN)
     # Leaving the email runs the live check (htmx); let it finish before going offline.
     with page.expect_response(re.compile(r'/signup/check-email/$')):
         page.fill('#id_email', EMAIL_ADDRESS)

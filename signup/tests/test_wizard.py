@@ -7,7 +7,9 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password
 from django.db import connection
 
+from conftest import TURNSTILE_TEST_TOKEN
 from legal.models import LegalDocument
+from signup.captcha import TOKEN_FIELD
 from signup import steps as signup_steps
 from signup.forms import shown_document_ids
 from signup.models import PendingRegistration
@@ -44,9 +46,11 @@ STEP1 = {
 
 def _step1(client, lang='en', email=EMAIL_ADDRESS, password=PASSWORD, password2=None,
            **fields):
-    """Post a valid step 1, with any field replaced through `fields`."""
+    """Post a valid step 1 (with the Turnstile test token, as the widget would), with
+    any field replaced through `fields`."""
     return client.post(f'/{lang}/signup/', {
         **STEP1,
+        TOKEN_FIELD: TURNSTILE_TEST_TOKEN,
         'email': email, 'password1': password,
         'password2': password if password2 is None else password2,
         **fields,
