@@ -3,7 +3,7 @@ title: 'Retention jobs'
 type: 'feature'
 ticket: '10'
 created: '2026-10-14'
-status: 'built'
+status: 'done'
 baseline_revision: 'fb18cfd4cd811a925e70af17257dd0927cfeb053'
 route: 'full'
 route_source: 'auto'
@@ -133,4 +133,9 @@ context: []
 - `DATABASE_URL="sqlite:///$TMPDIR/x.sqlite3" ../.venv/bin/python -m pytest -q` (with test keys) -- expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check` -- expected: no changes.
 
-Done locally (2026-10-14) after the review patches, on SQLite: `pytest` 667 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. Before the patches, the implementer's run on a throwaway PostgreSQL passed all 669 tests. `makemigrations --check` reports no changes. Pending: CI on PostgreSQL and the staging check (`provision.sh` again; both timers listed; a manual start of each reports ok in Sentry Crons).
+Done locally (2026-10-14) after the review patches, on SQLite: `pytest` 667 passed, 6 skipped (PyYAML), 3 failed only because those tests use PostgreSQL-only raw SQL. Before the patches, the implementer's run on a throwaway PostgreSQL passed all 669 tests. `makemigrations --check` reports no changes. CI on PostgreSQL 16 (PR #20): 676 passed.
+
+Staging (2026-10-14): after the merge, `provision.sh` was run again. Checks:
+- `systemctl list-timers` lists `mytp-job@purgepending` and `mytp-job@eventlogretention`.
+- A manual start of each printed counts only in the journal.
+- Each reported an ok check-in in Sentry Crons (`mytp-staging-purgepending`, `mytp-staging-eventlogretention`).
