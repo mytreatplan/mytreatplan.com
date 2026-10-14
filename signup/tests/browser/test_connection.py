@@ -15,7 +15,10 @@ pytest.importorskip('pytest_playwright')
 
 from playwright.sync_api import expect  # noqa: E402
 
+from django.utils import timezone  # noqa: E402
+
 from eventlog.models import Event  # noqa: E402
+from legal.models import LegalDocument  # noqa: E402
 from signup.models import PendingRegistration  # noqa: E402
 
 from ..test_wizard import EMAIL_ADDRESS, FIRST_NAME, LAST_NAME, MOBILE, PASSWORD  # noqa: E402
@@ -39,6 +42,19 @@ def plain_http(settings):
     settings.SESSION_COOKIE_SECURE = False
     settings.CSRF_COOKIE_SECURE = False
     settings.SECURE_SSL_REDIRECT = False
+
+
+@pytest.fixture(autouse=True)
+def legal_documents():
+    """A published version of each legal document. The migration's drafts may be gone:
+    an earlier transactional test flushes the tables, and serialized_rollback restores
+    nothing when the test database was not serialized."""
+    now = timezone.now()
+    for kind in LegalDocument.Kind.values:
+        if not LegalDocument.objects.filter(kind=kind, published_at__lte=now).exists():
+            LegalDocument.objects.create(
+                kind=kind, title_en=f'{kind} (test)', title_es=f'{kind} (prueba)',
+                body_en='Test text.', body_es='Texto de prueba.', published_at=now)
 
 
 def _saved(step):
