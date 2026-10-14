@@ -11,7 +11,7 @@ from accounts.models import (HOW_FOUND_OTHER_MAX_LENGTH, PHONE_MAX_LENGTH, HowFo
                              phone_index_or_blank)
 
 # How long a pending registration counts as active (warned about, resumable), from its
-# `created_at`. The purge job (signup entry 10) uses the same window through `active()`.
+# `created_at`. The purge job (signup entry 10) uses the same window through `expired()`.
 ACTIVE_FOR = timedelta(hours=24)
 
 
@@ -19,6 +19,11 @@ class PendingRegistrationQuerySet(models.QuerySet):
     def active(self, now=None):
         """Rows created less than ACTIVE_FOR ago."""
         return self.filter(created_at__gt=(now or timezone.now()) - ACTIVE_FOR)
+
+    def expired(self, now=None):
+        """Rows created ACTIVE_FOR ago or more: the complement of `active()`, which the
+        purge job (signup.retention) deletes."""
+        return self.filter(created_at__lte=(now or timezone.now()) - ACTIVE_FOR)
 
     def matching_email(self, email):
         """Rows with this email whatever its case (through the blind index)."""

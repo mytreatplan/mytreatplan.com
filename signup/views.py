@@ -55,7 +55,8 @@ def _pending_registration(request):
     if not pk:
         return None
     try:
-        return PendingRegistration.objects.get(pk=pk)
+        # A row past the 24 h window counts as gone: the hourly purge deletes it.
+        return PendingRegistration.objects.active().get(pk=pk)
     except (PendingRegistration.DoesNotExist, ValidationError):
         request.session.pop(SESSION_KEY, None)
         request.session.pop(ATTEMPT_SESSION_KEY, None)

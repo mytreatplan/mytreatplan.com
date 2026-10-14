@@ -2,11 +2,11 @@
 
 One policy per failure scenario (CAP-11). Each row needs a test.
 
-Wizard progress is saved server-side at each step. Once a registration is cancelled or expires, its personal data is gone; the log keeps only the failure reason and field type/name (CAP-9).
+Wizard progress is saved server-side at each step. Once a registration is cancelled or expires, its personal data is gone from the registration store at once; the log keeps its personal values until 30 days after the attempt ends, then only the failure reason and field type/name (CAP-9, CAP-10).
 
 | Scenario | Policy | Failure reason logged |
 |---|---|---|
-| User cancels (Cancel Registration) | Confirm, then delete personal data and reset the form; keep the log without personal data (CAP-8) | cancelled |
+| User cancels (Cancel Registration) | Confirm, then clear the registration store at once and reset the form; the log keeps the reason and field name, and its personal values are anonymized 30 days after the attempt ends (CAP-8, CAP-10) | cancelled |
 | Registration unfinished after 24h | Purge automatically (CAP-9) | timeout |
 | Email already registered | Block; show a link to password recovery (CAP-2) | email exists |
 | Mobile already registered | Block; show a link to password recovery (CAP-2) | phone exists |

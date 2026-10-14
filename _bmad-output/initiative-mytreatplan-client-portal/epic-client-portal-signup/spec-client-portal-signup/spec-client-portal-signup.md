@@ -42,10 +42,10 @@ Vision plus mandate. mytreatplan.com is the client portal where Doctors order My
   - **success:** After both verifications, the user exists, can later log in with email and password, and lands logged in on the welcome/onboarding screen with no extra step.
 - **CAP-8**
   - **intent:** The Doctor can cancel registration from any wizard step.
-  - **success:** "Cancel Registration" asks for confirmation. On confirm, all personal data of the attempt is deleted, the form resets, and the attempt's log survives without personal data.
+  - **success:** "Cancel Registration" asks for confirmation. On confirm, the registration store is cleared at once and the form resets; the attempt's log keeps the reason and field name, and its personal values are anonymized 30 days after the attempt ends (CAP-10).
 - **CAP-9**
   - **intent:** Unfinished registrations are cleared automatically.
-  - **success:** A registration not completed within 24h has no personal data left in the registration store. Its log keeps only the failure reason and field type/name (e.g. "phone already exists", "OTP failed", "timeout").
+  - **success:** A registration not completed within 24h has no personal data left in the registration store, and its attempt ends with the reason "timeout". Its log is anonymized 30 days after the attempt ends, as CAP-10: it then keeps only the failure reason and field type/name (e.g. "phone already exists", "OTP failed", "timeout").
 - **CAP-10**
   - **intent:** Every piece of data received or captured during signup is logged for debugging and for detecting fraud and attacks.
   - **success:** Any signup attempt can be reconstructed step by step from the log. Personal data in log entries is anonymized 30 days after the attempt ends, and anonymized entries are deleted after 2 years.
@@ -69,7 +69,7 @@ Vision plus mandate. mytreatplan.com is the client portal where Doctors order My
 - Personal data is encrypted at rest per `encryption-policy.md`. Passwords are hashed with Argon2id, never encrypted.
 - Signup logs and personal data are handled per EU GDPR. Commercial consent is never required for signup, never pre-ticked, and its text names every group company that receives the data.
 - Final legal and consent texts, including the safeguard for transfers to MyTPDSO LLC-FZ (UAE), come from the company lawyer after development starts. Texts are versioned (CAP-4, CAP-13), so a new version replaces the old one.
-- No personal data from a cancelled or expired registration remains in the registration store. Failure logs keep the reason and field name, never field values.
+- No personal data from a cancelled or expired registration remains in the registration store: it is cleared at once. Failure logs keep the reason and field name; their personal values are anonymized 30 days after the attempt ends (CAP-10).
 - Twilio Verify sends and checks all codes (email via SendGrid; mobile via WhatsApp, then SMS). Codes are never stored in our database. Twilio credentials come from environment configuration; development proceeds without them until marketing provides the account.
 - Anti-abuse: invisible CAPTCHA on step 1, rate limits per IP (signup starts and code sends) and per contact (code sends), and disposable email domains are rejected.
 - Built inside the existing Django/PostgreSQL project (`brownfield.md`).
@@ -87,4 +87,4 @@ Vision plus mandate. mytreatplan.com is the client portal where Doctors order My
 
 ## Success signal
 
-- A new Doctor completes the four steps, in English or Spanish, verifies email and mobile, and lands logged in on the welcome screen. A second attempt with the same email or mobile is blocked with a recovery link. An attempt abandoned for 24h leaves no personal data in the registration store, only an anonymized log entry.
+- A new Doctor completes the four steps, in English or Spanish, verifies email and mobile, and lands logged in on the welcome screen. A second attempt with the same email or mobile is blocked with a recovery link. An attempt abandoned for 24h leaves no personal data in the registration store; its log is anonymized 30 days after the attempt ends, as CAP-10.

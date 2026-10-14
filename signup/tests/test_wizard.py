@@ -366,6 +366,31 @@ def test_stale_session_id_redirects_to_step1(client):
     assert SESSION_KEY not in client.session
 
 
+def test_session_row_past_24h_counts_as_gone(client):
+    """A row past the 24 h window (about to be purged) is never used again: the person
+    is sent back to a fresh step 1, and posting it creates a new row."""
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from signup.models import ACTIVE_FOR
+
+    _step1(client)
+    old = PendingRegistration.objects.get()
+    PendingRegistration.objects.update(
+        created_at=timezone.now() - ACTIVE_FOR - timedelta(minutes=1))
+
+    assert client.get('/en/signup/legal/')['Location'] == '/en/signup/'
+    assert SESSION_KEY not in client.session
+    response = client.get('/en/signup/')
+    assert response.status_code == 200
+    assert FIRST_NAME not in response.content.decode()  # not refilled from the old row
+
+    assert _step1(client).status_code == 302
+    new = PendingRegistration.objects.exclude(pk=old.pk).get()
+    assert client.session[SESSION_KEY] == str(new.pk)
+
+
 def test_unknown_step_is_404(client):
     assert client.get('/en/signup/no-such-step/').status_code == 404
 
