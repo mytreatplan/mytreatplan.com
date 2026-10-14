@@ -1,0 +1,41 @@
+{% load i18n %}{% comment %}
+Under a code form (signup/step_verify_email.html, step_verify_mobile.html, resume.html),
+outside it: the answer to a failed send (with a retry), the one-time notice of a blocked
+send (cooldown or hourly limit), the resend and "Send by SMS instead" buttons, the link
+to change the contact (step 1) and the support contact. After a failed send, "Try again"
+retries the channel tried and, on the mobile page, SMS is offered unless that was SMS. `code` comes from
+signup.views._code_help; `kind` is "email" or "mobile".
+{% endcomment %}
+<div class="mt-6 flex flex-col gap-4 text-[15px] leading-[1.5]" data-code-help>
+  {% if code.failed %}
+  <div class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-notice-text" role="alert" data-send-failed>
+    <p class="font-semibold">{% translate "We couldn't send the code. Please try again." %}</p>
+    <form method="post" class="mt-3">
+      {% csrf_token %}
+      <button type="submit" name="action" value="resend" class="min-h-[44px] cursor-pointer rounded-pill bg-ink px-6 text-[15px] font-black leading-none text-white transition hover:bg-green hover:text-ink focus-visible:shadow-focus-pill focus-visible:outline-none">{% translate "Try again" %}</button>{% if code.sms %}
+      <button type="submit" name="action" value="sms" class="ml-3 cursor-pointer font-semibold text-ink underline underline-offset-4 hover:text-green-deep" data-sms>{% translate "Send by SMS instead" %}</button>{% endif %}
+    </form>
+  </div>
+  {% endif %}
+  {% if code.notice == "cooldown" %}
+  <p class="rounded-12 border border-line bg-panel px-5 py-3" role="status" data-cooldown>{% blocktranslate count seconds=code.wait_seconds %}You can ask for a new code in {{ seconds }} second.{% plural %}You can ask for a new code in {{ seconds }} seconds.{% endblocktranslate %}</p>
+  {% elif code.notice == "hourly" %}
+  <p class="rounded-12 border border-notice-border bg-notice-bg px-5 py-3 font-semibold text-notice-text" role="alert" data-hourly-limit>{% blocktranslate count minutes=code.wait_minutes %}You have asked for too many codes. You can ask for a new one in {{ minutes }} minute.{% plural %}You have asked for too many codes. You can ask for a new one in {{ minutes }} minutes.{% endblocktranslate %}</p>
+  {% endif %}
+  {% if not code.failed %}
+  <form method="post">
+    {% csrf_token %}
+    <p class="text-ink-muted">{% translate "Didn't get it?" %}
+      <button type="submit" name="action" value="resend" class="cursor-pointer font-semibold text-ink underline underline-offset-4 hover:text-green-deep">{% translate "Send a new code" %}</button>{% if code.sms %}
+      <span aria-hidden="true">&middot;</span>
+      <button type="submit" name="action" value="sms" class="cursor-pointer font-semibold text-ink underline underline-offset-4 hover:text-green-deep" data-sms>{% translate "Send by SMS instead" %}</button>{% endif %}
+    </p>
+  </form>
+  {% endif %}
+  {% if code.change_url %}
+  <p><a href="{{ code.change_url }}" class="font-semibold text-ink underline underline-offset-4 hover:text-green-deep" data-change-contact>{% if kind == "mobile" %}{% translate "Change mobile number" %}{% else %}{% translate "Change email" %}{% endif %}</a></p>
+  {% endif %}
+  {% if code.show_support %}
+  <p class="text-ink-muted" data-support>{% blocktranslate with email=code.support_email %}Need help? Write to us at <a href="mailto:{{ email }}" class="font-semibold text-ink underline underline-offset-4 hover:text-green-deep">{{ email }}</a>.{% endblocktranslate %}</p>
+  {% endif %}
+</div>

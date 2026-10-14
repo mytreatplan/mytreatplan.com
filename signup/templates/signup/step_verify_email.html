@@ -1,19 +1,10 @@
 {% extends "signup/wizard.html" %}
 {% load i18n %}
 
-{% block intro %}<p>{% blocktranslate with email=pending.email %}We have sent a 6-digit code to <strong class="text-ink">{{ email }}</strong>. Enter it below to confirm your email address.{% endblocktranslate %}</p>{% endblock %}
+{% block intro %}{% if code.failed %}<p>{% blocktranslate with email=pending.email %}We couldn't send a code to <strong class="text-ink">{{ email }}</strong>.{% endblocktranslate %}</p>{% elif not code.sent_recently %}<p data-no-code>{% translate "Ask for a new code below to continue." %}</p>{% else %}<p>{% blocktranslate with email=pending.email %}We have sent a 6-digit code to <strong class="text-ink">{{ email }}</strong>. Enter it below to confirm your email address.{% endblocktranslate %}</p>{% endif %}{% endblock %}
 
 {% block fields %}
 {% include "includes/_form_field.html" with field=form.code %}
 {% endblock %}
 
-{% block submit_label %}{% translate "Create account" %}{% endblock %}
-
-{% block extra %}
-<form method="post" class="mt-6">
-  {% csrf_token %}
-  <p class="text-[15px] text-ink-muted">{% translate "Didn't get it?" %}
-    <button type="submit" name="action" value="resend" class="cursor-pointer font-semibold text-ink underline underline-offset-4 hover:text-green-deep">{% translate "Send a new code" %}</button>
-  </p>
-</form>
-{% endblock %}
+{% block extra %}{% include "signup/_code_help.html" with kind="email" %}{% endblock %}

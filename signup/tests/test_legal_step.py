@@ -10,9 +10,10 @@ from django.utils import timezone
 from eventlog.models import Attempt
 from legal.models import LegalChoice, LegalDocument
 from signup.models import PendingRegistration
-from signup.verification import EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP, FakeVerificationProvider
+from signup.verification import EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP
 
-from .test_wizard import NORMALIZED, _code_from_log, _legal, _step1
+from .test_wizard import (NORMALIZED, _code_from_log, _current_code, _email_code, _legal,
+                          _mobile_code, _step1)
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 
@@ -109,7 +110,7 @@ def test_saved_choices_are_logged_without_personal_data(at_legal):
 def test_first_visit_nothing_is_ticked(at_legal):
     page = at_legal.get(LEGAL_URL)
     html = page.content.decode()
-    assert page.status_code == 200 and 'Step 2 of 3' in html
+    assert page.status_code == 200 and 'Step 2 of 4' in html
     for kind in KINDS:
         assert not _checked(html, kind), kind
     # Every current document, its text (rendered Markdown) and version.
@@ -196,7 +197,8 @@ def test_choices_move_to_the_user(at_legal, caplog):
     pending = PendingRegistration.objects.get()
     before = {c.document_id: (c.accepted, c.decided_at) for c in pending.legal_choices.all()}
 
-    response = at_legal.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
+    _email_code(at_legal)
+    response = _mobile_code(at_legal)
     assert response['Location'] == '/en/welcome/'
 
     user = User.objects.get()
@@ -210,8 +212,9 @@ def test_choices_move_to_the_user(at_legal, caplog):
 
 def test_choices_stay_with_the_pending_row_when_creation_fails(at_legal, caplog):
     _legal(at_legal)
+    _email_code(at_legal)
     User.objects.create_user(NORMALIZED, 'another-password-123')  # registered meanwhile
-    response = at_legal.post('/en/signup/verify-email/', {'code': _code_from_log(caplog)})
+    response = _mobile_code(at_legal)
     assert response.status_code == 200
     assert PendingRegistration.objects.get().legal_choices.count() == 4
     assert not LegalChoice.objects.filter(user__isnull=False).exists()
@@ -222,9 +225,8 @@ def test_choices_stay_with_the_pending_row_when_creation_fails(at_legal, caplog)
 def _resume(second):
     second.post('/en/signup/check-email/', {'email': NORMALIZED})
     second.post('/en/signup/resume/', {'action': 'send'})
-    code = FakeVerificationProvider._code(EMAIL, NORMALIZED, PURPOSE_RESUME,
-                                          FakeVerificationProvider._window())
-    return second.post('/en/signup/resume/', {'code': code})
+    return second.post('/en/signup/resume/',
+                       {'code': _current_code(EMAIL, NORMALIZED, PURPOSE_RESUME)})
 
 
 def test_resume_after_the_legal_step_copies_the_choices_and_skips_it(at_legal):
@@ -240,9 +242,11 @@ def test_resume_after_the_legal_step_copies_the_choices_and_skips_it(at_legal):
                   for c in new.legal_choices.all()) == before
     assert LegalChoice.objects.count() == 4  # the old row's went with it
 
-    # Continue at step 1 skips the legal step and the verified email step.
+    # Continue at step 1 skips the legal step and the verified email step; the mobile
+    # code is still asked (the resume code proves only the email).
     response = _step1(second, password='', password2='')
-    assert response['Location'] == '/en/welcome/'
+    assert response['Location'] == '/en/signup/verify-mobile/'
+    assert _mobile_code(second)['Location'] == '/en/welcome/'
     assert _choices(User.objects.get())['ormco_tps'] == (1, True)
 
 
@@ -251,17 +255,17 @@ def test_resume_before_the_legal_step_asks_for_it(at_legal):
     _resume(second)
     assert not PendingRegistration.objects.get().legal_choices.exists()
     assert _step1(second, password='', password2='')['Location'] == LEGAL_URL
-    # The email is verified (resume code): the legal step creates the account.
-    assert _legal(second)['Location'] == '/en/welcome/'
+    # The email is verified (resume code): after the legal step, the mobile code.
+    assert _legal(second)['Location'] == '/en/signup/verify-mobile/'
+    assert _mobile_code(second)['Location'] == '/en/welcome/'
     assert len(_choices(User.objects.get())) == 4
 
 
 def test_the_signup_code_is_still_the_email_step(at_legal):
     _legal(at_legal)
-    code = FakeVerificationProvider._code(EMAIL, NORMALIZED, PURPOSE_SIGNUP,
-                                          FakeVerificationProvider._window())
+    code = _current_code(EMAIL, NORMALIZED, PURPOSE_SIGNUP)
     assert at_legal.post('/en/signup/verify-email/', {'code': code})['Location'] == (
-        '/en/welcome/')
+        '/en/signup/verify-mobile/')
 
 
 # --- Version published between showing and sending -------------------------------------
@@ -325,12 +329,13 @@ def test_pending_row_past_the_legal_step_without_choices_goes_back_to_it(at_lega
     assert PendingRegistration.objects.exclude(pk=pending.pk).get().step == 'verify-email'
 
     assert at_legal.get('/en/signup/verify-email/')['Location'] == LEGAL_URL
-    code = FakeVerificationProvider._code(EMAIL, NORMALIZED, PURPOSE_SIGNUP,
-                                          FakeVerificationProvider._window())
+    code = _current_code(EMAIL, NORMALIZED, PURPOSE_SIGNUP)
     assert at_legal.post('/en/signup/verify-email/', {'code': code})['Location'] == LEGAL_URL
     assert not User.objects.exists()
 
+    # Back at the email step within a minute: no new code; the one sent still works.
     assert _legal(at_legal)['Location'] == '/en/signup/verify-email/'
     assert at_legal.post('/en/signup/verify-email/', {'code': code})['Location'] == (
-        '/en/welcome/')
+        '/en/signup/verify-mobile/')
+    assert _mobile_code(at_legal)['Location'] == '/en/welcome/'
     assert len(_choices(User.objects.get())) == 4

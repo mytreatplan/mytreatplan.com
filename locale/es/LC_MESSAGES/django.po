@@ -835,3 +835,98 @@ msgstr "versión %(version)s"
 #: signup/forms.py
 msgid "The documents have been updated. Please review them again."
 msgstr "Los documentos se han actualizado. Revíselos de nuevo."
+
+#: signup/forms.py
+msgid "This code is no longer valid. Send a new code."
+msgstr "Este código ya no es válido. Solicite un código nuevo."
+
+#: signup/steps.py
+msgid "Check your mobile"
+msgstr "Revise su móvil"
+
+#: signup/steps.py
+msgid "We have sent you a new code by SMS."
+msgstr "Le hemos enviado un código nuevo por SMS."
+
+#: signup/templates/signup/_code_help.html
+msgid "We couldn't send the code. Please try again."
+msgstr "No hemos podido enviar el código. Inténtelo de nuevo."
+
+#: signup/templates/signup/_code_help.html
+msgid "Try again"
+msgstr "Intentar de nuevo"
+
+#: signup/templates/signup/_code_help.html
+#, python-format
+msgid "You can ask for a new code in %(seconds)s second."
+msgid_plural "You can ask for a new code in %(seconds)s seconds."
+msgstr[0] "Podrá solicitar un código nuevo dentro de %(seconds)s segundo."
+msgstr[1] "Podrá solicitar un código nuevo dentro de %(seconds)s segundos."
+msgstr[2] "Podrá solicitar un código nuevo dentro de %(seconds)s segundos."
+
+#: signup/templates/signup/_code_help.html
+#, python-format
+msgid ""
+"You have asked for too many codes. You can ask for a new one in %(minutes)s "
+"minute."
+msgid_plural ""
+"You have asked for too many codes. You can ask for a new one in %(minutes)s "
+"minutes."
+msgstr[0] "Ha solicitado demasiados códigos. Podrá solicitar uno nuevo dentro de %(minutes)s minuto."
+msgstr[1] "Ha solicitado demasiados códigos. Podrá solicitar uno nuevo dentro de %(minutes)s minutos."
+msgstr[2] "Ha solicitado demasiados códigos. Podrá solicitar uno nuevo dentro de %(minutes)s minutos."
+
+#: signup/templates/signup/_code_help.html
+msgid "Send by SMS instead"
+msgstr "Enviar por SMS"
+
+#: signup/templates/signup/_code_help.html
+msgid "Change mobile number"
+msgstr "Cambiar número de móvil"
+
+#: signup/templates/signup/_code_help.html
+msgid "Change email"
+msgstr "Cambiar correo electrónico"
+
+#: signup/templates/signup/_code_help.html
+#, python-format
+msgid ""
+"Need help? Write to us at <a href=\"mailto:%(email)s\" class=\"font-semibold "
+"text-ink underline underline-offset-4 hover:text-green-deep\">%(email)s</a>."
+msgstr "¿Necesita ayuda? Escríbanos a <a href=\"mailto:%(email)s\" class=\"font-semibold text-ink underline underline-offset-4 hover:text-green-deep\">%(email)s</a>."
+
+#: signup/templates/signup/step_verify_email.html
+#, python-format
+msgid ""
+"We couldn't send a code to <strong class=\"text-ink\">%(email)s</strong>."
+msgstr "No hemos podido enviar un código a <strong class=\"text-ink\">%(email)s</strong>."
+
+#: signup/templates/signup/step_verify_mobile.html
+#, python-format
+msgid ""
+"We couldn't send a code to <strong class=\"text-ink\">%(phone)s</strong>."
+msgstr "No hemos podido enviar un código a <strong class=\"text-ink\">%(phone)s</strong>."
+
+#: signup/templates/signup/step_verify_mobile.html
+msgid "WhatsApp is not available for this number, so we sent the code by SMS."
+msgstr "WhatsApp no está disponible para este número, así que le hemos enviado el código por SMS."
+
+#: signup/templates/signup/step_verify_mobile.html
+#, python-format
+msgid ""
+"We have sent a 6-digit code by SMS to <strong class=\"text-ink\">%(phone)s</"
+"strong>. Enter it below to confirm your mobile phone number."
+msgstr "Hemos enviado un código de 6 dígitos por SMS a <strong class=\"text-ink\">%(phone)s</strong>. Introdúzcalo a continuación para confirmar su número de teléfono móvil."
+
+#: signup/templates/signup/step_verify_mobile.html
+#, python-format
+msgid ""
+"We have sent a 6-digit code by WhatsApp to <strong class=\"text-"
+"ink\">%(phone)s</strong>. Enter it below to confirm your mobile phone number."
+msgstr "Hemos enviado un código de 6 dígitos por WhatsApp a <strong class=\"text-ink\">%(phone)s</strong>. Introdúzcalo a continuación para confirmar su número de teléfono móvil."
+
+#: signup/templates/signup/step_verify_email.html
+#: signup/templates/signup/step_verify_mobile.html
+#: signup/templates/signup/resume.html
+msgid "Ask for a new code below to continue."
+msgstr "Solicite un código nuevo a continuación para continuar."

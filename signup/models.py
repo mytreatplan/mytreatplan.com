@@ -32,7 +32,8 @@ class PendingRegistrationQuerySet(models.QuerySet):
 
 
 class PendingRegistration(models.Model):
-    """A signup in progress. No user exists until the email code is correct.
+    """A signup in progress. No user exists until the email and the mobile codes are
+    correct.
 
     The wizard keeps only this row's id in the session. The password is stored as a
     Django hash (never plaintext); the new user later receives the same hash.
@@ -42,7 +43,8 @@ class PendingRegistration(models.Model):
     checks them). Title, country, prefix region and how-found-us are codes.
     `created_at` / `updated_at` let the purge job (signup entry 10) drop stale rows.
     `attempt` is this signup's event log attempt (eventlog), kept after this row is gone.
-    `email_verified_at` is when control of the email was proven (signup entry 5).
+    `email_verified_at` is when control of the email was proven (signup entry 5), and
+    `phone_verified_at` that of the mobile (signup entry 7).
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -69,6 +71,9 @@ class PendingRegistration(models.Model):
     # (sent to this email). Cleared when step 1 is saved with another email. A step whose
     # contact is verified is skipped (signup.steps.Step.is_done).
     email_verified_at = models.DateTimeField(null=True, blank=True)
+    # When control of `phone` was proven: a correct mobile-step code. Cleared when step 1
+    # is saved with another mobile. Never copied by a resume: its code proves the email only.
+    phone_verified_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -101,7 +106,8 @@ class PendingRegistration(models.Model):
     def copy_to_new_row(self, **fields):
         """A new saved row (new id) holding this row's RESUMED_FIELDS, plus `fields` (e.g.
         the resuming attempt). The resume code went to this row's email, so the new row's
-        email is marked verified (now) unless `fields` says otherwise. It keeps this row's
+        email is marked verified (now) unless `fields` says otherwise; the mobile is not
+        (`phone_verified_at` is not copied). It keeps this row's
         `created_at`, so a resume never extends the 24 h window of `active()` and the
         purge. This row is left as it is."""
         fields.setdefault('email_verified_at', timezone.now())

@@ -12,7 +12,9 @@ shown but its email, which is what the person typed at step 1.
 <h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Registration in progress" %}</h1>
 <div class="mt-3 text-copy text-ink-muted">
   <p role="status">{% translate "A registration with this email address is already in progress." %}</p>
-  {% if sent %}
+  {% if sent and not code.sent_recently %}
+  <p class="mt-3" data-no-code>{% translate "Ask for a new code below to continue." %}</p>
+  {% elif sent %}
   <p class="mt-3">{% blocktranslate %}We have sent a 6-digit code to <strong class="text-ink">{{ contact }}</strong>. Enter it below to continue that registration.{% endblocktranslate %}</p>
   {% else %}
   <p class="mt-3">{% translate "To continue it, we will send a code to this email address." %}</p>
@@ -27,12 +29,7 @@ shown but its email, which is what the person typed at step 1.
     {% translate "Continue" %}
   </button>
 </form>
-<form method="post" class="mt-6">
-  {% csrf_token %}
-  <p class="text-[15px] text-ink-muted">{% translate "Didn't get it?" %}
-    <button type="submit" name="action" value="resend" class="cursor-pointer font-semibold text-ink underline underline-offset-4 hover:text-green-deep">{% translate "Send a new code" %}</button>
-  </p>
-</form>
+{% include "signup/_code_help.html" with kind="email" %}
 {% else %}
 <form method="post" class="mt-8 flex flex-col gap-5">
   {% csrf_token %}
@@ -40,6 +37,7 @@ shown but its email, which is what the person typed at step 1.
     {% translate "Send code" %}
   </button>
 </form>
+{% if code.failed or code.notice %}{% include "signup/_code_help.html" with kind="email" %}{% endif %}
 {% endif %}
 <p class="mt-8 text-[15px]"><a href="{{ cancel_url }}" class="font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Use different details" %}</a></p>
 {% endblock %}

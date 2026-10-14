@@ -14,11 +14,11 @@ from django.utils import timezone
 from eventlog.models import Attempt
 from signup.models import PendingRegistration
 from signup.tests import urls_portal
-from signup.verification import EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP, FakeVerificationProvider
+from signup.verification import EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP
 from signup.views import ATTEMPT_SESSION_KEY, RESUME_SESSION_KEY, SESSION_KEY
 
-from .test_wizard import (EMAIL_ADDRESS, MOBILE_E164, NORMALIZED, PASSWORD, _legal, _step1,
-                          _wrong)
+from .test_wizard import (EMAIL_ADDRESS, MOBILE_E164, NORMALIZED, PASSWORD, _current_code,
+                          _email_code, _legal, _mobile_code, _step1, _wrong)
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 
@@ -44,8 +44,7 @@ def _without_csrf_tokens(html):
 
 
 def _code(channel, contact, purpose=PURPOSE_RESUME):
-    return FakeVerificationProvider._code(channel, contact, purpose,
-                                          FakeVerificationProvider._window())
+    return _current_code(channel, contact, purpose)
 
 
 def _events(attempt):
@@ -241,7 +240,8 @@ def test_mobile_in_another_pending_registration_is_allowed(first, caplog):
 
     response = second.post('/en/signup/verify-email/',
                            {'code': _code(EMAIL, OTHER_EMAIL, PURPOSE_SIGNUP)})
-    assert response['Location'] == '/en/welcome/'
+    assert response['Location'] == '/en/signup/verify-mobile/'
+    assert _mobile_code(second)['Location'] == '/en/welcome/'
     assert User.objects.get().email == OTHER_EMAIL
     assert not PendingRegistration.objects.exists()
     first.attempt.refresh_from_db()
@@ -258,6 +258,7 @@ def test_account_creation_removes_other_registrations_with_its_email(client, fir
     other = PendingRegistration.objects.exclude(pk=first.pk).get()
     second.post('/en/signup/verify-email/',
                 {'code': _code(EMAIL, NORMALIZED, PURPOSE_SIGNUP)})
+    _mobile_code(second)
     assert User.objects.get().email == NORMALIZED
     assert not PendingRegistration.objects.exists()
     first.attempt.refresh_from_db()
@@ -347,16 +348,20 @@ def _review(client, password='', password2='', **fields):
     return _step1(client, password=password, password2=password2, **{**OLD, **fields})
 
 
-def test_review_and_continue_creates_the_account_without_a_second_code(first, caplog):
+def test_review_and_continue_asks_only_the_mobile_code(first, caplog):
     second = Client()
     _check(second)
     _resume(second)
     sent_before = len([r for r in caplog.records if r.name == 'signup.verification'])
 
     response = _review(second)
-    assert response['Location'] == '/en/welcome/'
+    assert response['Location'] == '/en/signup/verify-mobile/'
+    assert PendingRegistration.objects.get().phone_verified_at is None
     lines = [r.getMessage() for r in caplog.records if r.name == 'signup.verification']
-    assert len(lines) == sent_before  # no email code was sent
+    assert len(lines) == sent_before + 1  # no email code; the mobile code
+    assert f'whatsapp {MOBILE_E164}' in lines[-1]
+    assert not User.objects.exists()
+    assert _mobile_code(second)['Location'] == '/en/welcome/'
 
     user = User.objects.get()
     assert user.first_name == OLD['first_name'] and user.check_password(PASSWORD)
@@ -364,7 +369,8 @@ def test_review_and_continue_creates_the_account_without_a_second_code(first, ca
     assert not PendingRegistration.objects.exists()
     attempt = Attempt.objects.get(outcome='completed')
     assert [e[0] for e in _events(attempt)] == [
-        'pending_found', 'code_sent', 'resumed', 'step_saved', 'completed']
+        'pending_found', 'code_sent', 'resumed', 'step_saved', 'code_sent', 'code_accepted',
+        'completed']
 
 
 def test_email_changed_in_review_runs_the_email_code_step(first, caplog):
@@ -380,7 +386,8 @@ def test_email_changed_in_review_runs_the_email_code_step(first, caplog):
 
     response = second.post('/en/signup/verify-email/',
                            {'code': _code(EMAIL, OTHER_EMAIL, PURPOSE_SIGNUP)})
-    assert response['Location'] == '/en/welcome/'
+    assert response['Location'] == '/en/signup/verify-mobile/'
+    assert _mobile_code(second)['Location'] == '/en/welcome/'
     assert User.objects.get().email == OTHER_EMAIL
 
 
@@ -388,7 +395,8 @@ def test_email_case_changed_in_review_stays_verified(first):
     second = Client()
     _check(second)
     _resume(second)
-    assert _review(second, email=NORMALIZED.upper())['Location'] == '/en/welcome/'
+    assert _review(second, email=NORMALIZED.upper())['Location'] == (
+        '/en/signup/verify-mobile/')
 
 
 def test_new_password_in_review(first):
@@ -407,7 +415,8 @@ def test_new_password_in_review(first):
 
     response = _review(second, password='indigo-harbor-lantern-77',
                        password2='indigo-harbor-lantern-77')
-    assert response['Location'] == '/en/welcome/'
+    assert response['Location'] == '/en/signup/verify-mobile/'
+    assert _mobile_code(second)['Location'] == '/en/welcome/'
     user = User.objects.get()
     assert user.check_password('indigo-harbor-lantern-77')
     assert not user.check_password(PASSWORD)
@@ -445,10 +454,11 @@ def test_a_signup_code_does_not_resume(first):
     assert PendingRegistration.objects.get() == first
 
 
-def test_resend(first):
+def test_resend(first, clock):
     second = Client()
     _check(second)
     second.post(RESUME_URL, {'action': 'send'})
+    clock.advance(60)
     second.post(RESUME_URL, {'action': 'resend'})
     events = list(_attempt_of(second).events.all())
     assert [e.event for e in events] == ['pending_found', 'code_sent', 'code_sent']
@@ -490,11 +500,12 @@ def test_browsers_own_earlier_registration_is_replaced(first):
 
 def test_page_closed_then_resumed_in_a_fresh_browser(first):
     """A signup closed at the email code step, resumed by its email in a fresh browser:
-    one code, then Continue creates the account."""
+    the resume code, then Continue asks only the mobile code."""
     fresh = Client()
     assert 'data-resume-offer' in _check(fresh).content.decode()
     assert _resume(fresh)['Location'] == '/en/signup/'
-    assert _review(fresh)['Location'] == '/en/welcome/'
+    assert _review(fresh)['Location'] == '/en/signup/verify-mobile/'
+    assert _mobile_code(fresh)['Location'] == '/en/welcome/'
     assert User.objects.get().email == NORMALIZED
 
 
@@ -546,9 +557,9 @@ def test_resumed_row_keeps_the_original_created_at(first):
 # --- Race at creation --------------------------------------------------------------------
 
 def test_mobile_registered_meanwhile(client, first):
+    _email_code(client)
     User.objects.create_user('someone@example.net', 'another-password-123', phone=MOBILE_E164)
-    response = client.post('/en/signup/verify-email/',
-                           {'code': _code(EMAIL, NORMALIZED, PURPOSE_SIGNUP)})
+    response = _mobile_code(client)
     assert response.status_code == 200
     assert response.context['form'].non_field_errors() == [
         'This mobile phone number is already registered.']
@@ -560,19 +571,19 @@ def test_mobile_registered_meanwhile(client, first):
 
 
 def test_email_registered_meanwhile_shows_the_recovery_note(client, first):
+    _email_code(client)
     User.objects.create_user(NORMALIZED, 'another-password-123')
-    response = client.post('/en/signup/verify-email/',
-                           {'code': _code(EMAIL, NORMALIZED, PURPOSE_SIGNUP)})
+    response = _mobile_code(client)
     assert response.context['form'].non_field_errors() == [
         'This email address is already registered.']
     assert RECOVERY_NOTE in response.content.decode()
 
 
 def test_email_step_code_marks_the_email_verified(client, first):
-    """A correct email-step code sets the mark (seen here on the row the race keeps)."""
+    """A correct email-step code sets the mark; the mobile one is still to do."""
     assert first.email_verified_at is None
-    User.objects.create_user('someone@example.net', 'another-password-123', phone=MOBILE_E164)
     client.post('/en/signup/verify-email/', {'code': _code(EMAIL, NORMALIZED, PURPOSE_SIGNUP)})
     first.refresh_from_db()
-    assert first.email_verified_at is not None
+    assert first.email_verified_at is not None and first.phone_verified_at is None
+    assert first.step == 'verify-mobile'
 
