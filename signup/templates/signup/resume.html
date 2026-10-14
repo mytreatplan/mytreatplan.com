@@ -3,10 +3,13 @@
 {% comment %}
 Resume a signup in progress (signup.views.resume) with a code sent to its email. Styled as
 signup/wizard.html. Before the code is correct, nothing of the matched registration is
-shown but its email, which is what the person typed at step 1.
+shown but its email, which is what the person typed at step 1. The forms are
+htmx-boosted, with the connection banner, as in the wizard.
 {% endcomment %}
 
 {% block title %}{% translate "Registration in progress" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block head %}{{ block.super }}{% include "signup/_scripts.html" %}{% endblock %}
 
 {% block portal_content %}
 <h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Registration in progress" %}</h1>
@@ -20,9 +23,10 @@ shown but its email, which is what the person typed at step 1.
   <p class="mt-3">{% translate "To continue it, we will send a code to this email address." %}</p>
   {% endif %}
 </div>
+{% include "signup/_connection.html" %}
 
 {% if sent %}
-<form method="post" class="mt-8 flex flex-col gap-5" novalidate>
+<form method="post" class="mt-8 flex flex-col gap-5" novalidate hx-boost="true" hx-target="body">
   {% csrf_token %}
   {% include "includes/_form_field.html" with field=form.code %}
   <button type="submit" class="mt-2 min-h-[52px] cursor-pointer rounded-pill bg-ink px-8 text-[16px] font-black leading-none tracking-[-0.01em] text-white transition hover:-translate-y-[2px] hover:bg-green hover:text-ink hover:shadow-lift focus-visible:shadow-focus-pill focus-visible:outline-none">
@@ -31,7 +35,7 @@ shown but its email, which is what the person typed at step 1.
 </form>
 {% include "signup/_code_help.html" with kind="email" %}
 {% else %}
-<form method="post" class="mt-8 flex flex-col gap-5">
+<form method="post" class="mt-8 flex flex-col gap-5" hx-boost="true" hx-target="body">
   {% csrf_token %}
   <button type="submit" name="action" value="send" class="min-h-[52px] cursor-pointer rounded-pill bg-ink px-8 text-[16px] font-black leading-none tracking-[-0.01em] text-white transition hover:-translate-y-[2px] hover:bg-green hover:text-ink hover:shadow-lift focus-visible:shadow-focus-pill focus-visible:outline-none">
     {% translate "Send code" %}
@@ -39,5 +43,8 @@ shown but its email, which is what the person typed at step 1.
 </form>
 {% if code.failed or code.notice %}{% include "signup/_code_help.html" with kind="email" %}{% endif %}
 {% endif %}
-<p class="mt-8 text-[15px]"><a href="{{ cancel_url }}" class="font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Use different details" %}</a></p>
+<p class="mt-8 flex flex-wrap justify-between gap-x-6 gap-y-3 text-[15px]">
+  <a href="{{ cancel_url }}" class="font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Use different details" %}</a>
+  <a href="{{ cancel_registration_url }}" class="ml-auto font-semibold text-ink-muted underline underline-offset-4 hover:text-ink" data-cancel-registration>{% translate "Cancel registration" %}</a>
+</p>
 {% endblock %}

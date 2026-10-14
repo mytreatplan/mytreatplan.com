@@ -1,0 +1,23 @@
+{% extends "portal_base.html" %}
+{% load i18n %}
+{% comment %}
+"Cancel registration" (signup.views.cancel): GET shows this page, its form's POST
+confirms. A plain form (no JavaScript needed). "Keep my registration" goes back to the
+page Cancel was chosen on (`back_url`). Styled as signup/wizard.html.
+{% endcomment %}
+
+{% block title %}{% translate "Cancel registration" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Cancel registration" %}</h1>
+<div class="mt-3 text-copy text-ink-muted">
+  <p>{% translate "Do you want to cancel your registration? The details you have entered will be deleted, and you will have to start again." %}</p>
+</div>
+<form method="post" class="mt-8 flex flex-col gap-5">
+  {% csrf_token %}
+  <button type="submit" class="min-h-[52px] cursor-pointer rounded-pill bg-ink px-8 text-[16px] font-black leading-none tracking-[-0.01em] text-white transition hover:-translate-y-[2px] hover:bg-green hover:text-ink hover:shadow-lift focus-visible:shadow-focus-pill focus-visible:outline-none" data-confirm-cancel>
+    {% translate "Cancel registration" %}
+  </button>
+</form>
+<p class="mt-8 text-[15px]"><a href="{{ back_url }}" class="font-semibold text-ink-muted underline underline-offset-4 hover:text-ink" data-keep-registration>{% translate "Keep my registration" %}</a></p>
+{% endblock %}

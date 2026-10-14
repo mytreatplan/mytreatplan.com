@@ -930,3 +930,32 @@ msgstr "Hemos enviado un código de 6 dígitos por WhatsApp a <strong class=\"te
 #: signup/templates/signup/resume.html
 msgid "Ask for a new code below to continue."
 msgstr "Solicite un código nuevo a continuación para continuar."
+
+#: signup/views.py
+msgid ""
+"Your session ended after 30 minutes without activity. Enter your email to "
+"continue where you left off."
+msgstr "Su sesión ha finalizado tras 30 minutos sin actividad. Introduzca su correo electrónico para continuar donde lo dejó."
+
+#: signup/views.py
+msgid "Your registration was cancelled."
+msgstr "Su registro se ha cancelado."
+
+#: signup/templates/signup/wizard.html signup/templates/signup/resume.html
+#: signup/templates/signup/cancel.html
+msgid "Cancel registration"
+msgstr "Cancelar registro"
+
+#: signup/templates/signup/cancel.html
+msgid ""
+"Do you want to cancel your registration? The details you have entered will "
+"be deleted, and you will have to start again."
+msgstr "¿Quiere cancelar su registro? Los datos que ha introducido se eliminarán y tendrá que empezar de nuevo."
+
+#: signup/templates/signup/cancel.html
+msgid "Keep my registration"
+msgstr "Mantener mi registro"
+
+#: signup/templates/signup/_connection.html
+msgid "Connection lost. We'll send your data again when you're back online."
+msgstr "Se ha perdido la conexión. Volveremos a enviar sus datos cuando vuelva a estar en línea."

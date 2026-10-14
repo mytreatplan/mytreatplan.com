@@ -1,12 +1,17 @@
 {% extends "portal_base.html" %}
 {% load i18n %}
 {% comment %}
-Frame shared by every signup step: progress, heading, the step's form and the back link.
-Each step template (named in signup.steps) fills `intro` and `fields`, and may add `extra`.
-The button reads "Create account" on the last step left to do (`is_last`), else "Continue".
+Frame shared by every signup step: progress, heading, the step's form, the back link and
+"Cancel registration". Each step template (named in signup.steps) fills `intro` and
+`fields`, and may add `extra`. The button reads "Create account" on the last step left to
+do (`is_last`), else "Continue". The forms are htmx-boosted (the whole body is swapped;
+without JavaScript they are plain POSTs); a failed send shows the connection banner
+(signup/_connection.html).
 {% endcomment %}
 
 {% block title %}{{ step.title }} &mdash; MyTreatPlan{% endblock %}
+
+{% block head %}{{ block.super }}{% include "signup/_scripts.html" %}{% endblock %}
 
 {% block portal_content %}
 <p class="text-[12px] font-extrabold uppercase leading-[1.4] tracking-[0.09em] text-field-label">
@@ -14,8 +19,9 @@ The button reads "Create account" on the last step left to do (`is_last`), else 
 </p>
 <h1 class="mt-2 text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{{ step.title }}</h1>
 <div class="mt-3 text-copy text-ink-muted">{% block intro %}{% endblock %}</div>
+{% include "signup/_connection.html" %}
 
-<form method="post" class="mt-8 flex flex-col gap-5" novalidate>
+<form method="post" class="mt-8 flex flex-col gap-5" novalidate hx-boost="true" hx-target="body">
   {% csrf_token %}
   {% if form.non_field_errors %}
   <ul class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert">
@@ -29,7 +35,8 @@ The button reads "Create account" on the last step left to do (`is_last`), else 
   </button>
 </form>
 {% block extra %}{% endblock %}
-{% if back_url %}
-<p class="mt-8 text-[15px]"><a href="{{ back_url }}" class="font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Back" %}</a></p>
-{% endif %}
+<p class="mt-8 flex flex-wrap justify-between gap-x-6 gap-y-3 text-[15px]">
+  {% if back_url %}<a href="{{ back_url }}" class="font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Back" %}</a>{% endif %}
+  <a href="{% url 'signup_cancel' %}?from={{ step.slug }}" class="ml-auto font-semibold text-ink-muted underline underline-offset-4 hover:text-ink" data-cancel-registration>{% translate "Cancel registration" %}</a>
+</p>
 {% endblock %}
