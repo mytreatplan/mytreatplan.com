@@ -14,7 +14,8 @@ from django.urls import NoReverseMatch, Resolver404, clear_url_caches, path, res
 from django.utils import translation
 
 import mytreatplan.urls
-from mytp_publicsite.checks import INSECURE_DB_TLS, check_db_tls
+from mytp_publicsite.checks import (INSECURE_DB_TLS, TURNSTILE_TEST_KEYS, check_db_tls,
+                                    check_turnstile_keys)
 
 SETTINGS_FILE = str(django_settings.BASE_DIR / 'mytreatplan' / 'settings.py')
 # Every key these tests depend on, at its documented default. Set explicitly in the
@@ -293,3 +294,47 @@ def test_portal_routes_do_not_leak_after_reload(client):
 
 def test_portal_env_var(load_settings):
     assert load_settings(DEBUG='True', PORTAL_ENABLED='True')['PORTAL_ENABLED'] is True
+
+
+# --- Turnstile keys (signup entry 9) ------------------------------------------------------
+
+REAL_SITE_KEY = '0x4AAAAAAAexampleSiteKey'
+REAL_SECRET_KEY = '0x4AAAAAAAexampleSecretKey'
+
+
+@pytest.mark.parametrize('site_key, secret_key, names', [
+    ('1x00000000000000000000AA', '1x0000000000000000000000000000000AA',
+     'TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY'),
+    (REAL_SITE_KEY, '2x0000000000000000000000000000000AA', 'TURNSTILE_SECRET_KEY'),
+    ('3x00000000000000000000FF', REAL_SECRET_KEY, 'TURNSTILE_SITE_KEY'),
+])
+def test_turnstile_test_keys_fail_deploy_check(settings, site_key, secret_key, names):
+    settings.DEBUG = False
+    settings.TURNSTILE_SITE_KEY = site_key
+    settings.TURNSTILE_SECRET_KEY = secret_key
+
+    errors = check_turnstile_keys(None)
+
+    assert [e.id for e in errors] == [TURNSTILE_TEST_KEYS]
+    assert errors[0].msg.startswith(names + ' ')
+    assert TURNSTILE_TEST_KEYS in {e.id for e in run_checks(include_deployment_checks=True)}
+
+
+def test_default_turnstile_keys_are_the_test_keys_and_fail(settings):
+    """The settings default to the test keys, so an unset key fails the deploy check."""
+    settings.DEBUG = False
+    assert [e.id for e in check_turnstile_keys(None)] == [TURNSTILE_TEST_KEYS]
+
+
+def test_real_turnstile_keys_pass_deploy_check(settings):
+    settings.DEBUG = False
+    settings.TURNSTILE_SITE_KEY = REAL_SITE_KEY
+    settings.TURNSTILE_SECRET_KEY = REAL_SECRET_KEY
+
+    assert check_turnstile_keys(None) == []
+
+
+def test_turnstile_check_skipped_with_debug_on(settings):
+    settings.DEBUG = True
+
+    assert check_turnstile_keys(None) == []

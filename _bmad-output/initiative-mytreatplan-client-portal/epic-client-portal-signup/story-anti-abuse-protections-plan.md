@@ -132,6 +132,8 @@ A blocked request gets a generic error that reveals nothing, and the reason is l
 - Second review: reserve-then-refund. `ip_reserve` does the read-check-increment under the per-IP lock (held milliseconds, 5 s safety timeout; a held lock is retried every 50 ms for up to 1 s before answering blocked); the lock is not held during the send or the save. A failed send, or a step 1 that saves nothing, refunds its reservation (`ip_refund`, in the reservation's own window). JS: Turnstile `error-callback`, `timeout-callback` and a 15 s fallback end a held submit with the error note.
 - Tests: an autouse `turnstile` fake of siteverify in the root conftest (test secrets semantics); `_step1` posts the test token. The browser test stubs `challenges.cloudflare.com` in Chromium with a script whose `render` adds the test token, so it never reaches the network.
 
+- Added at the user's request after the review (2026-10-14): the deploy check `mytp_publicsite.E003` (`check_turnstile_keys` in `mytp_publicsite/checks.py`). It fails `check --deploy` while `DEBUG` is off and either Turnstile key is one of Cloudflare's test keys, which the settings default to. Like the other deploy checks it runs only with `check --deploy`, which no staging deploy runs today. It guards the production deploy (story 1.12). Tests are in `mytp_publicsite/tests/test_settings_staging.py`.
+
 ## Plan Change Log
 
 ## Review Triage Log
@@ -152,4 +154,4 @@ A blocked request gets a generic error that reveals nothing, and the reason is l
 - `manage.py makemigrations --check`, `manage.py compilemessages` -- expected: no changes; compiles.
 - Don't download Chromium, or install anything else outside the sandbox. The browser test runs in CI.
 
-Done locally (2026-10-14) after the review patches, on SQLite: `pytest` 739 passed, 7 skipped (PyYAML, and the browser test without Playwright), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date; `node --check` passes. The Turnstile JS has not run in a browser yet. Pending: the browser test in CI, CI on PostgreSQL, and the staging check with real Turnstile keys.
+Done locally (2026-10-14) after the review patches, on SQLite: `pytest` 739 passed (745 with the deploy check), 7 skipped (PyYAML, and the browser test without Playwright), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date; `node --check` passes. The Turnstile JS has not run in a browser yet. Pending: the browser test in CI, CI on PostgreSQL, and the staging check with real Turnstile keys.
