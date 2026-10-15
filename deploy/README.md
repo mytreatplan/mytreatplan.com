@@ -792,8 +792,8 @@ With the Twilio provider selected and any of the four empty, every `check` and `
 
 ### Sentry alert on failed sends
 
-Every failed send logs the error `Signup code send failed` (channel, purpose and error
-type only); a failed check logs `Signup code check failed`. In Sentry: Alerts → Create
+Every failed send logs the error `Signup code send failed` (channel, purpose, and
+Twilio's error code and HTTP status only); a failed check logs `Signup code check failed`. In Sentry: Alerts → Create
 Alert → Issues → condition "The issue is seen more than **4** times in **10 minutes**" (5 or more),
 filter "The event's message contains `Signup code send failed`", environment `staging` →
 send an email to **devops@mytreatplan.com**. Name it "Signup code sends failing".
