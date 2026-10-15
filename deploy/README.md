@@ -730,6 +730,42 @@ sudo journalctl -u mytp-job@clearsessions -n 100
 systemctl list-units --failed 'mytp-job@*'
 ```
 
+## Erase an account
+
+A registered user is never deleted in the admin (its legal choices are kept as evidence):
+it is **erased**, for example when the user asks (GDPR art. 17).
+
+- **Who:** staff with the `accounts.delete_user` permission (superusers have it). Plain
+  delete is off for users.
+- **How:** Admin → Users → select the accounts → action **Erase account** → tick "I
+  understand this can't be undone" → **Erase**. Your own account and accounts already
+  erased are skipped. There is no undo.
+- **What happens:** the account is deactivated (no staff or superuser flag, no groups or
+  permissions), gets an unusable password (its sessions end), and loses how-found-us and
+  the last login. Its email, title, names, country, phone, date joined and legal choices
+  are kept as evidence; the commercial consent is recorded as withdrawn. The same email
+  (and mobile) can sign up again at once. The admin log records "Erased" with `User <pk>`
+  and the staff member, no personal values.
+- **Finding it later:** the user list hides erased accounts; set the "status" filter to
+  "Erased" (or "All") and search by the exact email.
+- **Retention:** `ACCOUNT_ERASURE_RETENTION_DAYS` in `shared/settings.env` (days). It has
+  no default, as the lawyer sets it: while it is unset the action refuses, and `check
+  --deploy` fails (`mytp_publicsite.E005`). Staging uses `1` until the lawyer gives the
+  value. Restart `mytp-gunicorn` after changing it.
+- **Purge:** the `purgeerased` job (daily at 04:15 UTC, `manage.py purge_erased_accounts`)
+  deletes each erased account with its legal choices once its `purge_after` has passed,
+  and prints only the count. On a server provisioned before it, re-run `provision.sh`
+  (see [Scheduled jobs](#scheduled-jobs)), then:
+
+  ```sh
+  sudo systemctl start mytp-job@purgeerased      # Sentry Crons: mytp-staging-purgeerased ok
+  sudo journalctl -u mytp-job@purgeerased -n 20  # the count only
+  ```
+
+  and set the monitor's notifications in Sentry → Crons (step 8.5).
+- **Backups:** the nightly dumps still hold an erased (or purged) account until they
+  expire, 30 days later (see [Backups and restore](#backups-and-restore)).
+
 ## Backups and restore
 
 | Layer | Where | Retention | Who restores |

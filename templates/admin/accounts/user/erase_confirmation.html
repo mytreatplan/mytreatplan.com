@@ -1,0 +1,38 @@
+{% extends "admin/base_site.html" %}
+{% load i18n l10n admin_urls static %}
+
+{% block extrahead %}
+    {{ block.super }}
+    {% csp_nonce_attr media %}
+    <script src="{% static 'admin/js/cancel.js' %}" async {% csp_nonce_attr %}></script>
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} app-{{ opts.app_label }} model-{{ opts.model_name }} delete-confirmation erase-confirmation{% endblock %}
+
+{% block breadcrumbs %}
+<ol class="breadcrumbs">
+<li><a href="{% url 'admin:index' %}">{% translate 'Home' %}</a></li>
+<li><a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a></li>
+<li><a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a></li>
+<li aria-current="page">{% translate 'Erase account' %}</li>
+</ol>
+{% endblock %}
+
+{% block content %}
+<p>{% blocktranslate with count=count|unlocalize %}Accounts to erase: {{ count }}.{% endblocktranslate %}</p>
+<p><strong>{% translate "Erasing can't be undone." %}</strong>
+{% blocktranslate with purge_date=purge_date|date:"DATE_FORMAT" %}Each account is deactivated at once and cleared of everything but its email, title, names, country, phone, date joined and legal choices, which are kept as evidence. Its retention ends on {{ purge_date }}; the next daily purge then deletes it for good, with its legal choices.{% endblocktranslate %}</p>
+<form method="post">{% csrf_token %}
+<div>
+{% for pk in pks %}
+<input type="hidden" name="{{ action_checkbox_name }}" value="{{ pk|unlocalize }}">
+{% endfor %}
+<input type="hidden" name="action" value="{{ action }}">
+<input type="hidden" name="post" value="yes">
+{% if confirm_error %}<ul class="errorlist"><li>{{ confirm_error }}</li></ul>{% endif %}
+<p><label><input type="checkbox" name="confirm" value="yes" required> {% translate "I understand this can't be undone" %}</label></p>
+<input type="submit" value="{% translate 'Erase' %}">
+<a role="button" href="#" class="button cancel-link">{% translate "No, take me back" %}</a>
+</div>
+</form>
+{% endblock %}

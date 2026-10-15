@@ -14,8 +14,9 @@ from django.urls import NoReverseMatch, Resolver404, clear_url_caches, path, res
 from django.utils import translation
 
 import mytreatplan.urls
-from mytp_publicsite.checks import (INSECURE_DB_TLS, PLAIN_FIELD_KEYS, TURNSTILE_TEST_KEYS,
-                                    check_db_tls, check_field_key_provider,
+from mytp_publicsite.checks import (INSECURE_DB_TLS, NO_ERASURE_RETENTION, PLAIN_FIELD_KEYS,
+                                    TURNSTILE_TEST_KEYS, check_db_tls,
+                                    check_erasure_retention, check_field_key_provider,
                                     check_turnstile_keys)
 
 SETTINGS_FILE = str(django_settings.BASE_DIR / 'mytreatplan' / 'settings.py')
@@ -30,6 +31,7 @@ BASELINE_ENV = {
     'ROBOTS_NOINDEX': 'False',
     'PORTAL_ENABLED': 'False',
     'SENTRY_DSN': '',
+    'ACCOUNT_ERASURE_RETENTION_DAYS': '',
 }
 
 
@@ -368,3 +370,39 @@ def test_field_key_provider_check_skipped_with_debug_on(settings):
     settings.FIELD_KEY_PROVIDER = 'accounts.crypto.EnvKeyProvider'
 
     assert check_field_key_provider(None) == []
+
+
+# --- Account erasure retention (plan-account-erasure) ---------------------------------------
+
+@pytest.mark.parametrize('days', [None, 0, -5])
+def test_unset_erasure_retention_fails_deploy_check(settings, days):
+    settings.DEBUG = False
+    settings.ACCOUNT_ERASURE_RETENTION_DAYS = days
+
+    errors = check_erasure_retention(None)
+
+    assert [e.id for e in errors] == [NO_ERASURE_RETENTION]
+    assert 'ACCOUNT_ERASURE_RETENTION_DAYS must be a positive number of days' in errors[0].msg
+    assert NO_ERASURE_RETENTION in {e.id for e in run_checks(include_deployment_checks=True)}
+    assert NO_ERASURE_RETENTION not in {e.id for e in run_checks()}
+
+
+def test_set_erasure_retention_passes_deploy_check(settings):
+    settings.DEBUG = False
+    settings.ACCOUNT_ERASURE_RETENTION_DAYS = 1
+
+    assert check_erasure_retention(None) == []
+
+
+def test_erasure_retention_check_skipped_with_debug_on(settings):
+    settings.DEBUG = True
+    settings.ACCOUNT_ERASURE_RETENTION_DAYS = None
+
+    assert check_erasure_retention(None) == []
+
+
+@pytest.mark.parametrize('value, expected', [('', None), ('  ', None), ('30', 30), ('1', 1)])
+def test_erasure_retention_env_var_has_no_default(load_settings, value, expected):
+    s = load_settings(DEBUG='True', ACCOUNT_ERASURE_RETENTION_DAYS=value)
+
+    assert s['ACCOUNT_ERASURE_RETENTION_DAYS'] == expected

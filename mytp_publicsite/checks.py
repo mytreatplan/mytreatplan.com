@@ -9,6 +9,7 @@ DRAFT_LEGAL_TEXTS = 'mytp_publicsite.E001'
 INSECURE_DB_TLS = 'mytp_publicsite.E002'
 TURNSTILE_TEST_KEYS = 'mytp_publicsite.E003'
 PLAIN_FIELD_KEYS = 'mytp_publicsite.E004'
+NO_ERASURE_RETENTION = 'mytp_publicsite.E005'
 
 SECURE_DB_SSLMODES = ('verify-full', 'verify-ca')
 
@@ -95,4 +96,25 @@ def check_field_key_provider(app_configs, **kwargs):
         hint=f'Set FIELD_KEY_PROVIDER={KMS_KEY_PROVIDER} with FIELD_KMS_KEYS and '
              'BLIND_INDEX_KMS_KEY (deploy/README.md, step 12, "Move to the KMS provider").',
         id=PLAIN_FIELD_KEYS,
+    )]
+
+
+@register('security', deploy=True)
+def check_erasure_retention(app_configs, **kwargs):
+    """Block a deploy without the retention period of erased accounts (accounts.erasure),
+    which the lawyer sets: without it, accounts can't be erased from the admin.
+
+    Runs only with `check --deploy`. Fails while DEBUG is off and
+    ACCOUNT_ERASURE_RETENTION_DAYS is unset or below 1 (treated as unset).
+    """
+    days = getattr(settings, 'ACCOUNT_ERASURE_RETENTION_DAYS', None)
+    if settings.DEBUG or (days is not None and days >= 1):
+        return []
+    return [Error(
+        'ACCOUNT_ERASURE_RETENTION_DAYS must be a positive number of days (it is '
+        f"{'unset' if days is None else days}): the admin cannot erase accounts.",
+        hint="Set ACCOUNT_ERASURE_RETENTION_DAYS in settings.env to the number of days the "
+             "lawyer gives for keeping an erased account as evidence (deploy/README.md, "
+             "\"Erase an account\").",
+        id=NO_ERASURE_RETENTION,
     )]

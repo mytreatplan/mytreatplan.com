@@ -1,8 +1,14 @@
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.contrib.admin import helpers
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
-from django.utils.translation import gettext_lazy as _
+from django.core.exceptions import ImproperlyConfigured
+from django.db.models import Q
+from django.template.response import TemplateResponse
+from django.utils import timezone
+from django.utils.translation import gettext, gettext_lazy as _, pgettext_lazy
 
+from . import erasure
 from .crypto import email_index
 from .models import User
 
@@ -52,6 +58,38 @@ class _LoggedUser:
         return f'User {self.pk}'
 
 
+class ErasureStatusFilter(admin.SimpleListFilter):
+    """Active (not erased) users by default; erased ones, or all, on request."""
+
+    title = pgettext_lazy('erasure status', 'status')
+    parameter_name = 'status'
+    DEFAULT = 'active'
+
+    def lookups(self, request, model_admin):
+        # A context of their own, so they don't change Django's "All" of other filters.
+        return (('active', pgettext_lazy('erasure status', 'Active')),
+                ('erased', pgettext_lazy('erasure status', 'Erased')),
+                ('all', pgettext_lazy('erasure status', 'All')))
+
+    def value(self):
+        return super().value() or self.DEFAULT
+
+    def choices(self, changelist):
+        for lookup, title in self.lookup_choices:
+            yield {
+                'selected': self.value() == lookup,
+                'query_string': changelist.get_query_string({self.parameter_name: lookup}),
+                'display': title,
+            }
+
+    def queryset(self, request, queryset):
+        if self.value() == 'erased':
+            return queryset.filter(erased_at__isnull=False)
+        if self.value() == 'all':
+            return queryset
+        return queryset.filter(erased_at__isnull=True)
+
+
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
     form = UserChangeAdminForm
@@ -65,6 +103,7 @@ class UserAdmin(BaseUserAdmin):
         (_('Permissions'), {'fields': ('is_active', 'is_staff', 'is_superuser',
                                        'groups', 'user_permissions')}),
         (_('Important dates'), {'fields': ('last_login', 'date_joined')}),
+        (_('Erasure'), {'fields': ('erased_at', 'purge_after')}),
     )
     add_fieldsets = (
         (None, {
@@ -74,8 +113,10 @@ class UserAdmin(BaseUserAdmin):
     )
     # The mobile is validated and stored in E.164 form by signup step 1 (signup.forms), so
     # it is shown here but not edited.
-    readonly_fields = ('phone',)
+    readonly_fields = ('phone', 'erased_at', 'purge_after')
     list_display = ('email', 'first_name', 'last_name', 'country', 'is_staff')
+    list_filter = (ErasureStatusFilter, *BaseUserAdmin.list_filter)
+    actions = ['erase_accounts']
     # Email and names are encrypted: the database can neither sort nor search them.
     sortable_by = ('is_staff',)
     ordering = ('id',)
@@ -87,7 +128,81 @@ class UserAdmin(BaseUserAdmin):
         search_term = search_term.strip()
         if not search_term:
             return queryset, False
-        return queryset.filter(email_index=email_index(search_term)), False
+        index = email_index(search_term)
+        # An erased account is found by its real index too (evidence), under the
+        # "Erased" or "All" status.
+        return queryset.filter(Q(email_index=index) | Q(erased_email_index=index)), False
+
+    # --- Erasure: no plain delete, erased accounts read-only, the erase action ----------
+
+    def has_delete_permission(self, request, obj=None):
+        """Users are never deleted here: they are erased (accounts.erasure), and the
+        daily purge deletes them after retention."""
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        if obj is not None and obj.is_erased:
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_erase_permission(self, request):
+        return request.user.has_perm(f'{self.opts.app_label}.delete_{self.opts.model_name}')
+
+    @admin.action(description=_('Erase account'), permissions=['erase'])
+    def erase_accounts(self, request, queryset):
+        """Erase the selected accounts after an explicit confirmation (counts only in
+        the messages: never an email or a name)."""
+        try:
+            purge_date = erasure.purge_date()
+        except ImproperlyConfigured:
+            self.message_user(request, gettext(
+                'Accounts cannot be erased: ACCOUNT_ERASURE_RETENTION_DAYS is not set to a '
+                'positive number of days.'),
+                messages.ERROR)
+            return None
+        selected = list(queryset.order_by('pk'))
+        users = [u for u in selected if not u.is_erased and u.pk != request.user.pk]
+        # The skips are told once: on the first pass (the confirmation page), or when
+        # nothing is left to erase.
+        first_pass = request.POST.get('post') != 'yes'
+        if (first_pass or not users) and any(u.pk == request.user.pk for u in selected):
+            self.message_user(request, gettext('Your own account was skipped.'),
+                              messages.WARNING)
+        already = sum(1 for u in selected if u.is_erased)
+        if already and (first_pass or not users):
+            self.message_user(request, gettext(
+                'Accounts skipped because they are already erased: %(count)d.')
+                % {'count': already}, messages.WARNING)
+        if not users:
+            self.message_user(request, gettext('No account to erase.'), messages.WARNING)
+            return None
+
+        confirm_error = None
+        if request.POST.get('post') == 'yes':
+            if request.POST.get('confirm') == 'yes':
+                now = timezone.now()
+                erased = sum(1 for user in users if erasure.erase_user(user, by=request.user,
+                                                                         now=now))
+                self.message_user(request, gettext('Accounts erased: %(count)d.')
+                                  % {'count': erased}, messages.SUCCESS)
+                return None
+            confirm_error = gettext("Tick \"I understand this can't be undone\" to erase.")
+
+        context = {
+            **self.admin_site.each_context(request),
+            'title': gettext('Erase account'),
+            'opts': self.opts,
+            'count': len(users),
+            'pks': [user.pk for user in users],
+            'purge_date': purge_date,
+            'confirm_error': confirm_error,
+            'action': 'erase_accounts',
+            'action_checkbox_name': helpers.ACTION_CHECKBOX_NAME,
+            'media': self.media,
+        }
+        request.current_app = self.admin_site.name
+        return TemplateResponse(request, 'admin/accounts/user/erase_confirmation.html',
+                                context)
 
     def log_addition(self, request, obj, message):
         return super().log_addition(request, _LoggedUser(obj), message)

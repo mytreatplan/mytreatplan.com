@@ -975,3 +975,96 @@ msgstr ""
 #: signup/templates/signup/step_account.html
 msgid "Checking your browser…"
 msgstr "Comprobando su navegador…"
+
+#: accounts/models.py
+msgid "erased at"
+msgstr "borrada el"
+
+#: accounts/models.py
+msgid "purge after"
+msgstr "eliminar después de"
+
+#: accounts/admin.py
+msgctxt "erasure status"
+msgid "status"
+msgstr "estado"
+
+#: accounts/admin.py
+msgctxt "erasure status"
+msgid "Active"
+msgstr "Activas"
+
+#: accounts/admin.py
+msgctxt "erasure status"
+msgid "Erased"
+msgstr "Borradas"
+
+#: accounts/admin.py
+msgctxt "erasure status"
+msgid "All"
+msgstr "Todas"
+
+#: accounts/admin.py
+msgid "Erasure"
+msgstr "Borrado"
+
+#: accounts/admin.py
+#: templates/admin/accounts/user/erase_confirmation.html
+msgid "Erase account"
+msgstr "Borrar cuenta"
+
+#: accounts/admin.py
+msgid "Accounts cannot be erased: ACCOUNT_ERASURE_RETENTION_DAYS is not set to a positive number of days."
+msgstr "No se pueden borrar cuentas: ACCOUNT_ERASURE_RETENTION_DAYS no tiene un número de días positivo."
+
+#: accounts/admin.py
+msgid "Your own account was skipped."
+msgstr "Se ha omitido su propia cuenta."
+
+#: accounts/admin.py
+#, python-format
+msgid "Accounts skipped because they are already erased: %(count)d."
+msgstr "Cuentas omitidas porque ya estaban borradas: %(count)d."
+
+#: accounts/admin.py
+msgid "No account to erase."
+msgstr "No hay ninguna cuenta que borrar."
+
+#: accounts/admin.py
+#, python-format
+msgid "Accounts erased: %(count)d."
+msgstr "Cuentas borradas: %(count)d."
+
+#: accounts/admin.py
+msgid "Tick \"I understand this can't be undone\" to erase."
+msgstr "Marque «Entiendo que no se puede deshacer» para borrar."
+
+#: templates/admin/accounts/user/erase_confirmation.html
+#, python-format
+msgid "Accounts to erase: %(count)s."
+msgstr "Cuentas que se van a borrar: %(count)s."
+
+#: templates/admin/accounts/user/erase_confirmation.html
+msgid "Erasing can't be undone."
+msgstr "El borrado no se puede deshacer."
+
+#: templates/admin/accounts/user/erase_confirmation.html
+#, python-format
+msgid "Each account is deactivated at once and cleared of everything but its email, title, names, country, phone, date joined and legal choices, which are kept as evidence. Its retention ends on %(purge_date)s; the next daily purge then deletes it for good, with its legal choices."
+msgstr "Cada cuenta se desactiva de inmediato y se vacía de todo salvo su correo electrónico, tratamiento, nombres, país, teléfono, fecha de alta y decisiones legales, que se conservan como prueba. Su conservación termina el %(purge_date)s; la siguiente purga diaria la elimina entonces definitivamente, con sus decisiones legales."
+
+#: templates/admin/accounts/user/erase_confirmation.html
+msgid "I understand this can't be undone"
+msgstr "Entiendo que no se puede deshacer"
+
+#: templates/admin/accounts/user/erase_confirmation.html
+msgid "Erase"
+msgstr "Borrar"
+
+#: templates/admin/accounts/user/erase_confirmation.html
+msgid "No, take me back"
+msgstr "No, volver atrás"
+
+#: templates/admin/accounts/user/erase_confirmation.html
+msgid "Home"
+msgstr "Inicio"
