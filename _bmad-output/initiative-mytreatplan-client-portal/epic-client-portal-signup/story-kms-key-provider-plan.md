@@ -3,7 +3,7 @@ title: 'KMS key provider'
 type: 'feature'
 ticket: '12'
 created: '2026-10-14'
-status: 'built'
+status: 'done'
 baseline_revision: 'c94b2bc0622e7858208bdb23454b7a4ff18ba7aa'
 route: 'full'
 route_source: 'auto'
@@ -162,4 +162,6 @@ context: []
 - `manage.py makemigrations --check` -- expected: no changes.
 - Don't call the real KMS, download anything, or install anything outside the sandbox.
 
-Done locally (2026-10-14) after the review patches, on SQLite: `pytest` 804 passed, 7 skipped (PyYAML, and the browser test without Playwright), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes. No real KMS was called. Pending: CI on PostgreSQL and the staging move (README "Move to the KMS provider").
+Done locally (2026-10-14) after the review patches, on SQLite: `pytest` 804 passed, 7 skipped (PyYAML, and the browser test without Playwright), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes. No real KMS was called. CI on PostgreSQL 16 (PR #23): 814 passed.
+
+Staging (2026-10-15): the merge deployed and the user did the move following the README ("Move to the KMS provider"), every command in their own terminal on the server. An earlier run of the old plain-key block (step 12.1) by mistake was caught before any restart; `reencrypt_fields` later decrypted every value with the original transition key, so it had no effect. `kmscheck`: certificate valid until 2027-10-12, service key active, round trip ok, field key `kms20261015T1216` and the blind index key unwrap ok. `reencrypt_fields`: done, 163 rows on `kms20261015T1216` (5 users, 158 events, 0 pending registrations). The plain keys are gone from `settings.env` (grep count 0); `check --deploy` reports no `mytp_publicsite.E004` (only the known `mail.E001`, `mytp_publicsite.E001` and the HSTS warnings). The user reported an existing user opens in the admin and is found by email, and a new signup works. The wrapped values are in the password-manager entry "MyTreatplan staging KMS"; "MyTreatplan staging field keys" is to be deleted on 2026-11-14.
