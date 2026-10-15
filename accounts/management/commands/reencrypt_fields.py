@@ -1,9 +1,13 @@
 """Rewrite every encrypted value with the current key (story 2.2, key rotation).
 
-Rotation: put a new key first in FIELD_ENCRYPTION_KEYS (keeping the old ones after it),
-restart, then run this. Afterwards no value uses an older key, which may then be removed.
-Each row is saved through its model, so its blind indexes are recomputed as well (with
-the current BLIND_INDEX_KEY). Prints counts and key ids only, never values or keys.
+Rotation: put a new key first in the provider's key list (FIELD_KMS_KEYS with the KMS
+provider, FIELD_ENCRYPTION_KEYS with the environment one), keeping the old ones after it
+(with the KMS provider, plain keys being retired may stay in FIELD_ENCRYPTION_KEYS, for
+decryption only), restart, then run this. Afterwards no value uses an older key, which may
+then be removed. Each row is saved through its model, so its blind indexes are recomputed
+as well (with the current blind index key: BLIND_INDEX_KMS_KEY with the KMS provider,
+BLIND_INDEX_KEY with the environment one). Prints counts and key ids only, never values
+or keys.
 """
 from django.apps import apps
 from django.core.management.base import BaseCommand, CommandError

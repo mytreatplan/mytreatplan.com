@@ -9,8 +9,12 @@ bits per value. The associated data is ``<app_label>.<model>.<field>``, so a val
 into another field (or another model) fails to decrypt.
 
 Keys come from a key provider, chosen by the setting FIELD_KEY_PROVIDER (a dotted path to
-a class with ``current_key() -> (key_id, key)`` and ``get_key(key_id) -> key``). For now
-``EnvKeyProvider`` reads FIELD_ENCRYPTION_KEYS; the KMS provider replaces it in story 2.12.
+a class with ``current_key() -> (key_id, key)`` and ``get_key(key_id) -> key``; the class
+also supplies the blind index key). ``EnvKeyProvider`` (development, CI) reads the plain
+keys FIELD_ENCRYPTION_KEYS and BLIND_INDEX_KEY. ``KMSKeyProvider`` (story 2.12; staging,
+production) reads FIELD_KMS_KEYS and BLIND_INDEX_KMS_KEY, data keys wrapped by the OVHcloud
+KMS service key KMS_SERVICE_KEY_ID, and unwraps each through the KMS once per process,
+keeping the plain key in memory only.
 
 No message raised from here ever contains a key, a plaintext or a ciphertext.
 """
@@ -21,6 +25,7 @@ import hmac
 import json
 import os
 import re
+import threading
 from functools import cache
 
 from cryptography.exceptions import InvalidTag
@@ -33,6 +38,8 @@ from django.db import models
 from django.dispatch import receiver
 from django.utils.module_loading import import_string
 
+from mytp_publicsite import kms
+
 FORMAT_PREFIX = 'enc'
 FORMAT_VERSION = 'v1'
 KEY_SIZE = 32  # AES-256 / HMAC-SHA256 key, bytes
@@ -40,11 +47,22 @@ NONCE_SIZE = 12  # 96 bits, the GCM standard
 KEY_ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,32}$')
 
 DEFAULT_KEY_PROVIDER = 'accounts.crypto.EnvKeyProvider'
-KEY_SETTINGS = ('FIELD_KEY_PROVIDER', 'FIELD_ENCRYPTION_KEYS', 'BLIND_INDEX_KEY')
+KMS_PROVIDER = 'accounts.crypto.KMSKeyProvider'
+KEY_SETTINGS = ('FIELD_KEY_PROVIDER', 'FIELD_ENCRYPTION_KEYS', 'BLIND_INDEX_KEY',
+                'FIELD_KMS_KEYS', 'BLIND_INDEX_KMS_KEY', *kms.REQUIRED_SETTINGS, 'KMS_CA_FILE')
+# A KMS-wrapped data key is the KMS's opaque string: anything printable without spaces
+# or commas (the list separator).
+WRAPPED_KEY_RE = re.compile(r'^[!-+\--~]{1,4096}$')
 
 
 class KeyConfigurationError(ImproperlyConfigured):
     """A key setting is missing or malformed. The message names the setting, never a value."""
+
+
+class KeyUnavailableError(Exception):
+    """A KMS-wrapped key could not be unwrapped (KMS unreachable, refused, ...). Names the
+    setting, the key id and the failed KMS step, never a key. Not cached: the next use
+    retries."""
 
 
 class DecryptionError(Exception):
@@ -73,11 +91,39 @@ def decode_key(text, setting, what='the key'):
 
 def parse_key_list(value, setting='FIELD_ENCRYPTION_KEYS'):
     """Parse ``<key_id>:<base64 key>,...`` into an ordered list of (key_id, key)."""
+    return [(key_id, decode_key(encoded, setting, f'the key of entry {position}'))
+            for position, key_id, encoded in _split_key_list(
+                value, setting, 'base64 key', 'generate_field_keys')]
+
+
+def parse_wrapped_key_list(value, setting='FIELD_KMS_KEYS'):
+    """Parse ``<key_id>:<KMS-wrapped key>,...`` into an ordered list of (key_id, wrapped).
+    The wrapped keys are opaque here; only the KMS can unwrap them."""
+    keys = []
+    for position, key_id, wrapped in _split_key_list(
+            value, setting, 'wrapped key', 'generate_kms_field_key'):
+        keys.append((key_id, check_wrapped_key(wrapped, setting,
+                                               f'the wrapped key of entry {position}')))
+    return keys
+
+
+def check_wrapped_key(text, setting, what='the wrapped key'):
+    """A KMS-wrapped key as stored in a setting, or KeyConfigurationError naming `setting`."""
+    text = (text or '').strip()
+    if not WRAPPED_KEY_RE.match(text):
+        raise KeyConfigurationError(
+            f'{setting}: {what} is empty or not a KMS-wrapped key (printable, no spaces '
+            f'or commas).')
+    return text
+
+
+def _split_key_list(value, setting, what, command):
+    """(position, key_id, value text) for each ``<key_id>:<value>`` entry, ids checked."""
     if not (value or '').strip():
         raise KeyConfigurationError(
-            f'{setting} is empty. Generate keys with `manage.py generate_field_keys` '
+            f'{setting} is empty. Generate keys with `manage.py {command}` '
             f'and set {setting}.')
-    keys = []
+    entries = []
     seen = set()
     for position, entry in enumerate(value.split(','), start=1):
         entry = entry.strip()
@@ -86,7 +132,7 @@ def parse_key_list(value, setting='FIELD_ENCRYPTION_KEYS'):
         key_id, sep, encoded = entry.partition(':')
         if not sep:
             raise KeyConfigurationError(
-                f'{setting}: entry {position} is not in the form <key_id>:<base64 key>.')
+                f'{setting}: entry {position} is not in the form <key_id>:<{what}>.')
         if not KEY_ID_RE.match(key_id):
             raise KeyConfigurationError(
                 f'{setting}: entry {position} has an invalid key id (letters, digits, '
@@ -94,12 +140,54 @@ def parse_key_list(value, setting='FIELD_ENCRYPTION_KEYS'):
         if key_id in seen:
             raise KeyConfigurationError(f'{setting}: key id {key_id!r} appears twice.')
         seen.add(key_id)
-        keys.append((key_id, decode_key(encoded, setting, f'the key of entry {position}')))
-    return keys
+        entries.append((position, key_id, encoded))
+    return entries
+
+
+def unwrap_data_key(setting, key_id, wrapped):
+    """The plain 32-byte key of a data key wrapped by the KMS service key
+    KMS_SERVICE_KEY_ID. KeyUnavailableError (setting, key id and KMS step only) if the KMS
+    fails; the KMS client's own exception is not chained."""
+    try:
+        client = kms.KMSClient.from_settings(settings)
+        key = client.decrypt_data_key(settings.KMS_SERVICE_KEY_ID.strip(), wrapped)
+    except kms.KMSError as error:
+        raise KeyUnavailableError(
+            f'{setting}: cannot unwrap key {key_id!r} through the KMS: {error}') from None
+    if len(key) != KEY_SIZE:
+        raise KeyUnavailableError(
+            f'{setting}: key {key_id!r} unwrapped to {len(key)} bytes, not {KEY_SIZE}.')
+    return key
 
 
 class KeyProvider:
-    """Supplies the field encryption keys. The first key encrypts; every key decrypts."""
+    """Supplies the field encryption keys. The first key encrypts; every key decrypts.
+
+    The class also supplies the blind index key (class methods, so a broken encryption
+    key list does not hide a broken blind index key in the checks). By default it is the
+    plain BLIND_INDEX_KEY."""
+
+    blind_index_setting = 'BLIND_INDEX_KEY'
+
+    @classmethod
+    def check_blind_index_key(cls):
+        """Parse the blind index setting without any network call; KeyConfigurationError
+        naming it if it is missing or malformed. Returns the parsed value."""
+        return cls.load_blind_index_key()
+
+    @classmethod
+    def load_blind_index_key(cls):
+        """The 32-byte blind index key."""
+        value = getattr(settings, 'BLIND_INDEX_KEY', '') or ''
+        if not value.strip():
+            raise KeyConfigurationError(
+                'BLIND_INDEX_KEY is empty. Generate it with `manage.py generate_field_keys` '
+                'and set BLIND_INDEX_KEY.')
+        return decode_key(value, 'BLIND_INDEX_KEY')
+
+    def check_keys(self):
+        """Validate the key settings without any network call (system checks, startup)."""
+        self.current_key()
 
     def current_key(self):
         """(key_id, 32-byte key) used to encrypt new values."""
@@ -135,33 +223,124 @@ class EnvKeyProvider(KeyProvider):
                 f'{self.setting}.') from None
 
 
-@cache
-def get_key_provider():
+class KMSKeyProvider(KeyProvider):
+    """Keys wrapped by the OVHcloud KMS (envelope encryption, story 2.12).
+
+    FIELD_KMS_KEYS: ``<key_id>:<wrapped key>``, comma-separated, as the KMS returned them
+    (`manage.py generate_kms_field_key`); the first is current, the others only decrypt.
+    Each is unwrapped with the service key KMS_SERVICE_KEY_ID on first use and kept in
+    memory for the life of the process; a failed unwrap is not kept, so the next use
+    retries. During a rotation from plain keys, FIELD_ENCRYPTION_KEYS may also be set:
+    those keys only decrypt (a KMS key is always current). The blind index key is
+    BLIND_INDEX_KMS_KEY, one wrapped key, unwrapped the same way.
+
+    Building the provider parses the settings only; the KMS is called on first use.
+    """
+
+    setting = 'FIELD_KMS_KEYS'
+    transition_setting = 'FIELD_ENCRYPTION_KEYS'
+    blind_index_setting = 'BLIND_INDEX_KMS_KEY'
+    blind_index_key_id = 'blind-index'
+
+    def __init__(self):
+        self._wrapped = parse_wrapped_key_list(getattr(settings, self.setting, ''), self.setting)
+        self._wrapped_by_id = dict(self._wrapped)
+        transition = getattr(settings, self.transition_setting, '') or ''
+        self._transition = (dict(parse_key_list(transition, self.transition_setting))
+                            if transition.strip() else {})
+        for key_id in self._transition:
+            if key_id in self._wrapped_by_id:
+                raise KeyConfigurationError(
+                    f'{self.transition_setting}: key id {key_id!r} is also in {self.setting}.')
+        self._plain = {}
+        self._lock = threading.Lock()
+
+    def __repr__(self):
+        return (f'<{type(self).__name__} key ids={[key_id for key_id, _ in self._wrapped]} '
+                f'transition key ids={list(self._transition)}>')
+
+    def check_keys(self):
+        """Parsed in __init__; the KMS itself is checked by `manage.py kmscheck`."""
+
+    def current_key(self):
+        key_id = self._wrapped[0][0]
+        return key_id, self._unwrap(key_id)
+
+    def get_key(self, key_id):
+        if key_id in self._wrapped_by_id:
+            return self._unwrap(key_id)
+        if key_id in self._transition:
+            return self._transition[key_id]
+        raise DecryptionError(
+            f'Unknown field encryption key id {key_id!r}: it is not in {self.setting} '
+            f'or {self.transition_setting}.')
+
+    def _unwrap(self, key_id):
+        key = self._plain.get(key_id)
+        if key is None:
+            with self._lock:
+                key = self._plain.get(key_id)
+                if key is None:
+                    key = unwrap_data_key(self.setting, key_id, self._wrapped_by_id[key_id])
+                    self._plain[key_id] = key
+        return key
+
+    @classmethod
+    def check_blind_index_key(cls):
+        value = getattr(settings, cls.blind_index_setting, '') or ''
+        if not value.strip():
+            raise KeyConfigurationError(
+                f'{cls.blind_index_setting} is empty. Generate it with `manage.py '
+                f'generate_kms_field_key --blind-index` and set {cls.blind_index_setting}.')
+        return check_wrapped_key(value, cls.blind_index_setting)
+
+    @classmethod
+    def load_blind_index_key(cls):
+        return unwrap_data_key(cls.blind_index_setting, cls.blind_index_key_id,
+                               cls.check_blind_index_key())
+
+
+def get_key_provider_class():
     path = getattr(settings, 'FIELD_KEY_PROVIDER', '') or DEFAULT_KEY_PROVIDER
     try:
-        provider_class = import_string(path)
+        return import_string(path)
     except ImportError:
         raise KeyConfigurationError(
             f'FIELD_KEY_PROVIDER: cannot import {path!r}.') from None
-    return provider_class()
 
 
 @cache
+def get_key_provider():
+    return get_key_provider_class()()
+
+
+_blind_index_key = {}
+_blind_index_lock = threading.Lock()
+
+
 def get_blind_index_key():
-    value = getattr(settings, 'BLIND_INDEX_KEY', '') or ''
-    if not value.strip():
-        raise KeyConfigurationError(
-            'BLIND_INDEX_KEY is empty. Generate it with `manage.py generate_field_keys` '
-            'and set BLIND_INDEX_KEY.')
-    return decode_key(value, 'BLIND_INDEX_KEY')
+    """The blind index key from the provider class, loaded once per process (a failure is
+    not kept, so the next call retries)."""
+    key = _blind_index_key.get('key')
+    if key is None:
+        with _blind_index_lock:
+            key = _blind_index_key.get('key')
+            if key is None:
+                key = get_key_provider_class().load_blind_index_key()
+                _blind_index_key['key'] = key
+    return key
+
+
+get_blind_index_key.cache_clear = _blind_index_key.clear
 
 
 def validate_field_keys():
-    """Load both keys now; KeyConfigurationError (naming the setting) if either is bad."""
+    """Check both key settings now, without calling the KMS; KeyConfigurationError (naming
+    the setting) if either is bad."""
     get_key_provider.cache_clear()
     get_blind_index_key.cache_clear()
-    get_key_provider().current_key()
-    get_blind_index_key()
+    get_key_provider().check_keys()
+    get_key_provider_class().check_blind_index_key()
 
 
 @receiver(setting_changed)
@@ -333,31 +512,47 @@ def encrypted_fields(model):
 
 def check_field_keys(app_configs=None, **kwargs):
     """Refuse to run without valid keys: accounts.E001 (encryption keys / provider),
-    accounts.E002 (blind index key)."""
+    accounts.E002 (blind index key). Parses the settings only: the KMS provider's keys are
+    not unwrapped here (so `check` and `migrate` work without network); `kmscheck` does."""
     from django.core.checks import Error
 
     errors = []
     encryption_keys = []
+    wrapped_keys = []
     get_key_provider.cache_clear()
     get_blind_index_key.cache_clear()
     try:
         provider = get_key_provider()
-        provider.current_key()
+        provider.check_keys()
         if isinstance(provider, EnvKeyProvider):
             encryption_keys = [key for _id, key in provider._keys]
+        elif isinstance(provider, KMSKeyProvider):
+            encryption_keys = list(provider._transition.values())
+            wrapped_keys = [wrapped for _id, wrapped in provider._wrapped]
     except KeyConfigurationError as error:
         errors.append(Error(str(error), hint='See deploy/README.md, step 12.',
                             id='accounts.E001'))
     try:
-        index_key = get_blind_index_key()
+        provider_class = get_key_provider_class()
+    except KeyConfigurationError:
+        provider_class = KeyProvider  # already E001; still check BLIND_INDEX_KEY
+    try:
+        index_key = provider_class.check_blind_index_key()
     except KeyConfigurationError as error:
         errors.append(Error(str(error), hint='See deploy/README.md, step 12.',
                             id='accounts.E002'))
     else:
-        if any(hmac.compare_digest(index_key, key) for key in encryption_keys):
+        if isinstance(index_key, bytes) and any(
+                hmac.compare_digest(index_key, key) for key in encryption_keys):
             errors.append(Error(
                 'BLIND_INDEX_KEY must be its own key, not one of FIELD_ENCRYPTION_KEYS.',
                 hint='Generate a separate key with `manage.py generate_field_keys`.',
+                id='accounts.E002'))
+        elif isinstance(index_key, str) and index_key in wrapped_keys:
+            errors.append(Error(
+                'BLIND_INDEX_KMS_KEY must be its own key, not one of FIELD_KMS_KEYS.',
+                hint='Generate a separate key with '
+                     '`manage.py generate_kms_field_key --blind-index`.',
                 id='accounts.E002'))
     return errors
 

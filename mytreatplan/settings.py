@@ -156,10 +156,22 @@ KMS_CA_FILE = config('KMS_CA_FILE', default='')
 # 32-byte key. Both are empty by default: `check` (and so `runserver` and `migrate`)
 # fails naming the missing setting; there is no fallback key. `manage.py
 # generate_field_keys` prints new keys. Losing them makes the data unreadable; see
-# deploy/README.md, step 12. The KMS provider replaces the environment one in story 2.12.
+# deploy/README.md, step 12. Development and CI use this environment provider.
+#
+# Staging and production use the KMS provider (story 2.12; `check --deploy` fails
+# without it, mytp_publicsite.E004): FIELD_KEY_PROVIDER=accounts.crypto.KMSKeyProvider.
+# FIELD_KMS_KEYS lists `<key_id>:<wrapped key>` entries, comma-separated, first current:
+# data keys wrapped by the KMS service key KMS_SERVICE_KEY_ID, unwrapped through the KMS
+# once per process and kept in memory only. BLIND_INDEX_KMS_KEY is the blind index key,
+# one wrapped value; it replaces BLIND_INDEX_KEY. `manage.py generate_kms_field_key
+# <key_id>` (or `--blind-index`) prints new ones. With the KMS provider,
+# FIELD_ENCRYPTION_KEYS may still hold plain keys during a move to the KMS, for
+# decryption only. `check` parses them without calling the KMS; `kmscheck` unwraps them.
 FIELD_KEY_PROVIDER = config('FIELD_KEY_PROVIDER', default='accounts.crypto.EnvKeyProvider')
 FIELD_ENCRYPTION_KEYS = config('FIELD_ENCRYPTION_KEYS', default='')
 BLIND_INDEX_KEY = config('BLIND_INDEX_KEY', default='')
+FIELD_KMS_KEYS = config('FIELD_KMS_KEYS', default='')
+BLIND_INDEX_KMS_KEY = config('BLIND_INDEX_KMS_KEY', default='')
 
 # Application definition
 

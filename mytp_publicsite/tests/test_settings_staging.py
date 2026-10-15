@@ -14,7 +14,8 @@ from django.urls import NoReverseMatch, Resolver404, clear_url_caches, path, res
 from django.utils import translation
 
 import mytreatplan.urls
-from mytp_publicsite.checks import (INSECURE_DB_TLS, TURNSTILE_TEST_KEYS, check_db_tls,
+from mytp_publicsite.checks import (INSECURE_DB_TLS, PLAIN_FIELD_KEYS, TURNSTILE_TEST_KEYS,
+                                    check_db_tls, check_field_key_provider,
                                     check_turnstile_keys)
 
 SETTINGS_FILE = str(django_settings.BASE_DIR / 'mytreatplan' / 'settings.py')
@@ -338,3 +339,32 @@ def test_turnstile_check_skipped_with_debug_on(settings):
     settings.DEBUG = True
 
     assert check_turnstile_keys(None) == []
+
+
+# --- Field key provider (story 2.12) -------------------------------------------------------
+
+@pytest.mark.parametrize('provider', ['accounts.crypto.EnvKeyProvider', ''])
+def test_plain_field_keys_fail_deploy_check(settings, provider):
+    settings.DEBUG = False
+    settings.FIELD_KEY_PROVIDER = provider
+
+    errors = check_field_key_provider(None)
+
+    assert [e.id for e in errors] == [PLAIN_FIELD_KEYS]
+    assert 'EnvKeyProvider' in errors[0].msg
+    assert 'accounts.crypto.KMSKeyProvider' in errors[0].hint
+    assert PLAIN_FIELD_KEYS in {e.id for e in run_checks(include_deployment_checks=True)}
+
+
+def test_kms_field_key_provider_passes_deploy_check(settings):
+    settings.DEBUG = False
+    settings.FIELD_KEY_PROVIDER = 'accounts.crypto.KMSKeyProvider'
+
+    assert check_field_key_provider(None) == []
+
+
+def test_field_key_provider_check_skipped_with_debug_on(settings):
+    settings.DEBUG = True
+    settings.FIELD_KEY_PROVIDER = 'accounts.crypto.EnvKeyProvider'
+
+    assert check_field_key_provider(None) == []

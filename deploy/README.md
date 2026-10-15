@@ -19,7 +19,7 @@ team password (basic auth) and sends `X-Robots-Tag: noindex, nofollow`.
 | Scheduled jobs | `mytp-job@<name>.timer` → `mytp-job@<name>.service`, one per line of `jobs.conf` |
 | Health URL | `https://dev.mytpdso.com/healthz` (no password), watched by UptimeRobot |
 | Off-region backups | nightly `backupdb` job → Object Storage SBG (`age`-encrypted); restore test: `restore-db.sh` |
-| Field keys | `FIELD_ENCRYPTION_KEYS`, `BLIND_INDEX_KEY` in `shared/settings.env`; copy in the team password manager (step 12) |
+| Field keys | KMS-wrapped: `FIELD_KMS_KEYS`, `BLIND_INDEX_KMS_KEY` in `shared/settings.env` (`FIELD_KEY_PROVIDER=accounts.crypto.KMSKeyProvider`); password manager: key ids and wrapped values, never plain keys (step 12, "Keys (KMS)") |
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp/shared/kms-client.*`; daily `kmscheck` job |
 | Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
 
@@ -465,6 +465,13 @@ valid keys (check errors `accounts.E001` / `accounts.E002`, naming the setting),
 whose data migration encrypts the existing users and pending registrations in place. A
 deploy without the keys fails at `migrate` and the previous release stays live.
 
+**Steps 1–2 below are the plain-key setup: staging before story 2.12, and the plain keys'
+transition role during "Move to the KMS provider" only.** They are not the normal setup
+any more. A new environment (production, story 1.12) never gets plain keys: after step 11
+it starts directly with KMS keys, generated with `manage.py generate_kms_field_key` as in
+"Move to the KMS provider" step 1 (with nothing to re-encrypt, steps 2, 4 and 5 there do
+not apply).
+
 1. **Generate the keys on the server**, straight into the settings file, so they never
    show on a screen, a laptop or a chat (the release before 2.2 has no
    `generate_field_keys` yet; this is the same thing):
@@ -515,8 +522,9 @@ release directory right away.
 `FIELD_ENCRYPTION_KEYS` entry a value was encrypted with, nobody (us included) can read
 that value again, and a lost key cannot be reissued. Without `BLIND_INDEX_KEY` no one can
 log in or be found by email until every index is recomputed (which needs the encryption
-key). The password manager copy is the only backup of the keys until the KMS provider
-(story 2.12) wraps them.
+key). With the plain keys, the password manager copy is their only backup; with the KMS
+provider (below) what protects the data is the KMS service key ("Keys (KMS)",
+"Disaster recovery").
 
 **Backups need the same keys.** The nightly `backupdb` dumps (and OVHcloud's managed
 backups) hold the ciphertext, not the plaintext. A restored database is readable only with
@@ -542,6 +550,119 @@ restore needs the keys as they were when the dump was taken.
 `BLIND_INDEX_KEY` is not rotated routinely. If it must change (leak), change it and run
 `reencrypt_fields` right after the restart: until it finishes, email lookups and logins
 fail.
+
+The rotation above is for the plain keys (development, or staging before the move
+below). With the KMS provider, see "Keys (KMS)", "Rotate a field key".
+
+#### Move to the KMS provider (story 2.12)
+
+From story 2.12 staging keeps no plain field key: `settings.env` holds only data keys
+wrapped by the KMS service key (step 11), and the app unwraps them through the KMS once
+per process, keeping the plain keys in memory only. `check --deploy` fails
+(`mytp_publicsite.E004`) while `DEBUG` is off and `FIELD_KEY_PROVIDER` is not
+`accounts.crypto.KMSKeyProvider`.
+
+- `FIELD_KMS_KEYS`: `<key_id>:<wrapped key>` entries, comma-separated. The first encrypts;
+  the others only decrypt (during a rotation).
+- `BLIND_INDEX_KMS_KEY`: the blind index key, one wrapped value. It replaces
+  `BLIND_INDEX_KEY`.
+- With the KMS provider, `FIELD_ENCRYPTION_KEYS` may still hold the plain keys during the
+  move, **for decryption only**: a KMS key is always current. `BLIND_INDEX_KEY` is ignored.
+
+`check` (and so `migrate`) only parses these settings, without calling the KMS; the
+daily `kmscheck` job unwraps every one of them and fails if one cannot be unwrapped. A KMS
+failure when the app first needs a key raises an error naming the step and the key id
+(`FIELD_KMS_KEYS: cannot unwrap key 'kms...' through the KMS: step connect failed: ...`);
+it is not kept, so the next request retries.
+
+The staging move is a rotation (decision 2026-10-14). Run every command yourself, in your
+own terminal on the server, once the 2.12 release is live and step 11's `kmscheck` passes:
+
+1. **Generate the KMS keys** straight into the settings file (the wrapped keys are useless
+   without the KMS service key, but they still belong only in `settings.env`). The command
+   asks the KMS for a new 256-bit data key, prints only the wrapped key and discards the
+   plain one:
+
+   ```sh
+   cd /srv/mytp/current
+   sudo -u mytp sh -ec 'umask 077
+   f=$(./venv/bin/python manage.py generate_kms_field_key "kms$(date -u +%Y%m%dT%H%M)")
+   b=$(./venv/bin/python manage.py generate_kms_field_key --blind-index)
+   printf "FIELD_KEY_PROVIDER=accounts.crypto.KMSKeyProvider\nFIELD_KMS_KEYS=%s\nBLIND_INDEX_KMS_KEY=%s\n" "$f" "$b" \
+       >> /srv/mytp/shared/settings.env'
+   sudo grep -c -E '^(FIELD_KEY_PROVIDER|FIELD_KMS_KEYS|BLIND_INDEX_KMS_KEY)=.' /srv/mytp/shared/settings.env   # 3
+   ```
+
+   If the file already had any of these three lines, delete the older ones
+   (`sudo -u mytp nano /srv/mytp/shared/settings.env`).
+2. **Keep the plain keys as transition keys**: leave `FIELD_ENCRYPTION_KEYS` as it is
+   (existing values still decrypt with it) and `BLIND_INDEX_KEY` until step 5 (ignored by
+   the KMS provider).
+3. **Turn signups off, check and restart.** Between this restart and the end of step 4
+   email and phone lookups miss (the blind indexes still use the old key), so a signup
+   with an already registered email would get through and create a second user. Its new
+   index then collides with the old row's recomputed one (`email_index` is unique) and
+   `reencrypt_fields` aborts. Set `PORTAL_ENABLED=False` in `settings.env` first:
+
+   ```sh
+   sudo -u mytp nano /srv/mytp/shared/settings.env           # PORTAL_ENABLED=False
+   sudo -u mytp ./venv/bin/python manage.py check            # no issues (parses only)
+   sudo -u mytp ./venv/bin/python manage.py kmscheck         # ... field key kms... unwrap ok
+                                                             # ... blind index key blind-index unwrap ok
+   sudo systemctl restart mytp-gunicorn
+   ```
+
+   New values are now encrypted with the KMS key. **Email and phone lookups (login, the
+   signup duplicate checks, the admin search by email) fail from this restart until
+   step 4 finishes**, because the blind indexes still use the old key. That is accepted on
+   staging; do steps 3 and 4 back to back.
+4. **Re-encrypt:**
+
+   ```sh
+   sudo -u mytp ./venv/bin/python manage.py reencrypt_fields   # ... done, N rows on key kms...
+   ```
+
+   It rewrites every value with the KMS key and recomputes every blind index with the KMS
+   blind index key, and fails if any value is still on an older key. Once it reports
+   every value on the new key, set `PORTAL_ENABLED=True` again in `settings.env` and
+   `sudo systemctl restart mytp-gunicorn`. Then log in to staging and open a user in the
+   admin.
+
+   **If it aborts with an `IntegrityError` on `email_index`** (a duplicate user was created
+   in the window anyway), find the newer user by its new index and delete it, then run
+   `reencrypt_fields` again (it is safe to repeat):
+
+   ```sh
+   sudo -u mytp ./venv/bin/python manage.py shell -c "from accounts.crypto import email_index; from accounts.models import User; print(list(User.objects.filter(email_index=email_index('<the email>')).values_list('pk', 'date_joined')))"
+   # the one listed is the duplicate (the old row still has its old index); delete it:
+   sudo -u mytp ./venv/bin/python manage.py shell -c "from accounts.models import User; User.objects.get(pk='<its pk>').delete()"
+   ```
+
+   The error does not name the email; the duplicate is the user who signed up during the
+   window (newest `date_joined` in the admin).
+5. **Retire the plain keys.** Delete the `FIELD_ENCRYPTION_KEYS` and `BLIND_INDEX_KEY`
+   lines from `settings.env`, then:
+
+   ```sh
+   sudo -u mytp ./venv/bin/python manage.py check                # no issues
+   sudo -u mytp ./venv/bin/python manage.py check --deploy       # no mytp_publicsite.E004
+   sudo systemctl restart mytp-gunicorn
+   sudo grep -c -E '^(FIELD_ENCRYPTION_KEYS|BLIND_INDEX_KEY)=.' /srv/mytp/shared/settings.env   # 0
+   ```
+
+   Add the key ids and the wrapped values of `FIELD_KMS_KEYS` and `BLIND_INDEX_KMS_KEY`
+   (wrapped only, never a plain key) to the reference entry "MyTreatplan staging KMS".
+   Keep the entry "MyTreatplan staging field keys" (the plain keys) in the team password
+   manager for 30 days, until the last `backupdb` dump taken with them expires, then delete
+   it; note the deletion date in it now. Record it in the pull request ("plain field keys
+   retired from settings.env, <date>, <who>; password manager entry to delete on <date>").
+   Until then, a dump taken before step 4 is restored with those plain keys as
+   `FIELD_ENCRYPTION_KEYS` (transition keys) and `BLIND_INDEX_KEY`; afterwards it can no
+   longer be read. A release older than 2.12 can no longer start (it needs the plain keys
+   in `settings.env`).
+
+Production (story 1.12) follows the same steps with its own KMS domain, service key and
+certificate.
 
 ## How a deploy works
 
@@ -698,7 +819,8 @@ on purpose.
 | KMS domain | OVHcloud KMS, region **GRA** (`eu-west-gra`), endpoint `https://eu-west-gra.okms.ovh.net`, domain id in `KMS_OKMS_ID` |
 | Staging service key | `mytp-staging`: `oct`, 256 bits, wrapKey/unwrapKey/encrypt/decrypt, `SOFTWARE`; id in `KMS_SERVICE_KEY_ID` |
 | Server credential | access certificate (mTLS) for IAM identity `mytp-kms-staging`, `/srv/mytp/shared/kms-client.crt` + `.key` (mode 600); expires 2027-10-12 17:07 UTC |
-| IAM policy | `mytp-kms-staging-datakeys`: `serviceKey/get`, `serviceKey/dataKey/create`, `serviceKey/dataKey/decrypt` on this domain only |
+| IAM policy | `mytp-kms-staging-datakeys`: `serviceKey/get`, `serviceKey/dataKey/create`, `serviceKey/dataKey/decrypt` on this domain only (enough for the field key provider, story 2.12: no new action) |
+| Field keys | `FIELD_KMS_KEYS`, `BLIND_INDEX_KMS_KEY`: data keys wrapped by the staging service key, in `shared/settings.env` (never in the database); key ids and wrapped values (never plain) in the reference entry, superseded ones kept 30 days |
 | Backup of the credential | none (private key never leaves the server); if lost, issue a new certificate. Reference entry (no secrets) "MyTreatplan staging KMS" in the team password manager |
 | Production | separate domain/key/certificate, story 1.12 (may use `HSM`) |
 
@@ -707,7 +829,33 @@ on purpose.
 key, encrypts with the plain one in memory and stores only the wrapped one next to the
 data. To read, it sends the wrapped key to `POST .../datakey/decrypt`. The service key
 never leaves the KMS. `mytp_publicsite/kms.py` is the client (standard library only);
-story 2.12 builds the key provider on it.
+the field key provider `accounts.crypto.KMSKeyProvider` (story 2.12) builds on it. The
+wrapped field keys live in `settings.env` (`FIELD_KMS_KEYS`, `BLIND_INDEX_KMS_KEY`), not
+next to the data; each is unwrapped once per process (`datakey/decrypt`) and the plain key
+stays in the process's memory only: never in a log, an error, Sentry, the database, the
+cache or a file.
+
+**Disaster recovery rests on the service key** (decisions 2026-10-14). There is no
+plain-key escrow. Recovering the data needs both:
+
+- (a) **the KMS service key and its domain, which must never be deleted.** **Deleting the
+  service key, or losing the KMS domain, makes all personal data and its backups
+  unrecoverable**, for good: every field key is wrapped by it.
+- (b) **the wrapped values** of `FIELD_KMS_KEYS` and `BLIND_INDEX_KMS_KEY`: from
+  `settings.env`, or, if the server is lost, from the password manager entry "MyTreatplan
+  staging KMS". That entry holds the key ids and the wrapped values (wrapped only, never a
+  plain key), updated at every generation and rotation. Restoring an older dump needs the
+  wrapped values that were current when it was taken, so superseded wrapped values stay in
+  the entry for 30 days after a rotation.
+
+So:
+
+- In OVHcloud IAM, restrict key deletion (and deactivation) to named administrators: only
+  their own identities get a policy with `okms:apikms:serviceKey/delete` (and
+  `deactivate`) on this domain; the server's identity never does, and no shared or root
+  login is used for it.
+- Never delete or deactivate the service key while any data or backup might still need it
+  ("Rotate the service key").
 
 **Daily check.** `kmscheck | kmscheck | *-*-* 04:00:00 UTC` in `jobs.conf`, so it runs via
 `runjob` with Sentry check-ins. `manage.py kmscheck` gets the service key, generates a
@@ -753,7 +901,7 @@ earlier). The new certificate goes in beside the old one, so nothing breaks mean
    sudo -u mytp mv /srv/mytp/shared/kms-client-new.crt /srv/mytp/shared/kms-client.crt
    sudo -u mytp mv /srv/mytp/shared/kms-client-new.key /srv/mytp/shared/kms-client.key
    sudo rm /srv/mytp/shared/kms-client-new.csr
-   sudo systemctl restart mytp-gunicorn            # once the app uses the KMS (2.12)
+   sudo systemctl restart mytp-gunicorn            # new KMS calls use the new certificate
    sudo systemctl start mytp-job@kmscheck
    ```
 
@@ -763,11 +911,45 @@ earlier). The new certificate goes in beside the old one, so nothing breaks mean
 If the private key may have leaked: do the same at once, and delete the old certificate
 in the panel first.
 
+### Rotate a field key
+
+With the KMS provider (story 2.12), e.g. yearly, or at once if a key may have leaked.
+Existing data stays readable throughout. Run each command yourself on the server, from
+`/srv/mytp/current`:
+
+1. **New key, first.** `sudo -u mytp ./venv/bin/python manage.py generate_kms_field_key
+   kms<UTC date>T<time>` prints one entry, `<key_id>:<wrapped key>` (the plain key is
+   discarded). Put it **first** in `FIELD_KMS_KEYS`, keeping the current entries after it
+   (comma-separated, no spaces), and add the key id and its wrapped value to the reference
+   entry "MyTreatplan staging KMS". Keep the superseded wrapped values there for 30 days
+   after the rotation (older dumps need them), then remove them.
+2. **Restart.** `manage.py check` (no issues), `manage.py kmscheck` (every key unwrap ok),
+   then `sudo systemctl restart mytp-gunicorn`. New values now use the new key; old ones
+   still decrypt.
+3. **Re-encrypt.** `manage.py reencrypt_fields` rewrites every value with the new key and
+   recomputes the blind indexes; it fails if any value is still on an older key.
+4. **Remove the old key** from `FIELD_KMS_KEYS`, and restart, once no backup encrypted
+   with it can still be needed (30 days of dumps).
+
+**Blind index key** (not rotated routinely; at once if it may have leaked):
+`generate_kms_field_key --blind-index` prints a new wrapped value. Replace
+`BLIND_INDEX_KMS_KEY` with it, restart, then run `reencrypt_fields` right away: email and
+phone lookups fail between the restart and the end of that run. Turn signups off for that
+window (`PORTAL_ENABLED=False` in `settings.env` before the restart; back to `True`, and
+restart, once `reencrypt_fields` reports every value on the new key). If it aborts with an
+`IntegrityError` on `email_index` anyway, delete the duplicate and run it again as in
+step 12, "Move to the KMS provider", step 4.
+
 ### Rotate the service key
 
-For story 2.12 to implement; until then no data is encrypted, so nothing needs
-re-wrapping. Rotation changes which key wraps the data keys; it never re-encrypts the
-data itself.
+Not supported yet by the field key provider (story 2.12): it unwraps every
+`FIELD_KMS_KEYS` entry and `BLIND_INDEX_KMS_KEY` with the one service key
+`KMS_SERVICE_KEY_ID`, so pointing that setting at a new key makes every existing wrapped
+key fail to unwrap (the app then fails on every personal field, and `kmscheck` alerts).
+Re-wrapping under a new service key needs a follow-up story (a service key id per
+wrapped key, or a re-wrap command). Until then, do **not** change `KMS_SERVICE_KEY_ID`
+while field keys are wrapped by the current key. The outline below is for that story.
+Rotation changes which key wraps the data keys; it never re-encrypts the data itself.
 
 1. **New key.** In the KMS domain, generate a new service key with the same settings
    (`oct`, 256, wrapKey/unwrapKey/encrypt/decrypt, `SOFTWARE`), e.g. `mytp-staging-2`. The IAM policy
@@ -781,9 +963,9 @@ data itself.
    plaintext with the new key (`encrypt` on the new key id), and store the new wrapped
    key and the new key id in place of the old ones, in one transaction per record. The
    data encrypted with that data key is untouched. A key wrapped with `encrypt` is
-   unwrapped with `decrypt` (not `datakey/decrypt`), so 2.12 must record how each data
+   unwrapped with `decrypt` (not `datakey/decrypt`), so that story must record how each data
    key was wrapped, and the IAM policy then also needs `okms:apikms:serviceKey/encrypt`
-   and `okms:apikms:serviceKey/decrypt`. 2.12 provides this as a management command;
+   and `okms:apikms:serviceKey/decrypt`. That story provides this as a management command;
    until every record is done, both keys stay active.
 4. **Deactivate the old key only once nothing uses it**: no stored record and no job
    refers to it any more, and every backup taken before step 3 has expired (the SBG

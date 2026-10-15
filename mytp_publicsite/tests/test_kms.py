@@ -33,7 +33,16 @@ PLAINTEXT_B64 = base64.b64encode(PLAINTEXT).decode()
 WRAPPED = 'eyJhbGciOiJBMjU2S1ciLCJraWQiOiJ3cmFwcGVkLWtleS1tYXJrZXIifQ.WRAPPED-MARKER-7Qx'
 CERT_MARKER = 'CERT-MATERIAL-MARKER-91c'
 KEY_MARKER = 'PRIVATE-KEY-MARKER-4fd'
-SECRETS = (PLAINTEXT_B64, WRAPPED, 'WRAPPED-MARKER', CERT_MARKER, KEY_MARKER)
+# Field keys (story 2.12): wrapped values in FIELD_KMS_KEYS / BLIND_INDEX_KMS_KEY and the
+# plain keys the KMS unwraps them to.
+FIELD_PLAIN = {
+    'FIELD-WRAPPED-K1-MARKER': b'test-only-field-plain-k1-32byte!',
+    'FIELD-WRAPPED-K2-MARKER': b'test-only-field-plain-k2-32byte!',
+    'FIELD-WRAPPED-BI-MARKER': b'test-only-field-plain-bi-32byte!',
+}
+SECRETS = (PLAINTEXT_B64, WRAPPED, 'WRAPPED-MARKER', CERT_MARKER, KEY_MARKER,
+           *FIELD_PLAIN, *(base64.b64encode(v).decode() for v in FIELD_PLAIN.values()),
+           *(v.decode() for v in FIELD_PLAIN.values()))
 FAR_EXPIRY = datetime(2099, 1, 31, 12, 0, tzinfo=timezone.utc)
 
 needs_openssl = pytest.mark.skipif(shutil.which('openssl') is None, reason='openssl not available')
@@ -60,6 +69,7 @@ class FakeKMS:
     def __init__(self):
         self.calls = []
         self.fail = {}
+        self.field_keys = dict(FIELD_PLAIN)  # wrapped -> plain, or an HTTP status
         self.state = 'active'
         self.unwrapped = PLAINTEXT
         self.error_body = {'error_code': 17125377, 'request_id': 'req-abc.123',
@@ -89,6 +99,12 @@ class FakeKMS:
                               'size': 256, 'attributes': {'state': self.state}})
         if op == 'generate':
             return _Response({'key': WRAPPED, 'plaintext': PLAINTEXT_B64})
+        if body['key'] in self.field_keys:
+            plain = self.field_keys[body['key']]
+            if isinstance(plain, int):
+                raise urllib.error.HTTPError(url, plain, 'error', {},
+                                             io.BytesIO(json.dumps(self.error_body).encode()))
+            return _Response({'plaintext': base64.b64encode(plain).decode()})
         assert body == {'key': WRAPPED}
         return _Response({'plaintext': base64.b64encode(self.unwrapped).decode()})
 
@@ -341,6 +357,126 @@ def test_error_body_free_text_is_not_echoed(kms_env, capsys):
     out, error = _run(capsys)
 
     assert 'HTTP 400' in str(error)  # _run already checked nothing secret is in it
+
+
+# --- kmscheck: field keys (story 2.12) ---------------------------------------------------------
+
+FIELD_KMS_KEYS = 'k2:FIELD-WRAPPED-K2-MARKER,k1:FIELD-WRAPPED-K1-MARKER'
+
+
+@pytest.fixture
+def field_keys(settings):
+    settings.FIELD_KEY_PROVIDER = 'accounts.crypto.KMSKeyProvider'
+    settings.FIELD_KMS_KEYS = FIELD_KMS_KEYS
+    settings.BLIND_INDEX_KMS_KEY = 'FIELD-WRAPPED-BI-MARKER'
+
+
+def test_no_field_keys_configured_is_reported(kms_env, capsys):
+    out, error = _run(capsys)
+
+    assert error is None
+    assert 'no KMS field keys configured' in out
+    assert kms_env.ops == ['get', 'generate', 'unwrap']
+
+
+def test_field_keys_each_unwrapped(kms_env, field_keys, capsys):
+    out, error = _run(capsys)
+
+    assert error is None
+    assert kms_env.ops == ['get', 'generate', 'unwrap', 'unwrap', 'unwrap', 'unwrap']
+    assert [body for op, body in kms_env.calls[3:]] == [
+        {'key': 'FIELD-WRAPPED-K2-MARKER'}, {'key': 'FIELD-WRAPPED-K1-MARKER'},
+        {'key': 'FIELD-WRAPPED-BI-MARKER'}]
+    assert 'kmscheck: field key k2 unwrap ok' in out
+    assert 'kmscheck: field key k1 unwrap ok' in out
+    assert 'kmscheck: blind index key blind-index unwrap ok' in out
+
+
+def test_field_keys_checked_when_set_with_the_env_provider(kms_env, settings, capsys):
+    settings.FIELD_KMS_KEYS = 'k1:FIELD-WRAPPED-K1-MARKER'  # e.g. during the move
+
+    out, error = _run(capsys)
+
+    assert error is None
+    assert 'field key k1 unwrap ok' in out and 'blind index' not in out
+
+
+@pytest.mark.parametrize('failure, shown', [(400, 'step unwrap, HTTP 400'),
+                                            (403, 'step auth, HTTP 403')])
+def test_field_key_that_cannot_be_unwrapped_fails(kms_env, field_keys, capsys, failure, shown):
+    kms_env.field_keys['FIELD-WRAPPED-K1-MARKER'] = failure
+
+    out, error = _run(capsys)
+
+    assert 'field key k2 unwrap ok' in out
+    assert f'field key k1 unwrap failed ({shown})' in out
+    assert 'blind index key blind-index unwrap ok' in out  # every key is still reported
+    assert 'step field-keys failed: cannot unwrap k1' in str(error)
+
+
+def test_field_key_of_the_wrong_size_fails(kms_env, field_keys, capsys):
+    kms_env.field_keys['FIELD-WRAPPED-BI-MARKER'] = b'short'
+
+    out, error = _run(capsys)
+
+    assert 'blind index key blind-index unwrap failed (wrong size)' in out
+    assert 'cannot unwrap blind-index' in str(error)
+
+
+@pytest.mark.parametrize('bad', ['unwrap', 'settings'])
+def test_field_key_failure_does_not_hide_certificate_expiry(kms_env, field_keys, settings,
+                                                            capsys, bad):
+    soon = datetime.now(timezone.utc) + timedelta(days=12)
+    kms_env.expiry['value'] = soon
+    if bad == 'unwrap':
+        kms_env.field_keys['FIELD-WRAPPED-K1-MARKER'] = 400
+    else:
+        settings.FIELD_KMS_KEYS = ''
+
+    out, error = _run(capsys)
+
+    message = str(error)
+    if bad == 'unwrap':
+        assert 'step field-keys failed: cannot unwrap k1' in message
+    else:
+        assert 'step settings failed' in message and 'FIELD_KMS_KEYS' in message
+    assert f'client certificate expires {soon:%Y-%m-%d}' in message
+    assert 'renew it' in message
+
+
+@pytest.mark.parametrize('setting', ['FIELD_KMS_KEYS', 'BLIND_INDEX_KMS_KEY'])
+def test_kms_provider_without_field_keys_fails(kms_env, field_keys, settings, capsys, setting):
+    setattr(settings, setting, '')
+
+    out, error = _run(capsys)
+
+    assert 'step settings failed' in str(error) and setting in str(error)
+
+
+def test_malformed_field_keys_fail_without_echoing_them(kms_env, field_keys, settings, capsys):
+    settings.FIELD_KMS_KEYS = 'k1 FIELD-WRAPPED-K1-MARKER'
+
+    out, error = _run(capsys)  # checks no wrapped key is echoed
+
+    assert 'FIELD_KMS_KEYS' in str(error)
+
+
+@pytest.mark.parametrize('case', ['ok', 'failed'])
+def test_runjob_field_key_failure_reaches_sentry_without_secrets(
+        kms_env, field_keys, monkeypatch, sentry_capture, case):  # noqa: F811
+    if case == 'failed':
+        kms_env.field_keys['FIELD-WRAPPED-K2-MARKER'] = 400
+    checkins = _runjob_with(monkeypatch, sentry_sdk)
+
+    if case == 'failed':
+        with pytest.raises(CommandError):
+            call_command('runjob', 'kmscheck')
+    else:
+        call_command('runjob', 'kmscheck')
+    sentry_sdk.flush()
+
+    assert checkins[-1]['status'] == ('error' if case == 'failed' else 'ok')
+    _assert_no_secrets(json.dumps(sentry_capture.events))
 
 
 # --- The client itself -----------------------------------------------------------------
