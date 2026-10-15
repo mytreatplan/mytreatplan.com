@@ -1,3 +1,5 @@
+import logging
+
 import phonenumbers
 from django import forms
 from django.contrib.auth import get_user_model, password_validation
@@ -13,7 +15,10 @@ from legal.rendering import render_markdown
 
 from .checks import DISPOSABLE_EMAIL_CHECK, email_domain, is_disposable_domain
 from .verification import (APPROVED, CODE_LENGTH, EMAIL, NO_CODE, PURPOSE_RESUME, PURPOSE_SIGNUP,
-                           SMS, get_provider)
+                           SMS, CheckFailed, get_provider)
+
+# The same logger as signup.steps (reported to Sentry): a code check failure is an error.
+logger = logging.getLogger('signup.steps')
 
 
 # Text-field classes (design tokens: field-border, radius-14, shadow-focus-field).
@@ -58,6 +63,7 @@ FAILURE_REASONS = {
     'code_expired': 'OTP verification failed',
     'rate_limited': 'OTP rate limited',
     'send_failed': 'OTP send failed',
+    'check_failed': 'OTP check failed',
     'captcha_failed': 'blocked: captcha',
     'rate_limited_ip': 'blocked: rate limit',
 }
@@ -397,7 +403,8 @@ class LegalForm(forms.Form):
 class CodeForm(StyledForm):
     """A verification code for `contact`, checked with the provider (signup.verification)
     over `channel` for `purpose`. A wrong code is `invalid_code`; no valid code (expired,
-    or invalidated after too many wrong attempts) is `code_expired`."""
+    or invalidated after too many wrong attempts) is `code_expired`; a check the provider
+    could not make (CheckFailed) is `check_failed`."""
 
     channel = EMAIL
     purpose = PURPOSE_SIGNUP
@@ -405,6 +412,7 @@ class CodeForm(StyledForm):
     error_messages = {
         'invalid_code': _('This code is not correct. Check it, or send a new one.'),
         'code_expired': _('This code is no longer valid. Send a new code.'),
+        'check_failed': _("We couldn't check your code right now. Please try again."),
     }
 
     code = forms.CharField(
@@ -423,7 +431,16 @@ class CodeForm(StyledForm):
 
     def clean_code(self):
         code = self.cleaned_data['code'].replace(' ', '')
-        result = get_provider().check(self.channel, self.contact, self.purpose, code)
+        try:
+            result = get_provider().check(self.channel, self.contact, self.purpose, code)
+        except CheckFailed as error:
+            # Neither right nor wrong (not counted as a wrong attempt): the person tries
+            # again. No contact or code here (the error's message holds only Twilio's error
+            # code and HTTP status); the event log gets `OTP check failed`.
+            logger.error('Signup code check failed: channel=%s purpose=%s error=%s',
+                         self.channel, self.purpose, error)
+            raise forms.ValidationError(self.error_messages['check_failed'],
+                                        code='check_failed') from None
         if result == NO_CODE:
             raise forms.ValidationError(self.error_messages['code_expired'],
                                         code='code_expired')

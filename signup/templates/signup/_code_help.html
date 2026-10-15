@@ -3,7 +3,8 @@ Under a code form (signup/step_verify_email.html, step_verify_mobile.html, resum
 outside it: the answer to a failed send (with a retry), the one-time notice of a blocked
 send (cooldown or hourly limit, or the generic error of the per-IP limit), the resend and "Send by SMS instead" buttons, the link
 to change the contact (step 1) and the support contact. After a failed send, "Try again"
-retries the channel tried and, on the mobile page, SMS is offered unless that was SMS. `code` comes from
+retries the channel tried and, on the mobile page, SMS is offered unless that was SMS (after
+a code sent by WhatsApp, with "Didn't get it on WhatsApp?" before it). `code` comes from
 signup.views._code_help; `kind` is "email" or "mobile". The forms are htmx-boosted, as the
 page's own form.
 {% endcomment %}
@@ -30,7 +31,8 @@ page's own form.
     {% csrf_token %}
     <p class="text-ink-muted">{% translate "Didn't get it?" %}
       <button type="submit" name="action" value="resend" class="cursor-pointer font-semibold text-ink underline underline-offset-4 hover:text-green-deep">{% translate "Send a new code" %}</button>{% if code.sms %}
-      <span aria-hidden="true">&middot;</span>
+      <span aria-hidden="true">&middot;</span>{% if code.channel == "whatsapp" %}
+      <span data-whatsapp-hint>{% translate "Didn't get it on WhatsApp?" %}</span>{% endif %}
       <button type="submit" name="action" value="sms" class="cursor-pointer font-semibold text-ink underline underline-offset-4 hover:text-green-deep" data-sms>{% translate "Send by SMS instead" %}</button>{% endif %}
     </p>
   </form>

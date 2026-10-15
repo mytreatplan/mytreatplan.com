@@ -853,6 +853,14 @@ msgid "We couldn't send the code. Please try again."
 msgstr "No hemos podido enviar el código. Inténtelo de nuevo."
 
 #: signup/templates/signup/_code_help.html
+msgid "Didn't get it on WhatsApp?"
+msgstr "¿No lo ha recibido por WhatsApp?"
+
+#: signup/forms.py
+msgid "We couldn't check your code right now. Please try again."
+msgstr "No hemos podido comprobar su código en este momento. Inténtelo de nuevo."
+
+#: signup/templates/signup/_code_help.html
 msgid "Try again"
 msgstr "Intentar de nuevo"
 

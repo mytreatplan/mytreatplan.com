@@ -5,7 +5,8 @@ A provider sends a code to a contact and later checks the code the person typed.
 code rules belong to the provider, as with Twilio Verify (entry 11): 6 digits, valid for
 10 minutes, a send within that time repeats the same code, and 5 wrong attempts
 invalidate it. Our database never holds a code. `get_provider()` returns the class named
-by the setting VERIFICATION_PROVIDER.
+by the setting VERIFICATION_PROVIDER: this module's fake (development, tests, staging
+until Twilio is set up) or signup.twilio_verify.TwilioVerifyProvider.
 
 Our own limits on how often a code may be sent are in signup.limits.
 """
@@ -59,7 +60,7 @@ FAKE_SEND_FAILS_NUMBER = '+34699000002'
 
 
 class VerificationError(Exception):
-    """A code could not be sent."""
+    """A code could not be sent or checked."""
 
 
 class ChannelUnavailable(VerificationError):
@@ -68,6 +69,12 @@ class ChannelUnavailable(VerificationError):
 
 class SendFailed(VerificationError):
     """The provider, or the network to it, failed."""
+
+
+class CheckFailed(VerificationError):
+    """A code could not be checked: the provider, or the network to it, failed (a network
+    error, refused credentials, a 5xx). The code is neither right nor wrong; the person
+    tries again. The fake provider never raises it."""
 
 
 def contact_kind(channel):
@@ -99,7 +106,8 @@ class VerificationProvider:
     def check(self, channel, contact, purpose, code):
         """APPROVED, WRONG or NO_CODE for `code` typed for this contact and purpose
         (`channel` gives the kind of contact: a mobile's code is the same over WhatsApp
-        and SMS). An approved code is used up."""
+        and SMS). An approved code is used up. Raises CheckFailed when the provider or
+        the network fails."""
         raise NotImplementedError
 
     @staticmethod

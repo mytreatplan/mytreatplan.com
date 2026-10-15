@@ -18,7 +18,9 @@ _REQUEST_KEYS_KEPT = {'method', 'url'}
 _USER_KEYS_KEPT = {'id'}
 
 
-# Loggers whose records carry verification codes (signup.verification.FakeVerificationProvider).
+# Loggers whose records carry verification codes (signup.verification.FakeVerificationProvider);
+# the Twilio provider (signup.twilio_verify) logs there too, and its failures reach Sentry
+# through the callers' `signup.steps` errors instead.
 CODE_LOGGERS = ('signup.verification',)
 
 REDACTED = '[redacted]'

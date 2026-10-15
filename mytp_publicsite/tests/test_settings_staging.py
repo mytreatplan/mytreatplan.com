@@ -14,10 +14,11 @@ from django.urls import NoReverseMatch, Resolver404, clear_url_caches, path, res
 from django.utils import translation
 
 import mytreatplan.urls
-from mytp_publicsite.checks import (INSECURE_DB_TLS, NO_ERASURE_RETENTION, PLAIN_FIELD_KEYS,
-                                    TURNSTILE_TEST_KEYS, check_db_tls,
-                                    check_erasure_retention, check_field_key_provider,
-                                    check_turnstile_keys)
+from mytp_publicsite.checks import (FAKE_VERIFICATION_PROVIDER, INSECURE_DB_TLS,
+                                    NO_ERASURE_RETENTION, PLAIN_FIELD_KEYS, TURNSTILE_TEST_KEYS,
+                                    check_db_tls, check_erasure_retention,
+                                    check_field_key_provider, check_turnstile_keys,
+                                    check_verification_provider)
 
 SETTINGS_FILE = str(django_settings.BASE_DIR / 'mytreatplan' / 'settings.py')
 # Every key these tests depend on, at its documented default. Set explicitly in the
@@ -32,6 +33,9 @@ BASELINE_ENV = {
     'PORTAL_ENABLED': 'False',
     'SENTRY_DSN': '',
     'ACCOUNT_ERASURE_RETENTION_DAYS': '',
+    'VERIFICATION_PROVIDER': 'signup.verification.FakeVerificationProvider',
+    'TWILIO_VERIFY_BASE_URL': '',
+    'TWILIO_WHATSAPP_ENABLED': 'False',
 }
 
 
@@ -406,3 +410,54 @@ def test_erasure_retention_env_var_has_no_default(load_settings, value, expected
     s = load_settings(DEBUG='True', ACCOUNT_ERASURE_RETENTION_DAYS=value)
 
     assert s['ACCOUNT_ERASURE_RETENTION_DAYS'] == expected
+
+
+# --- Verification provider (signup entry 11) ----------------------------------------------
+
+FAKE = 'signup.verification.FakeVerificationProvider'
+TWILIO = 'signup.twilio_verify.TwilioVerifyProvider'
+
+
+@pytest.mark.parametrize('provider', [FAKE, ''])
+def test_fake_verification_provider_fails_deploy_check(settings, provider):
+    settings.DEBUG = False
+    settings.VERIFICATION_PROVIDER = provider
+
+    errors = check_verification_provider(None)
+
+    assert [e.id for e in errors] == [FAKE_VERIFICATION_PROVIDER]
+    assert 'FakeVerificationProvider' in errors[0].msg
+    assert TWILIO in errors[0].hint
+    assert FAKE_VERIFICATION_PROVIDER in {e.id for e in run_checks(include_deployment_checks=True)}
+    assert FAKE_VERIFICATION_PROVIDER not in {e.id for e in run_checks()}
+
+
+def test_twilio_verification_provider_passes_deploy_check(settings):
+    settings.DEBUG = False
+    settings.VERIFICATION_PROVIDER = TWILIO
+
+    assert check_verification_provider(None) == []
+
+
+def test_verification_provider_check_skipped_with_debug_on(settings):
+    settings.DEBUG = True
+    settings.VERIFICATION_PROVIDER = FAKE
+
+    assert check_verification_provider(None) == []
+
+
+def test_twilio_settings_defaults(load_settings):
+    s = load_settings(DEBUG='True')
+
+    assert s['VERIFICATION_PROVIDER'] == FAKE
+    assert s['TWILIO_VERIFY_BASE_URL'] == 'https://verify.twilio.com/v2'
+    assert s['TWILIO_WHATSAPP_ENABLED'] is False
+
+
+def test_twilio_settings_from_env(load_settings):
+    s = load_settings(DEBUG='True', VERIFICATION_PROVIDER=TWILIO, TWILIO_WHATSAPP_ENABLED='True',
+                      TWILIO_VERIFY_BASE_URL='https://verify.test.invalid/v2')
+
+    assert s['VERIFICATION_PROVIDER'] == TWILIO
+    assert s['TWILIO_WHATSAPP_ENABLED'] is True
+    assert s['TWILIO_VERIFY_BASE_URL'] == 'https://verify.test.invalid/v2'

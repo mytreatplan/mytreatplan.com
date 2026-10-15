@@ -567,3 +567,44 @@ def test_staging_env_example_lists_sentry_without_secret():
 def test_sentry_sdk_pinned():
     lines = (REPO / 'requirements.txt').read_text().splitlines()
     assert any(re.fullmatch(r'sentry-sdk==\d+\.\d+\.\d+', line) for line in lines)
+
+
+@pytest.mark.django_db
+def test_twilio_send_and_check_failures_reach_sentry_without_secrets(sentry_capture, settings,
+                                                                      monkeypatch):
+    """Signup entry 11: Twilio errors reach Sentry through the callers' `signup.steps`
+    errors, with no contact, code or credential; the provider's own lines stay out."""
+    from django.contrib.sessions.backends.db import SessionStore
+    from django.test import RequestFactory
+
+    from signup.forms import MobileCodeForm
+    from signup.steps import FAILED, send_code
+    from signup.verification import SMS
+
+    secret = 'not-a-real-secret-0123456789abcdef'
+    phone, code = '+34622918374', '482913'
+    settings.VERIFICATION_PROVIDER = 'signup.twilio_verify.TwilioVerifyProvider'
+    settings.TWILIO_ACCOUNT_SID = 'AC' + '0' * 32
+    settings.TWILIO_API_KEY_SID = 'SK' + '0' * 32
+    settings.TWILIO_API_KEY_SECRET = secret
+    settings.TWILIO_VERIFY_SERVICE_SID = 'VA' + '0' * 32
+    answers = iter([(401, {'code': 20003, 'message': f'Authenticate {phone}'}),
+                    (503, {'message': f'down for {phone} {code}'})])
+    monkeypatch.setattr('signup.twilio_verify.post_verify', lambda path, data: next(answers))
+
+    request = RequestFactory().post('/en/signup/verify-mobile/')
+    request.session = SessionStore()
+    outcome = send_code(request, None, 'verify-mobile', phone, 'signup', SMS)
+    form = MobileCodeForm({'code': code}, phone=phone)
+    assert not form.is_valid() and form.errors.as_data()['code'][0].code == 'check_failed'
+    sentry_sdk.flush()
+
+    assert outcome.status == FAILED
+    text = json.dumps(sentry_capture.events)
+    assert 'Signup code send failed' in text and 'Signup code check failed' in text
+    # Twilio's error code and HTTP status reach Sentry, to tell the failures apart.
+    assert 'code 20003, HTTP 401' in text and 'code none, HTTP 503' in text
+    assert 'Twilio Verify' not in text  # the provider's own lines (signup.verification)
+    for value in (phone, phone[1:], code, secret, settings.TWILIO_API_KEY_SID,
+                  settings.TWILIO_ACCOUNT_SID, settings.TWILIO_VERIFY_SERVICE_SID):
+        assert value not in text

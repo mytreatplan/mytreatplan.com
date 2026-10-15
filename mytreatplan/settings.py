@@ -60,9 +60,25 @@ PORTAL_ENABLED = config('PORTAL_ENABLED', default=False, cast=bool)
 # Sends and checks the signup codes (email, mobile, resume): a dotted path to a class with
 # send(channel, contact, purpose, language) and check(channel, contact, purpose, code).
 # The default fake writes each code to the log (the console locally, the server journal on
-# staging) and stores nothing; Twilio Verify replaces it in signup entry 11.
+# staging) and stores nothing. Staging and production use Twilio Verify:
+# signup.twilio_verify.TwilioVerifyProvider. `check --deploy` fails with DEBUG off while the
+# fake is selected (mytp_publicsite.E006).
 VERIFICATION_PROVIDER = config('VERIFICATION_PROVIDER',
                                default='signup.verification.FakeVerificationProvider')
+
+# Twilio Verify (signup.twilio_verify; deploy/README.md, "Twilio Verify"). Typed into
+# settings.env on the server only. With the Twilio provider selected, an empty one fails
+# every `check` and `migrate` (signup.E001). The API key (SID and secret) is the Basic auth.
+TWILIO_ACCOUNT_SID = config('TWILIO_ACCOUNT_SID', default='')
+TWILIO_API_KEY_SID = config('TWILIO_API_KEY_SID', default='')
+TWILIO_API_KEY_SECRET = config('TWILIO_API_KEY_SECRET', default='')
+TWILIO_VERIFY_SERVICE_SID = config('TWILIO_VERIFY_SERVICE_SID', default='')
+# The Verify API's base URL; tests point it at a host that cannot exist.
+TWILIO_VERIFY_BASE_URL = (config('TWILIO_VERIFY_BASE_URL', default='')
+                          or 'https://verify.twilio.com/v2')
+# Off until the WhatsApp sender is approved: mobile codes then go by SMS (the WhatsApp
+# send raises ChannelUnavailable without calling Twilio, and the SMS fallback applies).
+TWILIO_WHATSAPP_ENABLED = config('TWILIO_WHATSAPP_ENABLED', default=False, cast=bool)
 
 # Where a person stuck in the signup codes is told to write: the hourly resend limit, a
 # code invalidated after too many wrong attempts, or a failed send (signup entry 7).
