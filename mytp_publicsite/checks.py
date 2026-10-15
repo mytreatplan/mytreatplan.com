@@ -10,6 +10,10 @@ INSECURE_DB_TLS = 'mytp_publicsite.E002'
 TURNSTILE_TEST_KEYS = 'mytp_publicsite.E003'
 PLAIN_FIELD_KEYS = 'mytp_publicsite.E004'
 NO_ERASURE_RETENTION = 'mytp_publicsite.E005'
+FAKE_VERIFICATION_PROVIDER = 'mytp_publicsite.E006'
+
+FAKE_PROVIDER = 'signup.verification.FakeVerificationProvider'
+TWILIO_PROVIDER = 'signup.twilio_verify.TwilioVerifyProvider'
 
 SECURE_DB_SSLMODES = ('verify-full', 'verify-ca')
 
@@ -117,4 +121,24 @@ def check_erasure_retention(app_configs, **kwargs):
              "lawyer gives for keeping an erased account as evidence (deploy/README.md, "
              "\"Erase an account\").",
         id=NO_ERASURE_RETENTION,
+    )]
+
+
+@register('security', deploy=True)
+def check_verification_provider(app_configs, **kwargs):
+    """Block a deploy whose signup codes go through the fake provider (signup entry 11):
+    no real person receives a code, and each code is written to the server log.
+
+    Runs only with `check --deploy`. Fails while DEBUG is off and VERIFICATION_PROVIDER is
+    the fake.
+    """
+    provider = getattr(settings, 'VERIFICATION_PROVIDER', '') or FAKE_PROVIDER
+    if settings.DEBUG or provider != FAKE_PROVIDER:
+        return []
+    return [Error(
+        f'VERIFICATION_PROVIDER is {provider!r}: signup codes are written to the server log '
+        'and never reach anyone.',
+        hint=f'Set VERIFICATION_PROVIDER={TWILIO_PROVIDER} and the Twilio credentials in '
+             'settings.env (deploy/README.md, "Twilio Verify").',
+        id=FAKE_VERIFICATION_PROVIDER,
     )]

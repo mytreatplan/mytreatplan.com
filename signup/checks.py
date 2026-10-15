@@ -1,5 +1,5 @@
 """Disposable email domains (signup-fields.md, step 1; registration-failure-policies.md:
-"email disposable").
+"email disposable"), and the signup's system check (signup.E001, at the end).
 
 Debounce's free API: `<DISPOSABLE_EMAIL_API_URL>?email=check@<domain>`. Only the domain
 leaves the server, never the person's address. On a timeout, an error or an unexpected
@@ -11,6 +11,7 @@ import logging
 import urllib.parse
 
 from django.conf import settings
+from django.core.checks import Error, register
 
 from accounts.http import FETCH_ERRORS, get_text
 
@@ -45,3 +46,28 @@ def is_disposable_domain(domain):
 
 def email_domain(email):
     return (email or '').rpartition('@')[2].strip().lower()
+
+
+TWILIO_CREDENTIALS_MISSING = 'signup.E001'
+TWILIO_PROVIDER = 'signup.twilio_verify.TwilioVerifyProvider'
+
+
+@register('signup')
+def check_twilio_credentials(app_configs, **kwargs):
+    """Fail every `check` (and `migrate`) while Twilio Verify is the verification provider
+    and one of its credentials is empty. Names the settings only, never a value."""
+    if getattr(settings, 'VERIFICATION_PROVIDER', '') != TWILIO_PROVIDER:
+        return []
+    from .twilio_verify import CREDENTIAL_SETTINGS
+
+    missing = [name for name in CREDENTIAL_SETTINGS
+               if not str(getattr(settings, name, '') or '').strip()]
+    if not missing:
+        return []
+    return [Error(
+        f"Twilio Verify is the verification provider but {', '.join(missing)} "
+        f"{'is' if len(missing) == 1 else 'are'} empty: no signup code can be sent.",
+        hint='Type the Twilio credentials into settings.env on the server '
+             '(deploy/README.md, "Twilio Verify").',
+        id=TWILIO_CREDENTIALS_MISSING,
+    )]

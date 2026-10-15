@@ -15,6 +15,9 @@ TEST_BLIND_INDEX_KEY = 'dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU='
 TEST_PWNED_PASSWORDS_API_URL = 'https://pwned.test.invalid/range/'
 TEST_DISPOSABLE_EMAIL_API_URL = 'https://disposable.test.invalid/'
 TEST_TURNSTILE_VERIFY_URL = 'https://turnstile.test.invalid/siteverify'
+TEST_TWILIO_VERIFY_BASE_URL = 'https://verify.test.invalid/v2'
+# Tests send and check codes with the fake provider, whatever settings.env selects.
+TEST_VERIFICATION_PROVIDER = 'signup.verification.FakeVerificationProvider'
 
 # Cloudflare's public Turnstile test keys: the site key whose widget always passes, and
 # the secrets siteverify always accepts or always refuses. The always-pass pair is the
@@ -40,6 +43,15 @@ def pytest_configure(config):
     settings.TURNSTILE_VERIFY_URL = TEST_TURNSTILE_VERIFY_URL
     settings.TURNSTILE_SITE_KEY = TURNSTILE_PASS_SITE_KEY
     settings.TURNSTILE_SECRET_KEY = TURNSTILE_PASS_SECRET
+    # The fake verification provider, and no Twilio credentials (a developer's
+    # settings.env must not make tests call Twilio, nor carry its keys into a test).
+    settings.VERIFICATION_PROVIDER = TEST_VERIFICATION_PROVIDER
+    settings.TWILIO_VERIFY_BASE_URL = TEST_TWILIO_VERIFY_BASE_URL
+    settings.TWILIO_ACCOUNT_SID = ''
+    settings.TWILIO_API_KEY_SID = ''
+    settings.TWILIO_API_KEY_SECRET = ''
+    settings.TWILIO_VERIFY_SERVICE_SID = ''
+    settings.TWILIO_WHATSAPP_ENABLED = False
 
 
 class NetworkAccessInTests(RuntimeError):

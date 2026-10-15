@@ -10,8 +10,8 @@ from eventlog.models import Attempt
 from signup import limits
 from signup.models import PendingRegistration
 from signup.verification import (EMAIL, FAKE_NO_WHATSAPP_NUMBER, FAKE_SEND_FAILS_NUMBER,
-                                 PURPOSE_RESUME, PURPOSE_SIGNUP, SMS, FakeVerificationProvider,
-                                 SendFailed)
+                                 PURPOSE_RESUME, PURPOSE_SIGNUP, SMS, CheckFailed,
+                                 FakeVerificationProvider, SendFailed)
 
 from .test_wizard import (MOBILE_E164, NORMALIZED, _current_code, _email_code, _legal,
                           _mobile_code, _step1, _to_code_step, _to_mobile_step, _wrong)
@@ -554,3 +554,118 @@ def test_back_from_the_mobile_page_skips_the_verified_email_step(client):
     html = _html(client)
     # Back goes to the legal step (never skipped), not to the used-up email code.
     assert 'href="/en/signup/legal/"' in html and 'href="/en/signup/verify-email/"' not in html
+
+
+# --- The WhatsApp hint (signup entry 11) --------------------------------------------------
+
+WHATSAPP_HINT = "Didn't get it on WhatsApp?"
+
+
+def test_whatsapp_hint_next_to_send_by_sms_after_a_whatsapp_code(client):
+    _to_mobile_step(client)
+
+    html = _html(client)
+    assert WHATSAPP_HINT in html and 'data-whatsapp-hint' in html
+    assert html.index(WHATSAPP_HINT) < html.index('Send by SMS instead')
+
+
+def test_whatsapp_hint_in_spanish(client):
+    _to_mobile_step(client, lang='es')
+
+    html = _html(client, '/es/signup/verify-mobile/')
+    assert '¿No lo ha recibido por WhatsApp?' in html and 'Enviar por SMS' in html
+
+
+def test_no_whatsapp_hint_after_an_sms_code(client, clock):
+    _to_mobile_step(client)
+    clock.advance(60)
+    client.post(MOBILE_URL, {'action': 'sms'})
+
+    assert WHATSAPP_HINT not in _html(client)
+
+
+def test_no_whatsapp_hint_after_the_sms_fallback(client):
+    _to_mobile_step(client, phone=NO_WHATSAPP)
+
+    assert WHATSAPP_HINT not in _html(client)
+
+
+def test_no_whatsapp_hint_on_the_email_page(client):
+    _to_code_step(client)
+
+    assert WHATSAPP_HINT not in _html(client, EMAIL_URL)
+
+
+# --- A code check that fails (signup entry 11) ---------------------------------------------
+
+CHECK_FAILED = "We couldn&#x27;t check your code right now. Please try again."
+
+
+@pytest.fixture
+def failing_check(monkeypatch):
+    """The provider cannot check codes while `failing` is set."""
+    state = {'failing': False, 'calls': 0}
+    real_check = FakeVerificationProvider.check
+
+    def check(self, *args):
+        state['calls'] += 1
+        if state['failing']:
+            raise CheckFailed('provider down')
+        return real_check(self, *args)
+
+    monkeypatch.setattr(FakeVerificationProvider, 'check', check)
+    return state
+
+
+def test_check_failure_shows_an_error_and_is_not_counted(client, caplog, failing_check):
+    _to_mobile_step(client)
+    code = _current_code(SMS, MOBILE_E164)
+    failing_check['failing'] = True
+
+    for _ in range(6):  # more than the wrong attempts that invalidate a code
+        response = client.post(MOBILE_URL, {'code': code})
+        assert response.status_code == 200
+        html = response.content.decode()
+        assert CHECK_FAILED in html
+        assert 'This code is not correct' not in html and 'no longer valid' not in html
+    assert not User.objects.exists()
+
+    failing_check['failing'] = False
+    assert _mobile_code(client)['Location'] == '/en/welcome/'
+
+
+def test_check_failure_is_logged_without_personal_values(client, caplog, failing_check):
+    _to_mobile_step(client)
+    code = _current_code(SMS, MOBILE_E164)
+    failing_check['failing'] = True
+    caplog.clear()
+
+    client.post(MOBILE_URL, {'code': code})
+
+    errors = [r for r in caplog.records if r.levelno >= logging.ERROR]
+    assert [(r.name, r.getMessage()) for r in errors] == [(
+        'signup.steps', 'Signup code check failed: channel=sms purpose=signup error=provider down')]
+    rejected = _events('rejected')[-1]
+    assert (rejected.step, rejected.field, rejected.reason) == (
+        'verify-mobile', 'code', 'OTP check failed')
+    assert code not in str(rejected.data)
+
+
+def test_check_failure_on_the_email_page_in_spanish(client, failing_check):
+    _to_code_step(client, lang='es')
+    code = _current_code(EMAIL, NORMALIZED)
+    failing_check['failing'] = True
+
+    html = client.post('/es/signup/verify-email/', {'code': code}).content.decode()
+
+    assert 'No hemos podido comprobar su código en este momento. Inténtelo de nuevo.' in html
+    assert _events('rejected')[-1].reason == 'OTP check failed'
+
+
+def test_fake_provider_never_raises_check_failed(client):
+    _to_mobile_step(client)
+
+    assert FakeVerificationProvider().check(SMS, MOBILE_E164, PURPOSE_SIGNUP, 'garbage') in (
+        'wrong', 'no_code')
+    assert FakeVerificationProvider().check(SMS, '+34600000000', PURPOSE_SIGNUP, '123456') == (
+        'no_code')

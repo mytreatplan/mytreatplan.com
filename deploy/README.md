@@ -21,6 +21,7 @@ team password (basic auth) and sends `X-Robots-Tag: noindex, nofollow`.
 | Off-region backups | nightly `backupdb` job → Object Storage SBG (`age`-encrypted); restore test: `restore-db.sh` |
 | Field keys | KMS-wrapped: `FIELD_KMS_KEYS`, `BLIND_INDEX_KMS_KEY` in `shared/settings.env` (`FIELD_KEY_PROVIDER=accounts.crypto.KMSKeyProvider`); password manager: key ids and wrapped values, never plain keys (step 12, "Keys (KMS)") |
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp/shared/kms-client.*`; daily `kmscheck` job |
+| Signup codes | Twilio Verify (email via SendGrid, WhatsApp, SMS); credentials in `shared/settings.env` ("Twilio Verify") |
 | Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -729,6 +730,91 @@ systemctl status mytp-job@clearsessions        # last result
 sudo journalctl -u mytp-job@clearsessions -n 100
 systemctl list-units --failed 'mytp-job@*'
 ```
+
+## Twilio Verify
+
+Signup codes (the email code, the mobile code and the resume code) are sent and checked by
+Twilio Verify (`signup/twilio_verify.py`). Twilio generates, stores, expires and counts the
+codes: 6 digits, valid 10 minutes, invalid after 5 wrong attempts. Email goes through
+Verify's email channel (SendGrid), mobile through WhatsApp, else SMS. One Verify service
+serves every purpose (signup and resume). Until it is set up, staging stays on the fake
+provider, which writes each code to the journal; `check --deploy` fails while the fake is
+selected (`mytp_publicsite.E006`).
+
+**Order** (not everything on Twilio's side is ready at once):
+
+1. Create the Verify service and the SendGrid email integration (console steps below).
+2. Type the credentials into `settings.env` and switch `VERIFICATION_PROVIDER` (below).
+   `TWILIO_WHATSAPP_ENABLED` stays `False`: mobile codes go by SMS.
+3. Once Meta approves the WhatsApp sender, set `TWILIO_WHATSAPP_ENABLED=True` and restart.
+
+### Twilio console
+
+In the Twilio console (account owned by the team, 2FA on):
+
+1. **Verify → Services → Create**: friendly name `MyTreatPlan` (it appears in the SMS
+   text). Settings: **code length 6**, **Fraud Guard on**, default TTL (10 minutes). Copy
+   the service SID (`VA...`).
+2. **Messaging → Settings → Geo permissions** (SMS): allow only the countries signup
+   accepts numbers from; everything else blocked.
+3. **Email integration**: in SendGrid, verify the sender domain and create one **dynamic
+   template** that switches on `{{locale}}` (`en`, `es`), showing the code
+   (`{{twilio_code}}`) in English or Spanish. In Twilio, Verify → Email Integration →
+   Create: the SendGrid API key (restricted to Mail Send), the template id, the from
+   address and name. Then attach the integration to the service (Service → Email).
+   The template id lives in the console only, not in our settings.
+4. **WhatsApp**: Verify → Service → WhatsApp: connect the approved WhatsApp sender. While
+   it is pending, leave `TWILIO_WHATSAPP_ENABLED=False`.
+5. **API key**: Account → API keys & tokens → Create API key, type **Standard**, name
+   `mytp-staging-verify`. The secret is shown once.
+
+### Credentials on the server
+
+Type them by hand straight into the server's settings file; never paste them anywhere
+else (chat, tickets, commits, tests). A lost API secret is replaced by a new API key.
+
+```sh
+sudo -u mytp nano /srv/mytp/shared/settings.env
+#   VERIFICATION_PROVIDER=signup.twilio_verify.TwilioVerifyProvider
+#   TWILIO_ACCOUNT_SID=AC...
+#   TWILIO_API_KEY_SID=SK...
+#   TWILIO_API_KEY_SECRET=...
+#   TWILIO_VERIFY_SERVICE_SID=VA...
+#   TWILIO_WHATSAPP_ENABLED=False
+cd /srv/mytp/current
+sudo -u mytp ./venv/bin/python manage.py check            # no signup.E001
+sudo -u mytp ./venv/bin/python manage.py check --deploy   # no mytp_publicsite.E006
+sudo systemctl restart mytp-gunicorn
+```
+
+With the Twilio provider selected and any of the four empty, every `check` and `migrate`
+(and so the next deploy) fails with `signup.E001`, naming the setting.
+
+### Sentry alert on failed sends
+
+Every failed send logs the error `Signup code send failed` (channel, purpose, and
+Twilio's error code and HTTP status only); a failed check logs `Signup code check failed`. In Sentry: Alerts → Create
+Alert → Issues → condition "The issue is seen more than **4** times in **10 minutes**" (5 or more),
+filter "The event's message contains `Signup code send failed`", environment `staging` →
+send an email to **devops@mytreatplan.com**. Name it "Signup code sends failing".
+
+### Checks on staging
+
+1. Sign up with a real email: the code arrives by email, in English; again with the page
+   in Spanish (`/es/`): the email is in Spanish.
+2. With WhatsApp off: the mobile code arrives by SMS. With WhatsApp on: by WhatsApp, and
+   the page shows "Didn't get it on WhatsApp?" next to "Send by SMS instead"; a number
+   without WhatsApp gets it by SMS. In Spanish, the messages are in Spanish.
+3. A wrong code shows "This code is not correct"; 5 wrong codes, "no longer valid".
+4. The journal has no codes or contacts: `sudo journalctl -u mytp-gunicorn -n 100`.
+5. Alert: set `TWILIO_VERIFY_SERVICE_SID` to a wrong `VA...` value, restart, and ask for
+   codes 5 times within 10 minutes (resend, other signups): each shows "We couldn't send
+   the code"; Sentry has the issue and devops@mytreatplan.com gets the alert. Put the
+   right value back and restart.
+
+A wrong `TWILIO_VERIFY_SERVICE_SID` shows first as send failures and the alert: Twilio
+answers a code check against a wrong service with the same 404 as "no pending code", so
+checks only say "This code is no longer valid" and log no Sentry error.
 
 ## Erase an account
 

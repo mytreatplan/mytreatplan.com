@@ -329,9 +329,10 @@ def _send(request, attempt, page, contact, purpose, channel, resend, field, log_
             channel, fallback = SMS, True
             provider.send(channel, contact, purpose, language)
     except VerificationError as error:
-        # No contact here: Sentry alerts on spikes of this message.
+        # No contact here: Sentry alerts on spikes of this message. The error's message is
+        # safe to log (the providers put only Twilio's error code and HTTP status in it).
         logger.error('Signup code send failed: channel=%s purpose=%s error=%s',
-                     channel, purpose, type(error).__name__)
+                     channel, purpose, error)
         eventlog.record(attempt, 'code_send_failed', request=request, step=page,
                         field=field, reason=OTP_SEND_FAILED,
                         data={**log_data, 'channel': channel})
