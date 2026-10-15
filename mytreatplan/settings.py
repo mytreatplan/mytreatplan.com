@@ -88,6 +88,15 @@ SIGNUP_IP_LIMITS = {
     'code_sends': config('SIGNUP_IP_LIMIT_CODE_SENDS', default=120, cast=int),
 }
 
+# Account erasure (accounts.erasure): days an erased account (email, names, country,
+# phone, date joined and its legal choices) is kept as evidence before the daily
+# `purgeerased` job deletes it. The lawyer sets the period, so there is no default: while
+# it is unset (or empty) the admin's "Erase account" action refuses, and `check --deploy`
+# fails with DEBUG off (mytp_publicsite.E005).
+ACCOUNT_ERASURE_RETENTION_DAYS = config(
+    'ACCOUNT_ERASURE_RETENTION_DAYS', default='',
+    cast=lambda value: int(value) if str(value).strip() else None)
+
 # The database cache (table `django_cache`, created by `createcachetable` in
 # deploy/release.sh), shared by every Gunicorn worker. It holds the signup code resend
 # limits and the per-IP limits (signup.limits) and the fake verification provider's
