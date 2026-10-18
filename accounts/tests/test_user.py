@@ -36,6 +36,16 @@ def test_create_user():
 
 
 @pytest.mark.django_db
+def test_by_phone_finds_users_through_the_blind_index():
+    ana = User.objects.create_user('ana@example.com', PASSWORD, phone='+34612345678')
+    User.objects.create_user('bea@example.com', PASSWORD, phone='+34612345679')
+    User.objects.create_user('carla@example.com', PASSWORD)
+
+    assert list(User.objects.by_phone('+34612345678')) == [ana]
+    assert not User.objects.by_phone('+34600000000').exists()
+
+
+@pytest.mark.django_db
 def test_create_user_requires_an_email():
     with pytest.raises(ValueError):
         User.objects.create_user('', PASSWORD)

@@ -16,12 +16,12 @@ from django.core.wsgi import get_wsgi_application
 from django.test import override_settings
 from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
-from sentry_sdk.transport import Transport
 
 import mytp_publicsite.views
 from mytp_publicsite import jobs
 from mytp_publicsite.management.commands import runjob
 from mytreatplan import sentry as mytp_sentry
+from signup.twilio_verify import TWILIO_PROVIDER
 
 REPO = django_settings.BASE_DIR
 DEPLOY = REPO / 'deploy'
@@ -170,15 +170,8 @@ def test_scrub_event_drops_user_without_id():
     assert 'user' not in mytp_sentry.scrub_event({'user': {'ip_address': '203.0.113.9'}})
 
 
-class _CaptureTransport(Transport):
-    def __init__(self, options=None):
-        super().__init__(options)
-        self.events = []
-
-    def capture_envelope(self, envelope):
-        event = envelope.get_event()
-        if event is not None:
-            self.events.append(event)
+# A view that fails, for the test below. Sentry sends the source lines around its `raise`
+# as the frame's context, so no personal value may be written near it.
 
 
 @csrf_exempt
@@ -187,18 +180,6 @@ def _boom(request):
 
 
 urlpatterns = [path('boom/', _boom)]
-
-
-@pytest.fixture
-def sentry_capture(monkeypatch):
-    """A real Sentry client (via init_sentry) whose events stay in memory."""
-    transport = _CaptureTransport()
-    real_init = sentry_sdk.init
-    monkeypatch.setattr(sentry_sdk, 'init',
-                        lambda **kwargs: real_init(transport=transport, **kwargs))
-    mytp_sentry.init_sentry('https://public@o1.ingest.de.sentry.io/2', 'test', 'abc123')
-    yield transport
-    sentry_sdk.get_global_scope().set_client(None)
 
 
 @override_settings(ROOT_URLCONF=__name__, ALLOWED_HOSTS=['dev.mytpdso.com'],
@@ -583,7 +564,7 @@ def test_twilio_send_and_check_failures_reach_sentry_without_secrets(sentry_capt
 
     secret = 'not-a-real-secret-0123456789abcdef'
     phone, code = '+34622918374', '482913'
-    settings.VERIFICATION_PROVIDER = 'signup.twilio_verify.TwilioVerifyProvider'
+    settings.VERIFICATION_PROVIDER = TWILIO_PROVIDER
     settings.TWILIO_ACCOUNT_SID = 'AC' + '0' * 32
     settings.TWILIO_API_KEY_SID = 'SK' + '0' * 32
     settings.TWILIO_API_KEY_SECRET = secret

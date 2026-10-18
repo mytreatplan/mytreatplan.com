@@ -102,8 +102,8 @@ def init_sentry(dsn, environment, release=None):
     from sentry_sdk.integrations.django import DjangoIntegration
     from sentry_sdk.integrations.logging import ignore_logger, ignore_logger_for_sentry_logs
 
-    # The fake verification provider logs signup codes; they stay on the server
-    # (no breadcrumbs, events or Sentry Logs).
+    # The verification providers log on these loggers, the fake with the signup codes;
+    # those records stay on the server (no breadcrumbs, events or Sentry Logs).
     for logger_name in CODE_LOGGERS:
         ignore_logger(logger_name)
         ignore_logger_for_sentry_logs(logger_name)

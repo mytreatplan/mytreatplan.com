@@ -8,7 +8,7 @@ the token nor the secret is ever logged.
 When siteverify cannot be reached (a timeout, an HTTP or network error, a body that is
 not its JSON) or answers that it could not decide (its own internal error, or our secret
 refused: a configuration fault), the answer is UNAVAILABLE: the step goes through and the
-caller logs `check_unavailable`, as for the other external checks (signup.checks).
+caller logs `check_unavailable`, as for the other external checks (signup.disposable).
 """
 import json
 import logging

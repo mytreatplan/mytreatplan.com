@@ -164,7 +164,7 @@ def test_erased_email_and_phone_are_free_again(staff):
 
 
 def test_erased_email_passes_signup_step1(staff, portal_urls):
-    from signup.tests.test_wizard import EMAIL_ADDRESS, MOBILE_E164, _step1
+    from signup.tests.helpers import EMAIL_ADDRESS, MOBILE_E164, _step1
 
     user = _user(EMAIL_ADDRESS, phone=MOBILE_E164)
     response = _step1(Client())
@@ -353,12 +353,6 @@ def test_purge_works_in_batches(staff):
 
     assert purge_erased(now=timezone.now() + timedelta(days=31), batch_size=2) == 5
     assert not User.objects.filter(pk__in=[u.pk for u in users]).exists()
-
-
-@pytest.fixture
-def release_jobs(monkeypatch, tmp_path):
-    """runjob reads the release's deploy/jobs.conf (no provisioned copy)."""
-    monkeypatch.setattr(jobs, 'INSTALLED_JOBS_FILE', tmp_path / 'missing.conf')
 
 
 def test_job_prints_only_the_count(staff, release_jobs, capsys, settings):

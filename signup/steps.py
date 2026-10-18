@@ -305,12 +305,18 @@ def _send_code_locked(request, attempt, page, contact, purpose, channel, resend,
             limits.ip_refund(request, limits.CODE_SENDS, reservation)
 
 
+def log_ip_blocked(request, get_attempt, step, counter, data=None):
+    """A request refused by a per-IP limit: `rejected`, field `ip`, the counter's name
+    (after `data`'s entries); only the first block of the IP and counter in the window
+    (`get_attempt` is called, and may start an attempt, only then)."""
+    if limits.first_block(request, counter):
+        eventlog.record(get_attempt(), 'rejected', request=request, step=step, field='ip',
+                        reason=BLOCKED_RATE_LIMIT, data={**(data or {}), 'counter': counter})
+
+
 def _ip_blocked(request, attempt, page, channel, log_data):
     """Not sent: the per-IP limit (or its lock not got). Logged once per IP and window."""
-    if limits.first_block(request, limits.CODE_SENDS):
-        eventlog.record(attempt, 'rejected', request=request, step=page, field='ip',
-                        reason=BLOCKED_RATE_LIMIT,
-                        data={**log_data, 'counter': limits.CODE_SENDS})
+    log_ip_blocked(request, lambda: attempt, page, limits.CODE_SENDS, log_data)
     outcome = SendOutcome(BLOCKED, channel, False, 0)
     _store_outcome(request, page, outcome)
     return outcome

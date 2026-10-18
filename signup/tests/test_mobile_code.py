@@ -13,8 +13,8 @@ from signup.verification import (EMAIL, FAKE_NO_WHATSAPP_NUMBER, FAKE_SEND_FAILS
                                  PURPOSE_RESUME, PURPOSE_SIGNUP, SMS, CheckFailed,
                                  FakeVerificationProvider, SendFailed)
 
-from .test_wizard import (MOBILE_E164, NORMALIZED, _current_code, _email_code, _legal,
-                          _mobile_code, _step1, _to_code_step, _to_mobile_step, _wrong)
+from .helpers import (MOBILE_E164, NORMALIZED, _current_code, _email_code, _legal,
+                      _mobile_code, _step1, _to_code_step, _to_mobile_step, _wrong)
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 

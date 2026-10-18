@@ -244,12 +244,6 @@ def test_second_run_changes_nothing():
     assert dict(Attempt.objects.values_list('pk', 'ended_at')) == ended
 
 
-@pytest.fixture
-def release_jobs(monkeypatch, tmp_path):
-    """runjob reads the release's deploy/jobs.conf (no provisioned copy)."""
-    monkeypatch.setattr(jobs, 'INSTALLED_JOBS_FILE', tmp_path / 'missing.conf')
-
-
 def test_job_runs_the_command_and_prints_counts_only(release_jobs, capsys):
     _pending(ACTIVE_FOR + timedelta(minutes=1))
     _orphan(timedelta(hours=25))

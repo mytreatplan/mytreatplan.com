@@ -46,6 +46,16 @@ def _now():
     return time.time()
 
 
+def _lock(key, timeout):
+    """Take the lock `key` for at most `timeout` seconds; False if it is held. `cache.add`
+    is atomic in the database cache."""
+    return cache.add(key, 1, timeout=timeout)
+
+
+def _unlock(key):
+    cache.delete(key)
+
+
 def _kind(contact):
     return EMAIL if '@' in contact else MOBILE
 
@@ -92,11 +102,11 @@ def acquire_send_lock(contact, purpose):
     """Take the per-contact-and-purpose send lock; False if another send holds it.
     `cache.add` is atomic in the database cache, so two parallel requests (a double
     click) cannot both pass `check_send` and send."""
-    return cache.add(_lock_key(contact, purpose), 1, timeout=LOCK_SECONDS)
+    return _lock(_lock_key(contact, purpose), LOCK_SECONDS)
 
 
 def release_send_lock(contact, purpose):
-    cache.delete(_lock_key(contact, purpose))
+    _unlock(_lock_key(contact, purpose))
 
 
 def seconds_since_last_send(contact, purpose):
@@ -145,11 +155,6 @@ def _ip_key(request, counter):
     return f'{_ip_base(request, counter)}:{window}'
 
 
-def ip_allowed(request, counter):
-    """Whether the request's IP is still under `counter`'s limit in this hour's window."""
-    return (cache.get(_ip_key(request, counter)) or 0) < settings.SIGNUP_IP_LIMITS[counter]
-
-
 # A count's key lives a little over its window: the key names its window, so a later
 # one never reads it.
 IP_COUNT_TIMEOUT = IP_WINDOW_SECONDS + 60
@@ -166,11 +171,11 @@ def _sleep(seconds):
 
 def acquire_ip_lock(request, counter):
     """Take the per-IP-and-counter lock (one try); False if another request holds it."""
-    return cache.add(_ip_base(request, counter) + ':lock', 1, timeout=IP_LOCK_SECONDS)
+    return _lock(_ip_base(request, counter) + ':lock', IP_LOCK_SECONDS)
 
 
 def release_ip_lock(request, counter):
-    cache.delete(_ip_base(request, counter) + ':lock')
+    _unlock(_ip_base(request, counter) + ':lock')
 
 
 def _wait_ip_lock(request, counter):

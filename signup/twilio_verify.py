@@ -1,16 +1,19 @@
 """Twilio Verify as the signup verification provider (signup entry 11, CAP-5, CAP-6, CAP-11).
 
-Selected with VERIFICATION_PROVIDER=signup.twilio_verify.TwilioVerifyProvider. Twilio
-generates, stores, expires and counts the codes (6 digits, 10 minutes, 5 wrong attempts:
-the Verify defaults, with the service's code length set to 6 in the console). Email goes
-through Verify's email channel (the SendGrid integration and its dynamic template, set in
-the console), mobile through WhatsApp or SMS. Our database never holds a code.
+Selected with VERIFICATION_PROVIDER=signup.twilio_verify.TwilioVerifyProvider (the
+constant TWILIO_PROVIDER). Twilio generates, stores, expires and counts the codes (6
+digits, 10 minutes, 5 wrong attempts: the Verify defaults, with the service's code length
+set to 6 in the console). Email goes through Verify's email channel (the SendGrid
+integration and its dynamic template, set in the console), mobile through WhatsApp or SMS.
+Our database never holds a code.
 
 The REST API (`<TWILIO_VERIFY_BASE_URL>/Services/<sid>/Verifications` and
 `/VerificationCheck`) is called with urllib (no SDK, no `requests`), Basic auth with an
 API key (TWILIO_API_KEY_SID / TWILIO_API_KEY_SECRET), and EXTERNAL_CHECK_TIMEOUT as the
-socket timeout. TWILIO_ACCOUNT_SID names the account the key and the service belong to;
-it is required (signup.E001) but not sent, as an API key already identifies its account.
+socket timeout. An unreachable Twilio raises one of accounts.http.FETCH_ERRORS, which the
+provider turns into SendFailed / CheckFailed. TWILIO_ACCOUNT_SID names the account the key
+and the service belong to; it is required (signup.E001) but not sent, as an API key
+already identifies its account.
 
 One Verify service serves every purpose: a resume code and a signup code to the same
 email share Twilio's pending verification (either proves control of the email).
@@ -38,6 +41,9 @@ from .verification import (APPROVED, CODE_LENGTH, NO_CODE, WHATSAPP, WRONG,
 
 # The provider's log lines go with the fake's, on the logger Sentry ignores.
 logger = logging.getLogger('signup.verification')
+
+# The dotted path of this provider, for VERIFICATION_PROVIDER.
+TWILIO_PROVIDER = 'signup.twilio_verify.TwilioVerifyProvider'
 
 DEFAULT_BASE_URL = 'https://verify.twilio.com/v2'
 # The four credentials; signup.E001 names any left empty while this provider is selected.

@@ -17,9 +17,10 @@ from botocore.exceptions import ClientError
 from django.conf import settings as django_settings
 from django.core.management import CommandError, call_command
 
+from conftest import _assert_no_secrets, _runjob_with
 from mytp_publicsite import jobs
-from mytp_publicsite.management.commands import backupdb, runjob
-from mytp_publicsite.tests.test_monitoring import _FakeSentry, sentry_capture  # noqa: F401
+from mytp_publicsite.management.commands import backupdb
+from mytp_publicsite.tests.test_monitoring import _FakeSentry
 
 REPO = Path(django_settings.BASE_DIR)
 DEPLOY = REPO / 'deploy'
@@ -132,12 +133,6 @@ def backup_env(tmp_path, monkeypatch, settings):
     return s3, log, tmp_dir
 
 
-def _assert_no_secrets(*texts):
-    for text in texts:
-        for secret in SECRETS:
-            assert secret not in str(text)
-
-
 # --- backupdb: the nightly run --------------------------------------------------------
 
 def test_backup_uploads_one_encrypted_object(backup_env, capsys):
@@ -155,7 +150,7 @@ def test_backup_uploads_one_encrypted_object(backup_env, capsys):
     assert list(tmp_dir.iterdir()) == []
     out = capsys.readouterr().out
     assert key in out
-    _assert_no_secrets(out)
+    _assert_no_secrets(SECRETS, out)
 
 
 def test_backup_runs_pg_dump_with_tls_and_password_only_in_env(backup_env):
@@ -176,7 +171,7 @@ def test_backup_runs_pg_dump_with_tls_and_password_only_in_env(backup_env):
     assert 'PGSERVICE' not in env
     age_args = (log / 'age.args').read_text().split()
     assert age_args == ['--encrypt', '--recipient', RECIPIENT]
-    _assert_no_secrets(*args, *age_args)
+    _assert_no_secrets(SECRETS, *args, *age_args)
 
 
 @pytest.mark.parametrize('key', backupdb.REQUIRED_SETTINGS)
@@ -189,7 +184,7 @@ def test_backup_missing_setting_names_key_and_dumps_nothing(backup_env, settings
 
     assert not (log / 'pg_dump.args').exists()
     assert s3.calls == []
-    _assert_no_secrets(exc.value)
+    _assert_no_secrets(SECRETS, exc.value)
 
 
 def test_backup_rejects_a_non_age_recipient(backup_env, settings):
@@ -212,7 +207,7 @@ def test_backup_dump_failure_uploads_nothing_and_hides_password(backup_env, monk
     assert s3.calls == []
     assert list(tmp_dir.iterdir()) == []
     assert '[redacted]' in str(exc.value)
-    _assert_no_secrets(exc.value)
+    _assert_no_secrets(SECRETS, exc.value)
     assert 'postgres://' not in str(exc.value)
 
 
@@ -258,7 +253,7 @@ def test_backup_database_unreachable_hides_password(backup_env, monkeypatch):
     with pytest.raises(CommandError, match='could not connect') as exc:
         call_command('backupdb')
 
-    _assert_no_secrets(exc.value)
+    _assert_no_secrets(SECRETS, exc.value)
     assert exc.value.__suppress_context__  # the original error is not chained
     assert s3.calls == []
 
@@ -271,7 +266,7 @@ def test_backup_upload_failure_hides_credentials_and_cleans_up(backup_env):
         call_command('backupdb')
 
     assert list(tmp_dir.iterdir()) == []
-    _assert_no_secrets(exc.value)
+    _assert_no_secrets(SECRETS, exc.value)
     assert exc.value.__suppress_context__
 
 
@@ -387,18 +382,6 @@ def test_backupdb_job_declared_nightly():
     assert job.crontab == '30 2 * * *'
 
 
-def _runjob_with(monkeypatch, sentry):
-    checkins = []
-
-    def capture_checkin(**kwargs):
-        checkins.append(kwargs)
-        return 'checkin-1'
-    monkeypatch.setattr(runjob, 'sentry_sdk', sentry)
-    monkeypatch.setattr(runjob, 'capture_checkin', capture_checkin)
-    monkeypatch.setattr(runjob, 'load_jobs', lambda: jobs.load_jobs(jobs.JOBS_FILE))
-    return checkins
-
-
 def test_runjob_backupdb_ok_checks_in(backup_env, monkeypatch, settings):
     settings.SENTRY_ENVIRONMENT = 'staging'
     fake = _FakeSentry(active=True)
@@ -412,7 +395,7 @@ def test_runjob_backupdb_ok_checks_in(backup_env, monkeypatch, settings):
 
 
 def test_runjob_backupdb_wrong_credentials_reaches_sentry_without_secrets(
-        backup_env, monkeypatch, sentry_capture):  # noqa: F811
+        backup_env, monkeypatch, sentry_capture):
     s3, log, tmp_dir = backup_env
     s3.fail_upload = True
     checkins = _runjob_with(monkeypatch, sentry_sdk)
@@ -429,7 +412,7 @@ def test_runjob_backupdb_wrong_credentials_reaches_sentry_without_secrets(
     for frame in values[0].get('stacktrace', {}).get('frames', []):
         assert 'vars' not in frame
     text = json.dumps([{k: v for k, v in x.items() if k != 'stacktrace'} for x in values])
-    _assert_no_secrets(text)
+    _assert_no_secrets(SECRETS, text)
 
 
 # --- restore-db.sh ------------------------------------------------------------------------

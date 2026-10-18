@@ -20,13 +20,13 @@ from django.core.management import CommandError, call_command
 
 from accounts import crypto
 from accounts.management.commands.reencrypt_fields import values_not_on_key
-from conftest import TEST_BLIND_INDEX_KEY, TEST_FIELD_ENCRYPTION_KEYS
+from conftest import TEST_BLIND_INDEX_KEY, TEST_FIELD_ENCRYPTION_KEYS, _env_values
 from mytp_publicsite import kms
 
 User = get_user_model()
 PASSWORD = 'violet-orbit-canyon-42'
 SERVICE_KEY_ID = '0d9e8f7a-2222-4c6b-8a5d-112233445566'
-KMS_PROVIDER = 'accounts.crypto.KMSKeyProvider'
+KMS_PROVIDER = crypto.KMS_PROVIDER
 
 PLAIN = {
     'W-k1': b'test-only-kms-plain-k1-32-bytes!',
@@ -131,7 +131,7 @@ def test_decrypt_value_on_an_older_kms_key(kms_keys, settings):
 
 
 def test_transition_from_plain_keys(kms_keys, settings):
-    settings.FIELD_KEY_PROVIDER = 'accounts.crypto.EnvKeyProvider'
+    settings.FIELD_KEY_PROVIDER = crypto.DEFAULT_KEY_PROVIDER
     settings.FIELD_ENCRYPTION_KEYS = TEST_FIELD_ENCRYPTION_KEYS  # env key test1
     stored = crypto.encrypt('Ana', 'a.b.c')
     assert key_id_of_value(stored) == 'test1'
@@ -154,7 +154,7 @@ def test_transition_key_id_also_in_kms_list_is_refused(kms_keys, settings):
 
 
 def test_unknown_key_id(kms_keys, settings):
-    settings.FIELD_KEY_PROVIDER = 'accounts.crypto.EnvKeyProvider'
+    settings.FIELD_KEY_PROVIDER = crypto.DEFAULT_KEY_PROVIDER
     settings.FIELD_ENCRYPTION_KEYS = TEST_FIELD_ENCRYPTION_KEYS
     stored = crypto.encrypt('Ana García', 'a.b.c')
     settings.FIELD_KEY_PROVIDER = KMS_PROVIDER
@@ -346,7 +346,7 @@ def test_rotation_between_kms_keys(kms_keys, settings):
 def test_staging_move_from_plain_keys_to_the_kms(kms_keys, settings):
     """The README's staging steps: plain keys -> KMS keys first, plain ones as transition
     keys -> restart -> reencrypt_fields -> plain keys removed."""
-    settings.FIELD_KEY_PROVIDER = 'accounts.crypto.EnvKeyProvider'
+    settings.FIELD_KEY_PROVIDER = crypto.DEFAULT_KEY_PROVIDER
     settings.FIELD_ENCRYPTION_KEYS = TEST_FIELD_ENCRYPTION_KEYS
     settings.BLIND_INDEX_KEY = TEST_BLIND_INDEX_KEY
     ana = User.objects.create_user('ana@example.com', PASSWORD, first_name='Ana')
@@ -440,11 +440,6 @@ def test_plain_key_never_in_logs_or_repr(kms_keys, settings, caplog):
 
 
 # --- Settings and examples -----------------------------------------------------------------
-
-def _env_values(path):
-    return dict(line.split('=', 1) for line in path.read_text().splitlines()
-                if line.strip() and not line.startswith('#'))
-
 
 def test_kms_key_settings_default_empty_and_examples_commented(settings):
     base = settings.BASE_DIR

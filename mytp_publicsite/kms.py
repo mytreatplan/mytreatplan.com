@@ -4,8 +4,8 @@
 
 The server authenticates with an access certificate (mutual TLS): KMS_CLIENT_CERT and
 KMS_CLIENT_KEY are PEM files in /srv/mytp/shared/ (mode 600), KMS_CA_FILE optionally
-replaces the system CAs. Only the standard library is used (urllib, ssl, json), so the
-signup key provider (story 2.12) can build on it without new dependencies.
+replaces the system CAs. Only the standard library is used (urllib, ssl, json); the field
+key provider accounts.crypto.KMSKeyProvider (story 2.12) builds on it.
 
 Errors are `KMSError`s naming the step that failed (settings, connect, auth, get,
 generate, unwrap) and, for HTTP errors, the status. Their text never contains a data

@@ -59,10 +59,13 @@ PORTAL_ENABLED = config('PORTAL_ENABLED', default=False, cast=bool)
 
 # Sends and checks the signup codes (email, mobile, resume): a dotted path to a class with
 # send(channel, contact, purpose, language) and check(channel, contact, purpose, code).
-# The default fake writes each code to the log (the console locally, the server journal on
-# staging) and stores nothing. Staging and production use Twilio Verify:
-# signup.twilio_verify.TwilioVerifyProvider. `check --deploy` fails with DEBUG off while the
-# fake is selected (mytp_publicsite.E006).
+# The default fake (development and tests) writes each code to the log (the console) and
+# keeps a random nonce, the send time and the wrong attempts in the cache, never the code.
+# Staging and production use Twilio Verify: signup.twilio_verify.TwilioVerifyProvider.
+# `check --deploy` fails with DEBUG off while the fake is selected (mytp_publicsite.E006).
+# The two paths are the constants signup.verification.FAKE_PROVIDER and
+# signup.twilio_verify.TWILIO_PROVIDER, typed out here because settings load before any
+# app module can be imported.
 VERIFICATION_PROVIDER = config('VERIFICATION_PROVIDER',
                                default='signup.verification.FakeVerificationProvider')
 
@@ -159,7 +162,8 @@ BACKUP_AGE_RECIPIENT = config('BACKUP_AGE_RECIPIENT', default='')
 BACKUP_TMP_DIR = config('BACKUP_TMP_DIR', default='/srv/mytp/shared/backup-tmp')
 
 # OVHcloud KMS (story 1.15): data keys for field encryption are wrapped by a service key
-# in an OKMS domain in France (encryption policy; the key provider itself is story 2.12).
+# in an OKMS domain in France (encryption policy; the key provider, story 2.12, is
+# accounts.crypto.KMSKeyProvider).
 # KMS_ENDPOINT is the regional REST endpoint, https://<region>.okms.ovh.net (the region
 # lives only here). The server authenticates with an access certificate (mutual TLS):
 # KMS_CLIENT_CERT and KMS_CLIENT_KEY are paths to PEM files in /srv/mytp/shared/ (mode
@@ -192,6 +196,8 @@ KMS_CA_FILE = config('KMS_CA_FILE', default='')
 # <key_id>` (or `--blind-index`) prints new ones. With the KMS provider,
 # FIELD_ENCRYPTION_KEYS may still hold plain keys during a move to the KMS, for
 # decryption only. `check` parses them without calling the KMS; `kmscheck` unwraps them.
+# The default is the constant accounts.crypto.DEFAULT_KEY_PROVIDER, typed out here because
+# settings load before any app module can be imported.
 FIELD_KEY_PROVIDER = config('FIELD_KEY_PROVIDER', default='accounts.crypto.EnvKeyProvider')
 FIELD_ENCRYPTION_KEYS = config('FIELD_ENCRYPTION_KEYS', default='')
 BLIND_INDEX_KEY = config('BLIND_INDEX_KEY', default='')
@@ -298,8 +304,8 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-# External checks of signup step 1 (accounts.password_validation, signup.checks). Only the
-# first 5 hex characters of the password's SHA-1 go to Have I Been Pwned, and only the
+# External checks of signup step 1 (accounts.password_validation, signup.disposable). Only
+# the first 5 hex characters of the password's SHA-1 go to Have I Been Pwned, and only the
 # email's domain to Debounce. EXTERNAL_CHECK_TIMEOUT (seconds) is urllib's socket timeout:
 # it applies to each socket operation (the connect, each read), not to the whole call, and
 # the DNS lookup has none. A check that times out or fails lets the value through and is
@@ -388,9 +394,10 @@ MAILERS = {
 }
 
 # Logging
-# Django's defaults, plus the fake verification provider's code line at INFO on the
-# console (stderr: the server journal on staging). That logger is kept out of Sentry
-# (see mytreatplan/sentry.py), so codes never leave the server.
+# Django's defaults, plus the verification providers' lines at INFO on the console (stderr:
+# the server journal on staging): the fake's code line in development, Twilio Verify's
+# send and check outcomes on staging. That logger is kept out of Sentry (see
+# mytreatplan/sentry.py), so codes never leave the server.
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

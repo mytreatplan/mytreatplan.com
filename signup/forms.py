@@ -7,13 +7,12 @@ from django.urls import reverse_lazy
 from django.utils.translation import gettext_lazy as _
 from django_countries import countries
 
-from accounts.crypto import phone_index
 from accounts.models import HOW_FOUND_OTHER_MAX_LENGTH, HowFound, Title
 from accounts.password_validation import BREACHED_PASSWORD_CHECK, collect_unavailable_checks
 from legal.models import LegalDocument
 from legal.rendering import render_markdown
 
-from .checks import DISPOSABLE_EMAIL_CHECK, email_domain, is_disposable_domain
+from .disposable import DISPOSABLE_EMAIL_CHECK, email_domain, is_disposable_domain
 from .verification import (APPROVED, CODE_LENGTH, EMAIL, NO_CODE, PURPOSE_RESUME, PURPOSE_SIGNUP,
                            SMS, CheckFailed, get_provider)
 
@@ -89,8 +88,7 @@ def email_is_registered(email):
 def phone_is_registered(phone):
     """A mobile (E.164) of an existing user; through the blind index, since it is
     encrypted."""
-    return bool(phone) and get_user_model().objects.filter(
-        phone_index=phone_index(phone)).exists()
+    return bool(phone) and get_user_model().objects.by_phone(phone).exists()
 
 
 # The empty first option of the step 1 selects (so nothing is chosen by default).

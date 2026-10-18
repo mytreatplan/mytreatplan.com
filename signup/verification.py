@@ -5,8 +5,8 @@ A provider sends a code to a contact and later checks the code the person typed.
 code rules belong to the provider, as with Twilio Verify (entry 11): 6 digits, valid for
 10 minutes, a send within that time repeats the same code, and 5 wrong attempts
 invalidate it. Our database never holds a code. `get_provider()` returns the class named
-by the setting VERIFICATION_PROVIDER: this module's fake (development, tests, staging
-until Twilio is set up) or signup.twilio_verify.TwilioVerifyProvider.
+by the setting VERIFICATION_PROVIDER: this module's fake (FAKE_PROVIDER; development and
+tests) or Twilio Verify (signup.twilio_verify.TWILIO_PROVIDER; staging and production).
 
 Our own limits on how often a code may be sent are in signup.limits.
 """
@@ -24,6 +24,9 @@ from django.utils.module_loading import import_string
 from accounts.crypto import email_index, phone_index
 
 logger = logging.getLogger(__name__)
+
+# The dotted path of this module's fake, for VERIFICATION_PROVIDER.
+FAKE_PROVIDER = 'signup.verification.FakeVerificationProvider'
 
 # Channels a code is sent over.
 EMAIL = 'email'
@@ -52,7 +55,7 @@ APPROVED = 'approved'
 WRONG = 'wrong'
 NO_CODE = 'no_code'  # no valid code: none sent, expired, invalidated or already used
 
-# Fixed numbers the fake provider treats specially, so staging can exercise both paths:
+# Fixed numbers the fake provider treats specially, so both paths can be exercised:
 # WhatsApp cannot deliver to the first (the code goes by SMS); every send to the second
 # fails. Both are valid Spanish mobiles.
 FAKE_NO_WHATSAPP_NUMBER = '+34699000001'
@@ -116,7 +119,7 @@ class VerificationProvider:
 
 
 class FakeVerificationProvider(VerificationProvider):
-    """Development and staging stand-in that emulates Twilio Verify's code rules.
+    """Development and test stand-in that emulates Twilio Verify's code rules.
 
     Per (kind of contact, contact's blind index, purpose) the cache (CACHES['default'])
     holds a random nonce, the time the code was first sent and the wrong attempts; the

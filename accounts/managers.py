@@ -1,6 +1,6 @@
 from django.contrib.auth.base_user import BaseUserManager
 
-from .crypto import email_index
+from .crypto import email_index, phone_index
 
 
 class UserManager(BaseUserManager):
@@ -17,6 +17,11 @@ class UserManager(BaseUserManager):
         """Users with this email whatever its case, found through the blind index
         (the email itself is encrypted and cannot be queried)."""
         return self.filter(email_index=email_index(email))
+
+    def by_phone(self, phone):
+        """Users with this mobile (E.164), found through the blind index (the phone itself
+        is encrypted and cannot be queried)."""
+        return self.filter(phone_index=phone_index(phone))
 
     def get_by_natural_key(self, username):
         """Log in by email whatever its case (signup treats case variants as the same address)."""

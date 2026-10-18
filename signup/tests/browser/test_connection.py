@@ -23,7 +23,7 @@ from signup.models import PendingRegistration  # noqa: E402
 
 from conftest import TURNSTILE_TEST_TOKEN  # noqa: E402
 
-from ..test_wizard import EMAIL_ADDRESS, FIRST_NAME, LAST_NAME, MOBILE, PASSWORD  # noqa: E402
+from ..helpers import EMAIL_ADDRESS, FIRST_NAME, LAST_NAME, MOBILE, PASSWORD  # noqa: E402
 
 # Playwright's sync API runs an event loop in this thread, so Django's ORM (the test's
 # own queries, the database teardown) would otherwise refuse to run here.

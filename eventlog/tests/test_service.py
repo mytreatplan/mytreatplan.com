@@ -11,13 +11,11 @@ from django.core import serializers
 from django.core.management import call_command
 from django.db import DatabaseError, connection
 from django.test import RequestFactory
-from sentry_sdk.transport import Transport
 
 from accounts import crypto
 from accounts.crypto import EncryptedJSONField, encrypted_fields
 from eventlog import service
 from eventlog.models import Attempt, Event
-from mytreatplan import sentry as mytp_sentry
 
 pytestmark = pytest.mark.django_db
 
@@ -169,29 +167,6 @@ def test_reencrypt_fields_covers_event_data(settings):
 
 
 # --- A failing write ------------------------------------------------------------------------
-
-class _CaptureTransport(Transport):
-    def __init__(self, options=None):
-        super().__init__(options)
-        self.events = []
-
-    def capture_envelope(self, envelope):
-        event = envelope.get_event()
-        if event is not None:
-            self.events.append(event)
-
-
-@pytest.fixture
-def sentry_capture(monkeypatch):
-    """A real Sentry client (via init_sentry) whose events stay in memory."""
-    transport = _CaptureTransport()
-    real_init = sentry_sdk.init
-    monkeypatch.setattr(sentry_sdk, 'init',
-                        lambda **kwargs: real_init(transport=transport, **kwargs))
-    mytp_sentry.init_sentry('https://public@o1.ingest.de.sentry.io/2', 'test', 'abc123')
-    yield transport
-    sentry_sdk.get_global_scope().set_client(None)
-
 
 def test_write_failure_is_reported_without_personal_values(sentry_capture, monkeypatch, caplog):
     attempt = service.start_attempt('signup')
