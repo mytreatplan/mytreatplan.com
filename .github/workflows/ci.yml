@@ -13,7 +13,8 @@ jobs:
 
     services:
       postgres:
-        image: postgres:16
+        # The major version staging runs (17.x), so the whole suite runs against it.
+        image: postgres:17
         env:
           POSTGRES_USER: mytp
           POSTGRES_PASSWORD: mytp
