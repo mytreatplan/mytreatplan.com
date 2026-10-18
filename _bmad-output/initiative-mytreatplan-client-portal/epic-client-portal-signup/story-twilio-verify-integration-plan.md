@@ -3,7 +3,7 @@ title: 'Twilio Verify integration'
 type: 'feature'
 ticket: '11'
 created: '2026-10-15'
-status: 'built'
+status: 'done'
 baseline_revision: '95d9a4cbec53ea7815688a1e281615120de583ac'
 route: 'full'
 route_source: 'auto'
@@ -136,6 +136,8 @@ context: []
 
 ## Plan Change Log
 
+- 2026-10-18 (staging): the spike alert is a Sentry **metric monitor** ("Number of Errors" on `message:"Signup code send failed"`, staging, 10 minutes, above 4), not the issue alert the README first described. That issue alert offered only a 15-minute window and never fired: it runs only when an issue changes state, and every failed send joins one existing issue. Boundaries' "5 or more in 10 minutes" is met as written. The README now describes the monitor.
+
 ## Review Triage Log
 
 Quick review, pass 1 (2026-10-15): 7 findings. high 0, medium 0, low 5, false 2, maybe-false 0.
@@ -163,4 +165,15 @@ Quick review, pass 1 (2026-10-15): 7 findings. high 0, medium 0, low 5, false 2,
 - `manage.py makemigrations --check`. Expected: no changes.
 - `manage.py compilemessages`. Expected: OK.
 
-Done locally (2026-10-15) after the review patches, on SQLite: `pytest` 938 passed, 7 skipped (PyYAML, and the browser test without Playwright), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date. No real Twilio was called. Pending: CI on PostgreSQL, then on staging (README "Twilio Verify"): the console setup, the credentials, the switch to the Twilio provider, the Sentry alert rule, and the acceptance criteria; WhatsApp once the sender is approved.
+Done locally (2026-10-15) after the review patches, on SQLite: `pytest` 938 passed, 7 skipped (PyYAML, and the browser test without Playwright), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date. No real Twilio was called. Pending: CI on PostgreSQL, then on staging (README "Twilio Verify"): the console setup, the credentials, the switch to the Twilio provider, the Sentry alert rule, and the acceptance criteria; WhatsApp once the sender is approved. CI on PostgreSQL 16 (PR #25): 948 passed.
+
+Staging (2026-10-18): the merge deployed. The Twilio console was set up: the Verify service (code length 6, Fraud Guard on), the SendGrid email integration with one template switching on `locale`, and the API key. The credentials were typed into `settings.env` and the provider switched; `check` reports no issues, and `check --deploy` no `signup.E001` or `mytp_publicsite.E006`. The user reported these checks passed:
+- the email code arrives in Spanish from `/es/` and in English;
+- with WhatsApp off, the mobile code arrives by SMS;
+- 5 wrong codes give "no longer valid";
+- the journal holds no codes or contacts;
+- with a wrong service SID, 5 requests showed the retry page, and the metric monitor emailed devops@mytreatplan.com (the issue alert tried first never fired; see the Plan Change Log).
+
+SMS first failed with Twilio `21608` (HTTP 403), which the app handled as designed (retry page, Sentry error). Twilio's own message said the account needed an approved Primary Customer Profile (Trust Hub). Until then, SMS went only to a Verified Caller ID, which had to be verified by voice call because Twilio blocks SMS verification for Spain. The profile has since been approved, and SMS now reaches unverified numbers. The sender is Twilio's pool (`AUTHMSG`, `TWVerify`). A branded sender ID `mytreatplan` was approved and set as the default, best effort where no pre-registration is needed. The README "Twilio Verify" now has these steps.
+
+Still open: WhatsApp waits for Meta to approve the sender (`TWILIO_WHATSAPP_ENABLED=True`, then the WhatsApp checks). Before production: SMS geo permissions, and a dedicated API key.

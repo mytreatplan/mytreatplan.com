@@ -755,17 +755,28 @@ In the Twilio console (account owned by the team, 2FA on):
 1. **Verify → Services → Create**: friendly name `MyTreatPlan` (it appears in the SMS
    text). Settings: **code length 6**, **Fraud Guard on**, default TTL (10 minutes). Copy
    the service SID (`VA...`).
-2. **Messaging → Settings → Geo permissions** (SMS): allow only the countries signup
+   The SMS sender is Twilio's generic pool (shown as `TWVerify` or `AUTHMSG`) unless a
+   branded sender ID is requested from Twilio and set as the default. Even then, Twilio
+   uses it on a best-effort basis only in countries that don't require sender ID
+   pre-registration, and falls back to the generic pool elsewhere.
+2. **Trust Hub → Customer Profiles → Primary Customer Profile**: submit the company's
+   legal name, registration number, address, website and an authorised representative,
+   exactly as in the company register. Until Twilio approves it (usually 1 to 3 business
+   days), a paid account still sends SMS only to the account's **Verified Caller IDs**,
+   and other numbers fail with Twilio code `21608` (HTTP 403). To test before approval,
+   add the test mobile under Phone Numbers → Manage → Verified Caller IDs. Verify it **by
+   voice call**: Twilio blocks verification by SMS in some countries, Spain among them.
+3. **Messaging → Settings → Geo permissions** (SMS): allow only the countries signup
    accepts numbers from; everything else blocked.
-3. **Email integration**: in SendGrid, verify the sender domain and create one **dynamic
+4. **Email integration**: in SendGrid, verify the sender domain and create one **dynamic
    template** that switches on `{{locale}}` (`en`, `es`), showing the code
    (`{{twilio_code}}`) in English or Spanish. In Twilio, Verify → Email Integration →
    Create: the SendGrid API key (restricted to Mail Send), the template id, the from
    address and name. Then attach the integration to the service (Service → Email).
    The template id lives in the console only, not in our settings.
-4. **WhatsApp**: Verify → Service → WhatsApp: connect the approved WhatsApp sender. While
+5. **WhatsApp**: Verify → Service → WhatsApp: connect the approved WhatsApp sender. While
    it is pending, leave `TWILIO_WHATSAPP_ENABLED=False`.
-5. **API key**: Account → API keys & tokens → Create API key, type **Standard**, name
+6. **API key**: Account → API keys & tokens → Create API key, type **Standard**, name
    `mytp-staging-verify`. The secret is shown once.
 
 ### Credentials on the server
@@ -793,10 +804,19 @@ With the Twilio provider selected and any of the four empty, every `check` and `
 ### Sentry alert on failed sends
 
 Every failed send logs the error `Signup code send failed` (channel, purpose, and
-Twilio's error code and HTTP status only); a failed check logs `Signup code check failed`. In Sentry: Alerts → Create
-Alert → Issues → condition "The issue is seen more than **4** times in **10 minutes**" (5 or more),
-filter "The event's message contains `Signup code send failed`", environment `staging` →
-send an email to **devops@mytreatplan.com**. Name it "Signup code sends failing".
+Twilio's error code and HTTP status only); a failed check logs `Signup code check failed`.
+In Sentry, create a **metric monitor**, not an issue alert. All failed sends group into
+one issue (one message template), and an issue alert only runs when an issue changes
+state (created, resolved, escalating, regressed). Further failures on an existing issue
+would never trigger it. A metric monitor counts the errors continuously:
+
+- Monitors → Create → **Metric** (Number of Errors), project of the portal, environment
+  `staging`.
+- Filter: `message:"Signup code send failed"`.
+- Interval **10 minutes**, Critical threshold **above 4** (5 or more).
+- Action: email the member devops@mytreatplan.com (Sentry emails only its members).
+
+Name it "Signup code sends failing".
 
 ### Checks on staging
 
