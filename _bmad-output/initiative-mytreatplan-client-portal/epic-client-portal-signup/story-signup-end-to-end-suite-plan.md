@@ -3,7 +3,7 @@ title: 'Signup end-to-end suite'
 type: 'feature'
 ticket: '14'
 created: '2026-10-18'
-status: 'built'
+status: 'done'
 baseline_revision: '103bc816f8d2108bd3494801c166abe1d6d293fe'
 route: 'full'
 route_source: 'auto'
@@ -126,3 +126,5 @@ After the patches (2026-10-18), locally on SQLite with Chromium (sandbox lifted)
 - `pytest -m browser` 3 times. Expected: passes each time.
 
 Done locally (2026-10-18), on SQLite with the test keys, Chromium run outside the command sandbox (it cannot start inside it): `pytest` 961 passed, 3 failed (the known PostgreSQL-only tests in `accounts/tests/test_crypto.py`), none skipped. `pytest -m browser` 3 times: 16 passed each time (~40 s); once more in reverse order: 16 passed. CI on PostgreSQL 17: not yet run (needs a push).
+
+CI on PostgreSQL 17.11 (PR #27): 964 passed, none skipped, so all 16 browser tests ran. Merged 2026-10-18 as `a8c3d89`. The user reported that the staging deploy completed ok. Nothing to set up on staging.
