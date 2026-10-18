@@ -24,7 +24,7 @@ from signup.models import PendingRegistration
 from signup.verification import (EMAIL, PURPOSE_RESUME, FakeVerificationProvider,
                                   VerificationError)
 
-from .test_wizard import NORMALIZED, PASSWORD, STEP1, _legal, _step1
+from .helpers import NORMALIZED, PASSWORD, STEP1, _legal, _step1
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 
@@ -305,7 +305,6 @@ def test_counter_keeps_the_window_timeout(small_limits):
     assert limits.ip_reserve(_request(), limits.SIGNUP_STARTS)
     assert limits.ip_reserve(_request(), limits.SIGNUP_STARTS)
     assert limits.ip_reserve(_request(), limits.SIGNUP_STARTS) is None
-    assert not limits.ip_allowed(_request(), limits.SIGNUP_STARTS)
     with connection.cursor() as cursor:
         cursor.execute("SELECT expires FROM django_cache WHERE cache_key LIKE '%signup:ip:%'")
         [(expires,)] = cursor.fetchall()
@@ -380,7 +379,7 @@ def test_failed_sends_are_not_counted(send_limits, monkeypatch):
     assert not _rejected('ip')
     # Each failed send's reservation was refunded.
     assert cache.get(limits._ip_key(_request(), limits.CODE_SENDS)) == 0
-    assert limits.ip_allowed(_request(), limits.CODE_SENDS)
+    assert limits.ip_reserve(_request(), limits.CODE_SENDS)  # still under the limit
 
 
 def test_refund_is_in_the_window_of_the_reservation(small_limits, clock):

@@ -1,5 +1,6 @@
 """Small HTTP helpers for the external checks (breached passwords, disposable domains, the
-signup CAPTCHA).
+signup CAPTCHA). Twilio Verify (signup.twilio_verify) makes its own request but raises the
+same `FETCH_ERRORS`.
 
 There is no `requests`: urllib with our own User-Agent and EXTERNAL_CHECK_TIMEOUT as the
 socket timeout. That limit applies to each socket operation (the connect, each read), not

@@ -18,9 +18,10 @@ import sentry_sdk
 from django.conf import settings as django_settings
 from django.core.management import CommandError, call_command
 
+from conftest import _assert_no_secrets, _runjob_with
 from mytp_publicsite import jobs, kms
-from mytp_publicsite.management.commands import kmscheck, runjob
-from mytp_publicsite.tests.test_monitoring import _FakeSentry, sentry_capture  # noqa: F401
+from mytp_publicsite.management.commands import kmscheck
+from mytp_publicsite.tests.test_monitoring import _FakeSentry
 
 REPO = Path(django_settings.BASE_DIR)
 DEPLOY = REPO / 'deploy'
@@ -137,12 +138,6 @@ def kms_env(tmp_path, monkeypatch, settings):
     return fake
 
 
-def _assert_no_secrets(*texts):
-    for text in texts:
-        for secret in SECRETS:
-            assert secret not in str(text)
-
-
 def _run(capsys):
     """kmscheck; returns (stdout, error or None)."""
     error = None
@@ -152,7 +147,7 @@ def _run(capsys):
         error = exc
         assert exc.__suppress_context__ or exc.__cause__ is None and exc.__context__ is None
     out = capsys.readouterr()
-    _assert_no_secrets(out.out, out.err, error)
+    _assert_no_secrets(SECRETS, out.out, out.err, error)
     return out.out, error
 
 
@@ -463,7 +458,7 @@ def test_malformed_field_keys_fail_without_echoing_them(kms_env, field_keys, set
 
 @pytest.mark.parametrize('case', ['ok', 'failed'])
 def test_runjob_field_key_failure_reaches_sentry_without_secrets(
-        kms_env, field_keys, monkeypatch, sentry_capture, case):  # noqa: F811
+        kms_env, field_keys, monkeypatch, sentry_capture, case):
     if case == 'failed':
         kms_env.field_keys['FIELD-WRAPPED-K2-MARKER'] = 400
     checkins = _runjob_with(monkeypatch, sentry_sdk)
@@ -476,7 +471,7 @@ def test_runjob_field_key_failure_reaches_sentry_without_secrets(
     sentry_sdk.flush()
 
     assert checkins[-1]['status'] == ('error' if case == 'failed' else 'ok')
-    _assert_no_secrets(json.dumps(sentry_capture.events))
+    _assert_no_secrets(SECRETS, json.dumps(sentry_capture.events))
 
 
 # --- The client itself -----------------------------------------------------------------
@@ -488,7 +483,7 @@ def test_client_loads_credentials_without_prompting(kms_env, settings):
         client._ssl_context()  # the marker files are not real PEM
 
     assert exc.value.step == 'auth'
-    _assert_no_secrets(exc.value)
+    _assert_no_secrets(SECRETS, exc.value)
     assert exc.value.__suppress_context__
 
 
@@ -553,7 +548,7 @@ def test_certificate_expiry_not_a_certificate(tmp_path):
     with pytest.raises(kms.KMSError, match='step cert failed') as exc:
         kms.certificate_expiry(path)
 
-    _assert_no_secrets(exc.value)
+    _assert_no_secrets(SECRETS, exc.value)
 
 
 def test_certificate_expiry_without_openssl(tmp_path, monkeypatch):
@@ -589,18 +584,6 @@ def test_kmscheck_job_declared_daily():
     assert job.crontab == '0 4 * * *'
 
 
-def _runjob_with(monkeypatch, sentry):
-    checkins = []
-
-    def capture_checkin(**kwargs):
-        checkins.append(kwargs)
-        return 'checkin-1'
-    monkeypatch.setattr(runjob, 'sentry_sdk', sentry)
-    monkeypatch.setattr(runjob, 'capture_checkin', capture_checkin)
-    monkeypatch.setattr(runjob, 'load_jobs', lambda: jobs.load_jobs(jobs.JOBS_FILE))
-    return checkins
-
-
 def test_runjob_kmscheck_ok_checks_in(kms_env, monkeypatch, settings):
     settings.SENTRY_ENVIRONMENT = 'staging'
     fake = _FakeSentry(active=True)
@@ -614,7 +597,7 @@ def test_runjob_kmscheck_ok_checks_in(kms_env, monkeypatch, settings):
 
 @pytest.mark.parametrize('case', ['mismatch', 'auth', 'expiring'])
 def test_runjob_kmscheck_failure_reaches_sentry_without_secrets(
-        kms_env, monkeypatch, sentry_capture, case):  # noqa: F811
+        kms_env, monkeypatch, sentry_capture, case):
     if case == 'mismatch':
         kms_env.unwrapped = bytes(32)
     elif case == 'auth':
@@ -633,7 +616,7 @@ def test_runjob_kmscheck_failure_reaches_sentry_without_secrets(
     assert len(values) == 1  # nothing chained
     for frame in values[0].get('stacktrace', {}).get('frames', []):
         assert 'vars' not in frame
-    _assert_no_secrets(json.dumps(sentry_capture.events))
+    _assert_no_secrets(SECRETS, json.dumps(sentry_capture.events))
 
 
 # --- Deploy files -------------------------------------------------------------------------------

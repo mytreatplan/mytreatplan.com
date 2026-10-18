@@ -16,7 +16,7 @@ from signup.views import (ATTEMPT_SESSION_KEY, IDLE_TIMEOUT, RESUME_SESSION_KEY,
                           SEEN_SESSION_KEY, SESSION_KEY)
 from signup.verification import EMAIL, PURPOSE_RESUME
 
-from .test_wizard import NORMALIZED, _current_code, _legal, _step1
+from .helpers import NORMALIZED, _current_code, _legal, _step1
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 
@@ -40,13 +40,6 @@ def _set_seen(client, seconds_ago):
     session = client.session
     session[SEEN_SESSION_KEY] = time.time() - seconds_ago
     session.save()
-
-
-@pytest.fixture
-def at_legal(client):
-    """Step 1 saved: the legal step is next."""
-    assert _step1(client)['Location'] == LEGAL_URL
-    return client
 
 
 # --- Cancel ----------------------------------------------------------------------------

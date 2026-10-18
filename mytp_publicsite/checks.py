@@ -3,7 +3,9 @@ import re
 from django.conf import settings
 from django.core.checks import Error, register
 
-from accounts.crypto import KMS_PROVIDER as KMS_KEY_PROVIDER
+from accounts.crypto import DEFAULT_KEY_PROVIDER, KMS_PROVIDER as KMS_KEY_PROVIDER
+from signup.twilio_verify import TWILIO_PROVIDER
+from signup.verification import FAKE_PROVIDER
 
 DRAFT_LEGAL_TEXTS = 'mytp_publicsite.E001'
 INSECURE_DB_TLS = 'mytp_publicsite.E002'
@@ -11,9 +13,6 @@ TURNSTILE_TEST_KEYS = 'mytp_publicsite.E003'
 PLAIN_FIELD_KEYS = 'mytp_publicsite.E004'
 NO_ERASURE_RETENTION = 'mytp_publicsite.E005'
 FAKE_VERIFICATION_PROVIDER = 'mytp_publicsite.E006'
-
-FAKE_PROVIDER = 'signup.verification.FakeVerificationProvider'
-TWILIO_PROVIDER = 'signup.twilio_verify.TwilioVerifyProvider'
 
 SECURE_DB_SSLMODES = ('verify-full', 'verify-ca')
 
@@ -91,7 +90,7 @@ def check_field_key_provider(app_configs, **kwargs):
     Runs only with `check --deploy`. Fails while DEBUG is off and FIELD_KEY_PROVIDER is
     not the KMS provider.
     """
-    provider = getattr(settings, 'FIELD_KEY_PROVIDER', '') or 'accounts.crypto.EnvKeyProvider'
+    provider = getattr(settings, 'FIELD_KEY_PROVIDER', '') or DEFAULT_KEY_PROVIDER
     if settings.DEBUG or provider == KMS_KEY_PROVIDER:
         return []
     return [Error(

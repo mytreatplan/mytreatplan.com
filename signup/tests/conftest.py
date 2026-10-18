@@ -48,3 +48,12 @@ def clock(monkeypatch):
     monkeypatch.setattr('signup.limits._now', clock)
     monkeypatch.setattr('signup.verification._now', clock)
     return clock
+
+
+@pytest.fixture
+def at_legal(client):
+    """Step 1 saved: the legal step is next."""
+    from .helpers import _step1
+
+    assert _step1(client)['Location'] == '/en/signup/legal/'
+    return client

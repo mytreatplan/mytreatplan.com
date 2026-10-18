@@ -13,16 +13,17 @@ import urllib.parse
 import pytest
 from django.core.checks import run_checks
 
+from conftest import _assert_no_secrets
 from eventlog.models import Attempt
 from signup import twilio_verify
 from signup.checks import TWILIO_CREDENTIALS_MISSING, check_twilio_credentials
-from signup.twilio_verify import TwilioVerifyProvider, post_verify
-from signup.verification import (APPROVED, EMAIL, NO_CODE, SMS, WHATSAPP, WRONG,
-                                 ChannelUnavailable, CheckFailed, SendFailed, get_provider)
+from signup.twilio_verify import TWILIO_PROVIDER as TWILIO, TwilioVerifyProvider, post_verify
+from signup.verification import (APPROVED, EMAIL, FAKE_PROVIDER, NO_CODE, SMS, WHATSAPP,
+                                 WRONG, ChannelUnavailable, CheckFailed, SendFailed,
+                                 get_provider)
 
-from .test_wizard import MOBILE_E164, NORMALIZED, _legal, _step1
+from .helpers import MOBILE_E164, NORMALIZED, _legal, _step1
 
-TWILIO = 'signup.twilio_verify.TwilioVerifyProvider'
 # Made-up values in Twilio's formats; none is a real credential.
 ACCOUNT_SID = 'AC' + '0' * 31 + '1'
 API_KEY_SID = 'SK' + '0' * 31 + '2'
@@ -71,12 +72,6 @@ def verify(monkeypatch, twilio):
     fake = FakeVerify()
     monkeypatch.setattr('signup.twilio_verify.post_verify', fake)
     return fake
-
-
-def _assert_no_secrets(*texts):
-    for text in texts:
-        for secret in SECRETS:
-            assert secret not in text, f'{secret!r} leaked into {text!r}'
 
 
 def _log_text(caplog):
@@ -143,7 +138,7 @@ def test_channel_unavailable_errors(verify, settings, channel, status, code):
     with pytest.raises(ChannelUnavailable) as caught:
         TwilioVerifyProvider().send(channel, MOBILE_E164, 'signup', 'en')
     assert f'code {code}, HTTP {status}' in str(caught.value)
-    _assert_no_secrets(str(caught.value), repr(caught.value))
+    _assert_no_secrets(SECRETS, str(caught.value), repr(caught.value), show_leak=True)
 
 
 @pytest.mark.parametrize('status, body', [
@@ -166,7 +161,8 @@ def test_send_refused_is_send_failed_with_code_and_status_only(verify, caplog, s
     assert f'HTTP {status}' in message
     assert f"code {body.get('code', 'none')}" in message
     assert 'Fraud' not in message and 'Authenticate' not in message
-    _assert_no_secrets(message, repr(caught.value), _log_text(caplog))
+    _assert_no_secrets(SECRETS, message, repr(caught.value), _log_text(caplog),
+                       show_leak=True)
 
 
 @pytest.mark.parametrize('error', [
@@ -185,7 +181,8 @@ def test_network_failure_is_send_failed(verify, caplog, error):
         TwilioVerifyProvider().send(EMAIL, EMAIL_TO, 'signup', 'en')
     assert type(error).__name__ in str(caught.value)
     assert caught.value.__cause__ is None and caught.value.__suppress_context__
-    _assert_no_secrets(str(caught.value), repr(caught.value), _log_text(caplog))
+    _assert_no_secrets(SECRETS, str(caught.value), repr(caught.value), _log_text(caplog),
+                       show_leak=True)
 
 
 def test_unknown_channel_is_refused(verify):
@@ -203,7 +200,7 @@ def test_provider_logs_on_the_code_logger_without_contact(verify, caplog):
 
     records = [r for r in caplog.records if r.name.startswith('signup')]
     assert records and {r.name for r in records} == {'signup.verification'}
-    _assert_no_secrets(_log_text(caplog))
+    _assert_no_secrets(SECRETS, _log_text(caplog), show_leak=True)
 
 
 # --- Check --------------------------------------------------------------------------------
@@ -255,7 +252,8 @@ def test_check_failure_answers(verify, caplog, status, body):
     with pytest.raises(CheckFailed) as caught:
         TwilioVerifyProvider().check(SMS, MOBILE_E164, 'signup', CODE)
     assert f'HTTP {status}' in str(caught.value)
-    _assert_no_secrets(str(caught.value), repr(caught.value), _log_text(caplog))
+    _assert_no_secrets(SECRETS, str(caught.value), repr(caught.value), _log_text(caplog),
+                       show_leak=True)
 
 
 @pytest.mark.parametrize('error', [
@@ -267,7 +265,8 @@ def test_check_network_failure(verify, caplog, error):
 
     with pytest.raises(CheckFailed) as caught:
         TwilioVerifyProvider().check(SMS, MOBILE_E164, 'signup', CODE)
-    _assert_no_secrets(str(caught.value), repr(caught.value), _log_text(caplog))
+    _assert_no_secrets(SECRETS, str(caught.value), repr(caught.value), _log_text(caplog),
+                       show_leak=True)
 
 
 # --- The HTTP call ------------------------------------------------------------------------
@@ -369,7 +368,7 @@ def test_tests_never_reach_twilio(twilio):
 # --- signup.E001 --------------------------------------------------------------------------
 
 def test_fake_provider_needs_no_credentials(settings):
-    settings.VERIFICATION_PROVIDER = 'signup.verification.FakeVerificationProvider'
+    settings.VERIFICATION_PROVIDER = FAKE_PROVIDER
 
     assert check_twilio_credentials(None) == []
 
@@ -387,7 +386,7 @@ def test_twilio_with_an_empty_credential_fails(twilio, missing):
     assert [e.id for e in errors] == [TWILIO_CREDENTIALS_MISSING]
     assert missing in errors[0].msg
     assert all(name not in errors[0].msg for name in CREDENTIALS if name != missing)
-    _assert_no_secrets(errors[0].msg, errors[0].hint)
+    _assert_no_secrets(SECRETS, errors[0].msg, errors[0].hint, show_leak=True)
     # A normal check (also run by `migrate`), not only `check --deploy`.
     assert TWILIO_CREDENTIALS_MISSING in {e.id for e in run_checks()}
 
@@ -402,7 +401,7 @@ def test_twilio_with_no_credentials_names_all_four(settings):
 
 def test_tests_run_on_the_fake_provider(settings):
     """Root conftest.py pins the fake, whatever a developer's settings.env says."""
-    assert settings.VERIFICATION_PROVIDER == 'signup.verification.FakeVerificationProvider'
+    assert settings.VERIFICATION_PROVIDER == FAKE_PROVIDER
     assert settings.TWILIO_VERIFY_BASE_URL.startswith('https://verify.test.invalid/')
     assert not settings.TWILIO_API_KEY_SECRET
 

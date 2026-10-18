@@ -9,9 +9,9 @@ from eventlog.models import Attempt, Event
 from signup.models import PendingRegistration
 from signup.views import ATTEMPT_SESSION_KEY
 
-from .test_wizard import (EMAIL_ADDRESS, ENCRYPTED, FIRST_NAME, LAST_NAME, MOBILE_E164,
-                          NORMALIZED, PASSWORD, _code_from_log, _complete, _legal,
-                          _mobile_code, _step1, _to_code_step, _to_mobile_step, _wrong)
+from .helpers import (EMAIL_ADDRESS, ENCRYPTED, FIRST_NAME, LAST_NAME, MOBILE_E164,
+                      NORMALIZED, PASSWORD, _code_from_log, _complete, _legal,
+                      _mobile_code, _step1, _to_code_step, _to_mobile_step, _wrong)
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 

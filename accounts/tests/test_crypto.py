@@ -20,7 +20,7 @@ from django.db import IntegrityError, connection
 from django.db.migrations.executor import MigrationExecutor
 
 from accounts import crypto
-from conftest import TEST_BLIND_INDEX_KEY, TEST_FIELD_ENCRYPTION_KEYS
+from conftest import TEST_BLIND_INDEX_KEY, TEST_FIELD_ENCRYPTION_KEYS, _env_values
 from signup.forms import email_is_registered
 from signup.models import PendingRegistration
 
@@ -468,11 +468,6 @@ def test_data_migration_encrypts_existing_rows_and_reverses():
 
 
 # --- Settings, examples, CI and runbook -----------------------------------------------------
-
-def _env_values(path):
-    return dict(line.split('=', 1) for line in path.read_text().splitlines()
-                if line.strip() and not line.startswith('#'))
-
 
 def test_key_settings_default_empty_and_examples_have_no_values(settings):
     base = settings.BASE_DIR

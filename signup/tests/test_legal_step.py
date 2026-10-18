@@ -12,8 +12,8 @@ from legal.models import LegalChoice, LegalDocument
 from signup.models import PendingRegistration
 from signup.verification import EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP
 
-from .test_wizard import (NORMALIZED, _code_from_log, _current_code, _email_code, _legal,
-                          _mobile_code, _step1)
+from .helpers import (NORMALIZED, _code_from_log, _current_code, _email_code, _legal,
+                      _mobile_code, _step1)
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 
@@ -39,13 +39,6 @@ def _new_version(kind='terms', published_at=None):
         kind=kind, title_en='Terms of Use v-next', title_es='Términos de uso v-next',
         body_en='## New terms\n\nThe **new** text.', body_es='## Nuevos términos\n\nTexto.',
         published_at=published_at or timezone.now())
-
-
-@pytest.fixture
-def at_legal(client):
-    """Step 1 saved: the legal step is next."""
-    assert _step1(client)['Location'] == LEGAL_URL
-    return client
 
 
 # --- All required / all ticked ---------------------------------------------------------

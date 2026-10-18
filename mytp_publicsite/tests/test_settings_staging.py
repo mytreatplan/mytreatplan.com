@@ -14,11 +14,14 @@ from django.urls import NoReverseMatch, Resolver404, clear_url_caches, path, res
 from django.utils import translation
 
 import mytreatplan.urls
+from accounts.crypto import DEFAULT_KEY_PROVIDER
 from mytp_publicsite.checks import (FAKE_VERIFICATION_PROVIDER, INSECURE_DB_TLS,
                                     NO_ERASURE_RETENTION, PLAIN_FIELD_KEYS, TURNSTILE_TEST_KEYS,
                                     check_db_tls, check_erasure_retention,
                                     check_field_key_provider, check_turnstile_keys,
                                     check_verification_provider)
+from signup.twilio_verify import TWILIO_PROVIDER as TWILIO
+from signup.verification import FAKE_PROVIDER as FAKE
 
 SETTINGS_FILE = str(django_settings.BASE_DIR / 'mytreatplan' / 'settings.py')
 # Every key these tests depend on, at its documented default. Set explicitly in the
@@ -33,7 +36,7 @@ BASELINE_ENV = {
     'PORTAL_ENABLED': 'False',
     'SENTRY_DSN': '',
     'ACCOUNT_ERASURE_RETENTION_DAYS': '',
-    'VERIFICATION_PROVIDER': 'signup.verification.FakeVerificationProvider',
+    'VERIFICATION_PROVIDER': FAKE,
     'TWILIO_VERIFY_BASE_URL': '',
     'TWILIO_WHATSAPP_ENABLED': 'False',
 }
@@ -349,7 +352,7 @@ def test_turnstile_check_skipped_with_debug_on(settings):
 
 # --- Field key provider (story 2.12) -------------------------------------------------------
 
-@pytest.mark.parametrize('provider', ['accounts.crypto.EnvKeyProvider', ''])
+@pytest.mark.parametrize('provider', [DEFAULT_KEY_PROVIDER, ''])
 def test_plain_field_keys_fail_deploy_check(settings, provider):
     settings.DEBUG = False
     settings.FIELD_KEY_PROVIDER = provider
@@ -371,7 +374,7 @@ def test_kms_field_key_provider_passes_deploy_check(settings):
 
 def test_field_key_provider_check_skipped_with_debug_on(settings):
     settings.DEBUG = True
-    settings.FIELD_KEY_PROVIDER = 'accounts.crypto.EnvKeyProvider'
+    settings.FIELD_KEY_PROVIDER = DEFAULT_KEY_PROVIDER
 
     assert check_field_key_provider(None) == []
 
@@ -413,10 +416,6 @@ def test_erasure_retention_env_var_has_no_default(load_settings, value, expected
 
 
 # --- Verification provider (signup entry 11) ----------------------------------------------
-
-FAKE = 'signup.verification.FakeVerificationProvider'
-TWILIO = 'signup.twilio_verify.TwilioVerifyProvider'
-
 
 @pytest.mark.parametrize('provider', [FAKE, ''])
 def test_fake_verification_provider_fails_deploy_check(settings, provider):

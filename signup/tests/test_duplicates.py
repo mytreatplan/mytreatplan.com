@@ -17,8 +17,8 @@ from signup.tests import urls_portal
 from signup.verification import EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP
 from signup.views import ATTEMPT_SESSION_KEY, RESUME_SESSION_KEY, SESSION_KEY
 
-from .test_wizard import (EMAIL_ADDRESS, MOBILE_E164, NORMALIZED, PASSWORD, _current_code,
-                          _email_code, _legal, _mobile_code, _step1, _wrong)
+from .helpers import (EMAIL_ADDRESS, MOBILE_E164, NORMALIZED, PASSWORD, _current_code,
+                      _email_code, _legal, _mobile_code, _step1, _wrong)
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 

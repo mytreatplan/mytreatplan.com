@@ -16,11 +16,11 @@ from accounts.password_validation import (BreachedPasswordValidator, fetch_pwned
                                           pwned_count)
 from conftest import NetworkAccessInTests
 from eventlog.models import Attempt, Event
-from signup.checks import fetch_disposable, is_disposable_domain
+from signup.disposable import fetch_disposable, is_disposable_domain
 from signup.models import PendingRegistration
 
-from .test_wizard import (ENCRYPTED, FIRST_NAME, LAST_NAME, MOBILE_E164, NORMALIZED, PASSWORD,
-                          _code_from_log, _legal, _mobile_code, _step1, _to_code_step)
+from .helpers import (ENCRYPTED, FIRST_NAME, LAST_NAME, MOBILE_E164, NORMALIZED, PASSWORD,
+                      _code_from_log, _legal, _mobile_code, _step1, _to_code_step)
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 
@@ -269,7 +269,7 @@ def test_debounce_down_accepts_the_email_and_logs_it(client, external_checks, er
 
 @pytest.mark.parametrize('answer', [{}, {'disposable': 'maybe'}, ['true'], {'disposable': None}])
 def test_debounce_unexpected_body_accepts_the_email(client, monkeypatch, answer):
-    monkeypatch.setattr('signup.checks.fetch_disposable', lambda domain: answer)
+    monkeypatch.setattr('signup.disposable.fetch_disposable', lambda domain: answer)
     assert _step1(client).status_code == 302
     assert _events()[0].event == 'check_unavailable'
 
@@ -405,7 +405,7 @@ def urlopen(monkeypatch):
     opener.calls = calls
     monkeypatch.setattr('urllib.request.urlopen', opener)
     monkeypatch.setattr('accounts.password_validation.fetch_pwned_range', fetch_pwned_range)
-    monkeypatch.setattr('signup.checks.fetch_disposable', fetch_disposable)
+    monkeypatch.setattr('signup.disposable.fetch_disposable', fetch_disposable)
     return opener
 
 
@@ -471,7 +471,7 @@ def test_real_calls_fail_in_tests(monkeypatch):
     """The guard in conftest.py: a real request fails the test (it is not swallowed as
     "check unavailable")."""
     monkeypatch.setattr('accounts.password_validation.fetch_pwned_range', fetch_pwned_range)
-    monkeypatch.setattr('signup.checks.fetch_disposable', fetch_disposable)
+    monkeypatch.setattr('signup.disposable.fetch_disposable', fetch_disposable)
     with pytest.raises(NetworkAccessInTests):
         pwned_count(PASSWORD)
     with pytest.raises(NetworkAccessInTests):

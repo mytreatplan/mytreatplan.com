@@ -36,15 +36,15 @@ from eventlog import service as eventlog
 from eventlog.models import Attempt
 from legal.models import LegalChoice
 
-from .forms import (BLOCKED_CAPTCHA, BLOCKED_MESSAGE, BLOCKED_RATE_LIMIT, EMAIL_EXISTS,
-                    EMAIL_PENDING, EMAIL_REGISTERED_MESSAGE, PHONE_EXISTS,
+from .forms import (BLOCKED_CAPTCHA, BLOCKED_MESSAGE, EMAIL_EXISTS, EMAIL_PENDING,
+                    EMAIL_REGISTERED_MESSAGE, PHONE_EXISTS,
                     PHONE_REGISTERED_MESSAGE, REGISTERED_CODES, ResumeCodeForm,
                     email_is_registered, failure_reason, normalize_email, phone_is_registered)
 from . import captcha, limits
 from .models import PendingRegistration
 from .retention import remove_pending
 from .steps import (CODE_STATE_SESSION_KEY, HOURLY, SENT, STEPS, CodeStep,
-                    MobileCodeStep, code_state, get_step, send_code)
+                    MobileCodeStep, code_state, get_step, log_ip_blocked, send_code)
 from .verification import CODE_TTL_SECONDS, EMAIL, PURPOSE_RESUME, SMS
 
 # The session holds only the pending registration's id, and the event log attempt's id.
@@ -324,15 +324,6 @@ def _submit(request, index, step, form, pending):
     return redirect(step_url(next_index))
 
 
-def _log_ip_blocked(request, get_attempt, step, counter):
-    """A request refused by a per-IP limit: `rejected`, field `ip`, the counter's name;
-    only the first block of the IP and counter in the window (`get_attempt` is called,
-    and may start an attempt, only then)."""
-    if limits.first_block(request, counter):
-        eventlog.record(get_attempt(), 'rejected', request=request, step=step, field='ip',
-                        reason=BLOCKED_RATE_LIMIT, data={'counter': counter})
-
-
 def _refuse(form, code):
     """Give the (unvalidated) form only the generic error: no field is validated, so no
     external check runs and no field error tells anything."""
@@ -364,7 +355,7 @@ def _guard_step1(request, get_attempt, step, form, pending):
     if pending is None:
         reservation = limits.ip_reserve(request, limits.SIGNUP_STARTS)
         if reservation is None:
-            _log_ip_blocked(request, get_attempt, step.slug, limits.SIGNUP_STARTS)
+            log_ip_blocked(request, get_attempt, step.slug, limits.SIGNUP_STARTS)
             _refuse(form, 'rate_limited_ip')
             return True, None
         return False, reservation
@@ -531,8 +522,8 @@ def check_email(request):
         return render(request, 'signup/_email_check.html', {'email_check': None})
     if not _count_email_check(request):
         # Nothing about the email, nor that a limit was hit.
-        _log_ip_blocked(request, lambda: _attempt(request, _pending_registration(request), 0),
-                        STEPS[0].slug, limits.EMAIL_CHECKS)
+        log_ip_blocked(request, lambda: _attempt(request, _pending_registration(request), 0),
+                       STEPS[0].slug, limits.EMAIL_CHECKS)
         return render(request, 'signup/_email_check.html', {'email_check': None})
     try:
         email = normalize_email(forms.EmailField(max_length=254).clean(
