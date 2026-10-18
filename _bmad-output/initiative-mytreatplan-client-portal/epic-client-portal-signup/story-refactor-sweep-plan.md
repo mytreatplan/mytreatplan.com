@@ -3,7 +3,7 @@ title: 'Refactor sweep'
 type: 'refactor'
 ticket: '13'
 created: '2026-10-18'
-status: 'built'
+status: 'done'
 baseline_revision: '9af7b259d83bee443d2f873267a8fe22fa611d75'
 route: 'full'
 route_source: 'auto'
@@ -142,3 +142,5 @@ After the patches (2026-10-18), on SQLite: `pytest` 939 passed, 7 skipped, 3 fai
 - `git diff --stat` -- expected: no template, locale, migration or `deploy/` file.
 
 Done locally (2026-10-18), on SQLite: `pytest` 939 passed, 7 skipped (PyYAML, and the browser test without Playwright), 3 failed (the known PostgreSQL-only tests). The baseline was 938 passed; +1 is the `by_phone` test. `check`: no issues; with the Twilio provider and empty credentials, `signup.E001` still fires. `makemigrations --check`: no changes. The grep acceptance checks pass. CI on PostgreSQL 16 and the Node 20 annotation: not yet run (needs a push).
+
+CI on PostgreSQL 16 (PR #26): 949 passed, with no annotations (the Node 20 deprecation is gone). Merged 2026-10-18 as `1264d38`; the user reported that the staging deploy, the first on `ubuntu-24.04` with the new action versions, completed ok. Nothing to set up on staging.
