@@ -1,12 +1,13 @@
 """Signup entry 8, in Chromium (Playwright) against live_server: the "Connection lost" and
-"Retry" rows of the plan's I/O matrix. A boosted submit that cannot be sent shows the
+"Retry" rows of the plan's I/O matrix, and the policy row "User loses connectivity"
+(registration-failure-policies.md, row 11). A boosted submit that cannot be sent shows the
 banner, keeps what was typed and stays on the page; the connection coming back (the
 `online` event) or "Try again" sends the same form once.
 
-Skipped when pytest-playwright (here) or its Chromium (conftest.py) is not installed (CI installs both:
-.github/workflows/ci.yml). The end-to-end suite (2.14) reuses this setup.
+Skipped when pytest-playwright (here) or its Chromium (conftest.py) is not installed (CI
+installs both: .github/workflows/ci.yml). The shared setup is in conftest.py and
+helpers.py.
 """
-import os
 import re
 
 import pytest
@@ -15,19 +16,10 @@ pytest.importorskip('pytest_playwright')
 
 from playwright.sync_api import expect  # noqa: E402
 
-from django.utils import timezone  # noqa: E402
-
-from eventlog.models import Event  # noqa: E402
-from legal.models import LegalDocument  # noqa: E402
 from signup.models import PendingRegistration  # noqa: E402
 
-from conftest import TURNSTILE_TEST_TOKEN  # noqa: E402
-
-from ..helpers import EMAIL_ADDRESS, FIRST_NAME, LAST_NAME, MOBILE, PASSWORD  # noqa: E402
-
-# Playwright's sync API runs an event loop in this thread, so Django's ORM (the test's
-# own queries, the database teardown) would otherwise refuse to run here.
-os.environ.setdefault('DJANGO_ALLOW_ASYNC_UNSAFE', 'true')
+from ..helpers import FIRST_NAME, PASSWORD  # noqa: E402
+from .helpers import fill_step1, saved  # noqa: E402
 
 pytestmark = [
     pytest.mark.browser,
@@ -38,83 +30,11 @@ pytestmark = [
 BANNER = '[data-connection-lost]'
 
 
-@pytest.fixture(autouse=True)
-def plain_http(settings):
-    """live_server speaks plain HTTP: no Secure cookies, no HTTPS redirect."""
-    settings.SESSION_COOKIE_SECURE = False
-    settings.CSRF_COOKIE_SECURE = False
-    settings.SECURE_SSL_REDIRECT = False
-
-
-@pytest.fixture(autouse=True)
-def legal_documents():
-    """A published version of each legal document. The migration's drafts may be gone:
-    an earlier transactional test flushes the tables, and serialized_rollback restores
-    nothing when the test database was not serialized."""
-    now = timezone.now()
-    for kind in LegalDocument.Kind.values:
-        if not LegalDocument.objects.filter(kind=kind, published_at__lte=now).exists():
-            LegalDocument.objects.create(
-                kind=kind, title_en=f'{kind} (test)', title_es=f'{kind} (prueba)',
-                body_en='Test text.', body_es='Texto de prueba.', published_at=now)
-
-
-# Stands in for Cloudflare's Turnstile script (signup entry 9) in Chromium: its explicit
-# render puts the test token in the form and calls the widget's callback with it, as the
-# always-pass test site key would. The
-# test never depends on challenges.cloudflare.com; siteverify is faked in this process by
-# the autouse `turnstile` fixture (conftest.py), which live_server's thread shares.
-TURNSTILE_STUB = """
-window.turnstile = {
-  count: 0,
-  render(container, options) {
-    const token = '%s'
-    const input = document.createElement('input')
-    input.type = 'hidden'
-    input.name = 'cf-turnstile-response'
-    input.value = token
-    container.appendChild(input)
-    if (options && options.callback) setTimeout(() => options.callback(token), 0)
-    this.count += 1
-    return 'widget-' + this.count
-  },
-  remove() {},
-}
-""" % TURNSTILE_TEST_TOKEN
-
-
-@pytest.fixture(autouse=True)
-def turnstile_script(context):
-    context.route('https://challenges.cloudflare.com/**', lambda route: route.fulfill(
-        status=200, content_type='text/javascript', body=TURNSTILE_STUB))
-
-
-def _saved(step):
-    return Event.objects.filter(event='step_saved', step=step).count()
-
-
-def _fill_step1(page):
-    # The CAPTCHA widget has put its token in the form.
-    expect(page.locator('input[name="cf-turnstile-response"]')).to_have_value(
-        TURNSTILE_TEST_TOKEN)
-    # Leaving the email runs the live check (htmx); let it finish before going offline.
-    with page.expect_response(re.compile(r'/signup/check-email/$')):
-        page.fill('#id_email', EMAIL_ADDRESS)
-        page.press('#id_email', 'Tab')
-    page.select_option('#id_title', 'dr')
-    page.fill('#id_first_name', FIRST_NAME)
-    page.fill('#id_last_name', LAST_NAME)
-    page.select_option('#id_country', 'ES')
-    page.fill('#id_password1', PASSWORD)
-    page.fill('#id_password2', PASSWORD)
-    page.select_option('#id_phone_prefix', 'ES')
-    page.fill('#id_phone', MOBILE)
-    page.select_option('#id_how_found', 'linkedin')
-
-
 def test_connection_lost_then_back(live_server, context, page):
+    """Policy row 11, "User loses connectivity": the open form keeps its input, the
+    "connection lost" banner shows, and the submit is sent again when back online."""
     page.goto(f'{live_server.url}/en/signup/')
-    _fill_step1(page)
+    fill_step1(page)
     banner = page.locator(BANNER)
     expect(banner).to_be_hidden()
 
@@ -134,7 +54,7 @@ def test_connection_lost_then_back(live_server, context, page):
     expect(page).to_have_url(re.compile(r'/en/signup/legal/$'))
     expect(page.locator('h1')).to_be_visible()
     expect(page.locator(BANNER)).to_be_hidden()
-    assert _saved('account') == 1
+    assert saved('account') == 1
     assert PendingRegistration.objects.get().step == 'legal'
 
     # The legal step, by "Try again": offline it fails once more (the banner again), then
@@ -148,9 +68,9 @@ def test_connection_lost_then_back(live_server, context, page):
         page.locator('[data-connection-retry]').click()
     expect(page.locator(BANNER)).to_be_visible()
     expect(page.locator('#id_terms')).to_be_checked()
-    assert _saved('legal') == 0
+    assert saved('legal') == 0
 
     context.set_offline(False)
     expect(page).to_have_url(re.compile(r'/en/signup/verify-email/$'))
-    assert _saved('legal') == 1
-    assert _saved('account') == 1
+    assert saved('legal') == 1
+    assert saved('account') == 1
