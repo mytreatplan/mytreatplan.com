@@ -3,7 +3,7 @@ title: 'Account erasure from the admin'
 type: 'feature'
 ticket: ''
 created: '2026-10-15'
-status: 'built'
+status: 'done'
 baseline_revision: '0fea05e017df5d261411cb06c7b834789cd354b2'
 route: 'full'
 route_source: 'auto'
@@ -161,4 +161,7 @@ The tombstone keeps `email_index` unique and required with no constraint change.
 - `manage.py makemigrations --check`, after adding `0007`. Expected: no changes.
 - `manage.py compilemessages`. Expected: OK.
 
-Done locally (2026-10-15) after the review patches, on SQLite: `pytest` 842 passed, 7 skipped (PyYAML, and the browser test without Playwright), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date. The admin's refusal message was reworded after the patches to cover 0 and negative values ("is not set to a positive number of days"). Pending: CI on PostgreSQL, then on staging: `ACCOUNT_ERASURE_RETENTION_DAYS=1` in `settings.env`, `provision.sh` for the `purgeerased` timer, and the acceptance criteria.
+Done locally (2026-10-15) after the review patches, on SQLite: `pytest` 842 passed, 7 skipped (PyYAML, and the browser test without Playwright), 3 failed only because those tests use PostgreSQL-only raw SQL. `makemigrations --check` reports no changes; `compilemessages` is up to date. The admin's refusal message was reworded after the patches to cover 0 and negative values ("is not set to a positive number of days"). CI on PostgreSQL 16 (PR #24): 852 passed.
+
+Staging (2026-10-15 to 2026-10-18): the merge deployed; `ACCOUNT_ERASURE_RETENTION_DAYS=1` was set and the app restarted. The user reported the erase checks passed: an erased test user shows only under status "Erased", read-only; the exact-email search under "Erased" finds it; the same email signs up again. The `purgeerased` timer was missing at first (`provision.sh` had not installed it); after re-running `provision.sh` the timer is listed, and a run by hand (2026-10-18) printed `5` and ended ok: the 5 accounts erased in the admin during testing (5 "Erased" admin log entries), all past retention. Afterwards: 1 user, 0 erased.
+
