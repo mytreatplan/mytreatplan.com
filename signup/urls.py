@@ -2,7 +2,7 @@ from django.urls import path
 
 from . import views
 
-# Not namespaced: the nav and LOGIN_URL use the plain name `signup`.
+# Not namespaced: the nav uses the plain name `signup`.
 urlpatterns = [
     path('signup/', views.signup, name='signup'),
     # Before signup/<slug>/, which would take "resume", "check-email" or "cancel" as a

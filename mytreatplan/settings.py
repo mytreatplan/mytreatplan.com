@@ -337,9 +337,9 @@ SILENCED_SYSTEM_CHECKS = [
     'auth.W004',
 ]
 
-# Where @login_required sends anonymous visitors. There is no login page yet (epic-login
-# points this at `login`), so they go to signup.
-LOGIN_URL = 'signup'
+# Where @login_required sends anonymous visitors: the login page (accounts.views.login),
+# which sends them back to `next` once logged in.
+LOGIN_URL = 'login'
 
 
 # Internationalization

@@ -1,0 +1,59 @@
+from django import forms
+from django.contrib.auth import authenticate
+from django.core.exceptions import ValidationError
+from django.forms.utils import ErrorDict
+from django.utils.translation import gettext_lazy as _
+
+from signup.forms import BLOCKED_MESSAGE, StyledForm
+
+# The one error of every failed login (a wrong password, an unknown email, an inactive or
+# erased account): it never tells which.
+INVALID_LOGIN_MESSAGE = _('The email address or password is not correct.')
+
+
+class LoginForm(StyledForm):
+    """Email and password, checked with `authenticate` (accounts.backends.EmailBackend:
+    the email is found through its blind index, whatever its case; inactive accounts,
+    erased ones among them, are refused). Every failure is the non-field error
+    `invalid_login`. The CAPTCHA is checked by the view before the form is validated."""
+
+    error_messages = {
+        'invalid_login': INVALID_LOGIN_MESSAGE,
+    }
+
+    # Not an EmailField: a malformed address gets the same generic error as any other.
+    email = forms.CharField(
+        label=_('Email'),
+        max_length=254,
+        widget=forms.EmailInput(attrs={'autocomplete': 'username', 'autofocus': True}),
+    )
+    password = forms.CharField(
+        label=_('Password'),
+        strip=False,
+        widget=forms.PasswordInput(attrs={'autocomplete': 'current-password'}),
+    )
+
+    def __init__(self, request, *args, **kwargs):
+        self.request = request
+        self.user = None
+        super().__init__(*args, **kwargs)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        email, password = cleaned_data.get('email'), cleaned_data.get('password')
+        if email and password:
+            self.user = authenticate(self.request, username=email, password=password)
+            if self.user is None:
+                raise ValidationError(self.error_messages['invalid_login'],
+                                      code='invalid_login')
+        return cleaned_data
+
+    def get_user(self):
+        return self.user
+
+    def refuse(self, code):
+        """Give the (unvalidated) form only signup's generic BLOCKED_MESSAGE: the
+        credentials are not checked."""
+        self._errors = ErrorDict()
+        self.cleaned_data = {}
+        self.add_error(None, ValidationError(BLOCKED_MESSAGE, code=code))

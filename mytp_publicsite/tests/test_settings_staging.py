@@ -211,7 +211,7 @@ def _fresh_urlconf():
     return module
 
 
-PORTAL_URL_NAMES = ['signup', 'signup_step', 'welcome']
+PORTAL_URL_NAMES = ['signup', 'signup_step', 'welcome', 'login', 'logout']
 
 
 def test_portal_patterns_hold_the_signup_routes(settings):
@@ -223,6 +223,8 @@ def test_portal_patterns_hold_the_signup_routes(settings):
             assert reverse('signup_step', urlconf, args=['verify-email']) == \
                 '/en/signup/verify-email/'
             assert reverse('welcome', urlconf) == '/en/welcome/'
+            assert reverse('login', urlconf) == '/en/login/'
+            assert reverse('logout', urlconf) == '/en/logout/'
     finally:
         clear_url_caches()
 
@@ -257,7 +259,9 @@ def test_portal_hook_is_wired_into_language_patterns(settings, enabled):
             with translation.override(lang):  # the prefix matches the active language
                 for url, name in [(f'/{lang}/signup/', 'signup'),
                                   (f'/{lang}/signup/verify-email/', 'signup_step'),
-                                  (f'/{lang}/welcome/', 'welcome')]:
+                                  (f'/{lang}/welcome/', 'welcome'),
+                                  (f'/{lang}/login/', 'login'),
+                                  (f'/{lang}/logout/', 'logout')]:
                     if enabled:
                         assert resolve(url, urlconf).url_name == name
                     else:
@@ -267,7 +271,7 @@ def test_portal_hook_is_wired_into_language_patterns(settings, enabled):
                     for name in PORTAL_URL_NAMES:
                         with pytest.raises(NoReverseMatch):
                             reverse(name, urlconf, args=['x'] if name == 'signup_step' else [])
-        for url in ['/signup/', '/welcome/']:
+        for url in ['/signup/', '/welcome/', '/login/', '/logout/']:
             with pytest.raises(Resolver404):
                 resolve(url, urlconf)  # only under the language prefixes
         assert resolve('/en/', urlconf).url_name == 'home'
@@ -278,8 +282,8 @@ def test_portal_hook_is_wired_into_language_patterns(settings, enabled):
 @pytest.mark.django_db
 @pytest.mark.parametrize('enabled', [True, False])
 def test_urlconf_loads_with_portal_switch(settings, reload_urlconf, client, enabled):
-    """The real URLconf, rebuilt with the switch: signup is served and linked from the
-    nav only when it is on (the Log in link waits for epic-login)."""
+    """The real URLconf, rebuilt with the switch: signup and login are served and linked
+    from the nav only when it is on."""
     settings.PORTAL_ENABLED = enabled
     reload_urlconf()
 
@@ -289,9 +293,12 @@ def test_urlconf_loads_with_portal_switch(settings, reload_urlconf, client, enab
     assert home.status_code == 200
     html = home.content.decode()
     assert ('href="/en/signup/"' in html) is enabled
-    assert 'data-portal-link="login"' not in html
+    assert ('href="/en/login/"' in html) is enabled
+    assert ('data-portal-link="login"' in html) is enabled
     assert client.get('/en/signup/').status_code == (200 if enabled else 404)
     assert client.get('/es/signup/').status_code == (200 if enabled else 404)
+    assert client.get('/en/login/').status_code == (200 if enabled else 404)
+    assert client.get('/es/login/').status_code == (200 if enabled else 404)
 
 
 @pytest.mark.django_db

@@ -1,14 +1,15 @@
-"""The CAPTCHA of signup step 1: Cloudflare Turnstile (signup entry 9, CAP-11).
+"""The CAPTCHA of signup step 1 and of login: Cloudflare Turnstile (signup entry 9, CAP-11).
 
-The widget (static/js/signup-account.js) puts a single-use token in the step 1 form's
-`cf-turnstile-response` field; `verify_turnstile` checks it with Cloudflare's siteverify
+The widget (templates/includes/_turnstile.html, rendered by static/js/turnstile.js) puts a
+single-use token in its form's `cf-turnstile-response` field; `verify_turnstile` checks it with Cloudflare's siteverify
 (TURNSTILE_VERIFY_URL), sending the token, TURNSTILE_SECRET_KEY and the client IP. Neither
 the token nor the secret is ever logged.
 
 When siteverify cannot be reached (a timeout, an HTTP or network error, a body that is
 not its JSON) or answers that it could not decide (its own internal error, or our secret
-refused: a configuration fault), the answer is UNAVAILABLE: the step goes through and the
-caller logs `check_unavailable`, as for the other external checks (signup.disposable).
+refused: a configuration fault), the answer is UNAVAILABLE: the step (or the login) goes
+through and the caller logs `check_unavailable`, as for the other external checks
+(signup.disposable).
 """
 import json
 import logging
@@ -21,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 PASSED, FAILED, UNAVAILABLE = 'passed', 'failed', 'unavailable'
 
+# Cloudflare's Turnstile script, explicit rendering (static/js/turnstile.js renders each
+# widget, after a full load and after every htmx swap).
+TURNSTILE_SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
 # The form field the widget fills in.
 TOKEN_FIELD = 'cf-turnstile-response'
 # The check's name in `check_unavailable` events.
@@ -31,6 +35,12 @@ MAX_TOKEN_LENGTH = 2048
 # our secret (a configuration fault, reported as an error so Sentry alerts on it).
 _SERVICE_ERRORS = {'internal-error'}
 _SECRET_ERRORS = {'missing-input-secret', 'invalid-input-secret'}
+
+
+def widget_context():
+    """What templates/includes/_turnstile.html needs: the site key and the script."""
+    return {'turnstile_site_key': settings.TURNSTILE_SITE_KEY,
+            'turnstile_script': TURNSTILE_SCRIPT_URL}
 
 
 def post_siteverify(data):

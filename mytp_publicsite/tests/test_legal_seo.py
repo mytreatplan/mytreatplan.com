@@ -229,6 +229,34 @@ def test_portal_links_render_once_the_urls_exist(client, url, lang):
     assert f'href="/{lang}/login/" class="' in nav
     assert re.search(r'data-portal-link="signup">[^<]+</a>', nav)
     assert re.search(r'data-portal-link="login">[^<]+</a>', nav)
+    assert 'data-portal-link="logout"' not in nav
+    assert 'data-portal-link="portal"' not in nav
+
+
+@pytest.mark.django_db
+@override_settings(ROOT_URLCONF='mytp_publicsite.tests.urls_with_portal')
+@pytest.mark.parametrize('url, lang, portal, logout', [
+    ('/en/', 'en', 'Client portal', 'Log out'),
+    ('/es/privacy/', 'es', 'Portal de clientes', 'Cerrar sesión'),
+])
+def test_portal_links_for_a_logged_in_user(client, url, lang, portal, logout):
+    """Decision 2 of the login tracer bullet: "Client portal" and a Log out button (a POST
+    form) instead of Log in and Sign up."""
+    from django.contrib.auth import get_user_model
+
+    client.force_login(get_user_model().objects.create_user('doc@example.com', 'x' * 12))
+    html = _html(client, url)
+    nav = re.search(r'<nav[^>]*aria-label="(?:Main|Principal)".*?</nav>', html, re.S).group(0)
+
+    assert re.search(rf'href="/{lang}/welcome/" class="[^"]*" data-portal-link="portal">'
+                     rf'{portal}</a>', nav)
+    form = re.search(r'<form method="post" action="([^"]+)"[^>]*>(.*?)</form>', nav, re.S)
+    assert form.group(1) == f'/{lang}/logout/'
+    assert 'name="csrfmiddlewaretoken"' in form.group(2)
+    assert re.search(rf'<button type="submit"[^>]*data-portal-link="logout">{logout}</button>',
+                     form.group(2))
+    assert 'data-portal-link="login"' not in nav
+    assert 'data-portal-link="signup"' not in nav
 
 
 # --- Draft legal texts guard ----------------------------------------------------------

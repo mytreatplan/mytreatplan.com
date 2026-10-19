@@ -71,7 +71,7 @@
             <li><a href="#contact" class="{{ link }}">{% translate "contact" %}</a></li>
           </ul>
           {% endwith %}
-          {# Sign up and Login: only once those pages exist (URL names signup / login). #}
+          {# Log in and Sign up, or a logged-in user's Client portal and Log out: only once the portal is routed. #}
           {% include "includes/_portal_links.html" with ul_class="flex items-center gap-[clamp(10px,1.6vw,18px)] text-nav max-tablet:mt-3 max-tablet:[.js_&]:mt-0 max-tablet:[.js_&]:flex-col max-tablet:[.js_&]:gap-[26px] max-tablet:[.js_&]:text-[20px] tablet:border-l-2 tablet:border-ink/40 tablet:pl-[clamp(10px,2.2vw,26px)]" link="font-semibold max-tablet:[.js_&]:text-white" %}
           {# Language switcher: the same page in each language; the current one is marked. #}
           {% include "includes/_language_switcher.html" with ul_class="flex gap-[clamp(10px,1.6vw,18px)] text-nav max-tablet:mt-3 max-tablet:[.js_&]:mt-0 max-tablet:[.js_&]:gap-[26px] max-tablet:[.js_&]:text-[20px] tablet:border-l-2 tablet:border-ink/40 tablet:pl-[clamp(10px,2.2vw,26px)]" link="font-semibold max-tablet:[.js_&]:text-white" current="font-black text-white" %}

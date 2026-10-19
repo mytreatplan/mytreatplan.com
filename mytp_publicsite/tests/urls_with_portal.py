@@ -1,5 +1,6 @@
-"""Root URLconf for tests: the real one plus stand-in `signup` and `login` routes, as the
-portal epics will add them. Lets the tests see the nav's Sign up / Login links appear."""
+"""Root URLconf for tests: the real one plus stand-in `signup`, `login`, `logout` and
+`welcome` routes, as the portal epics add them. Lets the tests see the nav's portal links
+appear."""
 from django.conf.urls.i18n import i18n_patterns
 from django.http import HttpResponse
 from django.urls import path
@@ -14,5 +15,7 @@ def _stub(request):
 urlpatterns = list(site_urlpatterns) + i18n_patterns(
     path('signup/', _stub, name='signup'),
     path('login/', _stub, name='login'),
+    path('logout/', _stub, name='logout'),
+    path('welcome/', _stub, name='welcome'),
     prefix_default_language=True,
 )

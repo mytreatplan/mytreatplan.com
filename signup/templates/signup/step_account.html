@@ -40,16 +40,8 @@
 <div data-show-if-field="{{ form.how_found.auto_id }}" data-show-if-value="others">
 {% include "includes/_form_field.html" with field=form.how_found_other %}
 </div>
-{# The CAPTCHA (signup.captcha): Cloudflare Turnstile, managed mode, so most people never #}
-{# see a challenge. signup-account.js loads data-script and renders it, after a full load #}
-{# and after every swap (a new single-use token each time); the widget adds the #}
-{# cf-turnstile-response field to this form. #}
-{% get_current_language as LANGUAGE_CODE %}<div class="cf-turnstile" data-turnstile data-sitekey="{{ turnstile_site_key }}"
-     data-language="{{ LANGUAGE_CODE }}" data-script="{{ turnstile_script }}"></div>
-{# Shown by signup-account.js: when Cloudflare's script cannot load (e.g. a blocker), and #}
-{# while a submit waits for the widget's token (it is sent once the token arrives). #}
-<p class="rounded-12 border border-notice-border bg-notice-bg px-5 py-3 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert" hidden data-turnstile-error>{% translate "Our security check could not load. Please allow challenges.cloudflare.com or try another browser." %}</p>
-<p class="rounded-12 border border-line bg-panel px-5 py-3 text-[15px] leading-[1.5]" role="status" hidden data-turnstile-pending>{% translate "Checking your browser…" %}</p>
+{# The CAPTCHA (signup.captcha): the shared Turnstile widget and its notes. #}
+{% include "includes/_turnstile.html" %}
 {% endblock %}
 
 {% block extra %}
