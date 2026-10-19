@@ -1,8 +1,8 @@
 """Our limits on sending verification codes (otp-verification.md), on top of the
 provider's own code rules (signup.verification).
 
-Per contact and purpose (signup or resume): a new send is allowed COOLDOWN_SECONDS after
-the previous one, and at most HOURLY_SENDS sends (the first plus 3 resends) within
+Per contact and purpose (signup, resume or login): a new send is allowed COOLDOWN_SECONDS
+after the previous one, and at most HOURLY_SENDS sends (the first plus 3 resends) within
 WINDOW_SECONDS. Only successful sends count (`record_send`); switching a mobile to SMS is
 a send like any other. The times of the sends are kept in CACHES['default'] (the database
 cache), keyed by the contact's blind index, never the plain address or number.

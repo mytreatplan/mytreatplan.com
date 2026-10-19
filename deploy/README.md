@@ -21,7 +21,7 @@ team password (basic auth) and sends `X-Robots-Tag: noindex, nofollow`.
 | Off-region backups | nightly `backupdb` job → Object Storage SBG (`age`-encrypted); restore test: `restore-db.sh` |
 | Field keys | KMS-wrapped: `FIELD_KMS_KEYS`, `BLIND_INDEX_KMS_KEY` in `shared/settings.env` (`FIELD_KEY_PROVIDER=accounts.crypto.KMSKeyProvider`); password manager: key ids and wrapped values, never plain keys (step 12, "Keys (KMS)") |
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp/shared/kms-client.*`; daily `kmscheck` job |
-| Signup codes | Twilio Verify (email via SendGrid, WhatsApp, SMS); credentials in `shared/settings.env` ("Twilio Verify") |
+| Signup and login codes | Twilio Verify (email via SendGrid, WhatsApp, SMS); credentials in `shared/settings.env` ("Twilio Verify") |
 | Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -733,11 +733,14 @@ systemctl list-units --failed 'mytp-job@*'
 
 ## Twilio Verify
 
-Signup codes (the email code, the mobile code and the resume code) are sent and checked by
-Twilio Verify (`signup/twilio_verify.py`). Twilio generates, stores, expires and counts the
-codes: 6 digits, valid 10 minutes, invalid after 5 wrong attempts. Email goes through
-Verify's email channel (SendGrid), mobile through WhatsApp, else SMS. One Verify service
-serves every purpose (signup and resume). Until it is set up, staging stays on the fake
+Signup codes (the email code, the mobile code and the resume code) and the login code (the
+second factor) are sent and checked by Twilio Verify (`signup/twilio_verify.py`). Twilio
+generates, stores, expires and counts the codes: 6 digits, valid 10 minutes, invalid after
+5 wrong attempts. Email goes through Verify's email channel (SendGrid), mobile through
+WhatsApp, else SMS. One Verify service serves every purpose (signup, resume and login): a
+login code and a pending signup or resume code to the same contact share Twilio's pending
+code and its 5-attempt count (accepted: each proves control of the same contact). Our own
+cooldown and hourly limits are kept per purpose. Until it is set up, staging stays on the fake
 provider, which writes each code to the journal; `check --deploy` fails while the fake is
 selected (`mytp_publicsite.E006`).
 

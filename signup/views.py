@@ -16,11 +16,9 @@ checks and code sends (signup.steps.send_code). A blocked request gets the gener
 BLOCKED_MESSAGE, which reveals nothing, and is logged `rejected` with the reason.
 """
 import functools
-import math
 import time
 
 from django import forms
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
@@ -43,9 +41,9 @@ from .forms import (BLOCKED_CAPTCHA, BLOCKED_MESSAGE, EMAIL_EXISTS, EMAIL_PENDIN
 from . import captcha, limits
 from .models import PendingRegistration
 from .retention import remove_pending
-from .steps import (CODE_STATE_SESSION_KEY, HOURLY, SENT, STEPS, CodeStep,
-                    MobileCodeStep, code_state, get_step, log_ip_blocked, send_code)
-from .verification import CODE_TTL_SECONDS, EMAIL, PURPOSE_RESUME, SMS
+from .steps import (CODE_STATE_SESSION_KEY, SENT, STEPS, CodeStep, MobileCodeStep,
+                    code_help_context, get_step, log_ip_blocked, send_code)
+from .verification import EMAIL, PURPOSE_RESUME, SMS
 
 # The session holds only the pending registration's id, and the event log attempt's id.
 SESSION_KEY = 'signup_pending_id'
@@ -448,35 +446,8 @@ def _is_last(index, pending):
     return all(later.is_done(pending) for later in STEPS[index + 1:])
 
 
-def _code_help(request, page, form, contact, purpose, change_url=None, sms=False):
-    """The context of signup/_code_help.html for a code page: the state of its last send
-    (signup.steps.code_state), the one-time notice, whether the support contact shows
-    (the hourly limit, a failed send, or a code no longer valid), and whether a code
-    went to `contact` for `purpose` within its validity (`sent_recently`: only then
-    does the page say a code was sent)."""
-    state = code_state(request, page)
-    since = limits.seconds_since_last_send(contact, purpose)
-    expired = form.is_bound and any(
-        error.code == 'code_expired' for error in form.errors.as_data().get('code', ()))
-    notice = state.get('notice')
-    failed = bool(state.get('failed'))
-    return {
-        'page': page,
-        'channel': state.get('channel'),
-        'fallback': bool(state.get('fallback')),
-        'failed': failed,
-        'notice': notice,
-        'wait_seconds': state.get('wait') or 0,
-        'wait_minutes': math.ceil((state.get('wait') or 0) / 60),
-        'expired': expired,
-        'show_support': notice == HOURLY or failed or expired,
-        'support_email': settings.SIGNUP_SUPPORT_EMAIL,
-        'sent_recently': since is not None and since < CODE_TTL_SECONDS,
-        'change_url': change_url,
-        'sms': sms and state.get('channel') != SMS,
-        # The `blocked` notice (the per-IP limit on code sends): the generic error.
-        'blocked_message': BLOCKED_MESSAGE,
-    }
+# The context of signup/_code_help.html (shared with the login code page, accounts.views).
+_code_help = code_help_context
 
 
 def _back_index(index, pending):

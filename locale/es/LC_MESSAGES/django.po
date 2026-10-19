@@ -910,6 +910,7 @@ msgid ""
 msgstr "No hemos podido enviar un código a <strong class=\"text-ink\">%(email)s</strong>."
 
 #: signup/templates/signup/step_verify_mobile.html
+#: accounts/templates/accounts/login_code.html
 #, python-format
 msgid ""
 "We couldn't send a code to <strong class=\"text-ink\">%(phone)s</strong>."
@@ -1100,3 +1101,63 @@ msgstr "Cree una cuenta"
 #: templates/includes/_portal_links.html
 msgid "Log out"
 msgstr "Cerrar sesión"
+
+#: accounts/views.py
+msgid "Your login has expired. Please log in again."
+msgstr "Su inicio de sesión ha caducado. Vuelva a iniciar sesión."
+
+#: accounts/templates/accounts/login_choose.html
+msgid "Confirm it's you"
+msgstr "Confirme que es usted"
+
+#: accounts/templates/accounts/login_choose.html
+msgid ""
+"To finish logging in, we will send you a 6-digit code. Where should we send "
+"it?"
+msgstr "Para terminar de iniciar sesión, le enviaremos un código de 6 dígitos. ¿Dónde quiere recibirlo?"
+
+#: accounts/templates/accounts/login_choose.html
+msgid "Send the code to my email"
+msgstr "Enviar el código a mi correo electrónico"
+
+#: accounts/templates/accounts/login_choose.html
+msgid "Send the code to my mobile"
+msgstr "Enviar el código a mi móvil"
+
+#: accounts/templates/accounts/login_choose.html
+msgid "by WhatsApp, or by SMS"
+msgstr "por WhatsApp o por SMS"
+
+#: accounts/templates/accounts/login_choose.html
+#: accounts/templates/accounts/login_code.html
+msgid "Log in with another account"
+msgstr "Iniciar sesión con otra cuenta"
+
+#: accounts/templates/accounts/login_code.html
+msgid "Enter your code"
+msgstr "Introduzca su código"
+
+#: accounts/templates/accounts/login_code.html
+#, python-format
+msgid ""
+"We have sent a 6-digit code by SMS to <strong class=\"text-ink\">%(phone)s</"
+"strong>. Enter it below to log in."
+msgstr "Hemos enviado un código de 6 dígitos por SMS a <strong class=\"text-ink\">%(phone)s</strong>. Introdúzcalo a continuación para iniciar sesión."
+
+#: accounts/templates/accounts/login_code.html
+#, python-format
+msgid ""
+"We have sent a 6-digit code by WhatsApp to <strong class=\"text-ink\">"
+"%(phone)s</strong>. Enter it below to log in."
+msgstr "Hemos enviado un código de 6 dígitos por WhatsApp a <strong class=\"text-ink\">%(phone)s</strong>. Introdúzcalo a continuación para iniciar sesión."
+
+#: accounts/templates/accounts/login_code.html
+#, python-format
+msgid ""
+"We have sent a 6-digit code to <strong class=\"text-ink\">%(contact)s</"
+"strong>. Enter it below to log in."
+msgstr "Hemos enviado un código de 6 dígitos a <strong class=\"text-ink\">%(contact)s</strong>. Introdúzcalo a continuación para iniciar sesión."
+
+#: accounts/templates/accounts/login_code.html
+msgid "Get the code another way"
+msgstr "Recibir el código de otra forma"

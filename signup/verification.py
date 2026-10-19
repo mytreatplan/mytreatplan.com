@@ -1,5 +1,5 @@
 """Verification codes for signup: the email, the mobile (WhatsApp, else SMS) and the
-resume code.
+resume code; and the login code (accounts.views, the second factor).
 
 A provider sends a code to a contact and later checks the code the person typed. The
 code rules belong to the provider, as with Twilio Verify (entry 11): 6 digits, valid for
@@ -43,6 +43,8 @@ CONTACT_KINDS = {EMAIL: EMAIL, WHATSAPP: MOBILE, SMS: MOBILE}
 PURPOSE_SIGNUP = 'signup'
 # Resuming a signup in progress (signup entry 5): a signup code does not work here.
 PURPOSE_RESUME = 'resume'
+# The second factor at login (epic-login entry 2): its own cooldown and hourly counters.
+PURPOSE_LOGIN = 'login'
 
 CODE_LENGTH = 6
 # How long a code is valid after it was first sent.
