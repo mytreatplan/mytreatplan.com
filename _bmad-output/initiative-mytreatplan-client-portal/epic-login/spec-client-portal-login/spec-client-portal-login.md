@@ -33,7 +33,7 @@ Vision plus mandate. Signup (epic 2) creates verified Doctor accounts, but nobod
   - **intent:** Logins are recorded with their date and time, IP and browser information.
   - **success:**
     - Every successful login leaves one record with its time, IP and browser information, tied to the account.
-    - Failures are counted per account, and the count resets after a successful login. The first failure leaves no record; the second and later consecutive failures each leave one.
+    - Wrong passwords and wrong second-factor codes are counted separately, per account, and both counts reset after a successful login. The first failure leaves no record; the second and later consecutive failures each leave one.
     - Failures for an email with no account (a typo, confusion or an attack) are recorded by the same rule, with no account attached.
 - **CAP-4**
   - **intent:** Every full page shown to a logged-in Doctor is recorded with the page and its date and time.
@@ -45,7 +45,7 @@ Vision plus mandate. Signup (epic 2) creates verified Doctor accounts, but nobod
   - **success:**
     - Every login attempt needs the CAPTCHA, as the reset request does.
     - Requests beyond signup's per-IP limits are refused with a generic error that reveals nothing.
-    - 5 wrong passwords, or 5 wrong second-factor codes, lock the account for 10 minutes.
+    - 5 wrong passwords, or 5 wrong second-factor codes (each on its own count), lock the account for 10 minutes.
 - **CAP-6**
   - **intent:** A logged-in Doctor logs out.
   - **success:** After logging out, the session is ended, and registered-area pages send the Doctor to login.
@@ -74,7 +74,7 @@ Vision plus mandate. Signup (epic 2) creates verified Doctor accounts, but nobod
 - Activity is recorded through signup's log service (`eventlog`), not a separate store.
 - Activity records, IP and User-Agent included, are kept intact for 5 years, a legal requirement, with no anonymization step. An erased account's activity is kept for the same 5 years as proof of behaviour, so it must outlive the account's deletion. Today the log's retention job anonymizes every attempt at 30 days and deletes it at 2 years, so it must treat activity records separately.
 - Activity tracking is covered by the Terms and Conditions and the service conditions; there is no separate notice.
-- The reset email is sent through the existing SendGrid account for now. Other providers will be considered before the final choice. Today the default mail backend is the console.
+- The reset email is sent through the existing SendGrid account for now. The final provider is chosen before production. Today the default mail backend is the console.
 - Login redirects to the welcome route created by epic 2. `LOGIN_URL` points at login once it exists.
 - Deactivated and erased accounts can't log in. Erasing an account deactivates it (`accounts.erasure`).
 - Login, reset and second-factor messages never reveal whether an account exists.
