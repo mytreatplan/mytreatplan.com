@@ -9,7 +9,8 @@ skips the next steps that are already done (`is_done`, e.g. the email code once 
 is verified); when none is left it creates the account (signup.views._create_account).
 The code steps (`CodeStep`: the email, then the mobile) share the sending, our limits
 (signup.limits) and the answer to a failed send (`send_code`, also used by the resume
-page).
+page and the login code page, accounts.views), and the context of the help under the
+code form (`code_help_context`).
 
 Every step is logged in the event log (eventlog.service) by the views: its rejected
 fields, and `saved_event` once saved, with the values `log_fields` names. A step lists
@@ -18,8 +19,10 @@ A form may also list external checks it could not make in `unavailable_checks`, 
 (field, check) pairs; each is logged as `check_unavailable`.
 """
 import logging
+import math
 from collections import namedtuple
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone, translation
@@ -33,11 +36,11 @@ from accounts.models import phone_index_or_blank
 from legal.models import LegalChoice, LegalDocument
 
 from . import captcha, limits
-from .forms import (BLOCKED_RATE_LIMIT, OTP_RATE_LIMITED, OTP_SEND_FAILED, AccountForm,
-                    EmailCodeForm, LegalForm, MobileCodeForm, national_number)
+from .forms import (BLOCKED_MESSAGE, BLOCKED_RATE_LIMIT, OTP_RATE_LIMITED, OTP_SEND_FAILED,
+                    AccountForm, EmailCodeForm, LegalForm, MobileCodeForm, national_number)
 from .models import PendingRegistration
-from .verification import (EMAIL, PURPOSE_SIGNUP, SMS, WHATSAPP, ChannelUnavailable,
-                           VerificationError, contact_kind, get_provider)
+from .verification import (CODE_TTL_SECONDS, EMAIL, PURPOSE_SIGNUP, SMS, WHATSAPP,
+                           ChannelUnavailable, VerificationError, contact_kind, get_provider)
 
 logger = logging.getLogger(__name__)
 
@@ -347,6 +350,38 @@ def _send(request, attempt, page, contact, purpose, channel, resend, field, log_
     outcome = SendOutcome(SENT, channel, fallback, 0)
     _store_outcome(request, page, outcome)
     return outcome
+
+
+def code_help_context(request, page, form, contact, purpose, change_url=None, sms=False):
+    """The context of signup/_code_help.html for a code page (the code steps, the resume
+    page, and the login code page in accounts.views): the state of its last send
+    (`code_state`), the one-time notice, whether the support contact shows (the hourly
+    limit, a failed send, or a code no longer valid), and whether a code went to
+    `contact` for `purpose` within its validity (`sent_recently`: only then does the page
+    say a code was sent)."""
+    state = code_state(request, page)
+    since = limits.seconds_since_last_send(contact, purpose)
+    expired = form.is_bound and any(
+        error.code == 'code_expired' for error in form.errors.as_data().get('code', ()))
+    notice = state.get('notice')
+    failed = bool(state.get('failed'))
+    return {
+        'page': page,
+        'channel': state.get('channel'),
+        'fallback': bool(state.get('fallback')),
+        'failed': failed,
+        'notice': notice,
+        'wait_seconds': state.get('wait') or 0,
+        'wait_minutes': math.ceil((state.get('wait') or 0) / 60),
+        'expired': expired,
+        'show_support': notice == HOURLY or failed or expired,
+        'support_email': settings.SIGNUP_SUPPORT_EMAIL,
+        'sent_recently': since is not None and since < CODE_TTL_SECONDS,
+        'change_url': change_url,
+        'sms': sms and state.get('channel') != SMS,
+        # The `blocked` notice (the per-IP limit on code sends): the generic error.
+        'blocked_message': BLOCKED_MESSAGE,
+    }
 
 
 class CodeStep(Step):

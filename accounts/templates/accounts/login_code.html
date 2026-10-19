@@ -1,0 +1,40 @@
+{% extends "portal_base.html" %}
+{% load i18n %}
+{% comment %}
+The second factor's code page (accounts.views.login_code): the code sent to the chosen contact,
+shown masked (decision 3), with signup's help under the form (signup/_code_help.html: resend,
+"Send by SMS instead", the notices, the support contact). The intro mirrors signup's code
+steps (step_verify_email.html, step_verify_mobile.html). Reached only with a pending login.
+{% endcomment %}
+
+{% block title %}{% translate "Enter your code" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Enter your code" %}</h1>
+<div class="mt-3 text-copy text-ink-muted">
+  {% if code.failed %}<p>{% if kind == "mobile" %}{% blocktranslate with phone=contact %}We couldn't send a code to <strong class="text-ink">{{ phone }}</strong>.{% endblocktranslate %}{% else %}{% blocktranslate with email=contact %}We couldn't send a code to <strong class="text-ink">{{ email }}</strong>.{% endblocktranslate %}{% endif %}</p>
+  {% elif not code.sent_recently %}<p data-no-code>{% translate "Ask for a new code below to continue." %}</p>
+  {% elif kind == "mobile" and code.channel == "sms" %}{% if code.fallback %}<p data-sms-fallback>{% translate "WhatsApp is not available for this number, so we sent the code by SMS." %}</p>{% endif %}<p{% if code.fallback %} class="mt-3"{% endif %} data-sent="sms">{% blocktranslate with phone=contact %}We have sent a 6-digit code by SMS to <strong class="text-ink">{{ phone }}</strong>. Enter it below to log in.{% endblocktranslate %}</p>
+  {% elif kind == "mobile" and code.channel == "whatsapp" %}<p data-sent="whatsapp">{% blocktranslate with phone=contact %}We have sent a 6-digit code by WhatsApp to <strong class="text-ink">{{ phone }}</strong>. Enter it below to log in.{% endblocktranslate %}</p>
+  {% else %}<p data-sent="{{ kind }}">{% blocktranslate %}We have sent a 6-digit code to <strong class="text-ink">{{ contact }}</strong>. Enter it below to log in.{% endblocktranslate %}</p>
+  {% endif %}
+</div>
+
+<form method="post" action="{% url 'login_code' %}" class="mt-8 flex flex-col gap-5" novalidate data-login-code>
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+  <ul class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert">
+    {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% include "includes/_form_field.html" with field=form.code %}
+  <button type="submit" class="mt-2 min-h-[52px] cursor-pointer rounded-pill bg-ink px-8 text-[16px] font-black leading-none tracking-[-0.01em] text-white transition hover:-translate-y-[2px] hover:bg-green hover:text-ink hover:shadow-lift focus-visible:shadow-focus-pill focus-visible:outline-none">
+    {% translate "Log in" %}
+  </button>
+</form>
+{% include "signup/_code_help.html" with kind=kind %}
+<p class="mt-8 flex flex-wrap justify-between gap-x-6 gap-y-3 text-[15px]">
+  <a href="{% url 'login_verify' %}" class="font-semibold text-ink-muted underline underline-offset-4 hover:text-ink" data-change-contact>{% translate "Get the code another way" %}</a>
+  <a href="{% url 'login' %}" class="ml-auto font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Log in with another account" %}</a>
+</p>
+{% endblock %}

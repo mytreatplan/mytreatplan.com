@@ -10,3 +10,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-client-portal/epic-client-portal-signup/story-kms-key-provider-plan.md`
   summary: KMS service key rotation for field encryption: let `accounts.crypto.KMSKeyProvider` unwrap data keys wrapped by more than one service key (an old and a new `KMS_SERVICE_KEY_ID`), with a documented procedure to rewrap `FIELD_KMS_KEYS` and `BLIND_INDEX_KMS_KEY` under the new service key and retire the old one.
   evidence: The 2.12 provider supports data key rotation only; one `KMS_SERVICE_KEY_ID` unwraps every key, and `deploy/README.md` leaves service key rotation to a follow-up story (story 2.12 plan, Implementation Notes). Recorded by the refactor sweep (ticket 13, 2026-10-18).
+- source_plan: `_bmad-output/initiative-mytreatplan-client-portal/epic-login/story-second-factor-at-login-plan.md`
+  summary: The admin site's login (`/admin/`, Django's own login form) has no second factor and no CAPTCHA. For the admin epics (decided by the user, 2026-10-19): add both there.
+  evidence: Story 3.2 adds the Twilio Verify code to the portal login only; decision 4 of its plan keeps the admin site out of scope. Staff accounts log in to `/admin/` with a password alone.

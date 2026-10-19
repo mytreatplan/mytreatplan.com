@@ -1,6 +1,7 @@
 """Login tracer bullet (epic-login entry 1): every row of the plan's I/O matrix: login and
 logout, the CAPTCHA, the safe `next`, the generic error, the portal switch, the nav, and
-Spanish."""
+Spanish. Since entry 2 a right password is followed by the code (`_login_with_code`); the
+second factor itself is tested in test_login_code.py."""
 import logging
 import re
 
@@ -14,7 +15,10 @@ from conftest import TURNSTILE_FAIL_SECRET, TURNSTILE_TEST_TOKEN
 from signup.captcha import TOKEN_FIELD
 from signup.forms import BLOCKED_MESSAGE
 from signup.tests.conftest import clear_cache  # noqa: F401 - autouse, this module only
-from signup.tests.helpers import EMAIL_ADDRESS, NORMALIZED, PASSWORD, _complete
+from signup.tests.conftest import clock  # noqa: F401 - fixture
+from signup.tests.helpers import (EMAIL_ADDRESS, MOBILE_E164, NORMALIZED, PASSWORD,
+                                  _complete, _current_code)
+from signup.verification import EMAIL, PURPOSE_LOGIN, SMS
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 
@@ -41,6 +45,21 @@ def _login(client, email=EMAIL_ADDRESS, password=PASSWORD, lang='en', query='', 
         **(extra or {}))
 
 
+def _login_with_code(client, contact='email', lang='en', extra=None, **kwargs):
+    """`_login` (the password), then the second factor: choose `contact` ('email' or
+    'mobile') and post the right code. Returns the response to the code."""
+    response = _login(client, lang=lang, extra=extra, **kwargs)
+    assert response.status_code == 302, response.context['form'].errors
+    assert response['Location'] == f'/{lang}/login/verify/'
+    response = client.post(f'/{lang}/login/verify/', {'contact': contact}, **(extra or {}))
+    assert response['Location'] == f'/{lang}/login/code/'
+    if contact == 'email':
+        code = _current_code(EMAIL, NORMALIZED, PURPOSE_LOGIN)
+    else:
+        code = _current_code(SMS, MOBILE_E164, PURPOSE_LOGIN)
+    return client.post(f'/{lang}/login/code/', {'code': code}, **(extra or {}))
+
+
 def _logged_in(client):
     return SESSION_KEY in client.session
 
@@ -53,7 +72,7 @@ def _html(response):
 
 @pytest.mark.parametrize('email', [NORMALIZED, NORMALIZED.upper(), EMAIL_ADDRESS])
 def test_signup_user_logs_in_with_email_in_any_case(client, doctor, email):
-    response = _login(client, email=email)
+    response = _login_with_code(client, email=email)
 
     assert response.status_code == 302
     assert response['Location'] == '/en/welcome/'
@@ -77,12 +96,13 @@ def test_login_page_shows_the_form_and_the_widget(client):
     assert 'noindex' in html
 
 
-def test_safe_next_is_honoured(client, doctor):
-    response = _login(client, query='?next=/en/welcome/')
+def test_safe_next_is_honoured(client, doctor, clock):
+    response = _login_with_code(client, query='?next=/en/welcome/')
     assert response['Location'] == '/en/welcome/'
 
     client.logout()
-    response = _login(client, next='/es/welcome/')
+    clock.advance(61)  # past the login code's cooldown
+    response = _login_with_code(client, next='/es/welcome/')
     assert response['Location'] == '/es/welcome/'
 
 
@@ -91,7 +111,7 @@ def test_safe_next_is_honoured(client, doctor):
 def test_unsafe_next_goes_to_welcome(client, doctor, unsafe):
     """Another host, a scheme-relative URL, and plain HTTP while the request is HTTPS are
     refused, as Django's LoginView refuses them."""
-    response = _login(client, next=unsafe, extra={'secure': True})
+    response = _login_with_code(client, next=unsafe, extra={'secure': True})
 
     assert response.status_code == 302
     assert response['Location'] == '/en/welcome/'
@@ -101,7 +121,7 @@ def test_unsafe_next_goes_to_welcome(client, doctor, unsafe):
 @pytest.mark.parametrize('relative', ['foo', 'logout'])
 def test_relative_next_is_a_literal_url(client, doctor, relative):
     """A safe `next` without a slash is a relative URL, never reversed as a view name."""
-    response = _login(client, next=relative)
+    response = _login_with_code(client, next=relative)
 
     assert response.status_code == 302
     assert response['Location'] == relative
@@ -240,8 +260,8 @@ def test_unavailable_captcha_lets_the_login_through_and_is_logged(client, doctor
     with caplog.at_level(logging.WARNING):
         response = _login(client)
 
-    assert response['Location'] == '/en/welcome/'
-    assert _logged_in(client)
+    assert response['Location'] == '/en/login/verify/'  # on to the second factor
+    assert not _logged_in(client)
     messages = [record.getMessage() for record in caplog.records
                 if record.name == 'accounts.views']
     assert messages == ['check_unavailable: step=login field=captcha reason=turnstile']
@@ -377,7 +397,7 @@ def test_spanish_page_error_and_messages(client, doctor):
     response = _login(client, lang='es', password='wrong-password-123')
     assert SPANISH_ERROR in _html(response)
 
-    response = _login(client, lang='es')
+    response = _login_with_code(client, lang='es')
     assert response['Location'] == '/es/welcome/'
     nav = _nav(_html(client.get('/es/welcome/')))
     assert 'Portal de clientes' in nav and 'Cerrar sesión' in nav

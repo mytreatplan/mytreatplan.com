@@ -15,9 +15,13 @@ provider turns into SendFailed / CheckFailed. TWILIO_ACCOUNT_SID names the accou
 and the service belong to; it is required (signup.E001) but not sent, as an API key
 already identifies its account.
 
-One Verify service serves every purpose: a resume code and a signup code to the same
-email share Twilio's pending verification (either proves control of the email).
-`purpose` only reaches our limits and logs.
+One Verify service serves every purpose (signup, resume and login): codes for different
+purposes to the same contact share Twilio's pending verification and its 5-attempt count.
+A resume code and a signup code to the same email are interchangeable (either proves
+control of the email); so are a login code and a pending signup or resume code to the
+same contact, and wrong attempts at one count against the other. Accepted (epic-login
+entry 2, decision 1): every purpose proves control of the same contact. `purpose` only
+reaches our limits and logs.
 
 Errors carry only Twilio's error code and the HTTP status: never the contact, the code or
 the credentials. This module logs on `signup.verification`, which Sentry ignores; failures

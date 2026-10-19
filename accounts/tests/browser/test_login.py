@@ -1,7 +1,7 @@
-"""Login tracer bullet (epic-login entry 1) in Chromium against live_server: a Doctor
-created by signup through the real pages logs out from the nav, logs in through the login
-page (the Turnstile widget holds the submit until its token arrives) and lands on the
-welcome screen."""
+"""Login (epic-login entries 1 and 2) in Chromium against live_server: a Doctor created by
+signup through the real pages logs out from the nav, logs in through the login page (the
+Turnstile widget holds the submit until its token arrives), chooses where the code goes,
+types it and lands on the welcome screen."""
 import pytest
 
 pytest.importorskip('pytest_playwright')
@@ -9,10 +9,11 @@ pytest.importorskip('pytest_playwright')
 from playwright.sync_api import expect  # noqa: E402
 
 from conftest import TURNSTILE_TEST_TOKEN  # noqa: E402
-from signup.tests.browser.helpers import (enter_code, mobile_code, press,  # noqa: E402
-                                          to_mobile_step)
+from signup.tests.browser.helpers import (email_code, enter_code, mobile_code,  # noqa: E402
+                                          new_page, press, to_mobile_step)
 from signup.forms import BLOCKED_MESSAGE  # noqa: E402
 from signup.tests.helpers import EMAIL_ADDRESS, PASSWORD  # noqa: E402
+from signup.verification import PURPOSE_LOGIN  # noqa: E402
 
 pytestmark = [
     pytest.mark.browser,
@@ -71,6 +72,23 @@ def test_signup_user_logs_out_and_logs_in(live_server, page):
     # Held, not sent without a token (which would show the blocked page).
     expect(page.get_by_text(str(BLOCKED_MESSAGE))).to_have_count(0)
 
+    # The second factor: the choice (contacts masked), then the code sent to the email.
+    expect(page).to_have_url(f'{live_server.url}/en/login/verify/')
+    expect(page.locator('h1')).to_have_text("Confirm it's you")
+    expect(page.locator('button[value="email"]')).to_contain_text(
+        'a\u2022\u2022\u2022@example.com')
+    expect(page.locator('button[value="mobile"]')).to_contain_text(
+        '+34 \u2022\u2022\u2022 \u2022\u2022\u2022 374')
+    new_page(page, page.locator('button[value="email"]').click)
+    expect(page).to_have_url(f'{live_server.url}/en/login/code/')
+    expect(page.locator('[data-sent="email"]')).to_be_visible()
+
+    # A wrong code first, then the right one.
+    enter_code(page, '000000' if email_code(purpose=PURPOSE_LOGIN) != '000000' else '111111',
+               'Log in')
+    expect(page.get_by_text(
+        'This code is not correct. Check it, or send a new one.')).to_be_visible()
+    enter_code(page, email_code(purpose=PURPOSE_LOGIN), 'Log in')
     expect(page).to_have_url(f'{live_server.url}/en/welcome/')
     expect(page.locator('h1')).to_have_text('Welcome to MyTreatPlan')
 
