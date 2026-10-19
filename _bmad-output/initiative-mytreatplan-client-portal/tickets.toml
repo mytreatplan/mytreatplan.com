@@ -5,6 +5,7 @@ id = 1
 slug = "epic-landing-integration"
 title = "Public site and platform baseline"
 covers = ["I1", "I2", "I5"]
+after = [{ epic = 3, needs = "transactional email (3.9) for the contact form (1.5)" }]
 
 [[epic]]
 id = 2
@@ -19,6 +20,6 @@ slug = "epic-login"
 title = "Doctors log in and recover access"
 covers = ["I4"]
 after = [
-  { epic = 2, needs = "user model and blind-index lookup (2.2), signup event log service (2.3), rate limits and CAPTCHA (2.9), welcome route (2.1)" },
-  { epic = 1, needs = "transactional email for password reset" },
+  { epic = 2, needs = "user model and blind-index lookup (2.2), signup event log service (2.3), rate limits and CAPTCHA (2.9), welcome route (2.1), retention jobs (2.10), Twilio Verify (2.11)" },
+  { epic = 1, needs = "production environment (1.12) for the go-live entry" },
 ]

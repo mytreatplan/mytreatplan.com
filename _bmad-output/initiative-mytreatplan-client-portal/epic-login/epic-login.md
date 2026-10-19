@@ -44,4 +44,9 @@ Authentication and activity logging. Not signup (epic 2), not profile, billing o
 ## Notes
 
 - Waits on epic 2 because: login looks users up through 2.2's blind index, logs activity through 2.3's log service, reuses 2.9's rate limits and CAPTCHA, and redirects to 2.1's welcome route.
-- Waits on epic 1 because: password reset sends email through epic 1's transactional email.
+- Waits on epic 2 also for 2.10's retention jobs and 2.11's Twilio Verify integration.
+- Waits on epic 1 because: the go-live entry needs the production environment (1.12).
+- Decision (2026-10-19): breakdown of 13 entries. Entry 1 is the tracer bullet (login page to welcome and logout). Entries 1–6 are one lane on the login flow, in order. Entry 9 (email) runs off the lane; 7 and 8 follow the records and sessions they use. Entries 11 → 12 → 13 close the epic.
+- Decision (2026-10-19): this epic owns transactional email (entry 9, SendGrid). Landing 1.5 reuses it, so the reset isn't blocked by 1.5's wait for marketing.
+- Decision (2026-10-19): the final email provider must be chosen before production; recorded as entry 13's unknown.
+- Decision (2026-10-19): wrong passwords and wrong second-factor codes have separate counters. 5 of either locks the account for 10 minutes, and wrong codes are recorded like failed logins, from the second.

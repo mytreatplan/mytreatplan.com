@@ -1,0 +1,145 @@
+# Entries of epic-login. Table order is the build order; ids are permanent.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Login tracer bullet"
+description = "Adds the login page (email and password, Turnstile CAPTCHA on every attempt, one generic error for a wrong password, an unknown email or an inactive or erased account) and logout, in EN/ES behind the portal switch. Login lands on 2.1's welcome route; LOGIN_URL, the nav's Login link and the registered-area redirects point at login. Users are found through 2.2's blind index (accounts.backends.EmailBackend). Entries 2 to 6 extend this login flow, in that order (one lane)."
+verify = "Locally a Doctor created by signup logs in (email typed in any case) and lands on the welcome screen, logs out and is sent to login from the welcome URL; a wrong password, an unknown email, a deactivated and an erased account get the same error; tests pass."
+covers = ["CAP-1", "CAP-6", "CAP-5"]
+after = ["2.1", "2.2", "2.9"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Second factor at login"
+description = "After a correct password, the Doctor chooses email or mobile and enters a code sent through 2.11's verification provider (mobile by WhatsApp first, then SMS); only the right code completes the login, with Twilio Verify's rules (6 digits, 10 minutes, invalid after 5 wrong attempts). Its pages are in EN/ES. Uses the fake provider in development and tests. Entry 5 adds the lockout after 5 wrong codes."
+verify = "Locally, after the password, a code to the chosen email or mobile completes the login and a wrong one does not; WhatsApp falls back to SMS; tests pass."
+covers = ["CAP-7"]
+after = [1, "2.11"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Remember this device for 90 days"
+description = "Adds the 'Remember me on this device/browser for 90 days' choice at the second factor; on that browser, logins within 90 days skip the code; EN/ES. The remembered-device mark survives logout and the session ends of entry 6. It is the only 'remember me': sessions keep their own idle limit (entry 6)."
+verify = "After ticking it, a new login in the same browser needs no code; another browser, or the same after 90 days (clock moved), needs one; tests pass."
+covers = ["CAP-8"]
+after = [2]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Login records"
+description = "Records each successful login with time, IP and User-Agent through 2.3's log service, tied to the account by its stable id (the user pk, not the email blind index, which erasure replaces), a link `eventlog` lacks today and that outlives the account's deletion; no personal value reaches Sentry; keeps per-account failure counters that reset on a successful login, one for wrong passwords and one for wrong second-factor codes, and records the second and later consecutive failures of each, including password failures for emails with no account. Owns the activity-record API entry 7 reuses and the counters entry 5 locks on."
+verify = "A login leaves one record with time, IP and User-Agent; one failure leaves none, a second leaves one, for passwords and for codes alike; a failure for an unknown email is recorded with no account; tests pass."
+covers = ["CAP-3"]
+after = [3, "2.3"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Lockout and login rate limits"
+description = "Locks an account for 10 minutes after 5 wrong passwords or 5 wrong second-factor codes, each on its own counter from entry 4, and adds per-IP limits on login attempts with 2.9's limits; refusals show the generic error and reveal nothing."
+verify = "5 wrong passwords, or 5 wrong codes, lock the account: the right password is refused until 10 minutes pass (clock moved); requests over the IP limit get the generic error; tests pass."
+covers = ["CAP-5"]
+after = [4, "2.9"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 6
+type = "story"
+title = "One session per Doctor with an idle limit"
+description = "A new login ends the Doctor's older session; a logged-in session with no request for 15 minutes ends, set as the session's expiry so the clearsessions job removes it (signup's own 30-minute wizard idle, 2.8, is unchanged); entry 3's remembered-device mark survives these ends. Owns the per-account session tracking entry 10 uses to end every session after a reset."
+verify = "Logging in from a second browser logs the first out; after 15 idle minutes (clock moved) a page sends the Doctor to login; tests pass."
+covers = ["CAP-9"]
+after = [5]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Page-request records"
+description = "Records every full HTML page shown to a logged-in Doctor (page and time) through entry 4's activity-record API; htmx partials, static files and redirects are not recorded. Its middleware goes after entry 6's session middleware."
+verify = "Opening the welcome page leaves one record of that page for the account; an htmx request and a static file leave none; tests pass."
+covers = ["CAP-4"]
+after = [4, 6]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Five-year retention of activity records"
+description = "Keeps login and page-request records, IP and User-Agent included, intact for 5 years and then deletes them, separately from the signup log's 30-day anonymization and 2-year deletion (encryption-policy.md's Logs row applies to signup attempts; activity records keep the same field encryption); an erased account's records survive its purge for the same 5 years. A daily job with its Sentry monitor, as the other retention jobs."
+verify = "A record 5 years and a day old is deleted by the job, a younger one stays intact; records of a purged erased account remain; signup attempts keep their 30-day and 2-year rules; tests pass."
+covers = ["CAP-3", "CAP-4"]
+after = [4, 7, "2.10"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Transactional email through SendGrid"
+description = "Sends the portal's transactional email through the existing SendGrid account (API key and from address typed into settings.env by a person; sender domain authenticated in SendGrid), with a deploy check that fails while production would use the console backend; epic 1's contact form (1.5) can reuse it. Entry 10 sends the reset email through it."
+verify = "On staging a test email from manage.py reaches a real inbox from the authenticated domain; check --deploy fails with the console backend; tests pass."
+covers = ["CAP-2"]
+after = []
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Password reset"
+description = "Forgot-password at URL name `password_reset` (opened by signup's recovery link): the request page (CAPTCHA, per-IP limits, the same answer for any email) emails through entry 9 a link valid 1 hour and usable once, which sets a new password meeting signup's password policy, ends every session of the Doctor through entry 6's tracking, and does not log them in; EN/ES emails."
+verify = "Locally a reset email arrives (console), its link sets a new password once, a second use and a link older than an hour are refused, the old session is ended and the new password logs in; tests pass."
+covers = ["CAP-2", "CAP-5"]
+after = [1, 6, 9]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
+verify = "The full test suite passes; deferred review findings are closed or recorded."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 12
+type = "story"
+title = "Login end-to-end suite"
+description = "Browser tests with the fake provider for the spec's success signal: login with the second factor, the remembered device, logout, password reset through the emailed link, the single session and idle limit, the lockout, and the activity records."
+verify = "The suite passes in CI (PostgreSQL 17, DEBUG off)."
+covers = ["CAP-1", "CAP-2", "CAP-3", "CAP-4", "CAP-5", "CAP-6", "CAP-7", "CAP-8", "CAP-9"]
+after = [11]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 13
+type = "story"
+title = "Signup and login go live in production"
+description = "Delivers the epic's Done when 5: turns the portal on in production once the production environment exists: production settings (Twilio, SendGrid from entry 9, Turnstile, KMS, retention), the production checks of signup and login, and PORTAL_ENABLED on together."
+verify = "In production a new Doctor signs up, logs out, and logs in with the second factor."
+covers = []
+after = [12, "1.12"]
+hitl = true
+risk = "high"
+unknown = "Final transactional email provider: SendGrid is used for now; other options are to be considered before production."

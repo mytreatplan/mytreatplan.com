@@ -83,13 +83,13 @@ risk = "high"
 id = 5
 type = "story"
 title = "Contact form"
-description = "Adds the contact form with the existing fields and limits, the anti-spam checks from enviar.php (honeypot, JS flag, minimum fill time, per-sender hourly limit on Django's database cache), HTMX submission in EN and ES, storage with admin listing, and email to the company inbox through SendGrid as Django's email backend from environment secrets (epic 3's password reset reuses it); marketing provides the SendGrid credentials and the inbox address."
+description = "Adds the contact form with the existing fields and limits, the anti-spam checks from enviar.php (honeypot, JS flag, minimum fill time, per-sender hourly limit on Django's database cache), HTMX submission in EN and ES, storage with admin listing, and email to the company inbox through the transactional email set up by epic-login entry 3.9 (SendGrid as Django's email backend); marketing provides the inbox address."
 verify = "Tests show valid submissions are stored and emailed (locmem backend) and each anti-spam rule silently drops the bot case; on staging a real message reaches the inbox."
 covers = ["E5"]
-after = [4, 13]
+after = [4, 13, "3.9"]
 hitl = true
 risk = "medium"
-unknown = "SendGrid credentials and the inbox address, from marketing."
+unknown = "The inbox address, from marketing."
 
 [[entry]]
 id = 9
