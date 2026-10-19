@@ -20,14 +20,15 @@ A Doctor created by signup logs in and gets back into the portal after forgettin
 
 ## Requirements
 
-Planned at this epic's inception, from initiative I4. Needs its own spec.
+Spec: `spec-client-portal-login/` (CAP-1 to CAP-9), written 2026-10-18/19 from initiative I4 and this epic.
 
 ## Done when
 
-1. A Doctor created by signup logs in with email and password.
+1. A Doctor created by signup logs in with email, password and a second factor: a Twilio Verify code to the email or the mobile, as the Doctor chooses. The device can be remembered for 90 days.
 2. Forgot-password resets the password; the signup recovery link (URL name `password_reset`) opens it.
-3. Each login records date/time, IP and browser info; each page request records the page and date/time.
-4. Signup and login are live in production together.
+3. Each login records date/time, IP and browser info; each page request records the page and date/time. The records are kept 5 years.
+4. A Doctor has one session at a time: a new login ends the older one, and a session idle for 15 minutes ends.
+5. Signup and login are live in production together.
 
 ## Boundaries
 
@@ -36,6 +37,7 @@ Authentication and activity logging. Not signup (epic 2), not profile, billing o
 ## References
 
 - parent — ../initiative-mytreatplan-client-portal.md, Requirements I4
+- spec — spec-client-portal-login/spec-client-portal-login.md
 - spec — ../epic-client-portal-signup/spec-client-portal-signup/spec-client-portal-signup.md, section Non-goals (former CAP-12)
 - constraint — ../epic-client-portal-signup/spec-client-portal-signup/encryption-policy.md, row Uniqueness and lookups
 
