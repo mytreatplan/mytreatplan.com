@@ -1076,3 +1076,27 @@ msgstr "No, volver atrás"
 #: templates/admin/accounts/user/erase_confirmation.html
 msgid "Home"
 msgstr "Inicio"
+
+#: accounts/forms.py
+msgid "The email address or password is not correct."
+msgstr "El correo electrónico o la contraseña no son correctos."
+
+#: accounts/views.py
+msgid "You have logged out."
+msgstr "Ha cerrado la sesión."
+
+#: accounts/templates/accounts/login.html
+msgid "Log in to your MyTreatPlan client portal."
+msgstr "Inicie sesión en su portal de clientes de MyTreatPlan."
+
+#: accounts/templates/accounts/login.html
+msgid "New to MyTreatPlan?"
+msgstr "¿Es nuevo en MyTreatPlan?"
+
+#: accounts/templates/accounts/login.html
+msgid "Create an account"
+msgstr "Cree una cuenta"
+
+#: templates/includes/_portal_links.html
+msgid "Log out"
+msgstr "Cerrar sesión"

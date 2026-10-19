@@ -1,8 +1,8 @@
 {% extends "base.html" %}
 {% load i18n static %}
 {% comment %}
-Layout for portal pages (signup, welcome, ...): a light header with the logo and the
-language switcher, a narrow column for the page, and the shared footer.
+Layout for portal pages (signup, login, welcome, ...): a light header with the logo, the
+logged-in user's portal links and the language switcher, a narrow column for the page, and the shared footer.
 Portal pages are not for search engines.
 {% endcomment %}
 
@@ -16,6 +16,8 @@ Portal pages are not for search engines.
            src="{% static 'img/Logo_MyTreatPlan.webp' %}" width="461" height="88" alt="MyTreatPlan">
     </a>
     <nav aria-label="{% translate 'Main' %}" class="flex flex-wrap items-center justify-center gap-x-[clamp(14px,2.2vw,26px)] gap-y-2 text-nav">
+      {# A logged-in user's "Client portal" and "Log out"; nothing for anonymous visitors. #}
+      {% include "includes/_portal_links.html" with ul_class="flex items-center gap-[clamp(10px,1.6vw,18px)]" link="font-semibold text-ink-muted underline-offset-4 hover:underline" authenticated_only=True %}
       {% include "includes/_language_switcher.html" with ul_class="flex gap-[clamp(10px,1.6vw,18px)]" link="font-semibold text-ink-muted underline-offset-4 hover:underline" current="font-black text-ink" %}
     </nav>
   </div>

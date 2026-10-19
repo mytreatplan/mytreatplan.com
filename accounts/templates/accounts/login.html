@@ -1,0 +1,36 @@
+{% extends "portal_base.html" %}
+{% load i18n static %}
+{% comment %}
+The login page (accounts.views.login): email, password and the CAPTCHA (includes/_turnstile.html,
+static/js/turnstile.js holds the submit until its token arrives). A plain POST form. Every
+failed login shows the same non-field error; the email is kept, the password is not.
+{% endcomment %}
+
+{% block title %}{% translate "Log in" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block head %}{{ block.super }}<script src="{% static 'js/turnstile.js' %}" defer></script>{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Log in" %}</h1>
+<p class="mt-3 text-copy text-ink-muted">{% translate "Log in to your MyTreatPlan client portal." %}</p>
+
+<form method="post" action="{% url 'login' %}" class="mt-8 flex flex-col gap-5" novalidate data-login-form>
+  {% csrf_token %}
+  {% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+  {% if form.non_field_errors %}
+  <ul class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert">
+    {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% include "includes/_form_field.html" with field=form.email %}
+  {% include "includes/_form_field.html" with field=form.password %}
+  {% include "includes/_turnstile.html" %}
+  <button type="submit" class="mt-2 min-h-[52px] cursor-pointer rounded-pill bg-ink px-8 text-[16px] font-black leading-none tracking-[-0.01em] text-white transition hover:-translate-y-[2px] hover:bg-green hover:text-ink hover:shadow-lift focus-visible:shadow-focus-pill focus-visible:outline-none">
+    {% translate "Log in" %}
+  </button>
+</form>
+<p class="mt-8 text-[15px] text-ink-muted">
+  {% translate "New to MyTreatPlan?" %}
+  <a href="{% url 'signup' %}" class="font-semibold text-ink underline underline-offset-4 hover:text-green-deep">{% translate "Create an account" %}</a>
+</p>
+{% endblock %}

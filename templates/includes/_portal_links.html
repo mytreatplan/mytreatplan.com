@@ -1,7 +1,17 @@
 {% load i18n %}{% comment %}
 Client portal links. Each renders only when its URL name exists, so the links appear by
-themselves once the Sign up (epic 2) and Login (epic 3) pages are routed.
-{% endcomment %}{% url 'login' as login_url %}{% url 'signup' as signup_url %}{% if login_url or signup_url %}
+themselves once the portal is routed (PORTAL_ENABLED). A logged-in user sees "Client portal"
+(the welcome page) and "Log out" (a POST form: a GET never logs out); anyone else sees "Log
+in" and "Sign up". With `authenticated_only` (the portal pages' header) nothing renders for
+anonymous visitors.
+{% endcomment %}{% url 'login' as login_url %}{% url 'signup' as signup_url %}{% url 'welcome' as welcome_url %}{% url 'logout' as logout_url %}{% if user.is_authenticated and logout_url %}
+<ul class="{{ ul_class }}" aria-label="{% translate 'Client portal' %}">
+  {% if welcome_url %}<li><a href="{{ welcome_url }}" class="{{ link }}" data-portal-link="portal">{% translate "Client portal" %}</a></li>{% endif %}
+  <li>
+    <form method="post" action="{{ logout_url }}" class="inline">{% csrf_token %}<button type="submit" class="{{ link }} cursor-pointer" data-portal-link="logout">{% translate "Log out" %}</button></form>
+  </li>
+</ul>
+{% elif not authenticated_only and login_url or not authenticated_only and signup_url %}
 <ul class="{{ ul_class }}" aria-label="{% translate 'Client portal' %}">
   {% if login_url %}<li><a href="{{ login_url }}" class="{{ link }}" data-portal-link="login">{% translate "Log in" %}</a></li>{% endif %}
   {% if signup_url %}<li><a href="{{ signup_url }}" class="{{ link }}" data-portal-link="signup">{% translate "Sign up" %}</a></li>{% endif %}

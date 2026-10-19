@@ -412,8 +412,10 @@ def test_spanish_wizard(client, caplog):
 # --- Portal off ------------------------------------------------------------------------
 
 @pytest.mark.parametrize('url', ['/en/signup/', '/es/signup/', '/en/signup/verify-email/',
-                                 '/en/signup/verify-mobile/', '/en/welcome/'])
+                                 '/en/signup/verify-mobile/', '/en/welcome/',
+                                 '/en/login/', '/es/login/', '/en/logout/'])
 def test_portal_off_is_404(client, settings, url):
     settings.ROOT_URLCONF = 'mytreatplan.urls'  # the real URLconf, built with the switch off
     assert not settings.PORTAL_ENABLED
     assert client.get(url).status_code == 404
+    assert client.post(url).status_code == 404

@@ -148,7 +148,7 @@ def test_admin_user_pages(admin_client):
 def test_welcome_requires_login(client):
     response = client.get('/en/welcome/')
     assert response.status_code == 302
-    assert response['Location'] == '/en/signup/?next=/en/welcome/'
+    assert response['Location'] == '/en/login/?next=/en/welcome/'
 
 
 @pytest.mark.django_db

@@ -20,7 +20,6 @@ A form may also list external checks it could not make in `unavailable_checks`, 
 import logging
 from collections import namedtuple
 
-from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone, translation
@@ -33,7 +32,7 @@ from accounts.models import phone_index_or_blank
 
 from legal.models import LegalChoice, LegalDocument
 
-from . import limits
+from . import captcha, limits
 from .forms import (BLOCKED_RATE_LIMIT, OTP_RATE_LIMITED, OTP_SEND_FAILED, AccountForm,
                     EmailCodeForm, LegalForm, MobileCodeForm, national_number)
 from .models import PendingRegistration
@@ -41,11 +40,6 @@ from .verification import (EMAIL, PURPOSE_SIGNUP, SMS, WHATSAPP, ChannelUnavaila
                            VerificationError, contact_kind, get_provider)
 
 logger = logging.getLogger(__name__)
-
-# Cloudflare's Turnstile script, explicit rendering (static/js/signup-account.js renders
-# each widget, after a full load and after every htmx swap).
-TURNSTILE_SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
-
 
 class Step:
     """One page of the wizard: a slug (its URL), a form, a template and its handlers."""
@@ -112,9 +106,8 @@ class AccountStep(Step):
                   'phone_prefix', 'phone', 'how_found', 'how_found_other')
 
     def get_context(self):
-        # The Turnstile widget (signup.captcha), rendered by signup-account.js.
-        return {'turnstile_site_key': settings.TURNSTILE_SITE_KEY,
-                'turnstile_script': TURNSTILE_SCRIPT_URL}
+        # The Turnstile widget (signup.captcha), rendered by turnstile.js.
+        return captcha.widget_context()
 
     def get_form_kwargs(self, pending):
         # With a saved hash (Back, or a resumed signup) the passwords may stay empty.
