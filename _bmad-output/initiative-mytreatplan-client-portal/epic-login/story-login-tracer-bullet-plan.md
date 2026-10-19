@@ -3,7 +3,7 @@ title: 'Login tracer bullet'
 type: 'feature'
 ticket: '1'
 created: '2026-10-19'
-status: 'built'
+status: 'done'
 baseline_revision: '2d9d4cef64585c121a8ff099036b2622a4da9e64'
 route: 'full'
 route_source: 'auto'
@@ -130,3 +130,5 @@ Done locally (2026-10-19) on SQLite: `pytest -m "not browser"` 989 passed, 3 fai
 - The local suite command with the test keys, on SQLite. Expected: only the 3 known PostgreSQL-only tests fail.
 - `pytest -m browser`, run outside the sandbox. Expected: all pass.
 - `manage.py makemigrations --check`, `manage.py compilemessages`. Expected: no changes, OK.
+
+CI on PostgreSQL 17 (PR #28): 1012 passed. Merged 2026-10-19 as `7a94df3`. On staging the user reported these checks passed: login lands on welcome with "Client portal" and "Log out" in the header; logout shows its message, and `/en/welcome/` then sends to login; a wrong password shows the generic error; `/es/login/` is in Spanish.
