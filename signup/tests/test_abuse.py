@@ -416,7 +416,9 @@ def test_cache_keys_hold_no_plain_ip(send_limits):
         cursor.execute('SELECT cache_key, value FROM django_cache')
         rows = cursor.fetchall()
     ip_keys = [key for key, _value in rows if ':signup:ip:' in key]
-    assert {key.split(':')[4] for key in ip_keys} == set(limits.IP_COUNTERS)
+    # Every signup counter (the login's own, epic-login entry 5, is not used by signup).
+    assert {key.split(':')[4] for key in ip_keys} == set(limits.IP_COUNTERS) - {
+        limits.LOGIN_ATTEMPTS}
     for key, value in rows:
         assert IP not in key and IP not in str(value)
 

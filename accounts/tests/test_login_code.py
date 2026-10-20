@@ -9,7 +9,7 @@ import re
 import pytest
 from django.contrib.auth import SESSION_KEY, get_user_model
 
-from accounts import views
+from accounts import login_failures, views
 from accounts.forms import INVALID_LOGIN_MESSAGE, mask_email, mask_phone
 from accounts.views import CODE_PAGE, PENDING_LOGIN_SESSION_KEY
 from signup import limits
@@ -321,6 +321,9 @@ def test_five_wrong_codes_invalidate_it_and_a_new_one_works(client, doctor, logi
     wrong = _wrong(_code())
     for _ in range(MAX_CHECK_ATTEMPTS - 1):
         assert _post_code(client, wrong).context['form'].has_error('code', 'invalid_code')
+    # Not the lockout's 5th wrong code in a row (entry 5, test_lockout.py): only the
+    # provider's own limit on this code is tested here.
+    login_failures.reset(doctor.pk)
 
     response = _post_code(client, wrong)
 

@@ -18,6 +18,18 @@ event log (`eventlog.service.record_activity`, kind `login`), tied to the accoun
 (entry 4, CAP-3): `_record_login` from `finish_login`, `_record_failure` from the password
 check and `login_code_rejected`. Recording never stops a login.
 
+The lockout and the per-IP limit (entry 5): LOCK_THRESHOLD wrong passwords, or as many
+wrong codes, in a row lock the account (an unknown email: its blind index) for
+LOCK_SECONDS (accounts.login_failures). After the CAPTCHA, a password submission first
+reserves one of the IP's hourly login attempts (signup.limits LOGIN_ATTEMPTS), then the
+lock is checked, and only then the credentials. A locked account, or an IP over its
+limit, gets signup's BLOCKED_MESSAGE, which tells nothing (not which check, how many
+attempts are left, or whether the account exists); a right password, and a remembered
+device, are refused while the lock lasts. A locked account's pending login ends on the
+code pages, back on the login page with that message. Locks (`account_locked`) and the
+first IP block in a window (`rejected`, field `ip`) are recorded; a counter, lock or
+limit error never stops a login (it is reported, without values).
+
 The pending login grants nothing: the session holds the user's pk, their session auth
 hash, its start time and the safe `next`, plus the contact chosen. It lives
 CODE_TTL_SECONDS; it ends, back on the login page, when it expires or when the account
@@ -50,6 +62,7 @@ from eventlog import service as eventlog
 from eventlog.models import Attempt
 from eventlog.service import client_ip
 from signup import captcha, limits
+from signup.forms import BLOCKED_MESSAGE, BLOCKED_RATE_LIMIT
 from signup.steps import (CODE_STATE_SESSION_KEY, SENT, code_help_context, code_state,
                           send_code)
 from signup.verification import (CODE_TTL_SECONDS, EMAIL, MOBILE, PURPOSE_LOGIN, SMS,
@@ -78,6 +91,9 @@ CODE_STEP = 'login-code'  # the login code page
 LOGIN_EVENT = 'login'
 LOGIN_FAILED_EVENT = 'login_failed'
 CHECK_UNAVAILABLE_EVENT = 'check_unavailable'
+# The lockout and the per-IP limit (entry 5).
+ACCOUNT_LOCKED_EVENT = 'account_locked'
+IP_BLOCKED_EVENT = 'rejected'
 # How a login passed the second factor.
 BY_CODE, BY_REMEMBERED_DEVICE = 'code', 'remembered_device'
 # Why a login failed.
@@ -193,8 +209,18 @@ def _pending_login_view(view):
         user = _pending_user(pending)
         if not _account_unchanged(user, pending):
             return _login_again(request)
+        if _locked(account_id=user.pk):
+            return _locked_out(request)
         return view(request, user, dict(pending))
     return wrapper
+
+
+def _locked_out(request):
+    """A locked account on the code pages: the pending login ends, back on the login page
+    with BLOCKED_MESSAGE (nothing tells why)."""
+    end_pending_login(request)
+    messages.error(request, BLOCKED_MESSAGE)
+    return redirect('login')
 
 
 # --- The login records (entry 4) --------------------------------------------------------
@@ -223,13 +249,40 @@ def _record_login(request, user, remembered):
         data={'code_needed': not remembered})
 
 
+def _locked(account_id=None, email=None):
+    """Whether the account (or the typed email) is locked; False when the check fails
+    (reported: a lock error never stops a login)."""
+    try:
+        return login_failures.is_locked(account_id=account_id, email=email)
+    except Exception as error:  # noqa: BLE001 - the lockout must never break the login
+        _report_counter_failure('is_locked', error)
+        return False
+
+
+def _login_locked(email):
+    """Whether the typed `email` may not log in now: its account is locked, or the email
+    itself (failures with no account lock it the same way). An empty email is never
+    locked (the form refuses it anyway)."""
+    if not (email or '').strip():
+        return False
+    try:
+        account = get_user_model()._default_manager.by_email(email).only('pk').first()
+    except Exception as error:  # noqa: BLE001 - the lockout must never break the login
+        _report_counter_failure('lock_lookup', error)
+        account = None
+    return _locked(account_id=account.pk if account else None, email=email)
+
+
 def _record_failure(request, counter, reason=None, *, step, account_id=None, email=None):
     """Count a failed login (`counter`, for the account, or for the typed `email` with no
     account) and record it from the second failure in a row onwards: `reason`, the
     counter (`field`) and the count; an unknown email's record holds it, normalized
     (decision 3). Never a password or a code. With `email` and no `account_id` (a wrong
     password), the account is looked up by the email first: found, `wrong_password` for
-    it, else `unknown_email` (an erased account's email is unknown)."""
+    it, else `unknown_email` (an erased account's email is unknown).
+
+    Returns True when this failure locked the account (or the email): its count reached
+    LOCK_THRESHOLD; the lock is recorded (`account_locked`) as well."""
     try:
         if account_id is None:
             account = get_user_model()._default_manager.by_email(email).only('pk').first()
@@ -237,24 +290,32 @@ def _record_failure(request, counter, reason=None, *, step, account_id=None, ema
                 reason = UNKNOWN_EMAIL
             else:
                 account_id, reason = account.pk, WRONG_PASSWORD
-        count = login_failures.record_failure(counter, account_id=account_id, email=email)
+        failure = login_failures.record_failure(counter, account_id=account_id, email=email)
     except Exception as error:  # noqa: BLE001 - recording must never break the login
         _report_counter_failure('record_failure', error)
-        return
-    if count < 2:
-        return
-    data = {'count': count}
+        return False
+    for action, error in failure.errors:
+        _report_counter_failure(action, error)
+    if failure.count < 2:
+        return failure.locked
+    data = {'count': failure.count}
     if account_id is None:
         data['email'] = normalize_email_for_index(email)
     eventlog.record_activity(Attempt.LOGIN, LOGIN_FAILED_EVENT, request=request,
                              account_id=account_id, step=step, field=counter,
                              reason=reason, data=data)
+    if not failure.locked:
+        return False
+    eventlog.record_activity(Attempt.LOGIN, ACCOUNT_LOCKED_EVENT, request=request,
+                             account_id=account_id, step=step, field=counter,
+                             reason=reason, data=data)
+    return True
 
 
 def _password_rejected(request, email):
     """A wrong password (`invalid_login`): counted for the account the email belongs to,
-    else for the email itself (`_record_failure` looks it up)."""
-    _record_failure(request, login_failures.PASSWORD, step=LOGIN_STEP, email=email)
+    else for the email itself (`_record_failure` looks it up). True when it locked."""
+    return _record_failure(request, login_failures.PASSWORD, step=LOGIN_STEP, email=email)
 
 
 def finish_login(request, user, pending, remembered=False):
@@ -275,13 +336,48 @@ def login_code_rejected(request, user, form):
     """The one place a rejected login code is handled: called only for a wrong code
     (`invalid_code`) or one no longer valid (`code_expired`), never for an empty submit or
     a check the provider could not make. Counted (and, from the second in a row, recorded)
-    as a code failure (entry 4); the hook for the lockout (entry 5). No personal value or
-    code is logged."""
+    as a code failure (entry 4). True when it locked the account (entry 5): the caller
+    ends the pending login. No personal value or code is logged."""
     codes = sorted({error.code for errors in form.errors.as_data().values()
                     for error in errors})
     logger.info('login code rejected: reasons=%s', ','.join(codes))
     reason = CODE_EXPIRED if 'code_expired' in codes else WRONG_CODE
-    _record_failure(request, login_failures.CODE, reason, step=CODE_STEP, account_id=user.pk)
+    return _record_failure(request, login_failures.CODE, reason, step=CODE_STEP,
+                           account_id=user.pk)
+
+
+def _reserve_login_attempt(request):
+    """One of the IP's hourly login attempts (signup.limits LOGIN_ATTEMPTS). Returns
+    (blocked, reservation). Blocked (over the limit, or its lock not got): the first
+    block of the IP in the window is recorded. A limit error lets the login go on."""
+    try:
+        reservation = limits.ip_reserve(request, limits.LOGIN_ATTEMPTS)
+    except Exception as error:  # noqa: BLE001 - the limit must never break the login
+        _report_counter_failure('ip_reserve', error)
+        return False, None
+    if reservation is not None:
+        return False, reservation
+    # Over the limit: refused whatever happens to the block's record.
+    try:
+        first = limits.first_block(request, limits.LOGIN_ATTEMPTS)
+    except Exception as error:  # noqa: BLE001 - the record must never lift the block
+        _report_counter_failure('first_block', error)
+        first = False
+    if first:
+        eventlog.record_activity(Attempt.LOGIN, IP_BLOCKED_EVENT, request=request,
+                                 step=LOGIN_STEP, field='ip', reason=BLOCKED_RATE_LIMIT,
+                                 data={'counter': limits.LOGIN_ATTEMPTS})
+    return True, None
+
+
+def _refund_login_attempt(request, reservation):
+    """Give back a reserved attempt that did not reach the credentials check."""
+    if reservation is None:
+        return
+    try:
+        limits.ip_refund(request, limits.LOGIN_ATTEMPTS, reservation)
+    except Exception as error:  # noqa: BLE001 - the limit must never break the login
+        _report_counter_failure('ip_refund', error)
 
 
 @sensitive_post_parameters('password')
@@ -310,9 +406,22 @@ def login(request):
                 eventlog.record_activity(Attempt.LOGIN, CHECK_UNAVAILABLE_EVENT,
                                          request=request, step=LOGIN_STEP, field='captcha',
                                          reason=captcha.TURNSTILE_CHECK)
-            if form.is_valid():
+            blocked, reservation = _reserve_login_attempt(request)
+            if blocked:
+                # Over the IP's limit: the credentials are not checked.
+                form.refuse('rate_limited_ip')
+            elif _login_locked(request.POST.get('email', '')):
+                # A locked account (or email): refused before the password is checked,
+                # so even a right one (or a remembered device) does not log in.
+                _refund_login_attempt(request, reservation)
+                form.refuse('locked')
+            elif form.is_valid():
                 user = form.get_user()
-                if not user.phone:
+                if _locked(account_id=user.pk):
+                    # Locked meanwhile (a parallel 5th failure, after the check above):
+                    # still refused, no pending login and no remembered-device skip.
+                    form.refuse('locked')
+                elif not user.phone:
                     # No mobile, no portal login (decision 2): the generic error, no code.
                     form.refuse_login()
                 else:
@@ -326,7 +435,11 @@ def login(request):
                                             remembered=True)
                     return redirect('login_verify')
             elif form.has_error(NON_FIELD_ERRORS, 'invalid_login'):
-                _password_rejected(request, form.cleaned_data.get('email', ''))
+                if _password_rejected(request, form.cleaned_data.get('email', '')):
+                    form.refuse('locked')
+            else:
+                # An empty email or password: the credentials were not checked.
+                _refund_login_attempt(request, reservation)
     return render(request, 'accounts/login.html', {
         'form': form,
         'next': requested_next(request),
@@ -403,7 +516,8 @@ def login_code(request, user, pending):
                 devices.remember(response, user, _now())
             return response
         if form.has_error('code', 'invalid_code') or form.has_error('code', 'code_expired'):
-            login_code_rejected(request, user, form)
+            if login_code_rejected(request, user, form):
+                return _locked_out(request)
     else:
         form = LoginCodeForm(kind=kind, contact=contact)
     code = code_help_context(request, CODE_PAGE, form, contact, PURPOSE_LOGIN,
