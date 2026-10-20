@@ -3,7 +3,7 @@ title: 'Login records'
 type: 'feature'
 ticket: '4'
 created: '2026-10-20'
-status: 'built'
+status: 'done'
 baseline_revision: 'fb30b8054c93701cd98a1345fd661084a03d39c7'
 route: 'full'
 route_source: 'auto'
@@ -143,3 +143,5 @@ After the patches (2026-10-20), on SQLite with Chromium (sandbox lifted): the fu
 **Commands:**
 - The local suite command (test keys, SQLite), outside the sandbox for the browser tests. Expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check` after adding the migration, and `compilemessages`. Expected: no changes, OK.
+
+CI on PostgreSQL 17 (PR #31): 1116 passed. Merged as `bf0f3cb`; the deploy ran migration `eventlog.0002`. On staging the user reported (2026-10-20) these checks passed in the admin: a login leaves a `login` attempt with the account id, whose event holds the time, IP and browser; of two wrong passwords only the second leaves a `login_failed` record (`wrong_password`, count 2); the second wrong code leaves a `wrong_code` record.
