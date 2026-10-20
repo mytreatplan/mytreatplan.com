@@ -90,6 +90,10 @@ class User(AbstractUser):
                                        db_index=True, editable=False)
     erased_email_index = models.CharField(max_length=BLIND_INDEX_LENGTH, blank=True,
                                           db_index=True, editable=False)
+    # The key of the account's one active session (accounts.sessions, epic-login entry 6):
+    # set at every login, cleared by `end_all_sessions`. Never shown.
+    current_session_key = models.CharField(max_length=40, null=True, blank=True,
+                                           editable=False)
 
     USERNAME_FIELD = 'email'
     EMAIL_FIELD = 'email'
