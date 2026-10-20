@@ -3,7 +3,7 @@ title: 'Remember this device for 90 days'
 type: 'feature'
 ticket: '3'
 created: '2026-10-20'
-status: 'built'
+status: 'done'
 baseline_revision: '86bc1e17a006789ecf7cdac23d8e0f208acc4655'
 route: 'full'
 route_source: 'auto'
@@ -126,3 +126,5 @@ Done locally (2026-10-20) on SQLite with the test keys: `pytest -m "not browser"
 - `manage.py makemigrations --check`, `manage.py compilemessages`. Expected: no changes, OK.
 
 First CI run (PR branch): 1 failed. `test_ticked_right_code_logs_in_and_sets_the_mark` asserted `Secure` off, which holds only with DEBUG on; CI runs with DEBUG off. The test now compares the flag with `SESSION_COOKIE_SECURE`, and passes with DEBUG on and off.
+
+CI on PostgreSQL 17 (PR #30): 1093 passed. Merged as `d064a51`. On staging the user reported (2026-10-20) these checks passed: with "Remember me…" ticked the login lands on welcome; after logout a password login opens welcome with no code page; a private window or another browser asks for the code; the `mtp_device_…` cookie shows Secure, HttpOnly and a 90-day expiry.
