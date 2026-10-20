@@ -1110,6 +1110,15 @@ msgstr "Cerrar sesión"
 msgid "Your login has expired. Please log in again."
 msgstr "Su inicio de sesión ha caducado. Vuelva a iniciar sesión."
 
+#: accounts/sessions.py
+msgid ""
+"You were logged out because your account was logged in on another device."
+msgstr "Se ha cerrado su sesión porque se ha iniciado sesión con su cuenta en otro dispositivo."
+
+#: accounts/sessions.py
+msgid "Your session ended after 15 minutes without activity. Please log in again."
+msgstr "Su sesión ha finalizado tras 15 minutos sin actividad. Vuelva a iniciar sesión."
+
 #: accounts/templates/accounts/login_choose.html
 msgid "Confirm it's you"
 msgstr "Confirme que es usted"

@@ -120,8 +120,10 @@ ACCOUNT_ERASURE_RETENTION_DAYS = config(
 
 # The database cache (table `django_cache`, created by `createcachetable` in
 # deploy/release.sh), shared by every Gunicorn worker. It holds the signup code resend
-# limits and the per-IP limits (signup.limits) and the fake verification provider's
-# state, keyed by blind indexes and IP hashes: never a code, a plain contact or an IP.
+# limits and the per-IP limits (signup.limits), the fake verification provider's state,
+# keyed by blind indexes and IP hashes, and the replaced-session marks
+# (`session-replaced:<sha256 of the session key>`, 1 hour, accounts.sessions): never a
+# code, a plain contact, an IP or a session key.
 CACHES = {
     'default': {
         'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
@@ -236,6 +238,8 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    # One session per account, and its idle limit (after messages: it queues one).
+    'accounts.sessions.SessionLimitMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
