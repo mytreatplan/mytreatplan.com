@@ -185,7 +185,8 @@ def test_the_fifth_code_counts_as_code_expired(client, doctor):
     for _ in range(MAX_CHECK_ATTEMPTS):
         response = _post_code(client, wrong)
 
-    assert response.context['form'].has_error('code', 'code_expired')
+    # The 5th wrong code also locks the account (entry 5): back to the login page.
+    assert response['Location'] == '/en/login/'
     records = _failures()
     _no_secrets(records, wrong, PASSWORD)
     assert [r.reason for r in records] == ['wrong_code'] * (MAX_CHECK_ATTEMPTS - 2) + [
@@ -354,7 +355,9 @@ def test_a_failing_account_lookup_still_shows_the_generic_error(client, doctor,
     assert response.status_code == 200 and not _logged_in(client)
     assert response.context['form'].non_field_errors() == [INVALID_LOGIN_MESSAGE]
     assert _failures() == []
+    # The lockout's lookup (entry 5) fails first; the login goes on as without a lock.
     assert _messages(sentry_capture) == [
+        'Login failure counter error: lock_lookup (DatabaseError)',
         'Login failure counter error: record_failure (DatabaseError)']
     text = json.dumps(sentry_capture.events)
     assert NORMALIZED not in text and IP not in text
