@@ -124,3 +124,5 @@ Done locally (2026-10-20) on SQLite with the test keys: `pytest -m "not browser"
 **Commands:**
 - The local suite command (test keys, SQLite), outside the sandbox for the browser tests. Expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check`, `manage.py compilemessages`. Expected: no changes, OK.
+
+First CI run (PR branch): 1 failed. `test_ticked_right_code_logs_in_and_sets_the_mark` asserted `Secure` off, which holds only with DEBUG on; CI runs with DEBUG off. The test now compares the flag with `SESSION_COOKIE_SECURE`, and passes with DEBUG on and off.

@@ -89,7 +89,7 @@ def test_spanish_label(client, doctor):
 
 # --- Giving the mark ----------------------------------------------------------------------
 
-def test_ticked_right_code_logs_in_and_sets_the_mark(client, doctor, login_clock):
+def test_ticked_right_code_logs_in_and_sets_the_mark(client, doctor, login_clock, settings):
     response = _login_with_code(client)
 
     assert response['Location'] == WELCOME
@@ -98,7 +98,8 @@ def test_ticked_right_code_logs_in_and_sets_the_mark(client, doctor, login_clock
     assert cookie['max-age'] == 90 * DAY
     assert cookie['httponly'] is True
     assert cookie['samesite'] == 'Lax'
-    assert bool(cookie['secure']) is False  # SESSION_COOKIE_SECURE is off here
+    # As the session cookie: on with DEBUG off (CI, staging), off locally.
+    assert bool(cookie['secure']) is settings.SESSION_COOKIE_SECURE
     assert devices.is_valid(cookie.value, doctor, login_clock())
     # No personal value, in the cookie's name or its content.
     data = signing.loads(cookie.value, salt=devices.SIGNING_SALT)
