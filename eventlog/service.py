@@ -1,6 +1,8 @@
-"""The event log API: `start_attempt`, `record` and `end_attempt` (plus `get_attempt`).
+"""The event log API: `start_attempt`, `record` and `end_attempt` (plus `get_attempt`), and
+`record_activity`, one self-contained record tied to an account (login records, epic-login
+entry 4; later page records).
 
-Every signup step logs through it (and, later, login). Logging never breaks the flow it
+Every signup step and every login record logs through it. Logging never breaks the flow it
 logs: any failure is caught, reported to Sentry by event type and error class only (no
 personal values, no exception text, which may quote them), and the caller carries on.
 """
@@ -16,8 +18,9 @@ from .models import Attempt, Event
 logger = logging.getLogger(__name__)
 
 
-def _report_failure(action, error, event=''):
-    """Report a failed log write without any personal value."""
+def report_failure(action, error, event=''):
+    """Report a failed log write (or a failed step around one, such as the login
+    counters) without any personal value: the action, the event type and the error class."""
     what = f'{action} {event}'.strip()
     message = f'Event log write failed: {what} ({type(error).__name__})'
     logger.warning(message)
@@ -52,17 +55,18 @@ def get_attempt(pk):
     except ValidationError:
         return None
     except Exception as error:  # noqa: BLE001 - logging must never break the flow
-        _report_failure('get_attempt', error)
+        report_failure('get_attempt', error)
         return None
 
 
-def start_attempt(kind):
-    """A new open attempt of `kind`, or None if it could not be written."""
+def start_attempt(kind, *, account_id=None):
+    """A new open attempt of `kind` (tied to the account `account_id`, a user pk, if
+    given), or None if it could not be written."""
     try:
         with transaction.atomic():
-            return Attempt.objects.create(kind=kind)
+            return Attempt.objects.create(kind=kind, account_id=account_id)
     except Exception as error:  # noqa: BLE001
-        _report_failure('start_attempt', error, kind)
+        report_failure('start_attempt', error, kind)
         return None
 
 
@@ -85,7 +89,7 @@ def record(attempt, event, *, request=None, step='', field='', reason='', data=N
                 attempt_id=attempt_id, event=event, step=step, field=field or '',
                 reason=reason or '', data=values or None)
     except Exception as error:  # noqa: BLE001
-        _report_failure('record', error, event)
+        report_failure('record', error, event)
         return None
 
 
@@ -99,7 +103,30 @@ def end_attempt(attempt, outcome):
         with transaction.atomic():
             Attempt.objects.filter(pk=attempt_id).update(ended_at=now, outcome=outcome)
     except Exception as error:  # noqa: BLE001
-        _report_failure('end_attempt', error, outcome)
+        report_failure('end_attempt', error, outcome)
         return
     if isinstance(attempt, Attempt):
         attempt.ended_at, attempt.outcome = now, outcome
+
+
+def record_activity(kind, event, *, request=None, account_id=None, step='', field='',
+                    reason='', data=None):
+    """One record of `kind` on its own: an attempt (tied to `account_id`, a user pk, or to
+    no account), its one `event` (as `record`: `data` encrypted, plus the client IP and
+    user agent with `request`), ended at once with `event` as its outcome. Returns the
+    Event, or None; never raises. A failed event write leaves nothing: the attempt is
+    removed again, so no record without its event remains."""
+    attempt = start_attempt(kind, account_id=account_id)
+    if attempt is None:
+        return None
+    entry = record(attempt, event, request=request, step=step, field=field, reason=reason,
+                   data=data)
+    if entry is None:
+        try:
+            with transaction.atomic():
+                Attempt.objects.filter(pk=attempt.pk).delete()
+        except Exception as error:  # noqa: BLE001
+            report_failure('record_activity', error, event)
+        return None
+    end_attempt(attempt, event)
+    return entry

@@ -37,9 +37,9 @@ class EventInline(ReadOnlyMixin, admin.TabularInline):
 
 @admin.register(Attempt)
 class AttemptAdmin(ReadOnlyMixin, admin.ModelAdmin):
-    list_display = ('id', 'kind', 'started_at', 'ended_at', 'outcome')
+    list_display = ('id', 'kind', 'account_id', 'started_at', 'ended_at', 'outcome')
     list_filter = ('kind', 'outcome')
-    fields = ('id', 'kind', 'started_at', 'ended_at', 'outcome')
+    fields = ('id', 'kind', 'account_id', 'started_at', 'ended_at', 'outcome')
     readonly_fields = fields
     ordering = ('-started_at',)
     inlines = [EventInline]

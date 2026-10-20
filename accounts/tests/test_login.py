@@ -12,6 +12,7 @@ from django.test import Client
 from accounts.erasure import erase_user
 from accounts.forms import INVALID_LOGIN_MESSAGE
 from conftest import TURNSTILE_FAIL_SECRET, TURNSTILE_TEST_TOKEN
+from eventlog.models import Attempt, Event
 from signup.captcha import TOKEN_FIELD
 from signup.forms import BLOCKED_MESSAGE
 from signup.tests.conftest import clear_cache  # noqa: F401 - autouse, this module only
@@ -255,6 +256,7 @@ def test_captcha_is_checked_with_the_token_and_ip(client, doctor, turnstile):
 
 def test_unavailable_captcha_lets_the_login_through_and_is_logged(client, doctor, turnstile,
                                                                    caplog):
+    """Since entry 4 in the event log (`check_unavailable`), no longer a server-log line."""
     turnstile.error = TimeoutError()
 
     with caplog.at_level(logging.WARNING):
@@ -262,9 +264,10 @@ def test_unavailable_captcha_lets_the_login_through_and_is_logged(client, doctor
 
     assert response['Location'] == '/en/login/verify/'  # on to the second factor
     assert not _logged_in(client)
-    messages = [record.getMessage() for record in caplog.records
-                if record.name == 'accounts.views']
-    assert messages == ['check_unavailable: step=login field=captcha reason=turnstile']
+    [event] = Event.objects.filter(attempt__kind=Attempt.LOGIN, event='check_unavailable')
+    assert (event.step, event.field, event.reason) == ('login', 'captcha', 'turnstile')
+    assert event.attempt.account_id is None and event.attempt.ended_at is not None
+    assert [record for record in caplog.records if record.name == 'accounts.views'] == []
     for record in caplog.records:
         assert NORMALIZED not in record.getMessage() and PASSWORD not in record.getMessage()
 

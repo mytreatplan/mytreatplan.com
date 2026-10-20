@@ -311,9 +311,12 @@ def test_skip_goes_through_finish_login(client, doctor, monkeypatch):
     from accounts import views
     original = views.finish_login
     monkeypatch.setattr(views, 'finish_login',
-                        lambda request, user, pending: calls.append(dict(pending))
-                        or original(request, user, pending))
+                        lambda request, user, pending, **kwargs: calls.append(
+                            (dict(pending), kwargs)) or original(request, user, pending,
+                                                                 **kwargs))
 
     assert _login(client)['Location'] == WELCOME
     assert len(calls) == 1
-    assert calls[0]['user'] == str(doctor.pk) and calls[0]['contact'] is None
+    pending, kwargs = calls[0]
+    assert pending['user'] == str(doctor.pk) and pending['contact'] is None
+    assert kwargs == {'remembered': True}

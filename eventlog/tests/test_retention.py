@@ -56,11 +56,14 @@ def test_attempt_ended_29_days_ago_keeps_its_data():
     assert all(event.data['email'] == EMAIL for event in attempt.events.all())
 
 
-def test_every_kind_is_anonymized():
-    login = _attempt(timedelta(days=31), kind='login', events=1)
+def test_every_kind_but_login_is_anonymized():
+    """Login records stay intact until their own retention (epic-login decision 1)."""
+    other = _attempt(timedelta(days=31), kind='other', events=1)
+    login = _attempt(timedelta(days=31), kind=Attempt.LOGIN, events=1)
 
     assert retention.anonymize() == 1
-    assert login.events.get().data is None
+    assert other.events.get().data is None
+    assert login.events.get().data['email'] == EMAIL
 
 
 def test_now_argument_time_travels():
@@ -94,10 +97,22 @@ def test_attempt_ended_two_years_and_a_day_ago_is_deleted():
 
 def test_delete_in_batches():
     for _ in range(3):
-        _attempt(timedelta(days=800), kind='login', events=1)
+        _attempt(timedelta(days=800), events=1)
 
     assert retention.delete_old(batch_size=2) == (3, 3)
     assert not Attempt.objects.exists()
+
+
+def test_login_attempts_are_never_deleted_by_age():
+    """Until epic-login entry 8 (decision 1); signup attempts as before."""
+    login = _attempt(timedelta(days=800), kind=Attempt.LOGIN, events=1)
+    signup = _attempt(timedelta(days=800), events=1)
+
+    assert retention.delete_old() == (1, 1)
+
+    assert Attempt.objects.filter(pk=login.pk).exists()
+    assert login.events.get().data['email'] == EMAIL
+    assert not Attempt.objects.filter(pk=signup.pk).exists()
 
 
 # --- Open attempts ---------------------------------------------------------------------

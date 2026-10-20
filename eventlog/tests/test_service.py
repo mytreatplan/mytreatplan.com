@@ -236,3 +236,50 @@ def test_admin_shows_events_in_order_read_only(admin_client):
     assert admin_client.get(f'/admin/eventlog/attempt/{attempt.pk}/delete/').status_code == 403
     assert admin_client.get('/admin/eventlog/attempt/').status_code == 200
     assert admin_client.get('/admin/eventlog/event/').status_code == 404  # inline only
+
+
+# --- Activity records (epic-login entry 4) --------------------------------------------------
+
+def test_record_activity_is_one_ended_attempt_tied_to_the_account():
+    event = service.record_activity(Attempt.LOGIN, 'login_failed',
+                                    request=_request(HTTP_X_FORWARDED_FOR=IP), account_id=42,
+                                    step='login', field='password', reason='wrong_password',
+                                    data={'count': 2})
+
+    attempt = event.attempt
+    assert (attempt.kind, attempt.account_id, attempt.outcome) == (
+        'login', 42, 'login_failed')
+    assert attempt.ended_at is not None
+    assert list(attempt.events.all()) == [event]
+    assert (event.step, event.field, event.reason) == ('login', 'password', 'wrong_password')
+    assert Event.objects.get(pk=event.pk).data == {'count': 2, 'ip': IP, 'user_agent': AGENT}
+    assert list(Attempt.objects.filter(account_id=42)) == [attempt]
+
+
+def test_record_activity_without_an_account():
+    event = service.record_activity(Attempt.LOGIN, 'check_unavailable')
+    assert event.attempt.account_id is None and event.data is None
+
+
+def test_signup_attempts_have_no_account():
+    assert service.start_attempt('signup').account_id is None
+
+
+def test_record_activity_failure_is_caught(monkeypatch, sentry_capture):
+    def fail(*args, **kwargs):
+        raise DatabaseError(f'insert failed from {IP}')
+
+    monkeypatch.setattr(Attempt.objects, 'create', fail)
+    assert service.record_activity(Attempt.LOGIN, 'login', request=_request(
+        HTTP_X_FORWARDED_FOR=IP), account_id=1) is None
+    sentry_sdk.flush()
+    [event] = sentry_capture.events
+    assert IP not in json.dumps(event) and 'DatabaseError' in json.dumps(event)
+
+
+def test_admin_shows_the_account_id(admin_client):
+    event = service.record_activity(Attempt.LOGIN, 'login', account_id=4242)
+
+    html = admin_client.get(f'/admin/eventlog/attempt/{event.attempt.pk}/change/').content
+    assert b'4242' in html
+    assert b'4242' in admin_client.get('/admin/eventlog/attempt/').content

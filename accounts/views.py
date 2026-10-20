@@ -12,6 +12,12 @@ remembered-device mark (accounts.devices, entry 3), and a later right password w
 valid mark completes the login through `finish_login` at once, without the code. Logout
 is a POST only (and leaves the mark).
 
+Every completed login, and every failed one from the second in a row onwards (wrong
+passwords and wrong codes counted apart, accounts.login_failures), is recorded in the
+event log (`eventlog.service.record_activity`, kind `login`), tied to the account's pk
+(entry 4, CAP-3): `_record_login` from `finish_login`, `_record_failure` from the password
+check and `login_code_rejected`. Recording never stops a login.
+
 The pending login grants nothing: the session holds the user's pk, their session auth
 hash, its start time and the safe `next`, plus the contact chosen. It lives
 CODE_TTL_SECONDS; it ends, back on the login page, when it expires or when the account
@@ -21,11 +27,14 @@ import functools
 import logging
 import time
 
+import sentry_sdk
+
 from django.contrib import messages
 from django.contrib.auth import REDIRECT_FIELD_NAME, get_user_model
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import NON_FIELD_ERRORS
 from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render, resolve_url
 from django.utils.crypto import constant_time_compare
@@ -37,6 +46,8 @@ from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_http_methods, require_POST
 
+from eventlog import service as eventlog
+from eventlog.models import Attempt
 from eventlog.service import client_ip
 from signup import captcha, limits
 from signup.steps import (CODE_STATE_SESSION_KEY, SENT, code_help_context, code_state,
@@ -44,7 +55,8 @@ from signup.steps import (CODE_STATE_SESSION_KEY, SENT, code_help_context, code_
 from signup.verification import (CODE_TTL_SECONDS, EMAIL, MOBILE, PURPOSE_LOGIN, SMS,
                                  WHATSAPP)
 
-from . import devices
+from . import devices, login_failures
+from .crypto import normalize_email_for_index
 from .forms import LoginCodeForm, LoginContactForm, LoginForm, mask_email, mask_phone
 
 logger = logging.getLogger(__name__)
@@ -59,6 +71,18 @@ PENDING_LOGIN_SESSION_KEY = 'login_pending'
 CODE_PAGE = 'login'
 # When a pending login has expired or its account changed: back to the login page.
 LOGIN_EXPIRED_MESSAGE = gettext_lazy('Your login has expired. Please log in again.')
+
+# The login records (entry 4): their event-log steps, events and reasons.
+LOGIN_STEP = 'login'  # the login page (the password, the CAPTCHA)
+CODE_STEP = 'login-code'  # the login code page
+LOGIN_EVENT = 'login'
+LOGIN_FAILED_EVENT = 'login_failed'
+CHECK_UNAVAILABLE_EVENT = 'check_unavailable'
+# How a login passed the second factor.
+BY_CODE, BY_REMEMBERED_DEVICE = 'code', 'remembered_device'
+# Why a login failed.
+WRONG_PASSWORD, UNKNOWN_EMAIL = 'wrong_password', 'unknown_email'
+WRONG_CODE, CODE_EXPIRED = 'wrong_code', 'code_expired'
 
 
 def _now():
@@ -173,25 +197,91 @@ def _pending_login_view(view):
     return wrapper
 
 
-def finish_login(request, user, pending):
+# --- The login records (entry 4) --------------------------------------------------------
+
+def _report_counter_failure(action, error):
+    """Report a failed login counter call (or the account lookup before it) without any
+    personal value: the action and the error class only."""
+    message = f'Login failure counter error: {action} ({type(error).__name__})'
+    logger.warning(message)
+    with sentry_sdk.new_scope() as scope:
+        scope.set_tag('login_failures.action', action)
+        sentry_sdk.capture_message(message, level='error')
+
+
+def _record_login(request, user, remembered):
+    """A completed login: both failure counts of the account start again, and the login
+    is recorded (its time, IP and user agent; `reason` says whether a code was needed)."""
+    try:
+        login_failures.reset(user.pk)
+    except Exception as error:  # noqa: BLE001 - recording must never break the login
+        _report_counter_failure('reset', error)
+    eventlog.record_activity(
+        Attempt.LOGIN, LOGIN_EVENT, request=request, account_id=user.pk,
+        step=LOGIN_STEP if remembered else CODE_STEP,
+        reason=BY_REMEMBERED_DEVICE if remembered else BY_CODE,
+        data={'code_needed': not remembered})
+
+
+def _record_failure(request, counter, reason=None, *, step, account_id=None, email=None):
+    """Count a failed login (`counter`, for the account, or for the typed `email` with no
+    account) and record it from the second failure in a row onwards: `reason`, the
+    counter (`field`) and the count; an unknown email's record holds it, normalized
+    (decision 3). Never a password or a code. With `email` and no `account_id` (a wrong
+    password), the account is looked up by the email first: found, `wrong_password` for
+    it, else `unknown_email` (an erased account's email is unknown)."""
+    try:
+        if account_id is None:
+            account = get_user_model()._default_manager.by_email(email).only('pk').first()
+            if account is None:
+                reason = UNKNOWN_EMAIL
+            else:
+                account_id, reason = account.pk, WRONG_PASSWORD
+        count = login_failures.record_failure(counter, account_id=account_id, email=email)
+    except Exception as error:  # noqa: BLE001 - recording must never break the login
+        _report_counter_failure('record_failure', error)
+        return
+    if count < 2:
+        return
+    data = {'count': count}
+    if account_id is None:
+        data['email'] = normalize_email_for_index(email)
+    eventlog.record_activity(Attempt.LOGIN, LOGIN_FAILED_EVENT, request=request,
+                             account_id=account_id, step=step, field=counter,
+                             reason=reason, data=data)
+
+
+def _password_rejected(request, email):
+    """A wrong password (`invalid_login`): counted for the account the email belongs to,
+    else for the email itself (`_record_failure` looks it up)."""
+    _record_failure(request, login_failures.PASSWORD, step=LOGIN_STEP, email=email)
+
+
+def finish_login(request, user, pending, remembered=False):
     """The one place a login completes after the second factor (3.3's remembered device
-    skips the code by calling it right after the password). The account must still be as
-    it was at the password; the pending login is removed before `auth_login`."""
+    skips the code by calling it right after the password, with `remembered`). The
+    account must still be as it was at the password; the pending login is removed before
+    `auth_login`. The completed login is recorded (entry 4)."""
     user.refresh_from_db()
     if not _account_unchanged(user, pending):
         return _login_again(request)
     end_pending_login(request)
-    return complete_login(request, user, pending.get('next') or '')
+    response = complete_login(request, user, pending.get('next') or '')
+    _record_login(request, user, remembered)
+    return response
 
 
 def login_code_rejected(request, user, form):
     """The one place a rejected login code is handled: called only for a wrong code
     (`invalid_code`) or one no longer valid (`code_expired`), never for an empty submit or
-    a check the provider could not make. The hook for the login counters and lockout
-    (entries 4 and 5). No personal value or code is logged."""
+    a check the provider could not make. Counted (and, from the second in a row, recorded)
+    as a code failure (entry 4); the hook for the lockout (entry 5). No personal value or
+    code is logged."""
     codes = sorted({error.code for errors in form.errors.as_data().values()
                     for error in errors})
     logger.info('login code rejected: reasons=%s', ','.join(codes))
+    reason = CODE_EXPIRED if 'code_expired' in codes else WRONG_CODE
+    _record_failure(request, login_failures.CODE, reason, step=CODE_STEP, account_id=user.pk)
 
 
 @sensitive_post_parameters('password')
@@ -215,9 +305,11 @@ def login(request):
         else:
             if result == captcha.UNAVAILABLE:
                 # The login goes on (decision 1: the login lockout and IP limits, entry 5,
-                # are the guard during an outage). No personal value is logged.
-                logger.warning('check_unavailable: step=login field=captcha reason=%s',
-                               captcha.TURNSTILE_CHECK)
+                # are the guard during an outage). Recorded in the event log, with no
+                # account (the credentials are not checked yet).
+                eventlog.record_activity(Attempt.LOGIN, CHECK_UNAVAILABLE_EVENT,
+                                         request=request, step=LOGIN_STEP, field='captcha',
+                                         reason=captcha.TURNSTILE_CHECK)
             if form.is_valid():
                 user = form.get_user()
                 if not user.phone:
@@ -230,8 +322,11 @@ def login(request):
                         # A remembered device (entry 3), only with a passed CAPTCHA: the
                         # same pending login, ended by the one completion, without the code.
                         return finish_login(request, user,
-                                            dict(request.session[PENDING_LOGIN_SESSION_KEY]))
+                                            dict(request.session[PENDING_LOGIN_SESSION_KEY]),
+                                            remembered=True)
                     return redirect('login_verify')
+            elif form.has_error(NON_FIELD_ERRORS, 'invalid_login'):
+                _password_rejected(request, form.cleaned_data.get('email', ''))
     return render(request, 'accounts/login.html', {
         'form': form,
         'next': requested_next(request),
