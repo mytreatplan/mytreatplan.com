@@ -1,5 +1,7 @@
-"""The event log (CAP-10): one Attempt per signup (later: login) attempt, and its ordered
-Events, so an attempt can be reconstructed step by step.
+"""The event log (CAP-10): one Attempt per signup attempt, and its ordered Events, so an
+attempt can be reconstructed step by step. Login activity (epic-login entry 4) is one
+Attempt of kind `login` per record (eventlog.service.record_activity), tied to the
+account by `account_id`.
 
 Only `Event.data` holds personal values (email, IP address, browser string, ...), encrypted
 with the 2.2 field encryption (accounts.crypto). The other columns are non-personal, so
@@ -16,9 +18,14 @@ from accounts.crypto import EncryptedJSONField
 
 class Attempt(models.Model):
     """One attempt at a flow (`kind`): started at its first data received, ended with an
-    outcome. Not tied to a user or a pending registration, so it outlives both."""
+    outcome. Never a foreign key to a user or a pending registration, so it outlives both.
+
+    `account_id` is the account's pk (a plain number, not a ForeignKey, kept after the
+    account is purged), set for login records; never the email blind index, which
+    erasure replaces."""
 
     SIGNUP = 'signup'
+    LOGIN = 'login'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     kind = models.CharField(max_length=30)
@@ -26,6 +33,7 @@ class Attempt(models.Model):
     # Set when the attempt ends; the retention jobs (signup entry 10) count from it.
     ended_at = models.DateTimeField(null=True, blank=True, db_index=True)
     outcome = models.CharField(max_length=50, blank=True)
+    account_id = models.BigIntegerField(null=True, blank=True, db_index=True)
 
     class Meta:
         ordering = ['-started_at']
