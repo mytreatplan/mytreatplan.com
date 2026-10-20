@@ -3,7 +3,7 @@ title: 'Second factor at login'
 type: 'feature'
 ticket: '2'
 created: '2026-10-19'
-status: 'built'
+status: 'done'
 baseline_revision: 'bd6e1c87a2841a33305697782880ac1c1c8acaa9'
 route: 'full'
 route_source: 'auto'
@@ -138,3 +138,5 @@ Done locally (2026-10-19) on SQLite with the test keys: `pytest -m "not browser"
 **Commands:**
 - The local suite command (test keys, SQLite), outside the sandbox for the browser tests. Expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check`, `manage.py compilemessages`. Expected: no changes, OK.
+
+CI on PostgreSQL 17 (PR #29): 1069 passed. Merged as `df11b94`. On staging, with real Twilio codes (mobile by SMS while WhatsApp is off), the user reported (2026-10-20) these checks passed: the choice page shows the email and mobile masked; the email code arrives, in Spanish from `/es/`, and logs in on welcome; the SMS code works; a wrong code says "not correct" and "Send a new code" works after a minute; after 10 minutes, submitting shows "Your login has expired".
