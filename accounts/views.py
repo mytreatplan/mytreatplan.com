@@ -7,7 +7,10 @@ choice of the account's email or mobile, and `login_code`, the code sent there t
 signup's verification provider and sending helper (signup.steps.send_code: WhatsApp,
 else SMS; the per-contact cooldown and hourly limits, purpose `login`). Only an approved
 code completes the login, through `finish_login` and `complete_login`, the one place a
-login is finished. Logout is a POST only.
+login is finished; with "Remember me" ticked it also gives the browser the account's
+remembered-device mark (accounts.devices, entry 3), and a later right password with that
+valid mark completes the login through `finish_login` at once, without the code. Logout
+is a POST only (and leaves the mark).
 
 The pending login grants nothing: the session holds the user's pk, their session auth
 hash, its start time and the safe `next`, plus the contact chosen. It lives
@@ -41,6 +44,7 @@ from signup.steps import (CODE_STATE_SESSION_KEY, SENT, code_help_context, code_
 from signup.verification import (CODE_TTL_SECONDS, EMAIL, MOBILE, PURPOSE_LOGIN, SMS,
                                  WHATSAPP)
 
+from . import devices
 from .forms import LoginCodeForm, LoginContactForm, LoginForm, mask_email, mask_phone
 
 logger = logging.getLogger(__name__)
@@ -221,6 +225,12 @@ def login(request):
                     form.refuse_login()
                 else:
                     start_pending_login(request, user, requested_next(request))
+                    if (result == captcha.PASSED
+                            and devices.is_remembered(request, user, _now())):
+                        # A remembered device (entry 3), only with a passed CAPTCHA: the
+                        # same pending login, ended by the one completion, without the code.
+                        return finish_login(request, user,
+                                            dict(request.session[PENDING_LOGIN_SESSION_KEY]))
                     return redirect('login_verify')
     return render(request, 'accounts/login.html', {
         'form': form,
@@ -293,7 +303,10 @@ def login_code(request, user, pending):
     if request.method == 'POST':
         form = LoginCodeForm(request.POST, kind=kind, contact=contact)
         if form.is_valid():
-            return finish_login(request, user, pending)
+            response = finish_login(request, user, pending)
+            if form.cleaned_data['remember'] and request.user.is_authenticated:
+                devices.remember(response, user, _now())
+            return response
         if form.has_error('code', 'invalid_code') or form.has_error('code', 'code_expired'):
             login_code_rejected(request, user, form)
     else:

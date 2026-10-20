@@ -1,7 +1,8 @@
 """Login (epic-login entries 1 and 2) in Chromium against live_server: a Doctor created by
 signup through the real pages logs out from the nav, logs in through the login page (the
 Turnstile widget holds the submit until its token arrives), chooses where the code goes,
-types it and lands on the welcome screen."""
+types it and lands on the welcome screen. Entry 3: with "Remember me" ticked, the next login
+from the same browser skips the code."""
 import pytest
 
 pytest.importorskip('pytest_playwright')
@@ -107,3 +108,37 @@ def test_wrong_password_shows_the_generic_error(live_server, page):
         has_text='The email address or password is not correct.')).to_be_visible()
     expect(page.locator('#id_email')).to_have_value(EMAIL_ADDRESS)
     expect(page.locator('#id_password')).to_have_value('')
+
+
+def _log_in(page):
+    """The login form, once the Turnstile stub's token is in."""
+    page.fill('#id_email', EMAIL_ADDRESS)
+    page.fill('#id_password', PASSWORD)
+    expect(page.locator('input[name="cf-turnstile-response"]')).to_have_value(
+        TURNSTILE_TEST_TOKEN)
+    press(page, 'Log in')
+
+
+def test_remembered_device_logs_in_without_a_code(live_server, page):
+    """Epic-login entry 3: ticking "Remember me" with the right code; after a logout the
+    next login from this browser lands on welcome without the code pages."""
+    _signup(page, live_server)
+    press(page, 'Log out')
+
+    _log_in(page)
+    expect(page).to_have_url(f'{live_server.url}/en/login/verify/')
+    new_page(page, page.locator('button[value="email"]').click)
+    expect(page).to_have_url(f'{live_server.url}/en/login/code/')
+    remember = page.get_by_label('Remember me on this device/browser for 90 days')
+    expect(remember).not_to_be_checked()
+    remember.check()
+    enter_code(page, email_code(purpose=PURPOSE_LOGIN), 'Log in')
+    expect(page).to_have_url(f'{live_server.url}/en/welcome/')
+    cookies = [c for c in page.context.cookies() if c['name'].startswith('mtp_device_')]
+    assert len(cookies) == 1 and cookies[0]['httpOnly'] and cookies[0]['sameSite'] == 'Lax'
+
+    press(page, 'Log out')
+    expect(page).to_have_url(f'{live_server.url}/en/login/')
+    _log_in(page)
+    expect(page).to_have_url(f'{live_server.url}/en/welcome/')
+    expect(page.locator('h1')).to_have_text('Welcome to MyTreatPlan')

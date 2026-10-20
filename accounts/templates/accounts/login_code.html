@@ -28,6 +28,10 @@ steps (step_verify_email.html, step_verify_mobile.html). Reached only with a pen
   </ul>
   {% endif %}
   {% include "includes/_form_field.html" with field=form.code %}
+  <label for="{{ form.remember.id_for_label }}" class="flex cursor-pointer items-start gap-3 text-[15px] leading-[1.45] text-ink" data-remember>
+    {{ form.remember }}
+    <span>{{ form.remember.label }}</span>
+  </label>
   <button type="submit" class="mt-2 min-h-[52px] cursor-pointer rounded-pill bg-ink px-8 text-[16px] font-black leading-none tracking-[-0.01em] text-white transition hover:-translate-y-[2px] hover:bg-green hover:text-ink hover:shadow-lift focus-visible:shadow-focus-pill focus-visible:outline-none">
     {% translate "Log in" %}
   </button>

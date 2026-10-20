@@ -1082,6 +1082,10 @@ msgstr "Inicio"
 msgid "The email address or password is not correct."
 msgstr "El correo electrónico o la contraseña no son correctos."
 
+#: accounts/forms.py
+msgid "Remember me on this device/browser for 90 days"
+msgstr "Recordarme en este dispositivo/navegador durante 90 días"
+
 #: accounts/views.py
 msgid "You have logged out."
 msgstr "Ha cerrado la sesión."
