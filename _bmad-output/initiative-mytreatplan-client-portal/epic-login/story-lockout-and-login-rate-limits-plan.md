@@ -3,7 +3,7 @@ title: 'Lockout and login rate limits'
 type: 'feature'
 ticket: '5'
 created: '2026-10-20'
-status: 'built'
+status: 'done'
 baseline_revision: '547c48c761ed2c860f585f3bc217b75fafd678d3'
 route: 'full'
 route_source: 'auto'
@@ -137,3 +137,5 @@ After the patches (2026-10-20), on SQLite with Chromium (sandbox lifted): the fu
 - `manage.py makemigrations --check`, `manage.py compilemessages`. Expected: no changes, OK.
 
 **Results (2026-10-20):** `DATABASE_URL=sqlite:///$TMPDIR/x.sqlite3 pytest -m "not browser"`: 1113 passed, only the 3 known PostgreSQL-only tests in `accounts/tests/test_crypto.py` failed (`test_lockout.py`: 19 passed). `pytest -m browser` outside the sandbox: 19 passed. `makemigrations --check --dry-run`: no changes. `compilemessages`: up to date. `check`: no issues.
+
+CI on PostgreSQL 17 (PR #32): 1139 passed. Merged as `7fb781e`. On staging the user reported these checks passed: the 5th wrong password shows the block message; the right password right after shows the same; after 10 minutes the right password works; the admin shows an `account_locked` record with count 5.
