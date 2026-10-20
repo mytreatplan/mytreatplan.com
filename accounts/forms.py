@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.forms.utils import ErrorDict
 from django.utils.translation import gettext_lazy as _
 
-from signup.forms import BLOCKED_MESSAGE, CodeForm, StyledForm
+from signup.forms import BLOCKED_MESSAGE, CHECKBOX_CLASSES, CodeForm, StyledForm
 from signup.verification import EMAIL, MOBILE, PURPOSE_LOGIN, SMS
 
 # The one error of every failed login (a wrong password, an unknown email, an inactive or
@@ -97,9 +97,17 @@ class LoginContactForm(forms.Form):
 
 class LoginCodeForm(CodeForm):
     """The login code (purpose `login`) sent to the chosen contact: `channel` is EMAIL for
-    the email; a mobile's code is checked over SMS (the same code as by WhatsApp)."""
+    the email; a mobile's code is checked over SMS (the same code as by WhatsApp). With
+    `remember` ticked, an approved code also remembers this browser for 90 days."""
 
     purpose = PURPOSE_LOGIN
+
+    # Remember this browser for this account (epic-login entry 3, accounts.devices).
+    remember = forms.BooleanField(
+        label=_('Remember me on this device/browser for 90 days'),
+        required=False,
+        widget=forms.CheckboxInput(attrs={'class': CHECKBOX_CLASSES}),
+    )
 
     def __init__(self, *args, kind, contact, **kwargs):
         self.channel = EMAIL if kind == EMAIL else SMS
