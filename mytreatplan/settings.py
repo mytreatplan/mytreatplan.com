@@ -396,9 +396,35 @@ if not DEBUG:
 
 # Email
 # https://docs.djangoproject.com/en/6.1/topics/email/#topic-email-configuration
+# Transactional email (the password reset, the contact form) goes over SMTP through the
+# company's own mail service, from noreply@mytreatplan.com (epic-login entry 9). The
+# server's settings.env holds the connection; with EMAIL_HOST empty (development) the
+# console backend prints messages instead, and Django's deploy check mail.E001 fails
+# `check --deploy`. EMAIL_USE_SSL=True means implicit TLS (default port 465); otherwise
+# STARTTLS is always used (default port 587), so the two can't both be on and plain SMTP
+# is never used. Tests use Django's locmem backend.
+# The values are read into lowercase names: Django 6.1 refuses the deprecated EMAIL_*
+# settings next to MAILERS (only the settings.env variables keep those names).
+_mail_host = config('EMAIL_HOST', default='')
+_mail_use_ssl = config('EMAIL_USE_SSL', default=False, cast=bool)
+DEFAULT_FROM_EMAIL = config('DEFAULT_FROM_EMAIL',
+                            default='MyTreatPlan <noreply@mytreatplan.com>')
+SERVER_EMAIL = config('SERVER_EMAIL', default=DEFAULT_FROM_EMAIL)
 
 MAILERS = {
     'default': {
+        'BACKEND': 'django.core.mail.backends.smtp.EmailBackend',
+        'OPTIONS': {
+            'host': _mail_host,
+            'port': config('EMAIL_PORT', default=465 if _mail_use_ssl else 587, cast=int),
+            'username': config('EMAIL_HOST_USER', default=''),
+            'password': config('EMAIL_HOST_PASSWORD', default=''),
+            'use_ssl': _mail_use_ssl,
+            'use_tls': not _mail_use_ssl,
+            # Seconds per socket operation, as EXTERNAL_CHECK_TIMEOUT.
+            'timeout': config('EMAIL_TIMEOUT', default=10, cast=int),
+        },
+    } if _mail_host else {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
 }

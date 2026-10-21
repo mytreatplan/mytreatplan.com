@@ -841,6 +841,36 @@ A wrong `TWILIO_VERIFY_SERVICE_SID` shows first as send failures and the alert: 
 answers a code check against a wrong service with the same 404 as "no pending code", so
 checks only say "This code is no longer valid" and log no Sentry error.
 
+## Email
+
+The portal's transactional email (the password reset, the contact form) goes over SMTP
+through the company's own mail service, sent from `MyTreatPlan <noreply@mytreatplan.com>`
+(epic-login entry 9). Signup's verification codes don't: they go through Twilio Verify
+("Twilio Verify" above). With `EMAIL_HOST` empty, mail is only written to the journal and
+`check --deploy` fails with Django's `mail.E001`.
+
+Type the connection by hand into the server's settings file; the password never goes
+anywhere else:
+
+```sh
+sudo -u mytp nano /srv/mytp/shared/settings.env
+#   EMAIL_HOST=<the mail service's SMTP host>
+#   EMAIL_USE_SSL=False            # True for implicit TLS; False means STARTTLS
+#   EMAIL_PORT=587                 # optional: 465 with SSL, 587 without, by default
+#   EMAIL_HOST_USER=noreply@mytreatplan.com
+#   EMAIL_HOST_PASSWORD=<the mailbox password>
+cd /srv/mytp/current
+sudo -u mytp ./venv/bin/python manage.py check --deploy   # no mail.E001
+sudo systemctl restart mytp-gunicorn
+sudo -u mytp ./venv/bin/python manage.py sendtestemail <your address>
+```
+
+The test email arrives from `noreply@mytreatplan.com`. If it doesn't, the command
+prints the SMTP error (authentication, TLS mode or port). Each socket operation waits at
+most `EMAIL_TIMEOUT` seconds (default 10). `EMAIL_PORT`, `EMAIL_USE_SSL` and
+`EMAIL_TIMEOUT` need a value or no line at all: an empty `EMAIL_PORT=` stops the app
+at startup. `DEFAULT_FROM_EMAIL` and `SERVER_EMAIL` default to the noreply address.
+
 ## Erase an account
 
 A registered user is never deleted in the admin (its legal choices are kept as evidence):
