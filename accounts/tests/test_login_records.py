@@ -7,6 +7,7 @@ from datetime import timedelta
 
 import pytest
 import sentry_sdk
+from dateutil.relativedelta import relativedelta
 from django.contrib.auth import get_user_model
 from django.db import DatabaseError
 from django.utils import timezone
@@ -365,7 +366,8 @@ def test_a_failing_account_lookup_still_shows_the_generic_error(client, doctor,
 
 # --- Retention --------------------------------------------------------------------------
 
-def test_retention_leaves_login_records_alone(client, doctor):
+def test_retention_keeps_login_records_intact_for_5_years(client, doctor):
+    """Epic-login entry 8: never anonymized, deleted 5 calendar years after they end."""
     _wrong_password(client)
     _wrong_password(client)
     _login_with_code(client, extra=META)
@@ -373,9 +375,16 @@ def test_retention_leaves_login_records_alone(client, doctor):
 
     retention.anonymize(now=later)
     retention.delete_old(now=later)
+    almost = timezone.now() + relativedelta(years=5) - timedelta(days=1)
+    assert retention.delete_old_activity(now=almost) == (0, 0)
 
     records = _records()
     assert [r.event for r in records] == ['login_failed', 'login']
-    assert all(record.data and record.data['ip'] == IP for record in records)
+    assert all(record.data and record.data['ip'] == IP
+               and record.data['user_agent'] == AGENT for record in records)
     # Signup's attempts (the doctor's own signup) follow their rules as before.
     assert not Attempt.objects.filter(kind=Attempt.SIGNUP).exists()
+
+    past = timezone.now() + relativedelta(years=5) + timedelta(days=1)
+    assert retention.delete_old_activity(now=past) == (2, 2)
+    assert _records() == []
