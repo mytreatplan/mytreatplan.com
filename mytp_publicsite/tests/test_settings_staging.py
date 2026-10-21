@@ -39,13 +39,21 @@ BASELINE_ENV = {
     'VERIFICATION_PROVIDER': FAKE,
     'TWILIO_VERIFY_BASE_URL': '',
     'TWILIO_WHATSAPP_ENABLED': 'False',
+    'EMAIL_HOST': '',
+    'EMAIL_USE_SSL': 'False',
 }
+# Unset in the process environment for every load, so their defaults apply (a local
+# settings.env setting them would still be read: decouple falls back to it).
+UNSET_ENV = ('EMAIL_PORT', 'EMAIL_HOST_USER', 'EMAIL_HOST_PASSWORD',
+             'EMAIL_TIMEOUT', 'DEFAULT_FROM_EMAIL', 'SERVER_EMAIL')
 
 
 @pytest.fixture
 def load_settings(monkeypatch):
     """Evaluate settings.py afresh with the given environment; returns its namespace."""
     def load(**env):
+        for name in UNSET_ENV:
+            monkeypatch.delenv(name, raising=False)
         for name, value in {**BASELINE_ENV, **env}.items():
             monkeypatch.setenv(name, value)
         return runpy.run_path(SETTINGS_FILE)
@@ -467,3 +475,49 @@ def test_twilio_settings_from_env(load_settings):
     assert s['VERIFICATION_PROVIDER'] == TWILIO
     assert s['TWILIO_WHATSAPP_ENABLED'] is True
     assert s['TWILIO_VERIFY_BASE_URL'] == 'https://verify.test.invalid/v2'
+
+
+# --- Transactional email (epic-login entry 9) --------------------------------------------
+
+NOREPLY = 'MyTreatPlan <noreply@mytreatplan.com>'
+
+
+def test_email_without_a_host_prints_to_the_console(load_settings):
+    s = load_settings()
+    assert s['MAILERS'] == {'default': {
+        'BACKEND': 'django.core.mail.backends.console.EmailBackend'}}
+    assert s['DEFAULT_FROM_EMAIL'] == NOREPLY
+    assert s['SERVER_EMAIL'] == NOREPLY
+
+
+def test_email_host_uses_smtp_with_starttls_by_default(load_settings):
+    s = load_settings(EMAIL_HOST='smtp.example.invalid', EMAIL_HOST_USER='noreply@mytreatplan.com',
+                      EMAIL_HOST_PASSWORD='not-a-real-password')
+    mailer = s['MAILERS']['default']
+    assert mailer['BACKEND'] == 'django.core.mail.backends.smtp.EmailBackend'
+    assert mailer['OPTIONS'] == {
+        'host': 'smtp.example.invalid', 'port': 587,
+        'username': 'noreply@mytreatplan.com', 'password': 'not-a-real-password',
+        'use_ssl': False, 'use_tls': True, 'timeout': 10,
+    }
+
+
+def test_email_ssl_uses_port_465_and_no_starttls(load_settings):
+    options = load_settings(EMAIL_HOST='smtp.example.invalid',
+                            EMAIL_USE_SSL='True')['MAILERS']['default']['OPTIONS']
+    assert (options['port'], options['use_ssl'], options['use_tls']) == (465, True, False)
+
+
+def test_no_deprecated_email_settings_next_to_mailers(load_settings):
+    """Django 6.1 refuses EMAIL_HOST and the like when MAILERS is defined."""
+    s = load_settings(EMAIL_HOST='smtp.example.invalid')
+    assert not [name for name in s if name.startswith('EMAIL_')]
+
+
+@pytest.mark.parametrize('host, failing', [('', True), ('smtp.example.invalid', False)])
+def test_deploy_check_fails_while_mail_goes_to_the_console(load_settings, host, failing):
+    """The project's own MAILERS: without EMAIL_HOST, `check --deploy` lists mail.E001."""
+    mailers = load_settings(EMAIL_HOST=host)['MAILERS']
+    with override_settings(DEBUG=False, MAILERS=mailers):
+        ids = {error.id for error in run_checks(include_deployment_checks=True)}
+    assert ('mail.E001' in ids) is failing
