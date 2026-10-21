@@ -3,7 +3,7 @@ title: 'Page-request records'
 type: 'feature'
 ticket: '7'
 created: '2026-10-21'
-status: 'built'
+status: 'done'
 baseline_revision: '1acf9e755d016ed39e51461dfc94314878d3aab9'
 route: 'full'
 route_source: 'auto'
@@ -115,3 +115,5 @@ After the patch (2026-10-21), on SQLite with Chromium (sandbox lifted): the full
 **Commands:**
 - The local suite command (test keys, SQLite), outside the sandbox for the browser tests. Expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check`. Expected: no changes.
+
+CI on PostgreSQL 17 (PR #34): 1199 passed. Merged as `343deb0`. On staging the user reported (2026-10-21) these checks passed in the admin: two welcome visits leave two `page` records (`welcome`, `200`); a missing page leaves a `page` record with `404`; admin pages appear as `page` records with `admin:…` steps.
