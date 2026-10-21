@@ -3,7 +3,7 @@ title: 'Five-year retention of activity records'
 type: 'feature'
 ticket: '8'
 created: '2026-10-21'
-status: 'built'
+status: 'done'
 baseline_revision: 'e8baf0aa906b61c50d5a1f3538462a277e44fa30'
 route: 'full'
 route_source: 'auto'
@@ -113,3 +113,5 @@ After the patches (2026-10-21), on SQLite with Chromium (sandbox lifted): the fu
 - `manage.py makemigrations --check`. Expected: no changes.
 
 **Results (2026-10-21):** `DATABASE_URL=sqlite:///$TMPDIR/x.sqlite3 pytest` outside the sandbox: 1211 passed; only the 3 known PostgreSQL-only tests in `accounts/tests/test_crypto.py` failed. `makemigrations --check --dry-run`: no changes.
+
+CI on PostgreSQL 17 (PR #35): 1214 passed. Merged as `9426cb4`. On staging (2026-10-21) the `eventlogretention` job, run by hand at 16:30 UTC, printed the new activity count and ended ok in 0.1 s. The Sentry monitor `mytp-staging-eventlogretention` shows an ok check-in for that run (release `4a0e10a4`), and the admin still shows the recent `login` and `page` records with their data.
