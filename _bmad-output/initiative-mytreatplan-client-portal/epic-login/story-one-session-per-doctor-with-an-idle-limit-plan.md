@@ -3,7 +3,7 @@ title: 'One session per Doctor with an idle limit'
 type: 'feature'
 ticket: '6'
 created: '2026-10-20'
-status: 'built'
+status: 'done'
 baseline_revision: '3835770d0e657c76328b2d3ef603b5e933d4f11b'
 route: 'full'
 route_source: 'auto'
@@ -135,3 +135,5 @@ After the patches (2026-10-20), on SQLite with Chromium (sandbox lifted): the fu
 - `manage.py makemigrations --check` after adding the migration, and `compilemessages`. Expected: no changes, OK.
 
 **Results (2026-10-20):** `DATABASE_URL=sqlite:///$TMPDIR/x.sqlite3 pytest -m "not browser"`: 1145 passed, only the 3 known PostgreSQL-only tests in `accounts/tests/test_crypto.py` failed (`test_sessions.py`: 28 passed; 31 after the review fixes). `pytest -m browser` outside the sandbox: 19 passed. `makemigrations --check --dry-run`: no changes. `compilemessages`: up to date. `check`: no issues.
+
+CI on PostgreSQL 17 (PR #33): 1170 passed. Merged as `2d37d60`; the deploy ran migration `accounts.0008`. On staging the user reported (2026-10-21) these checks passed: a second login sends browser A to login with "…logged in on another device"; 15 idle minutes end the session with the inactivity message; a new login on a remembered browser still skips the code.
