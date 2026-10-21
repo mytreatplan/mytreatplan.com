@@ -74,7 +74,7 @@ Vision plus mandate. Signup (epic 2) creates verified Doctor accounts, but nobod
 - Activity is recorded through signup's log service (`eventlog`), not a separate store.
 - Activity records, IP and User-Agent included, are kept intact for 5 years, a legal requirement, with no anonymization step. An erased account's activity is kept for the same 5 years as proof of behaviour, so it must outlive the account's deletion. Today the log's retention job anonymizes every attempt at 30 days and deletes it at 2 years, so it must treat activity records separately.
 - Activity tracking is covered by the Terms and Conditions and the service conditions; there is no separate notice.
-- The reset email is sent through the existing SendGrid account for now. The final provider is chosen before production. Today the default mail backend is the console.
+- The reset email is sent over SMTP through the company's own mail service, from noreply@mytreatplan.com (low volume: fewer than 10 resets a week). The final provider is reevaluated when the whole portal is finished. Today the default mail backend is the console.
 - Login redirects to the welcome route created by epic 2. `LOGIN_URL` points at login once it exists.
 - Deactivated and erased accounts can't log in. Erasing an account deactivates it (`accounts.erasure`).
 - Login, reset and second-factor messages never reveal whether an account exists.
