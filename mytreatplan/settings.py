@@ -231,6 +231,10 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     # First, so the noindex header also lands on redirects and errors from the rest.
     'mytp_publicsite.middleware.RobotsNoindexMiddleware',
+    # Page records (epic-login entry 7). Outside every other one, so it sees the final
+    # response (after the language and slash redirects) and the user as the session limit
+    # (accounts.sessions) left it.
+    'accounts.page_records.PageRecordMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.locale.LocaleMiddleware',

@@ -1,7 +1,9 @@
-"""Retention of the event log (signup entry 10, CAP-10), for every attempt kind but login.
+"""Retention of the event log (signup entry 10, CAP-10), for every attempt kind but login
+and page.
 
-Login records (kind `login`, epic-login entry 4) are left alone, neither anonymized nor
-deleted, until their own 5-year retention (epic-login entry 8, decision 1).
+Login records (kind `login`, epic-login entry 4) and page records (kind `page`, epic-login
+entry 7) are left alone, neither anonymized nor deleted, until their own retention
+(epic-login entry 8, decision 1).
 
 The daily `eventlog_retention` job (deploy/jobs.conf) calls `anonymize` then
 `delete_old`. Ages count from the attempt's `ended_at`: an attempt still open is never
@@ -15,7 +17,7 @@ from django.utils import timezone
 from .models import Attempt, Event
 
 # The kinds these rules do not apply to (kept intact until epic-login entry 8).
-EXCLUDED_KINDS = (Attempt.LOGIN,)
+EXCLUDED_KINDS = (Attempt.LOGIN, Attempt.PAGE)
 
 ANONYMIZE_AFTER = timedelta(days=30)
 DELETE_AFTER = timedelta(days=730)
