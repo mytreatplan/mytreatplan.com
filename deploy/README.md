@@ -193,9 +193,11 @@ curl -s https://dev.mytpdso.com/healthz                  # ok (no password neede
    purge_pending_signups`: deletes signups left unfinished for 24 h, ends their event
    log attempts as `timeout`, deletes expired cache rows) and `eventlogretention` (daily
    at 03:45 UTC, `manage.py eventlog_retention`: clears the event log's personal values
-   30 days after an attempt ends, deletes attempts 2 years after they end). On a server
-   provisioned before them, run `provision.sh` again (see [Scheduled jobs](#scheduled-jobs))
-   to install their timers, then check:
+   30 days after an attempt ends, deletes attempts 2 years after they end; login and
+   page records (epic-login entry 8) are never anonymized, keep their IP and User-Agent,
+   and are deleted 5 calendar years after they end, also after their account is purged).
+   On a server provisioned before them, run `provision.sh` again (see
+   [Scheduled jobs](#scheduled-jobs)) to install their timers, then check:
 
    ```sh
    systemctl list-timers 'mytp-job@*'                # lists purgepending and eventlogretention

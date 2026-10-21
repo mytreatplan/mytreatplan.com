@@ -13,6 +13,9 @@ from django.utils import timezone
 
 from accounts.crypto import email_index, phone_index
 from accounts.erasure import erase_user, purge_erased
+from eventlog import retention as eventlog_retention
+from eventlog import service
+from eventlog.models import Attempt, Event
 from legal.models import LegalChoice, LegalDocument
 from mytp_publicsite import jobs
 from signup.forms import email_is_registered, phone_is_registered
@@ -344,6 +347,30 @@ def test_purge_leaves_live_and_not_due_accounts(staff):
     assert User.objects.filter(pk=live.pk).exists()
     assert live.legal_choices.count() == 1
     assert User.objects.filter(pk=staff.pk).exists()
+
+
+def test_purge_keeps_the_activity_records_for_their_5_years(staff):
+    """Epic-login entry 8: an erased account's login and page records (1 year old) stay,
+    with its pk and their IP and User-Agent, through the purge and the retention job."""
+    user = _user()
+    pk = user.pk
+    data = {'ip': '203.0.113.9', 'user_agent': 'Mozilla/5.0 (ErasedBrowser)'}
+    ended = timezone.now() - timedelta(days=365)
+    for kind, event in ((Attempt.LOGIN, 'login'), (Attempt.PAGE, 'page_view')):
+        attempt = service.start_attempt(kind, account_id=pk)
+        service.record(attempt, event, data=data)
+        Attempt.objects.filter(pk=attempt.pk).update(ended_at=ended, outcome=event)
+    erase_user(user, by=staff)
+
+    assert purge_erased(now=User.objects.get(pk=pk).purge_after) == 1
+    assert not User.objects.filter(pk=pk).exists()
+    eventlog_retention.anonymize()
+    eventlog_retention.delete_old()
+    assert eventlog_retention.delete_old_activity() == (0, 0)
+
+    records = Event.objects.filter(attempt__account_id=pk).order_by('attempt__kind')
+    assert [r.attempt.kind for r in records] == [Attempt.LOGIN, Attempt.PAGE]
+    assert all(r.data == data for r in records)
 
 
 def test_purge_works_in_batches(staff):

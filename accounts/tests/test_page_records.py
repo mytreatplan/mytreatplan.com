@@ -6,6 +6,7 @@ from datetime import timedelta
 
 import pytest
 import sentry_sdk
+from dateutil.relativedelta import relativedelta
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
 from django.db import DatabaseError, connection
@@ -291,16 +292,24 @@ def test_session_replaced_by_another_login_is_not_recorded(doctor):
 
 # --- Retention --------------------------------------------------------------------------
 
-def test_retention_leaves_page_records_intact(doctor):
+def test_retention_keeps_page_records_intact_for_5_years(doctor):
+    """Epic-login entry 8: never anonymized, deleted 5 calendar years after they end."""
     _browser(doctor).get(f'{WELCOME}?x=1', **META)
     [record] = _records()
     columns = (record.step, record.event, record.reason, record.data)
 
     retention.anonymize(now=timezone.now() + timedelta(days=31))
     assert retention.delete_old(now=timezone.now() + timedelta(days=800)) == (0, 0)
+    almost = timezone.now() + relativedelta(years=5) - timedelta(days=1)
+    assert retention.delete_old_activity(now=almost) == (0, 0)
 
     [kept] = _records()
     assert (kept.step, kept.event, kept.reason, kept.data) == columns
+    assert kept.data['ip'] == IP and kept.data['user_agent'] == AGENT
+
+    past = timezone.now() + relativedelta(years=5) + timedelta(days=1)
+    assert retention.delete_old_activity(now=past) == (1, 1)
+    assert _records() == []
 
 
 # --- Failures ---------------------------------------------------------------------------
