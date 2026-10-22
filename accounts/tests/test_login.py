@@ -6,67 +6,20 @@ import logging
 import re
 
 import pytest
-from django.contrib.auth import SESSION_KEY, get_user_model
+from django.contrib.auth import SESSION_KEY
 from django.test import Client
 
-from accounts.erasure import erase_user
 from accounts.forms import INVALID_LOGIN_MESSAGE
 from conftest import TURNSTILE_FAIL_SECRET, TURNSTILE_TEST_TOKEN
 from eventlog.models import Attempt, Event
-from signup.captcha import TOKEN_FIELD
 from signup.forms import BLOCKED_MESSAGE
-from signup.tests.conftest import clear_cache  # noqa: F401 - autouse, this module only
-from signup.tests.conftest import clock  # noqa: F401 - fixture
-from signup.tests.helpers import (EMAIL_ADDRESS, MOBILE_E164, NORMALIZED, PASSWORD,
-                                  _complete, _current_code)
-from signup.verification import EMAIL, PURPOSE_LOGIN, SMS
+from signup.tests.helpers import EMAIL_ADDRESS, NORMALIZED, PASSWORD
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
+from .helpers import _deactivate, _erase, _html, _logged_in, _login, _login_with_code
 
-User = get_user_model()
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('clear_cache', 'portal_urls')]
 
 SPANISH_ERROR = 'El correo electrónico o la contraseña no son correctos.'
-
-
-@pytest.fixture
-def doctor(client):
-    """A Doctor created by signup (the whole wizard), then logged out."""
-    response = _complete(client)
-    assert response['Location'] == '/en/welcome/'
-    client.logout()
-    return User.objects.by_email(NORMALIZED).get()
-
-
-def _login(client, email=EMAIL_ADDRESS, password=PASSWORD, lang='en', query='', extra=None,
-           **fields):
-    """Post the login form with the Turnstile test token, as the widget would; `extra`
-    goes to the test client (e.g. secure, REMOTE_ADDR)."""
-    return client.post(f'/{lang}/login/{query}', {
-        'email': email, 'password': password, TOKEN_FIELD: TURNSTILE_TEST_TOKEN, **fields},
-        **(extra or {}))
-
-
-def _login_with_code(client, contact='email', lang='en', extra=None, **kwargs):
-    """`_login` (the password), then the second factor: choose `contact` ('email' or
-    'mobile') and post the right code. Returns the response to the code."""
-    response = _login(client, lang=lang, extra=extra, **kwargs)
-    assert response.status_code == 302, response.context['form'].errors
-    assert response['Location'] == f'/{lang}/login/verify/'
-    response = client.post(f'/{lang}/login/verify/', {'contact': contact}, **(extra or {}))
-    assert response['Location'] == f'/{lang}/login/code/'
-    if contact == 'email':
-        code = _current_code(EMAIL, NORMALIZED, PURPOSE_LOGIN)
-    else:
-        code = _current_code(SMS, MOBILE_E164, PURPOSE_LOGIN)
-    return client.post(f'/{lang}/login/code/', {'code': code}, **(extra or {}))
-
-
-def _logged_in(client):
-    return SESSION_KEY in client.session
-
-
-def _html(response):
-    return response.content.decode()
 
 
 # --- Success and next ------------------------------------------------------------------
@@ -157,17 +110,6 @@ def test_anonymous_on_welcome_goes_to_login(client):
 
 
 # --- Failures: one generic error ------------------------------------------------------
-
-def _deactivate(doctor):
-    doctor.is_active = False
-    doctor.save(update_fields=['is_active'])
-
-
-def _erase(doctor, settings):
-    settings.ACCOUNT_ERASURE_RETENTION_DAYS = 30
-    staff = User.objects.create_superuser('staff@example.net', PASSWORD)
-    assert erase_user(doctor, by=staff)
-
 
 @pytest.mark.parametrize('case', ['wrong_password', 'unknown_email', 'inactive', 'erased',
                                   'malformed_email'])

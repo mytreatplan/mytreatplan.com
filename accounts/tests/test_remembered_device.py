@@ -12,54 +12,28 @@ from accounts.forms import INVALID_LOGIN_MESSAGE
 from accounts.views import PENDING_LOGIN_SESSION_KEY
 from conftest import TURNSTILE_FAIL_SECRET
 from signup.forms import BLOCKED_MESSAGE
-from signup.tests.conftest import capture_codes, clear_cache  # noqa: F401 - autouse
-from signup.tests.conftest import clock  # noqa: F401 - fixture
 from signup.tests.helpers import MOBILE_E164, NORMALIZED, PASSWORD, _current_code, _wrong
 from signup.verification import EMAIL, PURPOSE_LOGIN
 
-from .test_login import _html, _logged_in, _login, doctor  # noqa: F401
-from .test_login_code import login_clock  # noqa: F401 - fixture
+from .helpers import (CODE, VERIFY, WELCOME, _html, _logged_in, _login, _login_remembering,
+                      _mark, _post_code, _to_code)
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
+pytestmark = [pytest.mark.django_db,
+              pytest.mark.usefixtures('capture_codes', 'clear_cache', 'portal_urls')]
 
 User = get_user_model()
 
-VERIFY, CODE, WELCOME = '/en/login/verify/', '/en/login/code/', '/en/welcome/'
 DAY = 24 * 60 * 60
 LABEL = 'Remember me on this device/browser for 90 days'
 
 
-def _to_code(client, email=NORMALIZED, lang='en', **kwargs):
-    response = _login(client, email=email, lang=lang, **kwargs)
-    assert response['Location'] == f'/{lang}/login/verify/'
-    assert client.post(f'/{lang}/login/verify/', {'contact': 'email'})['Location'] == \
-        f'/{lang}/login/code/'
-
-
-def _post_code(client, code, remember=True, lang='en'):
-    data = {'code': code}
-    if remember:
-        data['remember'] = 'on'
-    return client.post(f'/{lang}/login/code/', data)
-
-
-def _login_with_code(client, remember=True, email=NORMALIZED, **kwargs):
-    _to_code(client, email=email, **kwargs)
-    return _post_code(client, _current_code(EMAIL, email, PURPOSE_LOGIN), remember)
-
-
 def _remembered(client, doctor):
     """A browser where `doctor` ticked the box with the right code, then logged out."""
-    response = _login_with_code(client)
+    response = _login_remembering(client)
     assert response['Location'] == WELCOME
     client.post('/en/logout/')
     assert not _logged_in(client)
     return response
-
-
-def _mark(client, user):
-    cookie = client.cookies.get(devices.cookie_name(user))
-    return cookie.value if cookie else None
 
 
 def _second_doctor():
@@ -90,7 +64,7 @@ def test_spanish_label(client, doctor):
 # --- Giving the mark ----------------------------------------------------------------------
 
 def test_ticked_right_code_logs_in_and_sets_the_mark(client, doctor, login_clock, settings):
-    response = _login_with_code(client)
+    response = _login_remembering(client)
 
     assert response['Location'] == WELCOME
     assert _logged_in(client)
@@ -113,13 +87,13 @@ def test_mark_is_secure_when_debug_is_off(client, doctor, settings):
     # The production settings make the session cookie Secure exactly when DEBUG is off.
     settings.SESSION_COOKIE_SECURE = True
 
-    response = _login_with_code(client)
+    response = _login_remembering(client)
 
     assert response.cookies[devices.cookie_name(doctor)]['secure'] is True
 
 
 def test_unticked_right_code_logs_in_without_a_mark(client, doctor):
-    response = _login_with_code(client, remember=False)
+    response = _login_remembering(client, remember=False)
 
     assert response['Location'] == WELCOME
     assert _logged_in(client)
@@ -130,7 +104,8 @@ def test_unticked_right_code_logs_in_without_a_mark(client, doctor):
 def test_ticked_wrong_code_sets_no_mark(client, doctor):
     _to_code(client)
 
-    response = _post_code(client, _wrong(_current_code(EMAIL, NORMALIZED, PURPOSE_LOGIN)))
+    response = _post_code(client, _wrong(_current_code(EMAIL, NORMALIZED, PURPOSE_LOGIN)),
+                          remember='on')
 
     assert response.status_code == 200
     assert not _logged_in(client)
@@ -211,7 +186,8 @@ def test_another_account_needs_its_own_code(client, doctor):
 
     # Both accounts remembered in one browser: neither overwrites the other.
     assert client.post(VERIFY, {'contact': 'email'})['Location'] == CODE
-    response = _post_code(client, _current_code(EMAIL, 'bea@example.com', PURPOSE_LOGIN))
+    response = _post_code(client, _current_code(EMAIL, 'bea@example.com', PURPOSE_LOGIN),
+                          remember='on')
     assert response['Location'] == WELCOME
     client.post('/en/logout/')
     assert _mark(client, doctor) == mark and _mark(client, bea)

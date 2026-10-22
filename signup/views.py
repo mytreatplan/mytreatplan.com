@@ -23,7 +23,6 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model, login
 from django.core.exceptions import NON_FIELD_ERRORS, ValidationError
 from django.db import IntegrityError, transaction
-from django.forms.utils import ErrorDict
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -34,10 +33,11 @@ from eventlog import service as eventlog
 from eventlog.models import Attempt
 from legal.models import LegalChoice
 
-from .forms import (BLOCKED_CAPTCHA, BLOCKED_MESSAGE, EMAIL_EXISTS, EMAIL_PENDING,
+from .forms import (BLOCKED_CAPTCHA, EMAIL_EXISTS, EMAIL_PENDING,
                     EMAIL_REGISTERED_MESSAGE, PHONE_EXISTS,
                     PHONE_REGISTERED_MESSAGE, REGISTERED_CODES, ResumeCodeForm,
-                    email_is_registered, failure_reason, normalize_email, phone_is_registered)
+                    email_is_registered, failure_reason, normalize_email, phone_is_registered,
+                    refuse)
 from . import captcha, limits
 from .models import PendingRegistration
 from .retention import remove_pending
@@ -322,14 +322,6 @@ def _submit(request, index, step, form, pending):
     return redirect(step_url(next_index))
 
 
-def _refuse(form, code):
-    """Give the (unvalidated) form only the generic error: no field is validated, so no
-    external check runs and no field error tells anything."""
-    form._errors = ErrorDict()
-    form.cleaned_data = {}
-    form.add_error(None, ValidationError(BLOCKED_MESSAGE, code=code))
-
-
 def _guard_step1(request, get_attempt, step, form, pending):
     """The CAPTCHA and the starts limit, before step 1's form is validated. Returns
     (blocked, reservation). Blocked: the form (not validated, nothing saved) then holds
@@ -343,7 +335,7 @@ def _guard_step1(request, get_attempt, step, form, pending):
     if result == captcha.FAILED:
         eventlog.record(get_attempt(), 'rejected', request=request, step=step.slug,
                         field='captcha', reason=BLOCKED_CAPTCHA, data=step.log_data(form))
-        _refuse(form, 'captcha_failed')
+        refuse(form, 'captcha_failed')
         return True, None
     if result == captcha.UNAVAILABLE:
         eventlog.record(get_attempt(), 'check_unavailable', request=request, step=step.slug,
@@ -354,7 +346,7 @@ def _guard_step1(request, get_attempt, step, form, pending):
         reservation = limits.ip_reserve(request, limits.SIGNUP_STARTS)
         if reservation is None:
             log_ip_blocked(request, get_attempt, step.slug, limits.SIGNUP_STARTS)
-            _refuse(form, 'rate_limited_ip')
+            refuse(form, 'rate_limited_ip')
             return True, None
         return False, reservation
     return False, None
@@ -446,10 +438,6 @@ def _is_last(index, pending):
     return all(later.is_done(pending) for later in STEPS[index + 1:])
 
 
-# The context of signup/_code_help.html (shared with the login code page, accounts.views).
-_code_help = code_help_context
-
-
 def _back_index(index, pending):
     """The step Back goes to: the previous one, skipping code steps already done (their
     code is used up). Never skips the account or the legal step."""
@@ -476,9 +464,9 @@ def _render(request, index, step, form, pending, email_check=None):
         **step.get_context(),
     }
     if isinstance(step, CodeStep):
-        context['code'] = _code_help(request, step.slug, form, step.contact(pending),
-                                     step.purpose, change_url=step_url(0),
-                                     sms=isinstance(step, MobileCodeStep))
+        context['code'] = code_help_context(request, step.slug, form, step.contact(pending),
+                                            step.purpose, change_url=step_url(0),
+                                            sms=isinstance(step, MobileCodeStep))
     return render(request, step.template_name, context)
 
 
@@ -626,7 +614,7 @@ def _render_resume(request, state, contact, form):
         'sent': state.get('sent', False),
         'cancel_url': reverse('signup_resume') + '?cancel',
         'cancel_registration_url': reverse('signup_cancel') + '?from=resume',
-        'code': _code_help(request, RESUME_STEP, form, contact, PURPOSE_RESUME),
+        'code': code_help_context(request, RESUME_STEP, form, contact, PURPOSE_RESUME),
     })
 
 

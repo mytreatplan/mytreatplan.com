@@ -2,10 +2,9 @@ import phonenumbers
 from django import forms
 from django.contrib.auth import authenticate
 from django.core.exceptions import ValidationError
-from django.forms.utils import ErrorDict
 from django.utils.translation import gettext_lazy as _
 
-from signup.forms import BLOCKED_MESSAGE, CHECKBOX_CLASSES, CodeForm, StyledForm
+from signup.forms import CHECKBOX_CLASSES, CodeForm, StyledForm
 from signup.verification import EMAIL, MOBILE, PURPOSE_LOGIN, SMS
 
 # The one error of every failed login (a wrong password, an unknown email, an inactive or
@@ -59,13 +58,6 @@ class LoginForm(StyledForm):
         self.user = None
         self.add_error(None, ValidationError(self.error_messages['invalid_login'],
                                              code='invalid_login'))
-
-    def refuse(self, code):
-        """Give the (unvalidated) form only signup's generic BLOCKED_MESSAGE: the
-        credentials are not checked."""
-        self._errors = ErrorDict()
-        self.cleaned_data = {}
-        self.add_error(None, ValidationError(BLOCKED_MESSAGE, code=code))
 
 
 # --- The second factor (epic-login entry 2) -------------------------------------------

@@ -216,7 +216,8 @@ class LegalStep(Step):
 #  because WhatsApp could not deliver, 'failed': whether the last send failed,
 #  'notice': a one-time notice ('cooldown' or 'hourly', with 'wait' in seconds, or
 #  'blocked': the per-IP limit, shown as the generic error)}.
-# Never a contact or a code.
+# Never a contact or a code. Signup-named, but it also holds the login code page's state
+# (accounts.views CODE_PAGE; the name stays).
 CODE_STATE_SESSION_KEY = 'signup_code_state'
 
 SendOutcome = namedtuple('SendOutcome', 'status channel fallback wait_seconds')
@@ -333,6 +334,8 @@ def _send(request, attempt, page, contact, purpose, channel, resend, field, log_
     except VerificationError as error:
         # No contact here: Sentry alerts on spikes of this message. The error's message is
         # safe to log (the providers put only Twilio's error code and HTTP status in it).
+        # Signup-named, but also the login codes' send failure (`purpose` tells them
+        # apart; the message stays, the Sentry alert keys on it).
         logger.error('Signup code send failed: channel=%s purpose=%s error=%s',
                      channel, purpose, error)
         eventlog.record(attempt, 'code_send_failed', request=request, step=page,

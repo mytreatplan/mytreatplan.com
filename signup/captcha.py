@@ -1,9 +1,10 @@
-"""The CAPTCHA of signup step 1 and of login: Cloudflare Turnstile (signup entry 9, CAP-11).
+"""The CAPTCHA of signup step 1, the login and the password reset request: Cloudflare
+Turnstile (signup entry 9, CAP-11).
 
 The widget (templates/includes/_turnstile.html, rendered by static/js/turnstile.js) puts a
-single-use token in its form's `cf-turnstile-response` field; `verify_turnstile` checks it with Cloudflare's siteverify
-(TURNSTILE_VERIFY_URL), sending the token, TURNSTILE_SECRET_KEY and the client IP. Neither
-the token nor the secret is ever logged.
+single-use token in its form's `cf-turnstile-response` field; `verify_turnstile` checks it
+with Cloudflare's siteverify (TURNSTILE_VERIFY_URL), sending the token,
+TURNSTILE_SECRET_KEY and the client IP. Neither the token nor the secret is ever logged.
 
 When siteverify cannot be reached (a timeout, an HTTP or network error, a body that is
 not its JSON) or answers that it could not decide (its own internal error, or our secret

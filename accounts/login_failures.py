@@ -8,8 +8,8 @@ and account (or email index), and runs out FAILURE_WINDOW_SECONDS after its last
 (decision 2). A successful login resets both counts of its account (`reset`); a completed
 password reset (entry 10) also lifts its lock (`unlock`).
 
-Each count's read-then-write runs under a per-key lock (`cache.add`, atomic in the
-database cache, as signup.limits), waited for up to a second, so two simultaneous
+Each count's read-then-write runs under a per-key lock (accounts.cache_mutex, as
+signup.limits), waited for up to a second, so two simultaneous
 failures are both counted. When a count reaches LOCK_THRESHOLD, its subject (the account,
 or the typed email's blind index) is locked for LOCK_SECONDS (`lock`, `is_locked`) and
 that count starts again from 0, so after the lock a new run of LOCK_THRESHOLD is needed.
@@ -21,6 +21,7 @@ from collections import namedtuple
 
 from django.core.cache import cache
 
+from .cache_mutex import cache_mutex
 from .crypto import email_index
 
 PASSWORD = 'password'
@@ -36,7 +37,7 @@ LOCK_SECONDS = 10 * 60
 
 # The per-key lock covers only a read-then-write; a request that finds it held tries
 # again every MUTEX_PAUSE seconds, MUTEX_TRIES times (a second), then gives up
-# (CounterBusy, reported by the caller like any other counter error).
+# (accounts.cache_mutex.CounterBusy, reported by the caller like any other counter error).
 MUTEX_SECONDS = 5
 MUTEX_PAUSE = 0.05
 MUTEX_TRIES = 20
@@ -45,10 +46,6 @@ MUTEX_TRIES = 20
 # What `record_failure` did: the count in the run, whether it set the lock, and the
 # (action, error) pairs of the lock steps that failed, for the caller to report.
 Failure = namedtuple('Failure', 'count locked errors')
-
-
-class CounterBusy(Exception):
-    """A counter's lock was not got within the wait."""
 
 
 def _now():
@@ -79,20 +76,6 @@ def _lock_key(account_id=None, email=None):
     return f'login:lock:{_subject(account_id, email)}'
 
 
-def _acquire(key):
-    """The per-key mutex, waiting up to MUTEX_TRIES * MUTEX_PAUSE for it."""
-    for attempt in range(MUTEX_TRIES + 1):
-        if cache.add(key + ':mutex', 1, timeout=MUTEX_SECONDS):
-            return
-        if attempt < MUTEX_TRIES:
-            _sleep(MUTEX_PAUSE)
-    raise CounterBusy(key)
-
-
-def _release(key):
-    cache.delete(key + ':mutex')
-
-
 def _current(key, now):
     """The stored count, or 0 when there is none or its run has expired."""
     entry = cache.get(key)
@@ -118,8 +101,8 @@ def record_failure(counter, *, account_id=None, email=None):
     clearing (or, without the lock, storing) the count are independent steps: one that
     fails is returned in `errors`, and does not undo or skip the other."""
     key = _key(counter, account_id, email)
-    _acquire(key)
-    try:
+    with cache_mutex(key, seconds=MUTEX_SECONDS, pause=MUTEX_PAUSE, tries=MUTEX_TRIES,
+                     sleep=_sleep):
         now = _now()
         count = _current(key, now) + 1
         if count < LOCK_THRESHOLD:
@@ -140,13 +123,12 @@ def record_failure(counter, *, account_id=None, email=None):
         except Exception as error:  # noqa: BLE001 - reported by the caller
             errors.append(('clear_count' if locked else 'store_count', error))
         return Failure(count, locked, tuple(errors))
-    finally:
-        _release(key)
 
 
 def failure_count(counter, *, account_id=None, email=None):
     """The current count of `counter` for the account (or the email with no account);
-    0 when there is no run going."""
+    0 when there is no run going. Only the tests read it (the login reads the lock,
+    `is_locked`, never the count)."""
     return _current(_key(counter, account_id, email), _now())
 
 

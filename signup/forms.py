@@ -3,6 +3,7 @@ import logging
 import phonenumbers
 from django import forms
 from django.contrib.auth import get_user_model, password_validation
+from django.forms.utils import ErrorDict
 from django.urls import reverse_lazy
 from django.utils.translation import gettext_lazy as _
 from django_countries import countries
@@ -49,6 +50,15 @@ REGISTERED_CODES = ('email_registered', 'phone_registered')
 # says nothing of which check, limit or reset time. A non-field error on step 1; the
 # `blocked` notice on the code pages (signup/_code_help.html).
 BLOCKED_MESSAGE = _("We couldn't process your request. Please try again later.")
+
+
+def refuse(form, code, message=BLOCKED_MESSAGE):
+    """Give the (unvalidated) form only `message`, the generic error by default, as a
+    non-field error with `code`: no field is validated, so no external check runs and no
+    field error tells anything. Signup's step 1, the login and the password reset."""
+    form._errors = ErrorDict()
+    form.cleaned_data = {}
+    form.add_error(None, forms.ValidationError(message, code=code))
 
 
 # Failure reasons for the event log, in the wording of registration-failure-policies.md.

@@ -8,42 +8,26 @@ import json
 
 import pytest
 import sentry_sdk
-from django.contrib.auth import get_user_model
 from django.core.cache import cache
 from django.db import DatabaseError
 
 from accounts import login_failures
 from accounts.views import PENDING_LOGIN_SESSION_KEY
 from conftest import TURNSTILE_FAIL_SECRET
-from eventlog.models import Attempt, Event
 from signup import limits
 from signup.forms import BLOCKED_MESSAGE
-from signup.tests.conftest import capture_codes, clear_cache  # noqa: F401 - autouse
-from signup.tests.conftest import clock  # noqa: F401 - fixture
-from signup.tests.helpers import NORMALIZED, PASSWORD, _current_code, _wrong
-from signup.verification import EMAIL, PURPOSE_LOGIN
+from signup.tests.helpers import NORMALIZED, PASSWORD, _wrong
 
-from .test_login import _html, _logged_in, _login, _login_with_code, doctor  # noqa: F401
-from .test_login_code import login_clock  # noqa: F401 - fixture
+from .helpers import (AGENT, CODE, IP, LOGIN, META, VERIFY, WELCOME, WRONG_PASSWORD,
+                      _failures, _html, _ip_blocks, _lock_by_passwords, _locks, _logged_in,
+                      _login, _login_with_code, _messages, _post_code, _right_code, _to_code,
+                      _wrong_password)
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
+pytestmark = [pytest.mark.django_db,
+              pytest.mark.usefixtures('capture_codes', 'clear_cache', 'portal_urls')]
 
-User = get_user_model()
-
-IP = '203.0.113.77'
-META = {'REMOTE_ADDR': IP}
-WRONG_PASSWORD = 'wrong-password-123'
 UNKNOWN = 'nobody.here@example.com'
-VERIFY, CODE, LOGIN, WELCOME = ('/en/login/verify/', '/en/login/code/', '/en/login/',
-                                '/en/welcome/')
 SPANISH_BLOCKED = 'No hemos podido procesar su solicitud. Inténtelo de nuevo más tarde.'
-
-
-@pytest.fixture
-def lock_clock(login_clock, monkeypatch):
-    """The login clock, also seen by the failure counters and the locks."""
-    monkeypatch.setattr('accounts.login_failures._now', login_clock)
-    return login_clock
 
 
 @pytest.fixture
@@ -64,48 +48,6 @@ def _assert_blocked(response, message=BLOCKED_MESSAGE):
     assert 'attempt' not in page.lower()
 
 
-def _wrong_password(client, email=NORMALIZED, lang='en'):
-    response = _login(client, email=email, password=WRONG_PASSWORD, lang=lang, extra=META)
-    assert response.status_code == 200 and not _logged_in(client)
-    return response
-
-
-def _lock_by_passwords(client, email=NORMALIZED):
-    """4 wrong passwords (the generic login error), then the 5th, which locks."""
-    for _ in range(login_failures.LOCK_THRESHOLD - 1):
-        response = _wrong_password(client, email)
-        assert response.context['form'].has_error('__all__', 'invalid_login')
-    return _wrong_password(client, email)
-
-
-def _to_code(client):
-    assert _login(client, extra=META)['Location'] == VERIFY
-    assert client.post(VERIFY, {'contact': 'email'})['Location'] == CODE
-
-
-def _post_code(client, code):
-    return client.post(CODE, {'code': code}, **META)
-
-
-def _right_code():
-    return _current_code(EMAIL, NORMALIZED, PURPOSE_LOGIN)
-
-
-def _locks(**filters):
-    return list(Event.objects.filter(attempt__kind=Attempt.LOGIN, event='account_locked',
-                                     **filters).select_related('attempt'))
-
-
-def _ip_blocks():
-    return list(Event.objects.filter(attempt__kind=Attempt.LOGIN, event='rejected',
-                                     field='ip'))
-
-
-def _messages(sentry_capture):
-    return [event.get('logentry', {}).get('message') or event.get('message')
-            for event in sentry_capture.events]
-
-
 # --- Wrong passwords --------------------------------------------------------------------
 
 def test_fifth_wrong_password_locks_the_account(client, doctor, lock_clock):
@@ -118,7 +60,7 @@ def test_fifth_wrong_password_locks_the_account(client, doctor, lock_clock):
     [lock] = _locks()
     assert lock.attempt.account_id == doctor.pk
     assert (lock.step, lock.field, lock.reason) == ('login', 'password', 'wrong_password')
-    assert lock.data == {'count': 5, 'ip': IP, 'user_agent': ''}
+    assert lock.data == {'count': 5, 'ip': IP, 'user_agent': AGENT}
     assert WRONG_PASSWORD not in json.dumps(lock.data)
 
 
@@ -140,7 +82,7 @@ def test_locked_account_refuses_the_right_password(client, doctor, lock_clock, m
 
 
 def test_locked_account_refuses_a_remembered_device(client, doctor, lock_clock):
-    _to_code(client)
+    _to_code(client, extra=META)
     assert client.post(CODE, {'code': _right_code(), 'remember': 'on'})['Location'] == WELCOME
     client.post('/en/logout/')
     _lock_by_passwords(client)
@@ -171,12 +113,13 @@ def test_lock_ends_after_ten_minutes(client, doctor, lock_clock):
 # --- Wrong codes ------------------------------------------------------------------------
 
 def test_fifth_wrong_code_locks_and_ends_the_pending_login(client, doctor, lock_clock):
-    _to_code(client)
+    _to_code(client, extra=META)
     wrong = _wrong(_right_code())
     for _ in range(login_failures.LOCK_THRESHOLD - 1):
-        assert _post_code(client, wrong).context['form'].has_error('code', 'invalid_code')
+        response = _post_code(client, wrong, extra=META)
+        assert response.context['form'].has_error('code', 'invalid_code')
 
-    response = _post_code(client, wrong)
+    response = _post_code(client, wrong, extra=META)
 
     assert response['Location'] == LOGIN
     assert PENDING_LOGIN_SESSION_KEY not in client.session
@@ -192,7 +135,7 @@ def test_fifth_wrong_code_locks_and_ends_the_pending_login(client, doctor, lock_
 
 
 def test_lock_set_while_on_the_code_page(client, doctor, lock_clock):
-    _to_code(client)
+    _to_code(client, extra=META)
     login_failures.lock(account_id=doctor.pk)
 
     response = client.get(CODE)
@@ -216,10 +159,10 @@ def test_lock_set_while_choosing_the_contact(client, doctor, lock_clock):
 def test_separate_counters_do_not_add_up(client, doctor, lock_clock):
     for _ in range(4):
         _wrong_password(client)
-    _to_code(client)
+    _to_code(client, extra=META)
     wrong = _wrong(_right_code())
     for _ in range(4):
-        response = _post_code(client, wrong)
+        response = _post_code(client, wrong, extra=META)
         assert response.status_code == 200
         assert response.context['form'].has_error('code', 'invalid_code')
 
@@ -302,7 +245,7 @@ def test_ip_over_the_limit_is_refused_without_checking_credentials(client, docto
     assert PENDING_LOGIN_SESSION_KEY not in client.session
     [block] = _ip_blocks()
     assert (block.step, block.reason) == ('login', 'blocked: rate limit')
-    assert block.data == {'counter': 'login_attempts', 'ip': IP, 'user_agent': ''}
+    assert block.data == {'counter': 'login_attempts', 'ip': IP, 'user_agent': AGENT}
     assert block.attempt.account_id is None
     # Only the first block of the window is recorded.
     _assert_blocked(_login(client, extra=META))
@@ -401,11 +344,6 @@ def test_failing_lock_and_limit_never_stop_the_login(client, doctor, monkeypatch
         assert secret not in text
 
 
-def _failures():
-    return list(Event.objects.filter(attempt__kind=Attempt.LOGIN, event='login_failed')
-                .order_by('created_at', 'id'))
-
-
 def test_failing_lock_write_keeps_the_count_and_the_record(client, doctor, monkeypatch,
                                                            sentry_capture):
     def fail(**kwargs):
@@ -448,15 +386,15 @@ def test_failing_count_clear_still_locks_and_refuses(client, doctor, monkeypatch
 def test_lock_set_during_the_password_check_still_refuses(client, doctor, monkeypatch):
     """A parallel 5th failure locks the account after the first lock check passed: the
     right password authenticated meanwhile is refused all the same."""
-    from accounts import views
+    from accounts import login_guard
 
-    real_check = views._login_locked
+    real_check = login_guard.login_locked
 
     def locked_meanwhile(email):
         result = real_check(email)
         login_failures.lock(account_id=doctor.pk)
         return result
-    monkeypatch.setattr(views, '_login_locked', locked_meanwhile)
+    monkeypatch.setattr(login_guard, 'login_locked', locked_meanwhile)
 
     response = _login(client, extra=META)
 
@@ -466,18 +404,18 @@ def test_lock_set_during_the_password_check_still_refuses(client, doctor, monkey
 
 
 def test_remembered_device_locked_during_the_password_check(client, doctor, monkeypatch):
-    from accounts import views
+    from accounts import login_guard
 
-    _to_code(client)
+    _to_code(client, extra=META)
     assert client.post(CODE, {'code': _right_code(), 'remember': 'on'})['Location'] == WELCOME
     client.post('/en/logout/')
-    real_check = views._login_locked
+    real_check = login_guard.login_locked
 
     def locked_meanwhile(email):
         result = real_check(email)
         login_failures.lock(account_id=doctor.pk)
         return result
-    monkeypatch.setattr(views, '_login_locked', locked_meanwhile)
+    monkeypatch.setattr(login_guard, 'login_locked', locked_meanwhile)
 
     _assert_blocked(_login(client, extra=META))
     assert not _logged_in(client)
@@ -493,7 +431,7 @@ def test_spanish_refusal(client, doctor, lock_clock):
 
 
 def test_spanish_code_page_refusal(client, doctor, lock_clock):
-    _to_code(client)
+    _to_code(client, extra=META)
     login_failures.lock(account_id=doctor.pk)
 
     response = client.get('/es/login/code/')

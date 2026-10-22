@@ -25,23 +25,19 @@ from eventlog.models import Attempt, Event
 from signup import limits
 from signup.captcha import TOKEN_FIELD
 from signup.forms import BLOCKED_MESSAGE
-from signup.tests.conftest import capture_codes, clear_cache  # noqa: F401 - autouse
-from signup.tests.conftest import clock  # noqa: F401 - fixture
 from signup.tests.helpers import EMAIL_ADDRESS, NORMALIZED, PASSWORD
 
-from .test_login import _deactivate, _erase, _html, _logged_in, _login, doctor  # noqa: F401
-from .test_login import _login_with_code
-from .test_login_code import login_clock  # noqa: F401 - fixture
-from .test_lockout import _lock_by_passwords, lock_clock  # noqa: F401
-from .test_remembered_device import _login_with_code as _login_remembering
+from .helpers import (LOGIN, _deactivate, _erase, _html, _lock_by_passwords, _logged_in, _login,
+                      _login_remembering, _login_with_code, _records)
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
+pytestmark = [pytest.mark.django_db,
+              pytest.mark.usefixtures('capture_codes', 'clear_cache', 'portal_urls')]
 
 User = get_user_model()
 
 NEW_PASSWORD = 'amber-glacier-meadow-77'
-REQUEST, SENT, NEW, LOGIN = ('/en/password-reset/', '/en/password-reset/sent/',
-                             '/en/password-reset/new/', '/en/login/')
+REQUEST, SENT, NEW = ('/en/password-reset/', '/en/password-reset/sent/',
+                      '/en/password-reset/new/')
 SITE = 'https://portal.example.test'
 LINK_RE = re.compile(r'https://portal\.example\.test/(en|es)/reset/#(([^.\s]+)\.(\S+))')
 SENT_TEXT = 'If an account exists for that email address, we have sent it a link'
@@ -103,11 +99,6 @@ def _set_password(browser, password=NEW_PASSWORD, password2=None, lang='en'):
         'password1': password, 'password2': password if password2 is None else password2})
 
 
-def _records(event):
-    return list(Event.objects.filter(attempt__kind=Attempt.LOGIN, event=event)
-                .select_related('attempt').order_by('pk'))
-
-
 def _all_event_text():
     return json.dumps([[e.event, e.step, e.field, e.reason, e.data]
                        for e in Event.objects.all()], default=str)
@@ -151,7 +142,7 @@ def test_request_for_an_account_mails_the_link(client, doctor, mailoutbox, email
     assert not getattr(message, 'alternatives', [])
     link = _link(message)
     assert f'{SITE}/en/reset/#{link.uid}.{link.token}' in message.body  # in the fragment
-    [record] = _records('password_reset_requested')
+    [record] = _records(event='password_reset_requested')
     assert record.attempt.account_id == doctor.pk
     assert (record.step, record.reason) == ('password-reset', 'mail_queued')
     assert 'email' not in record.data
@@ -174,7 +165,7 @@ def test_request_for_an_unknown_email_sends_nothing(client, doctor, mailoutbox):
     assert unknown_response['Location'] == SENT
     assert _html(Client().get(SENT)).count(SENT_TEXT) == known.count(SENT_TEXT) == 1
     assert len(mailoutbox) == 1  # only the account's
-    record = _records('password_reset_requested')[-1]
+    record = _records(event='password_reset_requested')[-1]
     assert record.attempt.account_id is None
     assert record.reason == 'unknown_email'
     assert record.data['email'] == 'nobody.here@example.com'
@@ -195,7 +186,7 @@ def test_inactive_erased_and_unusable_accounts_get_no_mail(client, doctor, mailo
 
     assert response['Location'] == SENT
     assert mailoutbox == []
-    record = _records('password_reset_requested')[-1]
+    record = _records(event='password_reset_requested')[-1]
     if case == 'erased':
         assert (record.attempt.account_id, record.reason) == (None, 'unknown_email')
     else:
@@ -220,7 +211,7 @@ def test_failed_captcha_is_blocked(client, doctor, mailoutbox, settings):
     assert form.non_field_errors() == [BLOCKED_MESSAGE]
     assert list(form.errors) == ['__all__']
     assert mailoutbox == []
-    assert _records('password_reset_requested') == []
+    assert _records(event='password_reset_requested') == []
 
 
 def test_unavailable_captcha_lets_the_request_through(client, doctor, mailoutbox, turnstile):
@@ -229,7 +220,7 @@ def test_unavailable_captcha_lets_the_request_through(client, doctor, mailoutbox
     assert _request(client)['Location'] == SENT
 
     assert len(mailoutbox) == 1
-    [record] = _records('check_unavailable')
+    [record] = _records(event='check_unavailable')
     assert (record.step, record.field, record.reason) == ('password-reset', 'captcha',
                                                           'turnstile')
 
@@ -245,11 +236,11 @@ def test_ip_limit_answers_the_same_and_records_the_first_block(client, doctor, m
         assert _request(client)['Location'] == SENT
 
     assert mailoutbox == []
-    [block] = _records('rejected')
+    [block] = _records(event='rejected')
     assert (block.step, block.field, block.reason) == ('password-reset', 'ip',
                                                        'blocked: rate limit')
     assert block.data['counter'] == 'reset_requests'
-    assert len(_records('password_reset_requested')) == 2
+    assert len(_records(event='password_reset_requested')) == 2
 
 
 def test_ip_limit_default_is_20(settings):
@@ -267,8 +258,8 @@ def test_fourth_mail_to_an_email_within_the_hour_is_not_sent(client, doctor, mai
     assert _request(client, email=NORMALIZED.upper())['Location'] == SENT
     assert len(mailoutbox) == 3
     # The request is recorded as any other; the background job records the limit.
-    assert _records('password_reset_requested')[-1].reason == 'mail_queued'
-    [limited] = [e for e in _records('rejected') if e.field == 'email']
+    assert _records(event='password_reset_requested')[-1].reason == 'mail_queued'
+    [limited] = [e for e in _records(event='rejected') if e.field == 'email']
     assert (limited.attempt.account_id, limited.reason) == (doctor.pk, 'rate_limited_email')
 
     now[0] += password_reset.MAIL_WINDOW_SECONDS  # the first mail leaves the window
@@ -384,7 +375,7 @@ def test_reset_done(client, doctor, mailoutbox):
     assert not _logged_in(browser)
     assert LINK_SESSION_KEY not in browser.session
     assert CHANGED in _html(browser.get(LOGIN))
-    [record] = _records('password_reset_done')
+    [record] = _records(event='password_reset_done')
     assert record.attempt.account_id == doctor.pk
     assert record.step == 'password-reset-new'
     text = _all_event_text()

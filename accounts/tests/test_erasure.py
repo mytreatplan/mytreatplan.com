@@ -59,11 +59,6 @@ def _choose(user, kind, accepted, when=None):
 
 
 @pytest.fixture
-def staff():
-    return User.objects.create_superuser('staff@example.net', PASSWORD)
-
-
-@pytest.fixture
 def staff_client(staff):
     client = Client()
     client.force_login(staff)

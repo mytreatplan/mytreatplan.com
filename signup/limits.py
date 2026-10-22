@@ -9,8 +9,8 @@ cache), keyed by the contact's blind index, never the plain address or number.
 
 Plus the per-IP limits (signup entry 9, CAP-11), against one source cycling through
 contacts: signup starts, live email checks and code sends (every purpose, successful
-sends only), plus login password submissions (epic-login entry 5) and password reset requests (entry
-10), each at most SIGNUP_IP_LIMITS[counter] per client IP
+sends only), plus login password submissions (epic-login entry 5) and password reset
+requests (entry 10), each at most SIGNUP_IP_LIMITS[counter] per client IP
 (eventlog.service.client_ip) in fixed one-hour windows. A send must pass both the contact
 and the IP limits. The counters are in the same cache, keyed by an HMAC of the IP with
 SECRET_KEY, never the plain IP; an IPv6 address counts as its /64 network (one client
@@ -30,6 +30,7 @@ from collections import namedtuple
 from django.conf import settings
 from django.core.cache import cache
 
+from accounts.cache_mutex import acquire
 from eventlog.service import client_ip
 
 from .verification import EMAIL, MOBILE, contact_index
@@ -121,8 +122,8 @@ def seconds_since_last_send(contact, purpose):
 SIGNUP_STARTS = 'signup_starts'
 EMAIL_CHECKS = 'email_checks'
 CODE_SENDS = 'code_sends'
-# Login password submissions (epic-login entry 5): accounts.views counts them here, in the
-# same hourly window, with the same reserve, refund and first-block logging.
+# Login password submissions (epic-login entry 5): accounts.login_guard counts them here,
+# in the same hourly window, with the same reserve, refund and first-block logging.
 LOGIN_ATTEMPTS = 'login_attempts'
 # Password reset requests (epic-login entry 10): accounts.password_reset counts them here.
 RESET_REQUESTS = 'reset_requests'
@@ -153,6 +154,8 @@ def _ip_hash(ip):
 
 
 def _ip_base(request, counter):
+    # Signup-named, but also the login's and the password reset's counters (the prefix
+    # stays).
     return f'signup:ip:{counter}:{_ip_hash(client_ip(request))}'
 
 
@@ -175,23 +178,24 @@ def _sleep(seconds):
     time.sleep(seconds)
 
 
+def _ip_lock_key(request, counter):
+    return _ip_base(request, counter) + ':lock'
+
+
 def acquire_ip_lock(request, counter):
     """Take the per-IP-and-counter lock (one try); False if another request holds it."""
-    return _lock(_ip_base(request, counter) + ':lock', IP_LOCK_SECONDS)
+    return _lock(_ip_lock_key(request, counter), IP_LOCK_SECONDS)
 
 
 def release_ip_lock(request, counter):
-    _unlock(_ip_base(request, counter) + ':lock')
+    _unlock(_ip_lock_key(request, counter))
 
 
 def _wait_ip_lock(request, counter):
-    """The lock, waiting up to IP_LOCK_TRIES * IP_LOCK_PAUSE for it; False if not got."""
-    for attempt in range(IP_LOCK_TRIES + 1):
-        if acquire_ip_lock(request, counter):
-            return True
-        if attempt < IP_LOCK_TRIES:
-            _sleep(IP_LOCK_PAUSE)
-    return False
+    """The lock, waiting up to IP_LOCK_TRIES * IP_LOCK_PAUSE for it (accounts.cache_mutex);
+    False if not got."""
+    return acquire(_ip_lock_key(request, counter), seconds=IP_LOCK_SECONDS,
+                   pause=IP_LOCK_PAUSE, tries=IP_LOCK_TRIES, sleep=_sleep)
 
 
 def ip_reserve(request, counter):
