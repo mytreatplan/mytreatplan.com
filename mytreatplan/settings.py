@@ -107,6 +107,8 @@ SIGNUP_IP_LIMITS = {
     'code_sends': config('SIGNUP_IP_LIMIT_CODE_SENDS', default=120, cast=int),
     # Login password submissions (accounts.views, epic-login entry 5, decision 2).
     'login_attempts': config('SIGNUP_IP_LIMIT_LOGIN_ATTEMPTS', default=60, cast=int),
+    # Password reset requests (accounts.password_reset, epic-login entry 10, decision 1).
+    'reset_requests': config('SIGNUP_IP_LIMIT_RESET_REQUESTS', default=20, cast=int),
 }
 
 # Account erasure (accounts.erasure): days an erased account (email, names, country,
@@ -350,6 +352,10 @@ SILENCED_SYSTEM_CHECKS = [
 # Where @login_required sends anonymous visitors: the login page (accounts.views.login),
 # which sends them back to `next` once logged in.
 LOGIN_URL = 'login'
+
+# The password reset link (accounts.password_reset, epic-login entry 10) is valid 1 hour.
+# Django's token also stops working once the password changes, so it is single-use.
+PASSWORD_RESET_TIMEOUT = 3600
 
 
 # Internationalization

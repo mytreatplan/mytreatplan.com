@@ -9,7 +9,8 @@ cache), keyed by the contact's blind index, never the plain address or number.
 
 Plus the per-IP limits (signup entry 9, CAP-11), against one source cycling through
 contacts: signup starts, live email checks and code sends (every purpose, successful
-sends only), plus login password submissions (epic-login entry 5), each at most SIGNUP_IP_LIMITS[counter] per client IP
+sends only), plus login password submissions (epic-login entry 5) and password reset requests (entry
+10), each at most SIGNUP_IP_LIMITS[counter] per client IP
 (eventlog.service.client_ip) in fixed one-hour windows. A send must pass both the contact
 and the IP limits. The counters are in the same cache, keyed by an HMAC of the IP with
 SECRET_KEY, never the plain IP; an IPv6 address counts as its /64 network (one client
@@ -123,7 +124,9 @@ CODE_SENDS = 'code_sends'
 # Login password submissions (epic-login entry 5): accounts.views counts them here, in the
 # same hourly window, with the same reserve, refund and first-block logging.
 LOGIN_ATTEMPTS = 'login_attempts'
-IP_COUNTERS = (SIGNUP_STARTS, EMAIL_CHECKS, CODE_SENDS, LOGIN_ATTEMPTS)
+# Password reset requests (epic-login entry 10): accounts.password_reset counts them here.
+RESET_REQUESTS = 'reset_requests'
+IP_COUNTERS = (SIGNUP_STARTS, EMAIL_CHECKS, CODE_SENDS, LOGIN_ATTEMPTS, RESET_REQUESTS)
 IP_WINDOW_SECONDS = 3600
 
 

@@ -5,7 +5,8 @@ second-factor codes). A failure for an email with no account counts under PASSWO
 that email's blind index (accounts.crypto.email_index), never the plain email. Each count
 lives in CACHES['default'] (the database cache, as signup.limits), one key per counter
 and account (or email index), and runs out FAILURE_WINDOW_SECONDS after its last failure
-(decision 2). A successful login resets both counts of its account (`reset`).
+(decision 2). A successful login resets both counts of its account (`reset`); a completed
+password reset (entry 10) also lifts its lock (`unlock`).
 
 Each count's read-then-write runs under a per-key lock (`cache.add`, atomic in the
 database cache, as signup.limits), waited for up to a second, so two simultaneous
@@ -159,6 +160,12 @@ def lock(*, account_id=None, email=None):
     now = _now()
     cache.set(_lock_key(account_id, email), {'until': now + LOCK_SECONDS},
               timeout=LOCK_SECONDS + 60)
+
+
+def unlock(*, account_id=None, email=None):
+    """Lift the lock of the account (or of the email with no account) at once: a completed
+    password reset (epic-login entry 10, decision 2)."""
+    cache.delete(_lock_key(account_id, email))
 
 
 def is_locked(*, account_id=None, email=None):
