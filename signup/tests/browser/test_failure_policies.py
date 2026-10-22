@@ -19,8 +19,6 @@ pytest.importorskip('pytest_playwright')
 
 from django.contrib.auth import get_user_model  # noqa: E402
 from django.core.management import call_command  # noqa: E402
-from django.http import HttpResponse  # noqa: E402
-from django.urls import path  # noqa: E402
 from django.utils import timezone  # noqa: E402
 from playwright.sync_api import expect  # noqa: E402
 
@@ -28,7 +26,6 @@ from conftest import TURNSTILE_FAIL_SECRET, TURNSTILE_PASS_SECRET  # noqa: E402
 from eventlog.models import Attempt, Event  # noqa: E402
 from signup import limits  # noqa: E402
 from signup.models import ACTIVE_FOR, PendingRegistration  # noqa: E402
-from signup.tests import urls_portal  # noqa: E402
 from signup.verification import (FAKE_NO_WHATSAPP_NUMBER,  # noqa: E402
                                  FAKE_SEND_FAILS_NUMBER, PURPOSE_RESUME)
 
@@ -46,12 +43,6 @@ pytestmark = [
 
 User = get_user_model()
 
-# A URLconf with a `password_reset` route, as epic-login will add: the recovery note then
-# shows its link (signup/_recovery_note.html).
-urlpatterns = list(urls_portal.urlpatterns) + [
-    path('password-reset/', lambda request: HttpResponse(), name='password_reset'),
-]
-
 RECOVERY_NOTE = 'If this account is yours, you can recover access to it'
 PENDING_NOTE = 'A registration with this email address is already in progress.'
 RESTORED = 'We have restored your registration. Review your details and continue.'
@@ -64,11 +55,6 @@ GENERIC = "We couldn't process your request. Please try again later."
 
 # Another signup's own details (rows 5 and 6), which must not show before the code.
 OLD = {'first_name': 'Beatriz', 'last_name': 'Olmedo-Saavedra', 'country': 'PT'}
-
-
-@pytest.fixture
-def recovery_urls(settings, portal_urls):
-    settings.ROOT_URLCONF = __name__
 
 
 def _body(page):
@@ -158,7 +144,6 @@ def test_row2_unfinished_after_24h(live_server, page):
 
 # --- Rows 3 and 4 ----------------------------------------------------------------------------
 
-@pytest.mark.usefixtures('recovery_urls')
 def test_row3_email_already_registered(live_server, page):
     """Policy row 3, "Email already registered": blocked, with a link to password
     recovery; the email typed in another case."""
@@ -173,11 +158,10 @@ def test_row3_email_already_registered(live_server, page):
     expect(_body(page)).to_contain_text('This email address is already registered.')
     link = page.locator('[data-recovery-link]').first
     expect(link).to_have_text('Recover your password')
-    expect(link).to_have_attribute('href', '/password-reset/')
+    expect(link).to_have_attribute('href', '/en/password-reset/')
     assert not PendingRegistration.objects.exists()
 
 
-@pytest.mark.usefixtures('recovery_urls')
 def test_row4_mobile_already_registered(live_server, page):
     """Policy row 4, "Mobile already registered": blocked, with a link to password
     recovery; the mobile typed in another format."""
@@ -189,7 +173,8 @@ def test_row4_mobile_already_registered(live_server, page):
     expect(page).to_have_url(url('en'))
     expect(_body(page)).to_contain_text('This mobile phone number is already registered.')
     expect(_body(page)).to_contain_text(RECOVERY_NOTE)
-    expect(page.locator('[data-recovery-link]')).to_have_attribute('href', '/password-reset/')
+    expect(page.locator('[data-recovery-link]')).to_have_attribute('href',
+                                                                  '/en/password-reset/')
     assert not PendingRegistration.objects.exists()
 
 

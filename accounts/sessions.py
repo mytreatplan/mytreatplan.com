@@ -24,6 +24,10 @@ pending login) are untouched.
 
 Ending a session (`auth_logout`) leaves the remembered-device cookie (accounts.devices).
 `end_all_sessions(user)` ends every session of an account (for the password reset).
+
+The password reset pages (RESET_PAGES, epic-login entry 10, decision 4) never bounce to
+login: a session ended on them (replaced, idle, or ended meanwhile) carries on anonymously
+there, so the reset link opened in an idle browser still works.
 """
 import hashlib
 import time
@@ -37,7 +41,7 @@ from django.contrib.auth.views import redirect_to_login
 from django.core.cache import cache
 from django.http import HttpResponse, HttpResponseRedirect
 from django.shortcuts import resolve_url
-from django.urls import NoReverseMatch, reverse
+from django.urls import NoReverseMatch, Resolver404, resolve, reverse
 from django.utils.crypto import constant_time_compare
 from django.utils.translation import gettext_lazy as _
 
@@ -50,6 +54,11 @@ REPLACED_MESSAGE = _('You were logged out because your account was logged in on 
                      'device.')
 IDLE_MESSAGE = _('Your session ended after 15 minutes without activity. Please log in '
                  'again.')
+
+
+# The password reset pages' URL names (accounts.urls): an ended session carries on there.
+RESET_PAGES = frozenset({'password_reset', 'password_reset_done', 'password_reset_confirm',
+                         'password_reset_new'})
 
 
 def _now():
@@ -151,11 +160,18 @@ def _login_url(request):
         return None
 
 
+def _is_reset_page(request):
+    try:
+        return resolve(request.path_info).url_name in RESET_PAGES
+    except Resolver404:
+        return False
+
+
 def _to_login(request):
     """The response that sends an ended session to the login page; None to let the
-    request go on (logged out): no login page, or already on it."""
+    request go on (logged out): no login page, already on it, or a password reset page."""
     login_url = _login_url(request)
-    if login_url is None or request.path == login_url:
+    if login_url is None or request.path == login_url or _is_reset_page(request):
         return None
     if request.headers.get('HX-Request'):
         # htmx: a full-page redirect, not the login page swapped into a fragment.

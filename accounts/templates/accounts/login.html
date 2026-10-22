@@ -24,6 +24,8 @@ failed login shows the same non-field error; the email is kept, the password is 
   {% endif %}
   {% include "includes/_form_field.html" with field=form.email %}
   {% include "includes/_form_field.html" with field=form.password %}
+  {# The password reset request (epic-login entry 10, decision 5). #}
+  <p class="-mt-2 text-[15px]"><a href="{% url 'password_reset' %}" class="font-semibold text-ink-muted underline underline-offset-4 hover:text-ink" data-forgot-password>{% translate "Forgot your password?" %}</a></p>
   {% include "includes/_turnstile.html" %}
   <button type="submit" class="mt-2 min-h-[52px] cursor-pointer rounded-pill bg-ink px-8 text-[16px] font-black leading-none tracking-[-0.01em] text-white transition hover:-translate-y-[2px] hover:bg-green hover:text-ink hover:shadow-lift focus-visible:shadow-focus-pill focus-visible:outline-none">
     {% translate "Log in" %}

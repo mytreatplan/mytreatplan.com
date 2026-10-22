@@ -6,14 +6,11 @@ from datetime import timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
-from django.http import HttpResponse
 from django.test import Client
-from django.urls import path
 from django.utils import timezone
 
 from eventlog.models import Attempt
 from signup.models import PendingRegistration
-from signup.tests import urls_portal
 from signup.verification import EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP
 from signup.views import ATTEMPT_SESSION_KEY, RESUME_SESSION_KEY, SESSION_KEY
 
@@ -30,11 +27,6 @@ OTHER_EMAIL = 'carla@example.org'
 OTHER_MOBILE = '611 223 344'
 RECOVERY_NOTE = 'If this account is yours, you can recover access to it'
 RESUME_URL = '/en/signup/resume/'
-
-# A URLconf with a `password_reset` route, as epic-login will add (recovery link test).
-urlpatterns = list(urls_portal.urlpatterns) + [
-    path('password-reset/', lambda request: HttpResponse(), name='password_reset'),
-]
 
 
 def _without_csrf_tokens(html):
@@ -79,7 +71,8 @@ def test_registered_email_whatever_its_case(client):
     assert response.context['form'].errors == {
         'email': ['This email address is already registered.']}
     assert RECOVERY_NOTE in response.content.decode()
-    assert 'data-recovery-link' not in response.content.decode()  # no password_reset yet
+    # The link to the password reset request (epic-login entry 10).
+    assert 'href="/en/password-reset/"' in response.content.decode()
     assert _events(_attempt_of(client)) == [('rejected', 'account', 'email', 'email exists')]
 
 
@@ -104,12 +97,14 @@ def test_registered_wins_over_pending(first):
     assert [e[0] for e in _events(_attempt_of(second))] == ['rejected']
 
 
-def test_recovery_link_appears_once_password_reset_is_routed(client, settings):
-    settings.ROOT_URLCONF = __name__
+def test_recovery_link_opens_the_password_reset_request(client):
     User.objects.create_user(NORMALIZED, 'another-password-123')
     page = _step1(client).content.decode()
     assert RECOVERY_NOTE in page
-    assert 'href="/password-reset/"' in page and 'data-recovery-link' in page
+    assert 'href="/en/password-reset/"' in page and 'data-recovery-link' in page
+    response = Client().get('/en/password-reset/')
+    assert response.status_code == 200
+    assert 'Reset your password' in response.content.decode()
 
 
 def test_recovery_note_in_spanish(client):

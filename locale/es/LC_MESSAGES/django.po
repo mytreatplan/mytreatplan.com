@@ -1174,3 +1174,98 @@ msgstr "Hemos enviado un código de 6 dígitos a <strong class=\"text-ink\">%(co
 #: accounts/templates/accounts/login_code.html
 msgid "Get the code another way"
 msgstr "Recibir el código de otra forma"
+
+#: accounts/password_reset.py
+msgid "Your password has been changed. Please log in."
+msgstr "Su contraseña se ha cambiado. Inicie sesión."
+
+#: accounts/password_reset.py
+msgid "New password"
+msgstr "Nueva contraseña"
+
+#: accounts/templates/accounts/password_reset_form.html
+msgid "Reset your password"
+msgstr "Restablecer su contraseña"
+
+#: accounts/templates/accounts/password_reset_form.html
+msgid ""
+"Enter the email address of your account. We will send you a link to choose a "
+"new password."
+msgstr "Introduzca la dirección de correo electrónico de su cuenta. Le enviaremos un enlace para elegir una nueva contraseña."
+
+#: accounts/templates/accounts/password_reset_form.html
+msgid "Send the link"
+msgstr "Enviar el enlace"
+
+#: accounts/templates/accounts/password_reset_form.html
+#: accounts/templates/accounts/password_reset_sent.html
+msgid "Back to log in"
+msgstr "Volver a iniciar sesión"
+
+#: accounts/templates/accounts/password_reset_sent.html
+msgid ""
+"If an account exists for that email address, we have sent it a link to choose "
+"a new password. The link is valid for 1 hour."
+msgstr "Si existe una cuenta con esa dirección de correo electrónico, le hemos enviado un enlace para elegir una nueva contraseña. El enlace es válido durante 1 hora."
+
+#: accounts/templates/accounts/password_reset_sent.html
+msgid "If it doesn't arrive within a few minutes, check your spam folder."
+msgstr "Si no llega en unos minutos, revise su carpeta de correo no deseado."
+
+#: accounts/templates/accounts/password_reset_confirm.html
+msgid "Choose a new password"
+msgstr "Elija una nueva contraseña"
+
+#: accounts/templates/accounts/password_reset_confirm.html
+msgid "This link is no longer valid"
+msgstr "Este enlace ya no es válido"
+
+#: accounts/templates/accounts/password_reset_confirm.html
+msgid "Enter your new password twice. You will then log in with it."
+msgstr "Introduzca su nueva contraseña dos veces. Después iniciará sesión con ella."
+
+#: accounts/templates/accounts/password_reset_confirm.html
+msgid "Change password"
+msgstr "Cambiar la contraseña"
+
+#: accounts/templates/accounts/password_reset_confirm.html
+msgid "A password reset link works once and for 1 hour. You can ask for a new one."
+msgstr "Un enlace para restablecer la contraseña funciona una sola vez y durante 1 hora. Puede solicitar uno nuevo."
+
+#: accounts/templates/accounts/password_reset_confirm.html
+msgid "Ask for a new link"
+msgstr "Solicitar un nuevo enlace"
+
+#: accounts/templates/accounts/email/password_reset_subject.txt
+msgid "Reset your MyTreatPlan password"
+msgstr "Restablezca su contraseña de MyTreatPlan"
+
+#: accounts/templates/accounts/email/password_reset.txt
+msgid "Hello,"
+msgstr "Hola:"
+
+#: accounts/templates/accounts/email/password_reset.txt
+msgid ""
+"We received a request to reset the password of your MyTreatPlan account. To "
+"choose a new password, open this link:"
+msgstr "Hemos recibido una solicitud para restablecer la contraseña de su cuenta de MyTreatPlan. Para elegir una nueva contraseña, abra este enlace:"
+
+#: accounts/templates/accounts/email/password_reset.txt
+msgid "The link is valid for 1 hour and can be used once."
+msgstr "El enlace es válido durante 1 hora y solo puede usarse una vez."
+
+#: accounts/templates/accounts/email/password_reset.txt
+msgid ""
+"If you didn't ask for it, you can ignore this email: your password stays the "
+"same."
+msgstr "Si no lo ha solicitado, puede ignorar este correo: su contraseña no cambia."
+
+#: accounts/templates/accounts/login.html
+msgid "Forgot your password?"
+msgstr "¿Ha olvidado su contraseña?"
+
+#: accounts/templates/accounts/password_reset_link.html
+msgid ""
+"This page needs JavaScript to open your password reset link. Turn it on, then "
+"open the link from the email again."
+msgstr "Esta página necesita JavaScript para abrir su enlace de restablecimiento de contraseña. Actívelo y vuelva a abrir el enlace del correo."
