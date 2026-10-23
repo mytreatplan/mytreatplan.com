@@ -3,7 +3,7 @@ title: 'Refactor sweep'
 type: 'refactor'
 ticket: '11'
 created: '2026-10-22'
-status: 'built'
+status: 'done'
 baseline_revision: '6cd623d5aea71a3c38f0518fa0af3d23b44b9377'
 route: 'full'
 route_source: 'auto'
@@ -144,3 +144,5 @@ After the patches (2026-10-22), on SQLite with Chromium (sandbox lifted): the fu
 - `manage.py makemigrations --check`, `manage.py check`. Expected: clean.
 
 **Results (2026-10-22):** `DATABASE_URL=sqlite:///$TMPDIR/x.sqlite3 pytest -m "not browser"`: 1250 passed, only the 3 known PostgreSQL-only tests in `accounts/tests/test_crypto.py` failed (the same as the baseline at 6cd623d). `pytest -m browser` outside the sandbox: 20 passed. `makemigrations --check --dry-run`: no changes. `check`: no issues.
+
+CI on PostgreSQL 17 (PR #38): 1274 passed. Merged as `d0b252f`. On staging the user reported (2026-10-23) these smoke checks passed: a login with the code (a private window, no remembered device) opens welcome; a second wrong password leaves a `login_failed` record.
