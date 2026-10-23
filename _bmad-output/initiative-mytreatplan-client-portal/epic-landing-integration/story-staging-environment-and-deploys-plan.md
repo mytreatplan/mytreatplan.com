@@ -3,7 +3,7 @@ title: 'Staging-ready app settings'
 type: 'feature'
 ticket: '8'
 created: '2026-10-11'
-status: 'built'
+status: done
 baseline_revision: '8228122cdce1917abea929e5e22d181e33b73d51'
 route: 'full'
 route_source: 'auto'

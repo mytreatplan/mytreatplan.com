@@ -3,7 +3,7 @@ title: 'English and Spanish'
 type: 'feature'
 ticket: '3'
 created: '2026-10-08'
-status: 'built'
+status: done
 baseline_revision: 'cf56cac10989d0c2a90bd77c91496e0a8410b457'
 route: 'full'
 route_source: 'auto'

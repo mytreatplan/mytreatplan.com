@@ -3,7 +3,7 @@ title: 'Legal pages, SEO and portal links'
 type: 'feature'
 ticket: '4'
 created: '2026-10-08'
-status: 'built'
+status: done
 baseline_revision: '98c4ce8e7b667ed83598b68c43d6e2f810afbaa1'
 route: 'full'
 route_source: 'auto'

@@ -3,7 +3,7 @@ title: 'Public site tracer bullet'
 type: 'feature'
 ticket: '1'
 created: '2026-10-08'
-status: 'built'
+status: done
 baseline_revision: 'a9b5546a3e6f7f49c5f5a76c8e521aebcb30e7fa'
 route: 'full'
 route_source: 'auto'

@@ -3,7 +3,7 @@ title: 'Port the remaining sections'
 type: 'feature'
 ticket: '2'
 created: '2026-10-08'
-status: 'built'
+status: done
 baseline_revision: '41e638d07fd9d3f4af6db0ead88c2ec80da15556'
 route: 'full'
 route_source: 'auto'

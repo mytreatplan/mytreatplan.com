@@ -3,7 +3,7 @@ title: 'Staging provisioning and deploy pipeline'
 type: 'feature'
 ticket: '13'
 created: '2026-10-11'
-status: 'built'
+status: done
 baseline_revision: 'c547672bb850b82ecbfe775fa963f9a479e22ebb'
 route: 'full'
 route_source: 'auto'
