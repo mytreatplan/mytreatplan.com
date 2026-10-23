@@ -16,8 +16,8 @@ from signup import limits
 from signup.steps import CODE_STATE_SESSION_KEY
 from signup.tests.helpers import MOBILE_E164, NORMALIZED, PASSWORD, _current_code, _wrong
 from signup.verification import (CODE_TTL_SECONDS, EMAIL, FAKE_NO_WHATSAPP_NUMBER,
-                                 FAKE_SEND_FAILS_NUMBER, MAX_CHECK_ATTEMPTS, PURPOSE_LOGIN,
-                                 SMS, CheckFailed, FakeVerificationProvider)
+                                 FAKE_SEND_FAILS_NUMBER, MAX_CHECK_ATTEMPTS, NO_CODE,
+                                 PURPOSE_LOGIN, SMS, CheckFailed, FakeVerificationProvider)
 
 from .helpers import (CODE, VERIFY, _deactivate, _html, _logged_in, _login, _login_with_code,
                       _post_code, _right_code, _to_code)
@@ -310,7 +310,7 @@ def test_five_wrong_codes_invalidate_it_and_a_new_one_works(client, doctor, logi
     login_clock.advance(limits.COOLDOWN_SECONDS + 1)
     response = client.post(CODE, {'action': 'resend'})
     assert response['Location'] == CODE
-    assert 'We have sent you a new code.' in _html(client.get(CODE))
+    assert 'We have sent you the code again.' in _html(client.get(CODE))
     assert _post_code(client, _right_code())['Location'] == '/en/welcome/'
 
 
@@ -332,7 +332,7 @@ def test_resend_after_the_cooldown_and_the_hourly_limit(client, doctor, login_cl
     for _ in range(limits.HOURLY_SENDS - 1):
         login_clock.advance(limits.COOLDOWN_SECONDS + 1)
         client.post(CODE, {'action': 'resend'})
-        assert 'We have sent you a new code.' in _html(client.get(CODE))
+        assert 'We have sent you the code again.' in _html(client.get(CODE))
 
     login_clock.advance(limits.COOLDOWN_SECONDS + 1)
     client.post(CODE, {'action': 'resend'})
@@ -341,6 +341,17 @@ def test_resend_after_the_cooldown_and_the_hourly_limit(client, doctor, login_cl
     assert 'data-hourly-limit' in html and 'data-support' in html
     assert 'You have asked for too many codes.' in html
     assert _post_code(client, _right_code())['Location'] == '/en/welcome/'
+
+
+def test_resend_messages_in_spanish(client, doctor, login_clock):
+    _to_code(client, 'mobile', lang='es')
+    login_clock.advance(limits.COOLDOWN_SECONDS + 1)
+    client.post('/es/login/code/', {'action': 'resend'})
+    assert 'Le hemos enviado el código de nuevo.' in _html(client.get('/es/login/code/'))
+    login_clock.advance(limits.COOLDOWN_SECONDS + 1)
+    client.post('/es/login/code/', {'action': 'sms'})
+    assert 'Le hemos enviado el código de nuevo por SMS.' in _html(
+        client.get('/es/login/code/'))
 
 
 def test_send_by_sms_instead(client, doctor, login_clock, capture_codes):
@@ -352,7 +363,7 @@ def test_send_by_sms_instead(client, doctor, login_clock, capture_codes):
 
     assert 'Verification code for sms' in _code_lines(capture_codes)[-1]
     html = _html(client.get(CODE))
-    assert 'We have sent you a new code by SMS.' in html
+    assert 'We have sent you the code again by SMS.' in html
     assert 'data-sent="sms"' in html and 'data-sms-fallback' not in html
     assert 'data-sms>' not in html
     # A mobile has one code, whichever channel carried it.
@@ -416,6 +427,35 @@ def test_check_unavailable_keeps_the_pending_login(client, doctor, monkeypatch, 
     messages = [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
     assert messages == ['Signup code check failed: channel=email purpose=login '
                         'error=twilio: check failed (503)']
+
+
+def test_support_contact_after_two_checks_in_a_row_that_could_not_be_made(
+        client, doctor, monkeypatch, login_clock):
+    """QA A11, as on signup's code pages: one check that couldn't be made shows no support
+    contact, two in a row do; a successful send resets the count."""
+    _to_code(client)
+
+    def unavailable(self, channel, contact, purpose, code):
+        raise CheckFailed('twilio: check failed (503)')
+    monkeypatch.setattr(FakeVerificationProvider, 'check', unavailable)
+
+    assert 'data-support' not in _html(_post_code(client, '123456'))
+    assert 'data-support' in _html(_post_code(client, '123456'))
+
+    login_clock.advance(limits.COOLDOWN_SECONDS + 1)
+    client.post(CODE, {'action': 'resend'})
+    assert 'data-support' not in _html(client.get(CODE))
+
+
+def test_plain_expiry_shows_no_support_contact(client, doctor, monkeypatch):
+    """QA A11: "no longer valid" without 5 wrong codes before (e.g. an expired code)."""
+    _to_code(client)
+    monkeypatch.setattr(FakeVerificationProvider, 'check', lambda *args: NO_CODE)
+
+    response = _post_code(client, '123456')
+
+    assert response.context['form'].has_error('code', 'code_expired')
+    assert 'data-support' not in _html(response)
 
 
 # --- Pending expired / account changed --------------------------------------------------------

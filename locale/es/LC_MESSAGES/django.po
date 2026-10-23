@@ -459,9 +459,10 @@ msgstr "Cree su cuenta"
 msgid "Check your email"
 msgstr "Revise su correo electrónico"
 
-#: signup/steps.py:85
-msgid "We have sent you a new code."
-msgstr "Le hemos enviado un código nuevo."
+#: accounts/views.py:339 signup/steps.py:483 signup/steps.py:537
+#: signup/views.py:585
+msgid "We have sent you the code again."
+msgstr "Le hemos enviado el código de nuevo."
 
 #: signup/templates/signup/step_account.html:4
 msgid "Your email address will be your username."
@@ -616,6 +617,10 @@ msgstr "WhatsApp"
 #: accounts/models.py
 msgid "E-mail"
 msgstr "Correo electrónico"
+
+#: signup/forms.py:26
+msgid "e-mail"
+msgstr "correo electrónico"
 
 #: accounts/models.py
 msgid "Telephone Call"
@@ -848,9 +853,9 @@ msgstr "Este código ya no es válido. Solicite un código nuevo."
 msgid "Check your mobile"
 msgstr "Revise su móvil"
 
-#: signup/steps.py
-msgid "We have sent you a new code by SMS."
-msgstr "Le hemos enviado un código nuevo por SMS."
+#: accounts/views.py:335 signup/steps.py:542
+msgid "We have sent you the code again by SMS."
+msgstr "Le hemos enviado el código de nuevo por SMS."
 
 #: signup/templates/signup/_code_help.html
 msgid "We couldn't send the code. Please try again."

@@ -332,11 +332,11 @@ def login_code(request, user, pending):
         return redirect('login_code')  # an unknown action, or SMS on the email page
     if action is not None:
         if action == 'sms':
-            channel, message = SMS, _('We have sent you a new code by SMS.')
+            channel, message = SMS, _('We have sent you the code again by SMS.')
         else:
             last = code_state(request, CODE_PAGE).get('channel')
             channel = EMAIL if kind == EMAIL else (SMS if last == SMS else WHATSAPP)
-            message = _('We have sent you a new code.')
+            message = _('We have sent you the code again.')
         outcome = send_code(request, None, CODE_PAGE, contact, PURPOSE_LOGIN, channel,
                             resend=True)
         if outcome.status == SENT:

@@ -236,7 +236,7 @@ def test_resend_sends_a_new_code(client, caplog, clock):
     assert response['Location'] == '/en/signup/verify-email/'
     code = _code_from_log(caplog)
     page = client.get('/en/signup/verify-email/')
-    assert 'We have sent you a new code.' in page.content.decode()
+    assert 'We have sent you the code again.' in page.content.decode()
     assert client.post('/en/signup/verify-email/', {'code': code})['Location'] == (
         '/en/signup/verify-mobile/')
 

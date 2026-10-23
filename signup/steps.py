@@ -40,8 +40,9 @@ from .forms import (BLOCKED_MESSAGE, BLOCKED_RATE_LIMIT, OTP_NOT_DELIVERED, OTP_
                     OTP_SEND_FAILED, AccountForm, EmailCodeForm, LegalForm, MobileCodeForm,
                     national_number)
 from .models import PendingRegistration
-from .verification import (CODE_TTL_SECONDS, EMAIL, PURPOSE_SIGNUP, SMS, WHATSAPP,
-                           ChannelUnavailable, VerificationError, contact_kind, get_provider)
+from .verification import (CODE_TTL_SECONDS, EMAIL, MAX_CHECK_ATTEMPTS, PURPOSE_SIGNUP, SMS,
+                           WHATSAPP, ChannelUnavailable, VerificationError, contact_kind,
+                           get_provider)
 
 logger = logging.getLogger(__name__)
 
@@ -218,10 +219,21 @@ class LegalStep(Step):
 # {'channel': the channel of the last code sent, 'fallback': whether it went by SMS
 #  because WhatsApp could not deliver, 'failed': whether the last send failed,
 #  'notice': a one-time notice ('cooldown' or 'hourly', with 'wait' in seconds, or
-#  'blocked': the per-IP limit, shown as the generic error)}.
+#  'blocked': the per-IP limit, shown as the generic error), 'code_sent_at': when the
+#  current code was first sent (None once it is no longer valid), 'wrong': the "not
+#  correct" answers on that code (kept across resends of the same code, plan decision 2)
+#  and 'check_failures': the consecutive checks that could not be made since the last
+#  successful send (both decide the support contact, `code_help_context`)}.
 # Never a contact or a code. Signup-named, but it also holds the login code page's state
 # (accounts.views CODE_PAGE; the name stays).
 CODE_STATE_SESSION_KEY = 'signup_code_state'
+
+# The support contact shows (QA A11, plan decision 2) when "no longer valid" follows this
+# many "not correct" answers on the code (it is then the provider's 5th wrong attempt; any
+# other "no longer valid" is a plain expiry), and after this many consecutive checks that
+# could not be made.
+SUPPORT_AFTER_WRONG_CODES = MAX_CHECK_ATTEMPTS - 1
+SUPPORT_AFTER_CHECK_FAILURES = 2
 
 SendOutcome = namedtuple('SendOutcome', 'status channel fallback wait_seconds')
 SENT, COOLDOWN, HOURLY, FAILED = 'sent', 'cooldown', 'hourly', 'failed'
@@ -243,7 +255,14 @@ def _store_outcome(request, page, outcome):
     states = request.session.get(CODE_STATE_SESSION_KEY) or {}
     state = {k: v for k, v in (states.get(page) or {}).items() if k not in ('notice', 'wait')}
     if outcome.status == SENT:
-        state.update(channel=outcome.channel, fallback=outcome.fallback, failed=False)
+        state.update(channel=outcome.channel, fallback=outcome.fallback, failed=False,
+                     check_failures=0)
+        # A send within the code's validity repeats the same code (as Twilio): its wrong
+        # answers still count. Only a new code (none valid any more) starts them again.
+        now = limits._now()
+        sent_at = state.get('code_sent_at')
+        if sent_at is None or now - sent_at >= CODE_TTL_SECONDS:
+            state.update(code_sent_at=now, wrong=0)
     elif outcome.status == FAILED:
         # The channel tried, so a retry uses it (and the SMS switch shows after WhatsApp).
         state.update(channel=outcome.channel, fallback=False, failed=True)
@@ -363,19 +382,61 @@ def _send(request, attempt, page, contact, purpose, channel, resend, field, log_
     return outcome
 
 
+def _count_check(request, page, error_codes, malformed):
+    """Count a code check that failed in the page's state, and return the state: a
+    "not correct" answer from the provider (`wrong`; not for `malformed` input, which the
+    provider never sees), or a check that could not be made (`check_failures`; any check
+    made ends a run of them). "No longer valid" ends the code (`code_sent_at` None: the
+    next send is a new code, `_store_outcome`)."""
+    states = request.session.get(CODE_STATE_SESSION_KEY) or {}
+    state = dict(states.get(page) or {})
+    if not error_codes & {'invalid_code', 'code_expired', 'check_failed'}:
+        return state
+    if 'check_failed' in error_codes:
+        state['check_failures'] = state.get('check_failures', 0) + 1
+    else:
+        state['check_failures'] = 0
+        if 'invalid_code' in error_codes and not malformed:
+            state['wrong'] = state.get('wrong', 0) + 1
+    states[page] = state
+    if 'code_expired' in error_codes:
+        # Decided on the count before the code is ended.
+        states[page] = {**state, 'code_sent_at': None}
+    request.session[CODE_STATE_SESSION_KEY] = states
+    return state
+
+
+def _after_wrong_codes(state):
+    """Whether a "no longer valid" answer is the provider's 5th wrong attempt: enough
+    "not correct" answers on a code still within its validity (else a plain expiry)."""
+    sent_at = state.get('code_sent_at')
+    return (state.get('wrong', 0) >= SUPPORT_AFTER_WRONG_CODES and sent_at is not None
+            and limits._now() - sent_at < CODE_TTL_SECONDS)
+
+
 def code_help_context(request, page, form, contact, purpose, change_url=None, sms=False):
     """The context of signup/_code_help.html for a code page (the code steps, the resume
-    page, and the login code page in accounts.views): the state of its last send
-    (`code_state`), the one-time notice, whether the support contact shows (the hourly
-    limit, a failed send, or a code no longer valid), and whether a code went to
-    `contact` for `purpose` within its validity (`sent_recently`: only then does the page
-    say a code was sent)."""
+    page, and the login code page in accounts.views), rendered once per request: the
+    state of its last send (`code_state`), the one-time notice, whether the support
+    contact shows, and whether a code went to `contact` for `purpose` within its validity
+    (`sent_recently`: only then does the page say a code was sent).
+
+    A bound form's code error is counted here (`_count_check`). The support contact
+    shows (QA A11, plan decision 2) on the hourly limit, after a failed send, on "no
+    longer valid" after SUPPORT_AFTER_WRONG_CODES "not correct" answers on that code (the
+    provider's 5th wrong attempt; not on a plain expiry), and after
+    SUPPORT_AFTER_CHECK_FAILURES consecutive checks that could not be made."""
+    error_codes = ({error.code for error in form.errors.as_data().get('code', ())}
+                   if form.is_bound else set())
+    counted = _count_check(request, page, error_codes, getattr(form, 'malformed', False))
     state = code_state(request, page)
     since = limits.seconds_since_last_send(contact, purpose)
-    expired = form.is_bound and any(
-        error.code == 'code_expired' for error in form.errors.as_data().get('code', ()))
+    expired = 'code_expired' in error_codes
     notice = state.get('notice')
     failed = bool(state.get('failed'))
+    support = (notice == HOURLY or failed
+               or (expired and _after_wrong_codes(counted))
+               or state.get('check_failures', 0) >= SUPPORT_AFTER_CHECK_FAILURES)
     return {
         'page': page,
         'channel': state.get('channel'),
@@ -385,7 +446,7 @@ def code_help_context(request, page, form, contact, purpose, change_url=None, sm
         'wait_seconds': state.get('wait') or 0,
         'wait_minutes': math.ceil((state.get('wait') or 0) / 60),
         'expired': expired,
-        'show_support': notice == HOURLY or failed or expired,
+        'show_support': support,
         'support_email': settings.SIGNUP_SUPPORT_EMAIL,
         'sent_recently': since is not None and since < CODE_TTL_SECONDS,
         'change_url': change_url,
@@ -419,7 +480,7 @@ class CodeStep(Step):
 
     def resend(self, request, pending):
         if self._send(request, pending, self.channel, resend=True).status == SENT:
-            messages.success(request, _('We have sent you a new code.'))
+            messages.success(request, _('We have sent you the code again.'))
 
     def _send(self, request, pending, channel, resend=False):
         return send_code(request, pending.attempt_id, self.slug, self.contact(pending),
@@ -473,12 +534,12 @@ class MobileCodeStep(CodeStep):
         state = code_state(request, self.slug)
         channel = SMS if state.get('channel') == SMS else WHATSAPP
         if self._send(request, pending, channel, resend=True).status == SENT:
-            messages.success(request, _('We have sent you a new code.'))
+            messages.success(request, _('We have sent you the code again.'))
 
     def send_sms(self, request, pending):
         """"Send by SMS instead": a resend by SMS."""
         if self._send(request, pending, SMS, resend=True).status == SENT:
-            messages.success(request, _('We have sent you a new code by SMS.'))
+            messages.success(request, _('We have sent you the code again by SMS.'))
 
 
 STEPS = [AccountStep(), LegalStep(), EmailCodeStep(), MobileCodeStep()]

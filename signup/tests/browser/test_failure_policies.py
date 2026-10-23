@@ -46,7 +46,7 @@ User = get_user_model()
 RECOVERY_NOTE = 'If this account is yours, you can recover access to it'
 PENDING_NOTE = 'A registration with this email address is already in progress.'
 RESTORED = 'We have restored your registration. Review your details and continue.'
-NEW_CODE_SENT = 'We have sent you a new code.'
+NEW_CODE_SENT = 'We have sent you the code again.'
 WRONG_CODE = 'This code is not correct. Check it, or send a new one.'
 NO_LONGER_VALID = 'This code is no longer valid. Send a new code.'
 # The saved mobile as step 1 shows it again (national format).

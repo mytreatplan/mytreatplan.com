@@ -3,6 +3,7 @@ Pwned and Debounce replaced by the fakes of conftest.py (`external_checks`)."""
 import hashlib
 import io
 import json
+import re
 import urllib.error
 
 import pytest
@@ -113,6 +114,37 @@ def test_others_text_is_ignored_without_others(client):
     assert _step1(client, how_found='whatsapp', how_found_other='Ignored text').status_code == 302
     assert PendingRegistration.objects.get().how_found_other == ''
     assert _events()[0].data['how_found_other'] == ''
+
+
+def _others_wrapper(response):
+    """The opening tag of the "Others" text field's wrapper (step_account.html)."""
+    [tag] = re.findall(r'<div data-show-if-field="[^"]*" data-show-if-value="others"[^>]*>',
+                       response.content.decode())
+    return tag
+
+
+def test_others_field_is_hidden_without_others_also_without_javascript(client):
+    """QA A17: rendered `hidden` by the server unless "Others" is the selected value."""
+    assert _others_wrapper(client.get('/en/signup/')).endswith(' hidden>')
+    response = _step1(client, how_found='whatsapp', first_name='')
+    assert response.status_code == 200
+    assert _others_wrapper(response).endswith(' hidden>')
+
+
+def test_others_field_is_shown_when_others_is_selected(client):
+    response = _step1(client, how_found='others', how_found_other='')
+    assert response.status_code == 200
+    assert 'hidden' not in _others_wrapper(response)
+    # Refilled with "Others" (Back to step 1).
+    _step1(client, how_found='others', how_found_other='A colleague')
+    assert 'hidden' not in _others_wrapper(client.get('/en/signup/'))
+
+
+@pytest.mark.parametrize('lang,label', [('en', 'e-mail'), ('es', 'correo electrónico')])
+def test_how_found_email_choice_label(client, lang, label):
+    """QA A17: "e-mail", as signup-fields.md writes it."""
+    html = client.get(f'/{lang}/signup/').content.decode()
+    assert f'<option value="email">{label}</option>' in html
 
 
 # --- Mobile ------------------------------------------------------------------------------

@@ -36,8 +36,9 @@
 {% include "includes/_form_field.html" with field=form.phone_prefix %}
 {% include "includes/_form_field.html" with field=form.phone %}
 {% include "includes/_form_field.html" with field=form.how_found %}
-{# Shown only when "Others" is chosen (signup-account.js); without JavaScript it stays visible. #}
-<div data-show-if-field="{{ form.how_found.auto_id }}" data-show-if-value="others">
+{# Shown only when "Others" is chosen: hidden by the server unless it is the selected value #}
+{# (so also without JavaScript), and toggled by signup-account.js. #}
+<div data-show-if-field="{{ form.how_found.auto_id }}" data-show-if-value="others"{% if form.how_found.value != "others" %} hidden{% endif %}>
 {% include "includes/_form_field.html" with field=form.how_found_other %}
 </div>
 {# The CAPTCHA (signup.captcha): the shared Turnstile widget and its notes. #}
