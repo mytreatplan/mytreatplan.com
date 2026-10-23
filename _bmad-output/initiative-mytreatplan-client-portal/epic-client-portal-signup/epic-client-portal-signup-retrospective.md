@@ -1,7 +1,7 @@
 ---
 epic: epic-client-portal-signup
 date: 2026-10-23
-verdict: rejected
+verdict: accepted-with-open-items
 criteria: declared
 headless: false
 ---
@@ -13,6 +13,8 @@ headless: false
 - **Epic:** `epic-client-portal-signup`, "Doctors sign up for the client portal" (initiative requirement I3; spec `spec-client-portal-signup/`, CAP-1 to CAP-11 and CAP-13).
 - **Tickets:** 2.1–2.14, all `done` (`tickets.py status`). `pending_tickets` is empty; none at `built`.
 - **Going-in concerns from the user:** none.
+- **Re-run (2026-10-23, on master `86388ac`):** the user chose to keep the verdict rejected until R1 and S1 were fixed, then re-run. Both fixes are merged: R1 by PR #40 (`71c2079`), S1 by PR #41 (`ba378f6`). The resumed run checked them in the code and re-ran the signup browser suite; the earlier findings and views are otherwise unchanged. Tickets 2.1–2.14 are still all `done`.
+  - The R1 plan (`../plan-fix-resume-takeover.md`) is `done`, but its manual staging check was never reported. The S1 plan (`../plan-fix-legal-unpublished.md`) is still `built`: merged and deployed, with its staging check not yet reported.
 - **Plan ranges.** Ordered by baseline ancestry, the build order differs from the row order: 2.10 came before 2.8, and 2.12 before 2.11.
 
   | Ticket | Range | Commits |
@@ -58,12 +60,12 @@ The `bmad-review` skill wasn't invoked. A delegated reviewer ran the three lense
 
 | # | Finding | Source | Boundary | Disposition |
 |---|---|---|---|---|
-| R1 | **Resume takeover.** Anyone can create a pending row for someone else's unregistered email, choosing the password and ticking Terms, TPS and commercial consent. Its real owner can then only resume, after a code to the email. The resume copies the stranger's password hash (`RESUMED_FIELDS` includes `password`) and every legal choice with its original `decided_at` (`legal_choices.copy_to`), and `LegalStep.is_done` then skips the legal step. The account is created with consent the owner never gave and, if they leave the password fields empty, a password the stranger knows. | `signup/models.py:93,111-125`; `signup/views.py:574-606` (`_take_over`); `signup/steps.py:180-189`; test `signup/tests/test_legal_step.py:225` asserts the skip | 2.4 × 2.5 × 2.6 | **fix now** (security and consent evidence) |
+| R1 | **Resume takeover.** Anyone can create a pending row for someone else's unregistered email, choosing the password and ticking Terms, TPS and commercial consent. Its real owner can then only resume, after a code to the email. The resume copies the stranger's password hash (`RESUMED_FIELDS` includes `password`) and every legal choice with its original `decided_at` (`legal_choices.copy_to`), and `LegalStep.is_done` then skips the legal step. The account is created with consent the owner never gave and, if they leave the password fields empty, a password the stranger knows. | `signup/models.py:93,111-125`; `signup/views.py:574-606` (`_take_over`); `signup/steps.py:180-189`; test `signup/tests/test_legal_step.py:225` asserts the skip | 2.4 × 2.5 × 2.6 | **fixed** (re-run): PR #40, `71c2079`. `RESUMED_FIELDS` (`signup/models.py:95`) no longer holds `password`, `_take_over` copies no legal choices, and `copy_to` is gone. Tests: `test_resume_of_a_row_someone_else_made_keeps_none_of_their_choices`, `test_resume_after_the_legal_step_asks_it_again`, browser rows 5–7 |
 | R2 | **The signup wizard serves logged-in users.** A logged-in Doctor who completes a signup with new details is silently logged out (`login(request, B)` flushes A's session), and a second account exists. | `signup/views.py:236-277,401`; no `is_authenticated` check anywhere in `signup/` | 2.1 × login 3.x | **fix now** |
 | R3 | **Cancel after the idle timeout doesn't cancel.** The idle check handles the POST first, so `remove_pending` never runs; the row stays up to 24 h and the message invites the person to continue. | `signup/views.py:637-660`; `signup/retention.py:151` | 2.8 × 2.10 | **fix now** (small) |
 | R4 | **Login code sends use up signup's "first IP block" marker without logging it**, since they run with no attempt. Later signup code-send blocks from that IP in the hour are then never logged. | `signup/limits.py:231-234`; `signup/steps.py:305-316`; `accounts/views.py` login code sends | 2.9 × login 3.2/3.5 | **defer** (log completeness only) |
 | R5 | **`reencrypt_fields` handles each model in one transaction** with `select_for_update()` over all rows. Over `eventlog.Event`, which login page records make large, it locks every row for the whole pass and blocks the daily anonymization. | `accounts/management/commands/reencrypt_fields.py:39-46` | 2.2/2.12 × 2.3 × login 3.7 | **defer** to production readiness (batch it before the first production rotation) |
-| R6 | **Verification gaps** (confirmed by grep): no tests for a resume by another person, a logged-in user in the wizard, the shared code-send IP marker between signup and login, codes across purposes on Twilio's single service (only the fake is tested), `reencrypt_fields` over event rows, or a cancel POST after the idle timeout. | `signup/tests/`, `accounts/tests/`, `eventlog/tests/` | several | **fix now** with R1–R3; the others **defer** |
+| R6 | **Verification gaps** (confirmed by grep): no tests for a resume by another person (**added** by PR #40), a logged-in user in the wizard, the shared code-send IP marker between signup and login, codes across purposes on Twilio's single service (only the fake is tested), `reencrypt_fields` over event rows, or a cancel POST after the idle timeout. | `signup/tests/`, `accounts/tests/`, `eventlog/tests/` | several | **fix now** with R1–R3; the others **defer** |
 
 ### Spec-to-implementation reconciliation
 
@@ -71,7 +73,7 @@ The source is the QA report `../qa-spec-vs-code-2026-10-23.md`: signup parts A a
 
 | # | Finding | Source | Disposition |
 |---|---|---|---|
-| S1 | **The legal step passes without Terms or Conditions** when no version is published (QA A1). | `signup/forms.py:369-384` | **fix now** (before production seeding) |
+| S1 | **The legal step passes without Terms or Conditions** when no version is published (QA A1). | `signup/forms.py:369-384` | **fixed** (re-run): PR #41, `ba378f6`. `LegalForm.clean` refuses with `documents_missing` while either has no published version (`signup/forms.py:392-400`), and `_create_account` refuses without accepted Terms and Conditions (`signup/views.py:388-394,412`). Tests in `signup/tests/test_legal_step.py` |
 | S2 | **Step 1 can't be submitted without JavaScript** or with a script blocker: a missing Turnstile token counts as failed (QA A2). | `signup/captcha.py:55-56` | **defer**: needs a decision (accept, or add a no-JS path) |
 | S3 | **`OTP not delivered` is never logged**; delivery isn't tracked (QA A3). Done-when 5's test for that row checks the behaviour, not the logged reason. | failure policies, row "Code not received" | **accept**, and reconcile the spec (no webhooks, by the 2.11 decision) |
 | S4 | **Backups keep cancelled or purged signups** and pre-anonymization log values for up to 30 days (QA A8). | `deploy/README.md` backups | **defer**: a stated policy with the lawyer |
@@ -113,6 +115,11 @@ On staging, recorded in the plans' completion notes by the user:
 - KMS field keys with `kmscheck` ok and the data re-encrypted (2.12);
 - the retention jobs ran (2.10).
 
+Re-run, on master at `86388ac`:
+- `pytest -m browser signup/tests/browser`: **16 passed**, including failure-policy rows 5–7 with the new resume behaviour.
+- The S1 branch's full suite: 1,287 passed, plus the 3 known failures; CI on PostgreSQL 17 passed for PRs #40 and #41 and their master merges (1,284 passed on #40's master run).
+- Not exercised on staging: the R1 takeover check and the S1 normal-path check were not reported.
+
 **Not exercised in this retrospective:** the R1 takeover scenario and the R2 logged-in signup, live. Both were confirmed by reading the code.
 
 ## Previous-retro follow-through
@@ -125,8 +132,8 @@ Every item is proposed; nothing is applied yet.
 
 | # | Action | Kind | Owner |
 |---|---|---|---|
-| 1 | Fix **R1**. A resume must not carry over the original row's password or legal choices: the person sets a password and goes through the legal step again. Add tests for a resume of a row someone else created. | remediation (bug story, `bmad-build`) | dev |
-| 2 | Fix **S1**: refuse the legal step, or fail `check --deploy`, while no Terms or Conditions version is published. | remediation | dev |
+| 1 | **Done** (PR #40). Fix **R1**. A resume must not carry over the original row's password or legal choices: the person sets a password and goes through the legal step again. Add tests for a resume of a row someone else created. | remediation (bug story, `bmad-build`) | dev |
+| 2 | **Done** (PR #41). Fix **S1**: refuse the legal step, or fail `check --deploy`, while no Terms or Conditions version is published. | remediation | dev |
 | 3 | Fix **R2**: the signup wizard sends a logged-in user to welcome (or asks them to log out first). | remediation | dev |
 | 4 | Fix **R3**: a cancel POST after the idle timeout still removes the pending registration. | remediation | dev |
 | 5 | Decide **S2** (signup without JavaScript): accept and say so, or add a path. | decision | user |
@@ -142,7 +149,13 @@ Every item is proposed; nothing is applied yet.
 
 ## Acceptance verdict
 
-**Machine verdict: rejected**, criteria declared. A human decision overrides it.
+**Verdict: accepted-with-open-items** (human decision, 2026-10-23), criteria declared.
+
+The user overrode the machine verdict (**rejected**, from criterion 6) once R1 and S1 were fixed. The open items:
+- **Criterion 6**, production with epic-login: tracked by 3.13, which waits on 1.7 and 1.12.
+- **Fix now:** R2 and R3 (action items 3 and 4).
+- **Deferred:** R4, R5, S2 and S4, plus the spec reconciliation and the sweep (action items 5–10).
+- **Staging checks not reported:** R1 (PR #40) and S1 (PR #41).
 
 The epic file's Done when, criterion by criterion:
 1. **Staging journey, EN/ES, both codes, logged in, the end-to-end suite proves it:** met (2.14 suite; staging runs recorded in 2.11 and 2.14).
@@ -152,15 +165,15 @@ The epic file's Done when, criterion by criterion:
 5. **Every failure-policy row has a passing automated test:** met (2.14 browser suite plus client tests). S3 notes that one row's logged reason is untested.
 6. **Goes to production together with epic-login:** **not met.** Production doesn't exist yet (1.7 and 1.12 are open, and 3.13 waits on them).
 
-**Evidence for the call:**
-- Criterion 6 is unmet.
-- A blocking finding is unresolved: R1, a security and consent defect in shipped code, together with S1.
+**Evidence for the call (re-run):**
+- Criterion 6 is still unmet: production doesn't exist yet.
+- The blocking findings R1 and S1 are fixed (PRs #40 and #41), so criterion 2 is now met in substance too.
+- Still open: R2 and R3 (fix now, not blocking), and the deferred R4, R5, S2 and S4.
 - Every ticket is finished.
 
-The criterion-6 dependency is by design. Absent it, the epic would still not be accepted until R1 is fixed.
+The criterion-6 dependency is by design: the epic ships with epic-login (3.13). With no human decision the machine verdict stays **rejected**.
 
 ## Open questions
 
-- **Does a human decision override the verdict?** For example, "accepted-with-open-items once R1 and S1 are fixed, criterion 6 tracked by 3.13".
 - **S2:** is signup without JavaScript a requirement?
 - **S4:** is a 30-day backup retention acceptable under the lawyer's reading of "cleared at once"?
