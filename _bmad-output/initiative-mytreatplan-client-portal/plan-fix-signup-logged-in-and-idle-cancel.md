@@ -3,7 +3,7 @@ title: 'Fix: no signup while logged in; cancel works after the idle timeout'
 type: 'bugfix'
 ticket: ''
 created: '2026-10-23'
-status: 'built'
+status: 'done'
 baseline_revision: '820b631b5be1bedb52ca292b93d9d33da7d90bc0'
 route: 'oneshot'
 route_source: 'auto'
@@ -54,3 +54,8 @@ context: []
 **Commands:**
 - The local suite (test keys, SQLite), browser tests outside the sandbox -- expected: only the 3 known PostgreSQL-only tests fail.
 - `makemigrations --check` -- expected: no changes.
+
+## Staging
+
+- PR #42 merged on 2026-10-23. The master run passed (tests and the staging deploy).
+- The user asked to mark the plan done. The two manual staging checks from the PR description (a logged-in user on `/en/signup/` lands on welcome; a cancel confirmed after 30 idle minutes removes the registration) were not confirmed in this session.
