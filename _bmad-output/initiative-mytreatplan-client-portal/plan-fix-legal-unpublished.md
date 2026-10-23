@@ -3,7 +3,7 @@ title: 'Fix: no signup without published Terms and Conditions'
 type: 'bugfix'
 ticket: ''
 created: '2026-10-23'
-status: 'built'
+status: 'done'
 baseline_revision: 'd92aec06d7060bf68ac91d468f1865cad1f6cb04'
 route: 'oneshot'
 route_source: 'auto'
@@ -53,3 +53,8 @@ context: []
 **Commands:**
 - The local suite (test keys, SQLite) -- expected: only the 3 known PostgreSQL-only tests fail.
 - `makemigrations --check` -- expected: no changes.
+
+## Staging
+
+- PR #41 merged on 2026-10-23. The master run passed (tests and the staging deploy).
+- The user asked to mark the plan done. The manual staging check (a normal signup goes through the legal step as before) was not confirmed in this session.
