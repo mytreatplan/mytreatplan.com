@@ -1,0 +1,59 @@
+{% load i18n %}{% comment %}
+The contact form (story 1.5; mytp_publicsite.contact), in the home page's Contact section
+and as the answer to a POST with errors. htmx posts it and swaps #contact-form with the
+answer: this form again, or the thank-you (publicsite/contact/_thanks.html).
+static/js/contact-form.js sets the JS flag `cf_js` and enables Send (without JavaScript it
+can't be sent). `cf_ts` is the signed render time; `website` is the honeypot.
+The UAE club question (form.club) is not shown for now (decision 3): include
+publicsite/contact/_question.html with field=form.club to show it again.
+{% endcomment %}{% with form=contact_form %}
+<div id="contact-form" class="mx-auto mt-[clamp(28px,4vw,48px)] w-full max-w-[880px] text-left">
+  <form method="post" action="{% url 'publicsite:contact' %}" novalidate data-contact-form
+        hx-post="{% url 'publicsite:contact' %}" hx-target="#contact-form" hx-swap="outerHTML"
+        hx-disabled-elt="find button[type='submit']"
+        class="relative grid gap-[clamp(24px,3vw,34px)] overflow-hidden rounded-28 border border-line bg-surface p-[clamp(26px,4vw,48px)] text-ink shadow-card before:absolute before:inset-x-0 before:top-0 before:h-1.5 before:bg-linear-to-r before:from-lime before:to-green">
+    {% csrf_token %}
+    <input type="hidden" name="cf_js" value="">
+    <input type="hidden" name="cf_ts" value="{{ contact_stamp }}">
+    {# The honeypot: off screen and out of the tab order; a person leaves it empty. #}
+    <div class="absolute -left-[9999px] size-px overflow-hidden" aria-hidden="true">
+      <label for="contact_website">Website</label>
+      <input type="text" name="website" id="contact_website" value="" tabindex="-1" autocomplete="off">
+    </div>
+
+    {# The general errors, and those of the question not shown (only a crafted POST has them). #}
+    {% if form.non_field_errors or form.club.errors %}
+    <div class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] leading-[1.5] text-notice-text outline-none" role="alert" tabindex="-1" data-contact-errors>
+      {% for error in form.non_field_errors %}<p>{{ error }}</p>{% endfor %}
+      {% if form.club.errors %}<ul id="contact_club_error">{% for error in form.club.errors %}<li>{{ form.club.label }} {{ error }}</li>{% endfor %}</ul>{% endif %}
+    </div>
+    {% endif %}
+
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
+      {% include "includes/_form_field.html" with field=form.first_name %}
+      {% include "includes/_form_field.html" with field=form.middle_name %}
+      {% include "includes/_form_field.html" with field=form.surname %}
+    </div>
+    <div class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-4">
+      {% include "includes/_form_field.html" with field=form.country %}
+      {% include "includes/_form_field.html" with field=form.phone %}
+      {% include "includes/_form_field.html" with field=form.email %}
+    </div>
+
+    <div class="grid gap-[18px]">
+      {% include "publicsite/contact/_question.html" with field=form.aligners %}
+      {% include "publicsite/contact/_question.html" with field=form.decision %}
+    </div>
+
+    <div class="flex flex-col gap-3">
+      <p class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] leading-[1.5] text-notice-text" role="alert" hidden data-contact-failed>{% translate "Sorry, something went wrong. Please try again in a moment." %}</p>
+      <div class="flex flex-wrap items-center gap-[18px]">
+        <button type="submit" disabled data-contact-send
+                class="inline-flex min-h-[52px] cursor-pointer items-center rounded-pill bg-ink px-[34px] text-[16px] font-black tracking-[-0.01em] text-white transition hover:-translate-y-0.5 hover:bg-linear-to-r hover:from-lime hover:to-green hover:text-ink hover:shadow-lift focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-green disabled:cursor-wait disabled:opacity-55 disabled:hover:translate-y-0 disabled:hover:bg-ink disabled:hover:bg-none disabled:hover:text-white disabled:hover:shadow-none">{% translate "Send" %}</button>
+      </div>
+      {% url 'publicsite:privacy' as privacy_url %}
+      <p class="text-[14px] leading-[1.5] text-ink-muted [&_a]:font-bold [&_a]:text-ink [&_a]:underline [&_a]:underline-offset-4 [&_a:hover]:text-green-deep" data-contact-privacy>{% blocktranslate %}We use your details only to answer you. See our <a href="{{ privacy_url }}">Privacy policy</a>.{% endblocktranslate %}</p>
+    </div>
+  </form>
+</div>
+{% endwith %}

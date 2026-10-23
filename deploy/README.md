@@ -871,6 +871,19 @@ most `EMAIL_TIMEOUT` seconds (default 10). `EMAIL_PORT`, `EMAIL_USE_SSL` and
 `EMAIL_TIMEOUT` need a value or no line at all: an empty `EMAIL_PORT=` stops the app
 at startup. `DEFAULT_FROM_EMAIL` and `SERVER_EMAIL` default to the noreply address.
 
+**The contact form's inbox.** Each message sent from the home page's contact form is
+stored (Admin → Contact messages) and mailed to `CONTACT_INBOX`, from the noreply
+address, with Reply-To the sender. It has no default: set it in the same file,
+
+```sh
+#   CONTACT_INBOX=webform@mytreatplan.com
+```
+
+and restart `mytp-gunicorn`. While it is empty, `check --deploy` fails
+(`mytp_publicsite.E007`) and messages are only stored. A message whose mail failed stays in
+the admin with its mail "Failed" (filter by mail), and the failure is reported to Sentry
+without values.
+
 ## Erase an account
 
 A registered user is never deleted in the admin (its legal choices are kept as evidence):

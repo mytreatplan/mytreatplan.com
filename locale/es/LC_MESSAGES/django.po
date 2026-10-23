@@ -1278,3 +1278,130 @@ msgid ""
 "This page needs JavaScript to open your password reset link. Turn it on, then "
 "open the link from the email again."
 msgstr "Esta página necesita JavaScript para abrir su enlace de restablecimiento de contraseña. Actívelo y vuelva a abrir el enlace del correo."
+
+#: mytp_publicsite/admin.py
+msgid "sender"
+msgstr "remitente"
+
+#: mytp_publicsite/forms.py
+msgid "Enter a valid phone number: 6 to 32 digits, spaces and + ( ) . - only."
+msgstr ""
+"Introduzca un número de teléfono válido: de 6 a 32 caracteres, solo dígitos, "
+"espacios y + ( ) . -"
+
+#: mytp_publicsite/forms.py
+msgid "Interested in aligners?"
+msgstr "¿Le interesan los alineadores?"
+
+#: mytp_publicsite/forms.py
+msgid "Wants to know about the UAE club?"
+msgstr "¿Quiere conocer el club de los EAU?"
+
+#: mytp_publicsite/forms.py
+msgid "Makes purchasing decisions?"
+msgstr "¿Toma decisiones de compra?"
+
+#: mytp_publicsite/forms.py
+msgid "First name"
+msgstr "Nombre"
+
+#: mytp_publicsite/forms.py
+msgid "Surname"
+msgstr "Apellidos"
+
+#: mytp_publicsite/forms.py
+msgid "Country"
+msgstr "País"
+
+#: mytp_publicsite/forms.py
+msgid "Phone"
+msgstr "Teléfono"
+
+#: mytp_publicsite/models.py
+msgid "Yes"
+msgstr "Sí"
+
+#: mytp_publicsite/models.py
+msgid "No"
+msgstr "No"
+
+#: mytp_publicsite/models.py
+msgid "Pending"
+msgstr "Pendiente"
+
+#: mytp_publicsite/models.py
+msgid "Sent"
+msgstr "Enviado"
+
+#: mytp_publicsite/models.py
+msgid "Failed"
+msgstr "Fallido"
+
+#: mytp_publicsite/models.py
+msgid "surname"
+msgstr "apellidos"
+
+#: mytp_publicsite/models.py
+msgid "country"
+msgstr "país"
+
+#: mytp_publicsite/models.py
+msgid "phone"
+msgstr "teléfono"
+
+#: mytp_publicsite/models.py
+msgid "email"
+msgstr "correo electrónico"
+
+#: mytp_publicsite/models.py
+msgid "interested in aligners?"
+msgstr "¿le interesan los alineadores?"
+
+#: mytp_publicsite/models.py
+msgid "wants to know about the UAE club?"
+msgstr "¿quiere conocer el club de los EAU?"
+
+#: mytp_publicsite/models.py
+msgid "makes purchasing decisions?"
+msgstr "¿toma decisiones de compra?"
+
+#: mytp_publicsite/models.py
+msgid "sent at"
+msgstr "enviado el"
+
+#: mytp_publicsite/models.py
+msgid "mail"
+msgstr "correo"
+
+#: mytp_publicsite/models.py
+msgid "contact message"
+msgstr "mensaje de contacto"
+
+#: mytp_publicsite/models.py
+msgid "contact messages"
+msgstr "mensajes de contacto"
+
+#: mytp_publicsite/templates/publicsite/contact/_form.html
+msgid "Sorry, something went wrong. Please try again in a moment."
+msgstr "Lo sentimos, algo ha fallado. Inténtelo de nuevo en unos instantes."
+
+#: mytp_publicsite/templates/publicsite/contact/_form.html
+msgid "Send"
+msgstr "Enviar"
+
+#: mytp_publicsite/templates/publicsite/contact/_form.html
+#, python-format
+msgid ""
+"We use your details only to answer you. See our <a "
+"href=\"%(privacy_url)s\">Privacy policy</a>."
+msgstr ""
+"Usamos sus datos solo para responderle. Consulte nuestra <a "
+"href=\"%(privacy_url)s\">Política de privacidad</a>."
+
+#: mytp_publicsite/templates/publicsite/contact/_thanks.html
+msgid "Thank you for your message."
+msgstr "Gracias por su mensaje."
+
+#: mytp_publicsite/templates/publicsite/contact/_thanks.html
+msgid "We will get back to you soon."
+msgstr "Le responderemos pronto."
