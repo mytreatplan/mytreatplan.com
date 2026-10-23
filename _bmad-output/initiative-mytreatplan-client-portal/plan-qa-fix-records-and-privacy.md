@@ -3,7 +3,7 @@ title: 'QA fix 1: records and privacy'
 type: 'bugfix'
 ticket: ''
 created: '2026-10-23'
-status: 'built'
+status: 'done'
 baseline_revision: '820b631b5be1bedb52ca292b93d9d33da7d90bc0'
 route: 'full'
 route_source: 'auto'
@@ -146,3 +146,5 @@ After the patches (2026-10-23), in the worktree, on SQLite with Chromium (sandbo
 - `manage.py makemigrations --check`. Expected: no changes (the `account` kind is a free CharField value).
 
 Rebased onto master after PR #42 (R2/R3) merged (2026-10-23). One test needed changing: `/es/signup/` for a logged-in Doctor is now a redirect to welcome (R2), so it is not a page record. `test_signup_while_logged_in_redirects_and_is_not_recorded` covers that. Full suite on the rebased branch: 1,346 passed, 3 failed (the known PostgreSQL-only tests).
+
+CI on PostgreSQL 17 (PR #43): 1349 passed. Merged as `f3b8949`. On staging the user reported (2026-10-23) these checks passed: a new signup leaves a `signup` login record; logged in, the home page leaves no page record and welcome does; an attempt during a lock is recorded `blocked: locked`; a signup resend logs `OTP not delivered`.
