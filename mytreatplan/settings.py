@@ -87,6 +87,13 @@ TWILIO_WHATSAPP_ENABLED = config('TWILIO_WHATSAPP_ENABLED', default=False, cast=
 # code invalidated after too many wrong attempts, or a failed send (signup entry 7).
 SIGNUP_SUPPORT_EMAIL = config('SIGNUP_SUPPORT_EMAIL', default='sayhi@mytreatplan.com')
 
+# The company inbox that receives the contact form's messages (story 1.5,
+# mytp_publicsite.contact): webform@mytreatplan.com, typed into settings.env. Sent through
+# the mail settings below (MAILERS), from DEFAULT_FROM_EMAIL. Empty by default: messages
+# are then only stored (the admin lists them as failed mails), and with DEBUG off
+# `check --deploy` fails (mytp_publicsite.E007).
+CONTACT_INBOX = config('CONTACT_INBOX', default='').strip()
+
 # The CAPTCHA of signup step 1: Cloudflare Turnstile (signup.captcha). The defaults are
 # Cloudflare's public test keys (the widget always passes, siteverify always succeeds),
 # for development, CI and tests; staging and production set the real ones in

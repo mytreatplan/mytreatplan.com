@@ -13,6 +13,7 @@ TURNSTILE_TEST_KEYS = 'mytp_publicsite.E003'
 PLAIN_FIELD_KEYS = 'mytp_publicsite.E004'
 NO_ERASURE_RETENTION = 'mytp_publicsite.E005'
 FAKE_VERIFICATION_PROVIDER = 'mytp_publicsite.E006'
+NO_CONTACT_INBOX = 'mytp_publicsite.E007'
 
 SECURE_DB_SSLMODES = ('verify-full', 'verify-ca')
 
@@ -140,4 +141,21 @@ def check_verification_provider(app_configs, **kwargs):
         hint=f'Set VERIFICATION_PROVIDER={TWILIO_PROVIDER} and the Twilio credentials in '
              'settings.env (deploy/README.md, "Twilio Verify").',
         id=FAKE_VERIFICATION_PROVIDER,
+    )]
+
+
+@register('mail', deploy=True)
+def check_contact_inbox(app_configs, **kwargs):
+    """Block a deploy whose contact form mails no one (story 1.5): its messages would only
+    be stored.
+
+    Runs only with `check --deploy`. Fails while DEBUG is off and CONTACT_INBOX is empty.
+    """
+    if settings.DEBUG or (getattr(settings, 'CONTACT_INBOX', '') or '').strip():
+        return []
+    return [Error(
+        "CONTACT_INBOX is empty: the contact form's messages are stored but mailed to no one.",
+        hint='Set CONTACT_INBOX=webform@mytreatplan.com in settings.env (deploy/README.md, '
+             '"Email").',
+        id=NO_CONTACT_INBOX,
     )]

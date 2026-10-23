@@ -7,8 +7,9 @@
   <h2 class="absolute top-[24%] left-1/2 w-max max-w-[90vw] -translate-1/2 text-center text-h2 font-black text-ink max-tablet:static max-tablet:w-auto max-tablet:max-w-none max-tablet:translate-none max-tablet:px-gutter max-tablet:pt-4 max-tablet:pb-[22px]">{% translate "Contact" %}</h2>
 </section>
 
-{# Contact info pulls up over its banner above 700px. The form arrives in story 1.5. #}
+{# Contact info pulls up over its banner above 700px; the contact form (story 1.5) follows it. #}
 <section class="relative z-2 mt-[calc(-1*clamp(70px,13vw,210px))] px-gutter pt-[clamp(16px,2.5vw,34px)] pb-[clamp(20px,3vw,36px)] text-center max-tablet:mt-0">
   <p class="text-sub/[1.55]">{% translate "Get in touch" %}</p>
   <p class="mt-2.5 text-h3/[1.55] font-bold tracking-normal"><a href="mailto:sayhi@mytreatplan.com">sayhi@mytreatplan.com</a></p>
+  {% include "publicsite/contact/_form.html" %}
 </section>

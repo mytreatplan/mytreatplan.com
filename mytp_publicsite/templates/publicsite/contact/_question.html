@@ -1,0 +1,22 @@
+{% comment %}
+One yes/no question of the contact form (publicsite/contact/_form.html): a fieldset whose
+two radios look like pills, and its errors. Optional: neither may be chosen.
+Usage: {% include "publicsite/contact/_question.html" with field=form.aligners %}
+{% endcomment %}
+<fieldset class="m-0 border-0 p-0"{% if field.errors %} aria-describedby="{{ field.auto_id }}_error"{% endif %} data-contact-question="{{ field.html_name }}">
+  <legend class="p-0 text-[15px] font-bold leading-[1.45]">{{ field.label }}</legend>
+  <div class="mt-3 flex gap-2.5">
+    {% for radio in field %}
+    <label class="relative inline-flex cursor-pointer" for="{{ radio.id_for_label }}">
+      <input type="radio" name="{{ field.html_name }}" value="{{ radio.data.value }}" id="{{ radio.id_for_label }}"{% if radio.data.selected %} checked{% endif %}
+             class="peer absolute inset-0 m-0 size-full cursor-pointer opacity-0">
+      <span class="inline-flex min-h-[46px] min-w-[92px] items-center justify-center rounded-pill border border-field-border bg-panel px-6 text-[15px] font-bold text-ink transition hover:border-field-border-hover peer-checked:border-ink peer-checked:bg-ink peer-checked:text-white peer-focus-visible:border-green peer-focus-visible:shadow-focus-pill">{{ radio.choice_label }}</span>
+    </label>
+    {% endfor %}
+  </div>
+  {% if field.errors %}
+  <ul id="{{ field.auto_id }}_error" class="mt-2 text-[14px] font-semibold leading-[1.45] text-notice-text">
+    {% for error in field.errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+</fieldset>
