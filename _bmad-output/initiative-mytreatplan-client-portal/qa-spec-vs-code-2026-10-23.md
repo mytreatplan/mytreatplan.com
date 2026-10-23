@@ -85,3 +85,24 @@ This QA run is read-only. Three reviewers compared the signup spec (`epic-client
 2. User decisions on A3–A9, A11–A13 and A15.
 3. Spec updates for group B and the decisions in step 2 (`bmad-spec`, including the encryption policy's Logs row).
 4. C1–C5 on the production story 1.12.
+
+## User decisions (2026-10-23)
+
+- **A3:** defer the admin login's lockout and records to the admin epics, with the second factor and CAPTCHA (deferred-work entry).
+- **A4:** page records cover only the portal (registered area) and `/admin/`, not the public site.
+- **A5:** record every attempt refused during a lock (`blocked: locked`); otherwise keep "from the 2nd failure".
+- **A6:** the lawyer says keep a minimal identity; the encrypted email is OK. The purge of an erased account keeps it, so the 5-year records can be tied to the person.
+- **A7:** log `OTP not delivered` when the Doctor asks for a resend or switches to SMS.
+- **A8:** update the spec: `abandoned` when a later signup supersedes the attempt, otherwise `timeout`.
+- **A9:** keep one IP-block record per IP, counter and hour; update the spec.
+- **A11:** support shows after 5 wrong codes, the hourly limit, a failed send, or 2 consecutive checks that couldn't be made; not after a plain expiry.
+- **A12:** keep the rolling window; update the spec.
+- **A13:** the reset request goes through when the CAPTCHA is unavailable, as login does; update the spec.
+- **A15:** keep Django's token: valid until the password is set, and a login in between invalidates it; update the spec.
+- **A16, A17:** fix them (phone numbers redacted in Sentry; the "e-mail" label; the "Others" field hidden without JavaScript).
+
+**Fix stories:**
+- **QA fix 1, records and privacy:** A2, A4, A5, A6, A7, A14, A16.
+- **QA fix 2, signup flow:** A1, A10, A11, A17.
+
+Spec-only updates (with group B): A8, A9, A12, A13, A15.

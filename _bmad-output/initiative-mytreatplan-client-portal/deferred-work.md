@@ -13,3 +13,7 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-client-portal/epic-login/story-second-factor-at-login-plan.md`
   summary: The admin site's login (`/admin/`, Django's own login form) has no second factor and no CAPTCHA. For the admin epics (decided by the user, 2026-10-19): add both there.
   evidence: Story 3.2 adds the Twilio Verify code to the portal login only; decision 4 of its plan keeps the admin site out of scope. Staff accounts log in to `/admin/` with a password alone.
+- source_plan: `_bmad-output/initiative-mytreatplan-client-portal/qa-spec-vs-code-2026-10-23.md`
+  summary: The admin site's login (Django's own, `/admin/`) has no login lockout and leaves no login or failure records, besides its missing second factor and CAPTCHA (earlier entry); for the admin epics.
+  evidence: QA A3 (2026-10-23), the user chose to defer it: `mytreatplan/urls.py:27` routes Django's admin login, which bypasses accounts.login_guard (records, lockout) as well as the portal's second factor and CAPTCHA.
+
