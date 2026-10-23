@@ -10,7 +10,7 @@ Chosen: application-level field encryption with KMS envelope keys (option B of t
 | Passwords | Argon2id hash (supported natively by Django), never encrypted |
 | Storage | Disk/volume encryption underneath, as the base layer |
 | Transport | TLS everywhere, including to the DB and Twilio |
-| Logs | Signup logs hold personal data for up to 30 days and get the same protection; after that, anonymized |
+| Logs | Signup event logs hold personal values until 30 days after the attempt ends, then are anonymized, and are deleted after 2 years. Login, page and account activity records (login spec) are kept intact for 5 years. Both get the same protection, and never hold passwords, codes or the CAPTCHA token |
 
 ## Rejected options
 
