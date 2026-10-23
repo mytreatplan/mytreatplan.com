@@ -97,16 +97,6 @@ class LegalDocument(models.Model):
         super().save(*args, **kwargs)
 
 
-class LegalChoiceQuerySet(models.QuerySet):
-    def copy_to(self, **owner):
-        """Copy these choices (same version, decision and time) to `owner`
-        (pending_registration=... or user=...)."""
-        LegalChoice.objects.bulk_create([
-            LegalChoice(document_id=choice.document_id, accepted=choice.accepted,
-                        decided_at=choice.decided_at, **owner)
-            for choice in self])
-
-
 class LegalChoice(models.Model):
     """One decision on one document version: accepted or not, and when. Owned by a
     pending registration (signup in progress) or by a user, never both."""
@@ -119,8 +109,6 @@ class LegalChoice(models.Model):
         related_name='legal_choices')
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True,
                              on_delete=models.PROTECT, related_name='legal_choices')
-
-    objects = LegalChoiceQuerySet.as_manager()
 
     class Meta:
         ordering = ['decided_at', 'id']

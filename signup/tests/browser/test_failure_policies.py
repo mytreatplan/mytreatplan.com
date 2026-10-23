@@ -31,9 +31,9 @@ from signup.verification import (FAKE_NO_WHATSAPP_NUMBER,  # noqa: E402
 
 from ..helpers import (EMAIL_ADDRESS, FIRST_NAME, LAST_NAME, MOBILE, MOBILE_E164,  # noqa: E402
                        NORMALIZED, PASSWORD, _legal, _step1, _wrong)
-from .helpers import (email_code, enter_code, fill_email, fill_passwords,  # noqa: E402
-                      fill_step1, follow, mobile_code, press, route_turnstile,
-                      to_email_step, to_mobile_step, url, wait_for_token)
+from .helpers import (accept_legal, email_code, enter_code, fill_email,  # noqa: E402
+                      fill_passwords, fill_step1, follow, mobile_code, press,
+                      route_turnstile, to_email_step, to_mobile_step, url, wait_for_token)
 
 pytestmark = [
     pytest.mark.browser,
@@ -183,7 +183,9 @@ def test_row4_mobile_already_registered(live_server, page):
 def test_row5_email_in_a_pending_registration(live_server, page, client):
     """Policy row 5, "Email in a pending registration": a warning and the offer to resume
     after a code to that email. A wrong code reveals nothing of the other registration;
-    the right one restores it into step 1."""
+    the right one restores it into step 1, but not that registration's password nor its
+    legal choices (plan-fix-resume-takeover): the password is set again and the legal
+    step comes back unticked."""
     # Another signup in progress (another browser) with this email and its own details.
     assert _step1(client, **OLD).status_code == 302
     assert _legal(client).status_code == 302
@@ -212,14 +214,30 @@ def test_row5_email_in_a_pending_registration(live_server, page, client):
     expect(page.locator('#id_email')).to_have_value(NORMALIZED)
     restored = PendingRegistration.objects.get()
     assert restored.pk != other.pk and restored.email_verified_at is not None
+    assert restored.password == '' and not restored.legal_choices.exists()
+
+    # No "keep the password" option: Continue with the passwords empty is refused.
+    expect(_body(page)).not_to_contain_text('Leave both password fields empty')
+    wait_for_token(page)
+    press(page, 'Continue')
+    expect(page).to_have_url(url('en'))
+    expect(page.locator('#id_password1')).to_have_attribute('aria-invalid', 'true')
+
+    # With a password set: the legal step, nothing ticked.
+    fill_passwords(page)
+    wait_for_token(page)
+    press(page, 'Continue')
+    expect(page).to_have_url(url('en', 'legal/'))
+    for box in ('#id_terms', '#id_conditions', '#id_ormco_tps', '#id_commercial_consent'):
+        expect(page.locator(box)).not_to_be_checked()
 
 
 # --- Row 6 ---------------------------------------------------------------------------------
 
 def test_row6_page_closed_mid_wizard(live_server, browser, page):
     """Policy row 6, "User closes the page mid-wizard": within 24h, the same email in a
-    new browser starts the resume flow, which restores the saved data; the signup then
-    goes on to the account."""
+    new browser starts the resume flow, which restores the saved data (not the password
+    nor the legal choices); the signup then goes on to the account."""
     closed = browser.new_context()
     route_turnstile(closed)
     to_email_step(closed.new_page(), live_server)
@@ -234,9 +252,15 @@ def test_row6_page_closed_mid_wizard(live_server, browser, page):
     expect(page.locator('#id_last_name')).to_have_value(LAST_NAME)
     expect(page.locator('#id_phone')).to_have_value(MOBILE_SHOWN)
 
-    # Continue (the saved password kept): the legal step and the email code are done.
+    # A resume keeps neither the password nor the legal choices (plan-fix-resume-takeover):
+    # set the password again, then the legal step, unticked; the email code is done.
+    fill_passwords(page)
     wait_for_token(page)
     press(page, 'Continue')
+    expect(page).to_have_url(url('en', 'legal/'))
+    for box in ('#id_terms', '#id_conditions', '#id_ormco_tps', '#id_commercial_consent'):
+        expect(page.locator(box)).not_to_be_checked()
+    accept_legal(page)
     expect(page).to_have_url(url('en', 'verify-mobile/'))
     enter_code(page, mobile_code(), 'Create account')
     expect(page.locator('h1')).to_have_text('Welcome to MyTreatPlan')
@@ -266,6 +290,9 @@ def test_row7_idle_for_30_minutes(live_server, page, clock, monkeypatch):
     _resume_with_code(page)
     expect(page.locator('#id_first_name')).to_have_value(FIRST_NAME)
     expect(page.locator('#id_phone')).to_have_value(MOBILE_SHOWN)
+    # The password is set again after a resume (plan-fix-resume-takeover).
+    expect(_body(page)).not_to_contain_text('Leave both password fields empty')
+    assert PendingRegistration.objects.get().password == ''
 
 
 # --- Row 8 ---------------------------------------------------------------------------------

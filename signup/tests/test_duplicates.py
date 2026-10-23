@@ -10,6 +10,7 @@ from django.test import Client
 from django.utils import timezone
 
 from eventlog.models import Attempt
+from legal.models import LegalChoice
 from signup.models import PendingRegistration
 from signup.verification import EMAIL, PURPOSE_RESUME, PURPOSE_SIGNUP
 from signup.views import ATTEMPT_SESSION_KEY, RESUME_SESSION_KEY, SESSION_KEY
@@ -301,11 +302,13 @@ def test_correct_code_replaces_the_old_registration(client, first, caplog):
     assert new.email_verified_at is not None  # the code went to this email
     assert second.session[SESSION_KEY] == str(new.pk)
     assert RESUME_SESSION_KEY not in second.session
-    for name in (*PendingRegistration.USER_FIELDS, 'email', 'password', 'phone_region'):
+    for name in (*PendingRegistration.USER_FIELDS, 'email', 'phone_region'):
         assert getattr(new, name) == getattr(first, name), name
-    # The legal choices are copied (same versions, decisions and times).
-    copied = [(c.document_id, c.accepted, c.decided_at) for c in new.legal_choices.all()]
-    assert len(copied) == 4 and sum(accepted for _d, accepted, _t in copied) == 2
+    # Never the password nor the legal choices: whoever made the old row chose them, and
+    # the resume code proves only the email (plan-fix-resume-takeover).
+    assert new.password == ''
+    assert not new.legal_choices.exists()
+    assert not LegalChoice.objects.exists()  # the old row's went with it
 
     # Old attempt: ended `abandoned`. New one: found, code sent, resumed; no email code.
     old_attempt.refresh_from_db()
@@ -317,7 +320,7 @@ def test_correct_code_replaces_the_old_registration(client, first, caplog):
     assert events[2].data['attempt'] == str(old_attempt.pk)
     assert new_attempt.ended_at is None
 
-    # Step 1 shows the saved data, with the password fields empty.
+    # Step 1 shows the saved data, with the password fields empty and required.
     page = second.get('/en/signup/')
     form = page.context['form']
     assert (form.initial['email'], form.initial['first_name'], form.initial['last_name'],
@@ -327,7 +330,7 @@ def test_correct_code_replaces_the_old_registration(client, first, caplog):
     text = page.content.decode()
     assert 'We have restored your registration.' in text
     assert re.search(r'<input type="password" name="password1"(?![^>]*value=)', text)
-    assert not form.fields['password1'].required
+    assert form.fields['password1'].required and form.fields['password2'].required
 
     # The email code step is not reachable: step 1 (review) is next.
     assert new.step == 'account'
@@ -338,19 +341,21 @@ def test_correct_code_replaces_the_old_registration(client, first, caplog):
     assert SESSION_KEY not in client.session
 
 
-def _review(client, password='', password2='', **fields):
-    """Continue at step 1 after a resume: the saved data as shown, passwords empty."""
+def _review(client, password=PASSWORD, password2=PASSWORD, **fields):
+    """Continue at step 1 after a resume: the saved data as shown, and a password set
+    again (a resume never keeps the old row's)."""
     return _step1(client, password=password, password2=password2, **{**OLD, **fields})
 
 
-def test_review_and_continue_asks_only_the_mobile_code(first, caplog):
+def test_review_and_continue_asks_the_legal_step_and_the_mobile_code(first, caplog):
     second = Client()
     _check(second)
     _resume(second)
     sent_before = len([r for r in caplog.records if r.name == 'signup.verification'])
 
     response = _review(second)
-    assert response['Location'] == '/en/signup/verify-mobile/'
+    assert response['Location'] == '/en/signup/legal/'
+    assert _legal(second)['Location'] == '/en/signup/verify-mobile/'
     assert PendingRegistration.objects.get().phone_verified_at is None
     lines = [r.getMessage() for r in caplog.records if r.name == 'signup.verification']
     assert len(lines) == sent_before + 1  # no email code; the mobile code
@@ -364,15 +369,16 @@ def test_review_and_continue_asks_only_the_mobile_code(first, caplog):
     assert not PendingRegistration.objects.exists()
     attempt = Attempt.objects.get(outcome='completed')
     assert [e[0] for e in _events(attempt)] == [
-        'pending_found', 'code_sent', 'resumed', 'step_saved', 'code_sent', 'code_accepted',
-        'completed']
+        'pending_found', 'code_sent', 'resumed', 'step_saved', 'step_saved', 'code_sent',
+        'code_accepted', 'completed']
 
 
 def test_email_changed_in_review_runs_the_email_code_step(first, caplog):
     second = Client()
     _check(second)
     _resume(second)
-    response = _review(second, email=OTHER_EMAIL)
+    assert _review(second, email=OTHER_EMAIL)['Location'] == '/en/signup/legal/'
+    response = _legal(second)
     assert response['Location'] == '/en/signup/verify-email/'
     pending = PendingRegistration.objects.get()
     assert pending.email == OTHER_EMAIL and pending.email_verified_at is None
@@ -390,15 +396,19 @@ def test_email_case_changed_in_review_stays_verified(first):
     second = Client()
     _check(second)
     _resume(second)
-    assert _review(second, email=NORMALIZED.upper())['Location'] == (
-        '/en/signup/verify-mobile/')
+    assert _review(second, email=NORMALIZED.upper())['Location'] == '/en/signup/legal/'
+    assert _legal(second)['Location'] == '/en/signup/verify-mobile/'
 
 
 def test_new_password_in_review(first):
     second = Client()
     _check(second)
     _resume(second)
-    # Every rule applies once a password is typed.
+    # The password is required: a resume never keeps the old row's.
+    response = _review(second, password='', password2='')
+    assert response.status_code == 200
+    assert set(response.context['form'].errors) == {'password1', 'password2'}
+    # Every rule applies.
     response = _review(second, password='short', password2='short')
     assert response.status_code == 200 and 'password1' in response.context['form'].errors
     response = _review(second, password='indigo-harbor-lantern-77', password2='')
@@ -410,7 +420,8 @@ def test_new_password_in_review(first):
 
     response = _review(second, password='indigo-harbor-lantern-77',
                        password2='indigo-harbor-lantern-77')
-    assert response['Location'] == '/en/signup/verify-mobile/'
+    assert response['Location'] == '/en/signup/legal/'
+    assert _legal(second)['Location'] == '/en/signup/verify-mobile/'
     assert _mobile_code(second)['Location'] == '/en/welcome/'
     user = User.objects.get()
     assert user.check_password('indigo-harbor-lantern-77')
@@ -495,11 +506,12 @@ def test_browsers_own_earlier_registration_is_replaced(first):
 
 def test_page_closed_then_resumed_in_a_fresh_browser(first):
     """A signup closed at the email code step, resumed by its email in a fresh browser:
-    the resume code, then Continue asks only the mobile code."""
+    the resume code, a password set again, the legal step again, then the mobile code."""
     fresh = Client()
     assert 'data-resume-offer' in _check(fresh).content.decode()
     assert _resume(fresh)['Location'] == '/en/signup/'
-    assert _review(fresh)['Location'] == '/en/signup/verify-mobile/'
+    assert _review(fresh)['Location'] == '/en/signup/legal/'
+    assert _legal(fresh)['Location'] == '/en/signup/verify-mobile/'
     assert _mobile_code(fresh)['Location'] == '/en/welcome/'
     assert User.objects.get().email == NORMALIZED
 
@@ -582,3 +594,36 @@ def test_email_step_code_marks_the_email_verified(client, first):
     assert first.email_verified_at is not None and first.phone_verified_at is None
     assert first.step == 'verify-mobile'
 
+
+# --- A row someone else made (plan-fix-resume-takeover) ---------------------------------
+
+def test_resume_of_a_row_someone_else_made_keeps_none_of_their_choices(first):
+    """Someone else signed up with this email: their password and legal choices (Ormco
+    TPS and commercial consent ticked) must not become the owner's. The owner resumes by
+    the code to the email, sets their own password, and decides the legal step again."""
+    LegalChoice.objects.filter(pending_registration=first).update(accepted=True)
+    stranger_times = set(LegalChoice.objects.values_list('decided_at', flat=True))
+    owner = Client()
+    _check(owner)
+    assert _resume(owner)['Location'] == '/en/signup/'
+
+    # No password kept: both fields are required.
+    response = _review(owner, password='', password2='')
+    assert set(response.context['form'].errors) == {'password1', 'password2'}
+    assert _review(owner, password='indigo-harbor-lantern-77',
+                   password2='indigo-harbor-lantern-77')['Location'] == '/en/signup/legal/'
+
+    # The legal step is shown again, nothing ticked.
+    page = owner.get('/en/signup/legal/')
+    for kind in ('terms', 'conditions', 'ormco_tps', 'commercial_consent'):
+        assert not page.context['form'][kind].value(), kind
+    assert _legal(owner)['Location'] == '/en/signup/verify-mobile/'
+    assert _mobile_code(owner)['Location'] == '/en/welcome/'
+
+    user = User.objects.get()
+    assert user.check_password('indigo-harbor-lantern-77')
+    assert not user.check_password(PASSWORD)
+    choices = {c.document.kind: c for c in user.legal_choices.select_related('document')}
+    assert {kind: c.accepted for kind, c in choices.items()} == {
+        'terms': True, 'conditions': True, 'ormco_tps': False, 'commercial_consent': False}
+    assert not {c.decided_at for c in choices.values()} & stranger_times

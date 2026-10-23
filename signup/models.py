@@ -89,8 +89,10 @@ class PendingRegistration(models.Model):
                    'how_found', 'how_found_other')
 
     # Copied into the new row when a signup is resumed (signup entry 5): the user-facing
-    # data, the password hash, the prefix region and the next unsaved step.
-    RESUMED_FIELDS = ('email', *USER_FIELDS, 'password', 'phone_region', 'step')
+    # data, the prefix region and the next unsaved step. Never the password hash: the
+    # resume code proves control of the email, not who made the row, so the person
+    # resuming sets a password again (plan-fix-resume-takeover).
+    RESUMED_FIELDS = ('email', *USER_FIELDS, 'phone_region', 'step')
 
     def __str__(self):
         return f'Pending registration {self.pk}'
