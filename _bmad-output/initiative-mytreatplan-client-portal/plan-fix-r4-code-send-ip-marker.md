@@ -3,7 +3,7 @@ title: 'Fix R4: login code sends use up signup code-send block records'
 type: 'bugfix'
 ticket: ''
 created: '2026-10-23'
-status: 'built'
+status: 'done'
 baseline_revision: '71aaaac4eb2c4404037bee7df47e7b1094c7d9c9'
 route: 'oneshot'
 route_source: 'auto'
@@ -55,3 +55,7 @@ Oneshot: about 60 lines.
 | 5 | Irregular wrap of the `.verification` import | low | patch | Refilled. |
 
 After the patches (2026-10-23), on SQLite: the full suite gives 1,459 passed, 3 failed (the known PostgreSQL-only tests).
+
+## Staging
+
+PR #46 merged as 4196eda (2026-10-23), together with the S2 notice and the S2/S4/R4 spec updates. CI on master (run 40032694230, PostgreSQL 17): 1464 passed; deploy-staging succeeded. The user confirmed the deploy and the no-JavaScript notice on /en/signup/ and /es/signup/. R4 itself has no manual check (covered by the tests).
