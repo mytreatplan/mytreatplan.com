@@ -837,6 +837,10 @@ msgid "The documents have been updated. Please review them again."
 msgstr "Los documentos se han actualizado. Revíselos de nuevo."
 
 #: signup/forms.py
+msgid "Signup is not available right now. Please try again later."
+msgstr "El registro no está disponible en este momento. Inténtelo de nuevo más tarde."
+
+#: signup/forms.py
 msgid "This code is no longer valid. Send a new code."
 msgstr "Este código ya no es válido. Solicite un código nuevo."
 

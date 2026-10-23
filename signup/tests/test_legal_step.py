@@ -304,6 +304,61 @@ def test_documents_changed_in_spanish(at_legal):
             in response.content.decode())
 
 
+# --- No published Terms or Conditions (plan-fix-legal-unpublished) ---------------------
+
+@pytest.mark.parametrize('kind', ['terms', 'conditions'])
+def test_no_published_required_document_refuses_the_legal_step(at_legal, caplog, kind):
+    LegalDocument.objects.filter(kind=kind).update(published_at=None)
+    caplog.clear()
+    response = _legal(at_legal, terms=None, conditions=None)  # nothing ticked either
+
+    assert response.status_code == 200
+    message = 'Signup is not available right now. Please try again later.'
+    assert response.context['form'].errors == {'__all__': [message]}
+    assert message in response.content.decode()
+    assert not LegalChoice.objects.exists()
+    assert PendingRegistration.objects.get().step == 'legal'
+    assert not [r for r in caplog.records if r.name == 'signup.verification']  # no code
+    errors = [r.getMessage() for r in caplog.records
+              if r.name == 'signup.steps' and r.levelname == 'ERROR']
+    assert errors == [f'Signup legal step refused: no published version of {kind}']
+    rejected = [(e.step, e.field, e.reason)
+                for e in Attempt.objects.get().events.filter(event='rejected')]
+    assert rejected == [('legal', '', 'documents_missing')]
+
+
+def test_no_published_required_document_in_spanish(at_legal):
+    LegalDocument.objects.filter(kind='terms').update(published_at=None)
+    _step1(at_legal, lang='es')
+    response = _legal(at_legal, lang='es')
+    assert ('El registro no está disponible en este momento. Inténtelo de nuevo más tarde.'
+            in response.content.decode())
+
+
+@pytest.mark.parametrize('kinds', [['terms'], ['conditions'], KINDS])
+def test_no_account_without_accepted_terms_and_conditions(at_legal, kinds):
+    _legal(at_legal)
+    _email_code(at_legal)
+    # However it got there: not accepted (or no choice at all) when the account would be
+    # made.
+    if kinds == KINDS:
+        LegalChoice.objects.all().delete()
+    else:
+        LegalChoice.objects.filter(document__kind__in=kinds).update(accepted=False)
+
+    assert _mobile_code(at_legal)['Location'] == LEGAL_URL
+    assert not User.objects.exists()
+    assert PendingRegistration.objects.get().step == 'legal'
+    event = list(Attempt.objects.get().events.all())[-1]
+    assert (event.event, event.step, event.field, event.reason) == (
+        'rejected', 'verify-mobile', 'legal', 'legal_not_accepted')
+
+    # Accepted again: the verified contacts stand, so the account is made.
+    assert _legal(at_legal)['Location'] == '/en/welcome/'
+    assert _choices(User.objects.get())['terms'] == (1, True)
+    assert _choices(User.objects.get())['conditions'] == (1, True)
+
+
 # --- Rows saved before the legal step existed (migration signup 0008) ------------------
 
 def test_pending_row_past_the_legal_step_without_choices_goes_back_to_it(at_legal, caplog):
