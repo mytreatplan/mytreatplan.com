@@ -27,6 +27,12 @@ REDACTED = '[redacted]'
 _EMAIL_RE = re.compile(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}')
 # Candidates only; each is confirmed with `ipaddress`, so times like 03:30:00 stay.
 _IP_CANDIDATE_RE = re.compile(r'(?<![\w:.])[0-9A-Fa-f:.]*[.:][0-9A-Fa-f:.]*(?![\w:])')
+# Phone numbers: 9 to 15 digits (E.164's longest), either after a `+`, with spaces,
+# hyphens or brackets between them (`+34 622 918 374`, `+1 (415) 555-2671`), or all
+# together (`622918374`). Shorter numbers (prices, IDs, HTTP statuses), groups without a
+# `+` (`200 301 404`), and digits inside a word, a decimal or an identifier stay.
+_PHONE_RE = re.compile(r'(?<![\w+])\+\d(?:[ \-()]{0,2}\d){8,14}(?!\w)'
+                       r'|(?<![\w.+-])\d{9,15}(?!\w|\.\d)')
 
 
 def _redact_ip(match):
@@ -40,10 +46,11 @@ def _redact_ip(match):
 
 
 def redact(text):
-    """Replace email addresses and IPv4/IPv6 addresses in free text."""
+    """Replace email addresses, IPv4/IPv6 addresses and phone numbers in free text."""
     if not isinstance(text, str):
         return text
-    return _IP_CANDIDATE_RE.sub(_redact_ip, _EMAIL_RE.sub(REDACTED, text))
+    text = _IP_CANDIDATE_RE.sub(_redact_ip, _EMAIL_RE.sub(REDACTED, text))
+    return _PHONE_RE.sub(REDACTED, text)
 
 
 def _strip_query(url):
@@ -53,8 +60,8 @@ def _strip_query(url):
 
 def scrub_event(event, hint=None):
     """`before_send`: drop request data, cookies, headers, query strings, user email
-    and IP from an event, and redact emails and IPs in messages, before it leaves the
-    server."""
+    and IP from an event, and redact emails, IPs and phone numbers in messages, exception
+    values and breadcrumbs, before it leaves the server."""
     request = event.get('request')
     if isinstance(request, dict):
         scrubbed = {k: v for k, v in request.items() if k in _REQUEST_KEYS_KEPT}

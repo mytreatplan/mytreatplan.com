@@ -36,8 +36,9 @@ from accounts.models import phone_index_or_blank
 from legal.models import LegalChoice, LegalDocument
 
 from . import captcha, limits
-from .forms import (BLOCKED_MESSAGE, BLOCKED_RATE_LIMIT, OTP_RATE_LIMITED, OTP_SEND_FAILED,
-                    AccountForm, EmailCodeForm, LegalForm, MobileCodeForm, national_number)
+from .forms import (BLOCKED_MESSAGE, BLOCKED_RATE_LIMIT, OTP_NOT_DELIVERED, OTP_RATE_LIMITED,
+                    OTP_SEND_FAILED, AccountForm, EmailCodeForm, LegalForm, MobileCodeForm,
+                    national_number)
 from .models import PendingRegistration
 from .verification import (CODE_TTL_SECONDS, EMAIL, PURPOSE_SIGNUP, SMS, WHATSAPP,
                            ChannelUnavailable, VerificationError, contact_kind, get_provider)
@@ -257,7 +258,8 @@ def send_code(request, attempt, page, contact, purpose, channel, resend=False):
 
     A mobile goes by `channel` (WhatsApp, or SMS when asked); if WhatsApp cannot deliver
     to the number the code goes by SMS at once (`fallback`). Returns a SendOutcome:
-    SENT; COOLDOWN or HOURLY (not sent; the hourly limit is logged `rejected`); BLOCKED
+    SENT (logged `code_sent`; a resend's with the reason `OTP not delivered`); COOLDOWN or
+    HOURLY (not sent; the hourly limit is logged `rejected`); BLOCKED
     (not sent: the per-IP limit on code sends, logged `rejected` with field `ip`); or
     FAILED (the provider failed: logged `code_send_failed` and reported to Sentry, with
     no personal data). The page's session state is updated (`code_state`). A short lock
@@ -351,7 +353,11 @@ def _send(request, attempt, page, contact, purpose, channel, resend, field, log_
     data = {**log_data, 'channel': channel, 'fallback': fallback}
     if resend:
         data['resend'] = True
-    eventlog.record(attempt, 'code_sent', request=request, step=page, data=data)
+    # A resend (or the switch to SMS) means the last code was not received: logged
+    # `OTP not delivered` ("Code not received", QA A7) on the signup and resume pages (the
+    # login's, with no attempt, log nothing here).
+    eventlog.record(attempt, 'code_sent', request=request, step=page,
+                    reason=OTP_NOT_DELIVERED if resend else '', data=data)
     outcome = SendOutcome(SENT, channel, fallback, 0)
     _store_outcome(request, page, outcome)
     return outcome

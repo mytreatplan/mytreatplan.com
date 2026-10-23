@@ -10,6 +10,7 @@ class AccountsConfig(AppConfig):
         from django.contrib.auth.signals import user_logged_in
 
         from .crypto import check_field_keys
+        from . import login_guard
         from .sessions import on_user_logged_in
 
         # Missing or malformed field keys stop `check`, `runserver` and `migrate`.
@@ -17,3 +18,6 @@ class AccountsConfig(AppConfig):
 
         # One session per account (accounts.sessions): every login, whichever its way.
         user_logged_in.connect(on_user_logged_in, dispatch_uid='accounts.one_session')
+        # Signup's auto-login is recorded as a login (accounts.login_guard, QA A2).
+        user_logged_in.connect(login_guard.on_user_logged_in,
+                               dispatch_uid='accounts.signup_login_record')

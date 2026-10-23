@@ -2,7 +2,8 @@
 attempt can be reconstructed step by step. Login activity (epic-login entry 4) is one
 Attempt of kind `login` per record (eventlog.service.record_activity), tied to the
 account by `account_id`; so is each page shown to a logged-in user (kind `page`, epic-login
-entry 7, accounts.page_records).
+entry 7, accounts.page_records), and an erased account's purge (kind `account`, QA A6,
+accounts.erasure).
 
 Only `Event.data` holds personal values (email, IP address, browser string, ...), encrypted
 with the 2.2 field encryption (accounts.crypto). The other columns are non-personal, so
@@ -22,12 +23,14 @@ class Attempt(models.Model):
     outcome. Never a foreign key to a user or a pending registration, so it outlives both.
 
     `account_id` is the account's pk (a plain number, not a ForeignKey, kept after the
-    account is purged), set for login and page records; never the email blind index, which
+    account is purged), set for login, page and account records; never the email blind index, which
     erasure replaces."""
 
     SIGNUP = 'signup'
     LOGIN = 'login'
     PAGE = 'page'
+    # An erased account's purge (accounts.erasure, QA A6): its pk and encrypted email.
+    ACCOUNT = 'account'
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     kind = models.CharField(max_length=30)

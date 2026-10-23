@@ -178,8 +178,14 @@ def _pending_login_view(view):
         if not _account_unchanged(user, pending):
             return _login_again(request)
         if login_guard.account_locked(account_id=user.pk):
+            if request.method == 'POST':
+                # A submission refused during a lock: recorded (QA A5), not counted.
+                login_guard.record_blocked(request, step=step, account_id=user.pk)
             return _locked_out(request)
         return view(request, user, dict(pending))
+    # The event-log step of the page (the contact choice, or the code).
+    step = (login_guard.VERIFY_STEP if view.__name__ == 'login_verify'
+            else login_guard.CODE_STEP)
     return wrapper
 
 
@@ -235,14 +241,19 @@ def login(request):
                 refuse(form, 'rate_limited_ip')
             elif login_guard.login_locked(request.POST.get('email', '')):
                 # A locked account (or email): refused before the password is checked,
-                # so even a right one (or a remembered device) does not log in.
-                login_guard.refund_login_attempt(request, reservation)
+                # so even a right one (or a remembered device) does not log in. Recorded
+                # (`blocked: locked`, QA A5), not counted as a failure; it keeps its IP
+                # attempt, so the IP's limit bounds these records too.
+                login_guard.record_blocked(request, step=login_guard.LOGIN_STEP,
+                                           email=request.POST.get('email', ''))
                 refuse(form, 'locked')
             elif form.is_valid():
                 user = form.get_user()
                 if login_guard.account_locked(account_id=user.pk):
                     # Locked meanwhile (a parallel 5th failure, after the check above):
                     # still refused, no pending login and no remembered-device skip.
+                    login_guard.record_blocked(request, step=login_guard.LOGIN_STEP,
+                                               account_id=user.pk)
                     refuse(form, 'locked')
                 elif not user.phone:
                     # No mobile, no portal login (decision 2): the generic error, no code.
@@ -259,7 +270,8 @@ def login(request):
                     return redirect('login_verify')
             elif form.has_error(NON_FIELD_ERRORS, 'invalid_login'):
                 if login_guard.password_rejected(request,
-                                                 form.cleaned_data.get('email', '')):
+                                                 form.cleaned_data.get('email', ''),
+                                                 form.cleaned_data.get('password', '')):
                     refuse(form, 'locked')
             else:
                 # An empty email or password: the credentials were not checked.

@@ -7,6 +7,8 @@ tests that end in an IntegrityError (test_crypto.py)."""
 import pytest
 from django.contrib.auth import get_user_model
 
+from eventlog.models import Attempt
+
 from signup.tests.conftest import cache_cleared, clock  # noqa: F401 - clock: fixture
 from signup.tests.conftest import codes_captured
 from signup.tests.helpers import NORMALIZED, PASSWORD, _complete
@@ -29,11 +31,15 @@ def clear_cache(request):
 
 @pytest.fixture
 def doctor(client):
-    """A Doctor created by signup (the whole wizard), then logged out."""
+    """A Doctor created by signup (the whole wizard), then logged out. The login record of
+    signup's auto-login (QA A2, tested in test_login_records.py) is removed, so a test
+    sees only the records of what it does."""
     response = _complete(client)
     assert response['Location'] == '/en/welcome/'
     client.logout()
-    return User.objects.by_email(NORMALIZED).get()
+    user = User.objects.by_email(NORMALIZED).get()
+    Attempt.objects.filter(kind=Attempt.LOGIN, account_id=user.pk).delete()
+    return user
 
 
 @pytest.fixture

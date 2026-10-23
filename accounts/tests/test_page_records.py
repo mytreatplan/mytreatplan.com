@@ -8,6 +8,7 @@ import pytest
 import sentry_sdk
 from dateutil.relativedelta import relativedelta
 from django.contrib.auth import get_user_model
+from django.conf.urls.i18n import i18n_patterns
 from django.core.exceptions import PermissionDenied
 from django.db import DatabaseError, connection
 from django.http import HttpResponse, JsonResponse
@@ -31,7 +32,8 @@ User = get_user_model()
 
 
 # Test-only pages (this module is the test URLconf): a JSON answer, a file, a 403, a 500,
-# a plain page that answers 204, and the portal routes.
+# a plain page that answers 204, and the portal routes. Under a portal prefix
+# (`/en/welcome/test-pages/...`), since only the portal's pages are recorded (QA A4).
 def _json(request):
     return JsonResponse({'ok': True})
 
@@ -52,13 +54,16 @@ def _no_content(request):
     return HttpResponse(status=204, content_type='text/html')
 
 
-urlpatterns = list(portal_urlpatterns) + [
-    path('test-pages/json/', _json, name='test_json'),
-    path('test-pages/file/', _file, name='test_file'),
-    path('test-pages/forbidden/', _forbidden, name='test_forbidden'),
-    path('test-pages/broken/', _broken, name='test_broken'),
-    path('test-pages/no-content/', _no_content, name='test_no_content'),
-]
+TEST_PAGES = '/en/welcome/test-pages'
+
+urlpatterns = list(portal_urlpatterns) + i18n_patterns(
+    path('welcome/test-pages/json/', _json, name='test_json'),
+    path('welcome/test-pages/file/', _file, name='test_file'),
+    path('welcome/test-pages/forbidden/', _forbidden, name='test_forbidden'),
+    path('welcome/test-pages/broken/', _broken, name='test_broken'),
+    path('welcome/test-pages/no-content/', _no_content, name='test_no_content'),
+    prefix_default_language=True,
+)
 
 
 @pytest.fixture
@@ -133,9 +138,9 @@ def test_two_pages_and_an_htmx_request_make_two_records(doctor):
 
 
 @pytest.mark.parametrize('url, status', [
-    ('/en/nowhere/', 404),
-    ('/test-pages/forbidden/', 403),
-    ('/test-pages/broken/', 500),
+    ('/en/welcome/nowhere/', 404),
+    (f'{TEST_PAGES}/forbidden/', 403),
+    (f'{TEST_PAGES}/broken/', 500),
 ])
 def test_error_page_is_recorded_with_its_status(doctor, url, status):
     browser = _browser(doctor, raise_request_exception=False)
@@ -151,7 +156,7 @@ def test_error_page_is_recorded_with_its_status(doctor, url, status):
 
 
 def test_unresolved_page_has_no_step(doctor):
-    _browser(doctor).get('/en/nowhere/')
+    _browser(doctor).get('/en/welcome/nowhere/')
 
     [record] = _records()
     assert record.step == ''
@@ -177,7 +182,49 @@ def test_htmx_full_page_load_is_recorded(doctor, header):
     assert record.attempt.account_id == doctor.pk
 
 
+@pytest.mark.parametrize('url', ['/es/welcome/', '/es/signup/', '/en/password-reset/'])
+def test_other_portal_pages_are_recorded(doctor, url):
+    response = _browser(doctor).get(url)
+
+    assert response.status_code == 200
+    [record] = _records()
+    assert record.data['path'] == url
+
+
+def test_admin_404_is_recorded(staff):
+    response = _browser(staff, raise_request_exception=False).get('/admin/no-such-page/')
+
+    assert response.status_code == 404
+    [record] = _records()
+    assert record.reason == '404'
+
+
+def test_portal_prefixes_cover_every_portal_route():
+    """Each route of signup.urls and accounts.urls is under one of PORTAL_PREFIXES."""
+    from accounts.urls import urlpatterns as accounts_routes
+    from signup.urls import urlpatterns as signup_routes
+
+    routes = [str(pattern.pattern) for pattern in [*signup_routes, *accounts_routes]]
+    assert routes and all(route.startswith(page_records.PORTAL_PREFIXES) for route in routes)
+
+
 # --- Not recorded -----------------------------------------------------------------------
+
+@pytest.mark.parametrize('url', ['/en/', '/es/', '/en/privacy/', '/es/terms/'])
+def test_public_site_page_is_not_recorded(doctor, url):
+    response = _browser(doctor).get(url)
+
+    assert response.status_code == 200
+    assert _records() == []
+
+
+@pytest.mark.parametrize('url', ['/en/no-such-page/', '/es/nowhere/x/', '/nowhere/'])
+def test_unresolved_page_outside_the_portal_is_not_recorded(doctor, url):
+    response = _browser(doctor).get(url)
+
+    assert response.status_code == 404
+    assert _records() == []
+
 
 def test_htmx_request_is_not_recorded(doctor):
     response = _browser(doctor).get(WELCOME, headers={'HX-Request': 'true'})
@@ -205,7 +252,7 @@ def test_redirect_is_not_recorded(doctor, url):
 
 
 def test_other_success_status_is_not_recorded(doctor):
-    response = _browser(doctor).get('/test-pages/no-content/')
+    response = _browser(doctor).get(f'{TEST_PAGES}/no-content/')
 
     assert response.status_code == 204
     assert _records() == []
@@ -232,7 +279,8 @@ def test_anonymous_visitor_is_not_recorded():
     assert _records() == []
 
 
-@pytest.mark.parametrize('url', ['/test-pages/json/', '/test-pages/file/', '/robots.txt'])
+@pytest.mark.parametrize('url', [f'{TEST_PAGES}/json/', f'{TEST_PAGES}/file/',
+                                 '/robots.txt'])
 def test_non_html_response_is_not_recorded(doctor, url):
     response = _browser(doctor).get(url)
 

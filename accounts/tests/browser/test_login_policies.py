@@ -175,9 +175,12 @@ def test_records_after_the_journey(live_server, page, mailoutbox, clock, setting
     agent = page.evaluate('() => navigator.userAgent')
     account_id = User.objects.by_email(NORMALIZED).get().pk
 
-    logins = list(Event.objects.filter(attempt__kind=Attempt.LOGIN, event='login'))
-    # The code, the remembered device, and the code again after the reset.
-    assert len(logins) == 3
+    logins = list(Event.objects.filter(attempt__kind=Attempt.LOGIN, event='login')
+                  .order_by('created_at', 'id'))
+    # Signup's auto-login (QA A2), the code, the remembered device, and the code again
+    # after the reset.
+    assert [event.reason for event in logins] == [
+        'signup', 'code', 'remembered_device', 'code']
     for event in logins:
         assert event.attempt.account_id == account_id
         assert started <= event.created_at <= ended

@@ -469,6 +469,8 @@ def test_resend(first, clock):
     events = list(_attempt_of(second).events.all())
     assert [e.event for e in events] == ['pending_found', 'code_sent', 'code_sent']
     assert events[-1].data['resend'] is True
+    # "Code not received" (QA A7).
+    assert (events[1].reason, events[-1].reason) == ('', 'OTP not delivered')
 
 
 def test_use_different_details_clears_the_resume(first):
