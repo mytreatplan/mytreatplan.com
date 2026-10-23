@@ -3,7 +3,7 @@ title: 'QA fix 2: signup flow'
 type: 'bugfix'
 ticket: ''
 created: '2026-10-23'
-status: 'built'
+status: 'done'
 baseline_revision: 'b93f5a151d212c900fa965da5ab7bf5dda0012ff'
 route: 'full'
 route_source: 'auto'
@@ -139,3 +139,5 @@ After the patches (2026-10-23), on SQLite with Chromium (sandbox lifted): the fu
 **Commands:**
 - The local suite command (test keys, SQLite), outside the sandbox for the browser tests. Expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check`, `compilemessages`. Expected: no changes, OK.
+
+CI on PostgreSQL 17 (PR #44): 1369 passed. Merged as `32d646b`. On staging the user reported (2026-10-23) these checks passed: a resend says "We have sent you the code again." (EN and ES); a code entered after its 10 minutes shows "no longer valid" with no support contact; 4 wrong codes then a 5th show "no longer valid" with the support contact; step 1 shows "e-mail", and the Others field appears only when "Others" is chosen.
