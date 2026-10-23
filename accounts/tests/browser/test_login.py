@@ -10,11 +10,12 @@ pytest.importorskip('pytest_playwright')
 from playwright.sync_api import expect  # noqa: E402
 
 from conftest import TURNSTILE_TEST_TOKEN  # noqa: E402
-from signup.tests.browser.helpers import (email_code, enter_code, mobile_code,  # noqa: E402
-                                          new_page, press, to_mobile_step)
+from signup.tests.browser.helpers import email_code, enter_code, new_page, press  # noqa: E402
 from signup.forms import BLOCKED_MESSAGE  # noqa: E402
 from signup.tests.helpers import EMAIL_ADDRESS, PASSWORD  # noqa: E402
 from signup.verification import PURPOSE_LOGIN  # noqa: E402
+
+from .helpers import choose, sign_up, submit_password  # noqa: E402
 
 pytestmark = [
     pytest.mark.browser,
@@ -44,15 +45,8 @@ window.turnstile = {
 """ % TURNSTILE_TEST_TOKEN
 
 
-def _signup(page, live_server):
-    """A whole signup through the pages: the Doctor lands logged in on welcome."""
-    to_mobile_step(page, live_server)
-    enter_code(page, mobile_code(), 'Create account')
-    expect(page).to_have_url(f'{live_server.url}/en/welcome/')
-
-
 def test_signup_user_logs_out_and_logs_in(live_server, page):
-    _signup(page, live_server)
+    sign_up(page, live_server)
 
     # Log out from the header's button (a POST form).
     expect(page.get_by_role('link', name='Client portal', exact=True)).to_be_visible()
@@ -95,7 +89,7 @@ def test_signup_user_logs_out_and_logs_in(live_server, page):
 
 
 def test_wrong_password_shows_the_generic_error(live_server, page):
-    _signup(page, live_server)
+    sign_up(page, live_server)
     press(page, 'Log out')
 
     page.fill('#id_email', EMAIL_ADDRESS)
@@ -110,24 +104,15 @@ def test_wrong_password_shows_the_generic_error(live_server, page):
     expect(page.locator('#id_password')).to_have_value('')
 
 
-def _log_in(page):
-    """The login form, once the Turnstile stub's token is in."""
-    page.fill('#id_email', EMAIL_ADDRESS)
-    page.fill('#id_password', PASSWORD)
-    expect(page.locator('input[name="cf-turnstile-response"]')).to_have_value(
-        TURNSTILE_TEST_TOKEN)
-    press(page, 'Log in')
-
-
 def test_remembered_device_logs_in_without_a_code(live_server, page):
     """Epic-login entry 3: ticking "Remember me" with the right code; after a logout the
     next login from this browser lands on welcome without the code pages."""
-    _signup(page, live_server)
+    sign_up(page, live_server)
     press(page, 'Log out')
 
-    _log_in(page)
+    submit_password(page)
     expect(page).to_have_url(f'{live_server.url}/en/login/verify/')
-    new_page(page, page.locator('button[value="email"]').click)
+    choose(page, 'email')
     expect(page).to_have_url(f'{live_server.url}/en/login/code/')
     remember = page.get_by_label('Remember me on this device/browser for 90 days')
     expect(remember).not_to_be_checked()
@@ -139,6 +124,6 @@ def test_remembered_device_logs_in_without_a_code(live_server, page):
 
     press(page, 'Log out')
     expect(page).to_have_url(f'{live_server.url}/en/login/')
-    _log_in(page)
+    submit_password(page)
     expect(page).to_have_url(f'{live_server.url}/en/welcome/')
     expect(page.locator('h1')).to_have_text('Welcome to MyTreatPlan')
