@@ -304,7 +304,8 @@ def login_verify(request, user, pending):
                 and since < limits.COOLDOWN_SECONDS):
             _clear_code_state(request)
             outcome = send_code(request, None, CODE_PAGE, contact, PURPOSE_LOGIN,
-                                EMAIL if kind == EMAIL else WHATSAPP)
+                                EMAIL if kind == EMAIL else WHATSAPP,
+                                login_record=(user.pk, login_guard.VERIFY_STEP))
             request.session[PENDING_LOGIN_SESSION_KEY] = {
                 **pending, 'contact': kind, 'sent': outcome.status == SENT}
         return redirect('login_code')
@@ -338,7 +339,7 @@ def login_code(request, user, pending):
             channel = EMAIL if kind == EMAIL else (SMS if last == SMS else WHATSAPP)
             message = _('We have sent you the code again.')
         outcome = send_code(request, None, CODE_PAGE, contact, PURPOSE_LOGIN, channel,
-                            resend=True)
+                            resend=True, login_record=(user.pk, login_guard.CODE_STEP))
         if outcome.status == SENT:
             request.session[PENDING_LOGIN_SESSION_KEY] = {**pending, 'sent': True}
             messages.success(request, message)

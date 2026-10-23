@@ -10,6 +10,7 @@ The detailed rules behind CAP-1 to CAP-9. Each row needs a test.
 | CAPTCHA service unavailable | Login and reset request go through, recorded as `check_unavailable`. On that login a remembered device still asks for the code |
 | Per-IP login limit | 60 password submissions per IP per fixed hour (`SIGNUP_IP_LIMITS`, tunable in `settings.env`) |
 | Per-IP reset limit | 20 reset requests per IP per fixed hour (same setting) |
+| Per-IP code sends | Login codes share signup's per-IP code-send limit (same setting); a send over it is refused, and its first block per IP and hour is recorded on the account |
 | Reset mails per email | At most 3 per hour; beyond that nothing is sent and the page gives the same answer |
 | Refusals | Generic error that reveals nothing; the first IP block in a window is recorded |
 

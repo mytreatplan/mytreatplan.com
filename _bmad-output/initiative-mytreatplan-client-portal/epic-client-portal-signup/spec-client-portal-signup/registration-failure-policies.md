@@ -21,6 +21,6 @@ Wizard progress is saved server-side at each step. Once a registration is cancel
 | User already logged in | The wizard sends them to the welcome screen | |
 | User loses connectivity | Open form keeps its input; "connection lost" banner; submit retries when back online | |
 | Twilio or our server fails while sending a code | Error message with retry; support contact shown; registration stays pending (24h); failure logged; ops alerted when failures spike | OTP send failed |
-| CAPTCHA or rate limit blocks the attempt | Show a generic error that reveals nothing. An IP-limit block is logged once per IP, counter and hour | blocked: captcha / rate limit |
+| CAPTCHA or rate limit blocks the attempt | Show a generic error that reveals nothing. An IP-limit block is logged once per IP, counter, hour and flow (signup or login) | blocked: captcha / rate limit |
 | CAPTCHA, breached-password or disposable-email service unavailable | The request goes through without that check | |
 | Disposable email domain | Reject with a message asking for a professional email | email disposable |

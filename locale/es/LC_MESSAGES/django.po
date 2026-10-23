@@ -1405,3 +1405,7 @@ msgstr "Gracias por su mensaje."
 #: mytp_publicsite/templates/publicsite/contact/_thanks.html
 msgid "We will get back to you soon."
 msgstr "Le responderemos pronto."
+
+#: signup/templates/signup/step_account.html
+msgid "Signing up needs JavaScript. Turn it on in your browser, then reload this page."
+msgstr "Para registrarse se necesita JavaScript. Actívelo en su navegador y vuelva a cargar esta página."

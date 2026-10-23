@@ -61,3 +61,4 @@ Tracer path: epic 1's base layout and deploy target → epic 2's signup → epic
 - Decision (2026-10-08): signup and login go to production together; signup stays on staging until epic 3 is live.
 - Decision (2026-10-08): the contact form, EN/ES for the public site, operations, and the hosting/KMS choice belong to epic 1.
 - Decision (2026-10-08): the frontend uses Django templates, Tailwind CSS and HTMX; scheduled jobs are management commands run by cron; the rate-limit cache is Django's database cache.
+- Decision (user, 2026-10-23): production waits until the portal's next part (the deferred features in Boundaries) is finished on staging; this initiative is its first part. 1.7 (open the production project), 1.12, 1.10, 1.11 and 3.13 are on hold until then, and Done when 1–3 are met in production at that later go-live. Signup and login still go live together.

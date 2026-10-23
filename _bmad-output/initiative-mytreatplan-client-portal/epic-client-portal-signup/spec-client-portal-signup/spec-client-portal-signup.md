@@ -71,8 +71,10 @@ Vision plus mandate. mytreatplan.com is the client portal where Doctors order My
 - Signup logs and personal data are handled per EU GDPR. Commercial consent is never required for signup, never pre-ticked, and its text names every group company that receives the data.
 - Final legal and consent texts, including the safeguard for transfers to MyTPDSO LLC-FZ (UAE), come from the company lawyer after development starts. Texts are versioned (CAP-4, CAP-13), so a new version replaces the old one.
 - No personal data from a cancelled or expired registration remains in the registration store: it is cleared at once. Failure logs keep the reason and field name; their personal values are anonymized 30 days after the attempt ends (CAP-10).
+- Backups keep cancelled or purged registrations and log values not yet anonymized for up to 30 days, then expire (the stated policy; the Privacy text says so).
 - Twilio Verify sends and checks all codes (email via SendGrid; mobile via WhatsApp, then SMS), through one Verify service for every purpose. Codes are never stored in our database. Twilio credentials come from environment configuration.
 - Anti-abuse: CAPTCHA (Cloudflare Turnstile, managed mode, which may show a widget) on step 1; rate limits per IP (signup starts, email checks, code sends) and per contact (code sends); disposable email domains rejected. The CAPTCHA, breached-password and disposable-email checks let the request through when their service is unavailable.
+- Signup needs JavaScript, as the step-1 CAPTCHA does; there is no path without it. Step 1 tells a visitor without JavaScript to turn it on.
 - An admin can erase an account: it is deactivated at once and keeps only evidence (email, title, names, country, phone, date joined, legal choices) for a lawyer-set retention period, then is deleted. The email can sign up again at once. Before deletion, one activity record keeps the encrypted email for 5 years.
 - Built inside the existing Django/PostgreSQL project (`brownfield.md`).
 
@@ -91,8 +93,3 @@ Vision plus mandate. mytreatplan.com is the client portal where Doctors order My
 ## Success signal
 
 - A new Doctor completes the four wizard pages, in English or Spanish, verifies email and mobile, and lands logged in on the welcome screen. A second attempt with the same email or mobile is blocked with a recovery link. An attempt abandoned for 24h leaves no personal data in the registration store; its log is anonymized 30 days after the attempt ends, as CAP-10.
-
-## Open Questions
-
-- Step 1 can't be submitted without JavaScript (a missing CAPTCHA token fails). Accept and state it, or add a no-JavaScript path? (retrospective S2)
-- Nightly backups keep cancelled or purged signups and pre-anonymization log values for up to 30 days. What retention policy applies? To be written with the lawyer and ops (retrospective S4, QA C1, story 1.12).

@@ -384,6 +384,17 @@ def test_step1_page_loads_the_strength_meter_and_the_others_toggle(client):
     assert 'name="how_found_other"' in html
 
 
+@pytest.mark.parametrize('lang, text', [
+    ('en', 'Signing up needs JavaScript. Turn it on in your browser, then reload this page.'),
+    ('es', 'Para registrarse se necesita JavaScript.'),
+])
+def test_step1_tells_a_visitor_without_javascript_to_turn_it_on(client, lang, text):
+    """Signup needs JavaScript (the CAPTCHA; retrospective S2): a noscript notice."""
+    html = client.get(f'/{lang}/signup/').content.decode()
+    notice = html[html.index('<noscript>'):html.index('</noscript>')]
+    assert 'data-signup-needs-js' in notice and text in notice
+
+
 def test_strength_meter_is_loaded_on_step1_only(client):
     """zxcvbn-ts is loaded on step 1 only. signup-account.js is small and on every signup
     page (signup entry 8): step 1 may arrive in an htmx-swapped page, where it sets the

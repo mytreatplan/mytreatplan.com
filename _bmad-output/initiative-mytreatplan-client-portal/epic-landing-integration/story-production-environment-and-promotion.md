@@ -29,7 +29,7 @@ Verify: A manual approval deploys the staging build to production over HTTPS; th
 
 Production checklist from the specs-vs-code QA, part C (user, 2026-10-23). Each item is part of this story's work.
 
-- Open question (C1): nightly backups keep signup data and pre-anonymization log values up to 30 days after the app purges them. The backup retention policy is written with the lawyer and ops (signup retrospective S4) and applied to production's backups.
+- Decision (C1, user 2026-10-23, signup retrospective S4): backups keep signup data and pre-anonymization log values up to 30 days after the app purges them, then expire. Production's backups (managed and the off-region dump) must expire at 30 days; the Privacy text states it (lawyer).
 - Open question (C2): Nginx and journald access logs keep client IPs under OS defaults. Set and document their retention on production, in line with the C1 policy.
 - Decision (C3): production disk encryption at rest must be confirmed with OVHcloud or added; staging runs without it (epic Notes, 2026-10-11).
 - Decision (C4): the KMS master key can't be rotated yet (deferred-work.md), and rotating the blind-index key breaks email and phone lookups until `reencrypt_fields` finishes. Document both for production, and make `reencrypt_fields` work in batches before the first production rotation (signup retrospective R5).

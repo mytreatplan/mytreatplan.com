@@ -9,7 +9,11 @@
 <script src="{% static 'js/zxcvbn-ts-common.js' %}" defer></script>
 {% endblock %}
 
-{% block intro %}<p>{% translate "Your email address will be your username." %}</p>{% endblock %}
+{% block intro %}<p>{% translate "Your email address will be your username." %}</p>
+{# Signup needs JavaScript (the step-1 CAPTCHA; signup spec, retrospective S2). #}
+<noscript>
+  <p class="mt-4 rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert" data-signup-needs-js>{% translate "Signing up needs JavaScript. Turn it on in your browser, then reload this page." %}</p>
+</noscript>{% endblock %}
 
 {% block fields %}
 {# Email first: leaving it runs the live check (signup.views.check_email, htmx attributes #}
