@@ -3,7 +3,7 @@ title: 'Transactional email through our own mail service'
 type: 'feature'
 ticket: '9'
 created: '2026-10-21'
-status: 'built'
+status: 'done'
 baseline_revision: '23d70d27e05dda062834c45a46cc0e3ea94cf79b'
 route: 'oneshot'
 route_source: 'auto'
@@ -77,3 +77,8 @@ The password is typed only into the server's `settings.env`: never in chat, the 
 **Commands:**
 - The local suite command (test keys, SQLite). Expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py check --deploy` with `EMAIL_HOST` empty and DEBUG off: `mail.E001`. With `EMAIL_HOST` set: no `mail.E001`.
+
+## Staging
+
+- PR #36 merged as `fb37e3e`. Outgoing SMTP from the OVHcloud staging instance was blocked (465/587 timed out) until OVHcloud unblocked the mail ports on 2026-10-23.
+- The user reported (2026-10-23): `nc` to the SMTP host on 465 and 587 succeeded, and `sendtestemail` arrived. The DKIM result in Gmail's "Show original" was not reported.

@@ -3,7 +3,7 @@ title: 'Password reset'
 type: 'feature'
 ticket: '10'
 created: '2026-10-21'
-status: 'built'
+status: 'done'
 baseline_revision: 'fb37e3e41c519a0363bf3e3e5f3d241f5805afe8'
 route: 'full'
 route_source: 'auto'
@@ -166,3 +166,8 @@ After the patches (2026-10-22), on SQLite with Chromium (sandbox lifted): the fu
 - `manage.py makemigrations --check`, `manage.py compilemessages`. Expected: no changes, OK.
 
 **Results (2026-10-21):** `DATABASE_URL=sqlite:///$TMPDIR/x.sqlite3 pytest` outside the sandbox: 1260 passed; only the 3 known PostgreSQL-only tests in `accounts/tests/test_crypto.py` failed (`test_password_reset.py`: 42 passed; the browser test passed). `makemigrations --check --dry-run`: no changes. `compilemessages`: OK. `check`: no issues.
+
+## Staging
+
+- PR #37 merged as `6cd623d`. The mail checks waited for OVHcloud to unblock outgoing SMTP (2026-10-23).
+- The user reported (2026-10-23): a reset requested from the English login page arrived in English, one from the Spanish page in Spanish; the reset was completed and the new password logs in. Not reported: the address bar without the token, another browser logged out, and the reused link refused.
