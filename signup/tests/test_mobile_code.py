@@ -9,9 +9,10 @@ from django.test import Client
 from eventlog.models import Attempt
 from signup import limits
 from signup.models import PendingRegistration
-from signup.verification import (EMAIL, FAKE_NO_WHATSAPP_NUMBER, FAKE_SEND_FAILS_NUMBER,
-                                 PURPOSE_RESUME, PURPOSE_SIGNUP, SMS, CheckFailed,
-                                 FakeVerificationProvider, SendFailed)
+from signup.steps import CODE_STATE_SESSION_KEY
+from signup.verification import (CODE_TTL_SECONDS, EMAIL, FAKE_NO_WHATSAPP_NUMBER,
+                                 FAKE_SEND_FAILS_NUMBER, PURPOSE_RESUME, PURPOSE_SIGNUP, SMS,
+                                 CheckFailed, FakeVerificationProvider, SendFailed)
 
 from .helpers import (MOBILE_E164, NORMALIZED, _current_code, _email_code, _legal,
                       _mobile_code, _step1, _to_code_step, _to_mobile_step, _wrong)
@@ -126,7 +127,7 @@ def test_switch_to_sms_after_a_minute_counts_as_a_resend(client, caplog, clock):
     assert response['Location'] == MOBILE_URL
     assert f'sms {MOBILE_E164} (signup, en)' in _code_lines(caplog)[-1]
     html = _html(client)
-    assert 'We have sent you a new code by SMS.' in html and 'by SMS to' in html
+    assert 'We have sent you the code again by SMS.' in html and 'by SMS to' in html
     assert 'WhatsApp is not available' not in html
 
     sent = _events('code_sent')[-1]
@@ -172,7 +173,7 @@ def test_resend_within_a_minute_is_not_sent(client, caplog, clock):
     assert len(_code_lines(caplog)) == sent_before
     html = _html(client)
     assert 'You can ask for a new code in 40 seconds.' in html
-    assert 'We have sent you a new code.' not in html and SUPPORT not in html
+    assert 'We have sent you the code again.' not in html and SUPPORT not in html
     # Shown once.
     assert 'You can ask for a new code in' not in _html(client)
     assert len(_events('code_sent')) == 2  # email and mobile
@@ -331,7 +332,7 @@ def test_retry_after_a_failed_email_send(client, monkeypatch):
     monkeypatch.setattr(FakeVerificationProvider, 'send', real_send)
     client.post(EMAIL_URL, {'action': 'resend'})
     html = _html(client, EMAIL_URL)
-    assert "We couldn't send" not in html and 'We have sent you a new code.' in html
+    assert "We couldn't send" not in html and 'We have sent you the code again.' in html
     assert _email_code(client)['Location'] == MOBILE_URL
 
 
@@ -695,3 +696,195 @@ def test_fake_provider_never_raises_check_failed(client):
         'wrong', 'no_code')
     assert FakeVerificationProvider().check(SMS, '+34600000000', PURPOSE_SIGNUP, '123456') == (
         'no_code')
+
+
+# --- When the support contact shows (QA A11) --------------------------------------------
+
+def test_plain_expiry_shows_no_support_contact(client, clock):
+    _to_mobile_step(client)
+    code = _current_code(SMS, MOBILE_E164)
+    clock.advance(CODE_TTL_SECONDS + 1)
+
+    response = client.post(MOBILE_URL, {'code': code})
+
+    assert response.context['form'].errors['code'] == [
+        'This code is no longer valid. Send a new code.']
+    assert SUPPORT not in response.content.decode()
+
+
+def test_one_check_failure_shows_no_support_two_in_a_row_do(client, failing_check):
+    _to_mobile_step(client)
+    code = _current_code(SMS, MOBILE_E164)
+    failing_check['failing'] = True
+
+    assert SUPPORT not in client.post(MOBILE_URL, {'code': code}).content.decode()
+    html = client.post(MOBILE_URL, {'code': code}).content.decode()
+    assert CHECK_FAILED in html and f'mailto:{SUPPORT}' in html
+    assert f'mailto:{SUPPORT}' in _html(client)  # until a check is made or a code sent
+
+    # A check made ends the run: a wrong code, then one more failure.
+    failing_check['failing'] = False
+    assert SUPPORT not in client.post(MOBILE_URL, {'code': _wrong(code)}).content.decode()
+    failing_check['failing'] = True
+    assert SUPPORT not in client.post(MOBILE_URL, {'code': code}).content.decode()
+
+
+def test_a_successful_send_resets_the_counts(client, clock, failing_check):
+    _to_mobile_step(client)
+    code = _current_code(SMS, MOBILE_E164)
+    failing_check['failing'] = True
+    client.post(MOBILE_URL, {'code': code})
+    client.post(MOBILE_URL, {'code': code})
+    assert f'mailto:{SUPPORT}' in _html(client)
+
+    clock.advance(60)
+    client.post(MOBILE_URL, {'action': 'resend'})
+    assert SUPPORT not in _html(client)
+    assert SUPPORT not in client.post(MOBILE_URL, {'code': code}).content.decode()
+
+    # After 5 wrong codes too.
+    failing_check['failing'] = False
+    for _attempt in range(5):
+        response = client.post(MOBILE_URL, {'code': _wrong(code)})
+    assert f'mailto:{SUPPORT}' in response.content.decode()
+    clock.advance(60)
+    client.post(MOBILE_URL, {'action': 'resend'})
+    assert SUPPORT not in _html(client)
+
+
+def test_five_wrong_email_codes_show_the_support_contact(client):
+    _to_code_step(client)
+    code = _current_code(EMAIL, NORMALIZED)
+    for _attempt in range(4):
+        assert SUPPORT not in client.post(EMAIL_URL, {'code': _wrong(code)}).content.decode()
+    assert f'mailto:{SUPPORT}' in client.post(
+        EMAIL_URL, {'code': _wrong(code)}).content.decode()
+
+
+def test_resume_page_support_rules(first, clock):
+    second = Client()
+    _offer(second)
+    second.post(RESUME_URL, {'action': 'send'})
+    code = _current_code(EMAIL, NORMALIZED, PURPOSE_RESUME)
+    for _attempt in range(4):
+        response = second.post(RESUME_URL, {'code': _wrong(code)})
+        assert SUPPORT not in response.content.decode()
+    response = second.post(RESUME_URL, {'code': _wrong(code)})
+    assert 'This code is no longer valid. Send a new code.' in response.content.decode()
+    assert f'mailto:{SUPPORT}' in response.content.decode()
+
+    # A new code, then a plain expiry: no support contact.
+    clock.advance(60)
+    second.post(RESUME_URL, {'action': 'resend'})
+    assert SUPPORT not in _html(second, RESUME_URL)
+    code = _current_code(EMAIL, NORMALIZED, PURPOSE_RESUME)
+    clock.advance(CODE_TTL_SECONDS + 1)
+    response = second.post(RESUME_URL, {'code': code})
+    assert 'This code is no longer valid. Send a new code.' in response.content.decode()
+    assert SUPPORT not in response.content.decode()
+
+
+def test_resend_messages_in_spanish(client, clock):
+    _to_code_step(client, lang='es')
+    _email_code(client, lang='es')
+    clock.advance(60)
+    client.post('/es/signup/verify-mobile/', {'action': 'resend'})
+    assert 'Le hemos enviado el código de nuevo.' in _html(client, '/es/signup/verify-mobile/')
+    clock.advance(60)
+    client.post('/es/signup/verify-mobile/', {'action': 'sms'})
+    assert 'Le hemos enviado el código de nuevo por SMS.' in _html(
+        client, '/es/signup/verify-mobile/')
+
+
+# --- How wrong codes are counted (plan decision 2) ---------------------------------------
+
+def _wrong_count(client, page='verify-mobile'):
+    return client.session[CODE_STATE_SESSION_KEY][page].get('wrong', 0)
+
+
+def test_wrong_codes_count_across_a_resend_of_the_same_code(client, clock):
+    _to_mobile_step(client)
+    code = _current_code(SMS, MOBILE_E164)
+    for _attempt in range(4):
+        client.post(MOBILE_URL, {'code': _wrong(code)})
+    clock.advance(60)
+    client.post(MOBILE_URL, {'action': 'resend'})
+    assert _current_code(SMS, MOBILE_E164) == code  # the same code, as with Twilio
+
+    response = client.post(MOBILE_URL, {'code': _wrong(code)})
+    assert response.context['form'].errors['code'] == [
+        'This code is no longer valid. Send a new code.']
+    assert f'mailto:{SUPPORT}' in response.content.decode()
+
+
+def test_four_wrong_codes_then_an_expiry_shows_no_support(client, clock):
+    _to_mobile_step(client)
+    code = _current_code(SMS, MOBILE_E164)
+    for _attempt in range(4):
+        client.post(MOBILE_URL, {'code': _wrong(code)})
+    clock.advance(CODE_TTL_SECONDS + 1)
+
+    response = client.post(MOBILE_URL, {'code': code})
+    assert response.context['form'].errors['code'] == [
+        'This code is no longer valid. Send a new code.']
+    assert SUPPORT not in response.content.decode()
+
+
+def test_the_same_expired_code_five_times_shows_no_support(client, clock):
+    _to_mobile_step(client)
+    code = _current_code(SMS, MOBILE_E164)
+    clock.advance(CODE_TTL_SECONDS + 1)
+    for _attempt in range(5):
+        response = client.post(MOBILE_URL, {'code': code})
+        assert response.context['form'].has_error('code', 'code_expired')
+        assert SUPPORT not in response.content.decode()
+
+
+def test_malformed_entries_are_not_counted(client):
+    _to_mobile_step(client)
+    for entry in ('abc', '12345', '1234567'):
+        response = client.post(MOBILE_URL, {'code': entry})
+        assert response.context['form'].has_error('code', 'invalid_code')
+    assert _wrong_count(client) == 0
+    client.post(MOBILE_URL, {'code': _wrong(_current_code(SMS, MOBILE_E164))})
+    assert _wrong_count(client) == 1
+
+
+def test_a_send_after_the_code_validity_resets_the_count(client, clock):
+    _to_mobile_step(client)
+    code = _current_code(SMS, MOBILE_E164)
+    for _attempt in range(4):
+        client.post(MOBILE_URL, {'code': _wrong(code)})
+    assert _wrong_count(client) == 4
+    clock.advance(CODE_TTL_SECONDS + 1)
+    client.post(MOBILE_URL, {'action': 'resend'})
+    assert _wrong_count(client) == 0
+
+    new_code = _current_code(SMS, MOBILE_E164)
+    client.post(MOBILE_URL, {'code': _wrong(new_code)})
+    clock.advance(CODE_TTL_SECONDS + 1)
+    response = client.post(MOBILE_URL, {'code': new_code})
+    assert response.context['form'].has_error('code', 'code_expired')
+    assert SUPPORT not in response.content.decode()
+
+
+def test_plain_expiry_on_the_email_step_shows_no_support(client, clock):
+    _to_code_step(client)
+    code = _current_code(EMAIL, NORMALIZED)
+    clock.advance(CODE_TTL_SECONDS + 1)
+
+    response = client.post(EMAIL_URL, {'code': code})
+    assert response.context['form'].has_error('code', 'code_expired')
+    assert SUPPORT not in response.content.decode()
+
+
+def test_resume_page_check_failures(first, failing_check):
+    second = Client()
+    _offer(second)
+    second.post(RESUME_URL, {'action': 'send'})
+    code = _current_code(EMAIL, NORMALIZED, PURPOSE_RESUME)
+    failing_check['failing'] = True
+
+    assert SUPPORT not in second.post(RESUME_URL, {'code': code}).content.decode()
+    html = second.post(RESUME_URL, {'code': code}).content.decode()
+    assert CHECK_FAILED in html and f'mailto:{SUPPORT}' in html

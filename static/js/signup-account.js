@@ -1,7 +1,7 @@
 /*
  * Signup step 1 (signup/templates/signup/step_account.html):
- * - "Others: please specify" is shown only while "Others" is chosen. Without this script
- *   it stays visible, as a normal (optional unless "Others") field.
+ * - "Others: please specify" is shown only while "Others" is chosen. The server renders
+ *   it hidden unless "Others" is the selected value (so also without this script).
  * - The password strength meter, with zxcvbn-ts (core and the common dictionaries,
  *   vendored in static/js/). It is a hint only: the server-side rules decide.
  *

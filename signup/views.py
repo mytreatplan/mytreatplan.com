@@ -582,7 +582,7 @@ def resume(request):
             status = _send_resume_code(request, attempt, contact,
                                        resend=action == 'resend').status
             if action == 'resend' and status == SENT:
-                messages.success(request, _('We have sent you a new code.'))
+                messages.success(request, _('We have sent you the code again.'))
         if status == SENT:  # sent now, or one sent within the cooldown is still valid
             request.session[RESUME_SESSION_KEY] = {**state, 'sent': True}
         return redirect('signup_resume')

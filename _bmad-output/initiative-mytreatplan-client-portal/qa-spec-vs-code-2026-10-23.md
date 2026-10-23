@@ -106,3 +106,5 @@ This QA run is read-only. Three reviewers compared the signup spec (`epic-client
 - **QA fix 2, signup flow:** A1, A10, A11, A17.
 
 Spec-only updates (with group B): A8, A9, A12, A13, A15.
+
+A10, A11 and A17: fixed by `plan-qa-fix-signup-flow.md` (2026-10-23). A1: fixed by the signup retrospective's S1 (`plan-fix-legal-unpublished.md`).

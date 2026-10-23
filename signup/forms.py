@@ -21,6 +21,12 @@ from .verification import (APPROVED, CODE_LENGTH, EMAIL, NO_CODE, PURPOSE_RESUME
 logger = logging.getLogger('signup.steps')
 
 
+# Step 1's how-found choices. "e-mail" as signup-fields.md writes it (QA A17): set here,
+# not in HowFound, whose labels are in the migrations (changing one there is a migration).
+HOW_FOUND_CHOICES = [(value, _('e-mail') if value == HowFound.EMAIL else label)
+                     for value, label in HowFound.choices]
+
+
 # Text-field classes (design tokens: field-border, radius-14, shadow-focus-field).
 FIELD_CLASSES = (
     'min-h-[50px] w-full rounded-14 border border-field-border bg-surface px-4 text-[15px] '
@@ -242,7 +248,7 @@ class AccountForm(StyledForm):
     )
     how_found = forms.ChoiceField(
         label=_('How did you find out about us?'),
-        choices=BLANK_CHOICE + HowFound.choices,
+        choices=BLANK_CHOICE + HOW_FOUND_CHOICES,
     )
     how_found_other = forms.CharField(
         label=_('Others: please specify'),
@@ -456,6 +462,9 @@ class CodeForm(StyledForm):
 
     def clean_code(self):
         code = self.cleaned_data['code'].replace(' ', '')
+        # Not a code at all: the provider never checks it (signup.twilio_verify), so its
+        # "not correct" is not one of the provider's wrong attempts (signup.steps).
+        self.malformed = not (len(code) == CODE_LENGTH and code.isascii() and code.isdigit())
         try:
             result = get_provider().check(self.channel, self.contact, self.purpose, code)
         except CheckFailed as error:
