@@ -314,7 +314,8 @@ def test_idle_then_resume_restores_the_data(at_legal):
 
     new = PendingRegistration.objects.get()
     assert new.pk != old.pk and new.email == NORMALIZED
-    assert new.legal_choices.count() == 4
+    # Neither the password nor the legal choices come back (plan-fix-resume-takeover).
+    assert new.password == '' and not new.legal_choices.exists()
     old_attempt.refresh_from_db()
     assert old_attempt.outcome == 'abandoned'
     assert [e.event for e in old_attempt.events.all()][-1] == 'idle_timeout'

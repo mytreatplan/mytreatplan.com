@@ -222,32 +222,38 @@ def _resume(second):
                        {'code': _current_code(EMAIL, NORMALIZED, PURPOSE_RESUME)})
 
 
-def test_resume_after_the_legal_step_copies_the_choices_and_skips_it(at_legal):
-    _legal(at_legal, ormco_tps='on')
+def test_resume_after_the_legal_step_asks_it_again(at_legal):
+    """A resume never carries the old row's legal choices: whoever made that row chose
+    them, and the resume code proves only the email (plan-fix-resume-takeover). The legal
+    step is shown again, nothing ticked, and the account gets only the new choices."""
+    _legal(at_legal, ormco_tps='on', commercial_consent='on')
     old = PendingRegistration.objects.get()
-    before = sorted((c.document_id, c.accepted, c.decided_at) for c in old.legal_choices.all())
+    old_times = {c.decided_at for c in old.legal_choices.all()}
 
     second = Client()
     assert _resume(second)['Location'] == '/en/signup/'
     new = PendingRegistration.objects.get()
-    assert new.pk != old.pk
-    assert sorted((c.document_id, c.accepted, c.decided_at)
-                  for c in new.legal_choices.all()) == before
-    assert LegalChoice.objects.count() == 4  # the old row's went with it
+    assert new.pk != old.pk and not new.legal_choices.exists()
+    assert not LegalChoice.objects.exists()  # the old row's went with it
 
-    # Continue at step 1 skips the legal step and the verified email step; the mobile
-    # code is still asked (the resume code proves only the email).
-    response = _step1(second, password='', password2='')
-    assert response['Location'] == '/en/signup/verify-mobile/'
+    # Continue at step 1 (a password set again) asks the legal step, unticked; then the
+    # mobile code (the email is verified by the resume code).
+    assert _step1(second)['Location'] == LEGAL_URL
+    form = second.get(LEGAL_URL).context['form']
+    assert not any(form[kind].value() for kind in ('terms', 'conditions', 'ormco_tps',
+                                                    'commercial_consent'))
+    assert _legal(second)['Location'] == '/en/signup/verify-mobile/'
     assert _mobile_code(second)['Location'] == '/en/welcome/'
-    assert _choices(User.objects.get())['ormco_tps'] == (1, True)
+    choices = _choices(User.objects.get())
+    assert choices['ormco_tps'][1] is False and choices['commercial_consent'][1] is False
+    assert not {c.decided_at for c in User.objects.get().legal_choices.all()} & old_times
 
 
 def test_resume_before_the_legal_step_asks_for_it(at_legal):
     second = Client()
     _resume(second)
     assert not PendingRegistration.objects.get().legal_choices.exists()
-    assert _step1(second, password='', password2='')['Location'] == LEGAL_URL
+    assert _step1(second)['Location'] == LEGAL_URL
     # The email is verified (resume code): after the legal step, the mobile code.
     assert _legal(second)['Location'] == '/en/signup/verify-mobile/'
     assert _mobile_code(second)['Location'] == '/en/welcome/'

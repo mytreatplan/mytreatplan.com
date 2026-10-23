@@ -393,6 +393,8 @@ def _offer(second):
 
 
 def test_resumed_signup_asks_the_mobile_code_before_the_account(first):
+    """After a resume: a password set again, the legal step again, then the mobile
+    code (the email is verified by the resume code), and only then the account."""
     second = Client()
     _offer(second)
     second.post(RESUME_URL, {'action': 'send'})
@@ -400,7 +402,8 @@ def test_resumed_signup_asks_the_mobile_code_before_the_account(first):
     new = PendingRegistration.objects.get()
     assert new.email_verified_at is not None and new.phone_verified_at is None
 
-    assert _step1(second, password='', password2='')['Location'] == MOBILE_URL
+    assert _step1(second)['Location'] == '/en/signup/legal/'
+    assert _legal(second)['Location'] == MOBILE_URL
     assert not User.objects.exists()
     assert _mobile_code(second)['Location'] == '/en/welcome/'
 

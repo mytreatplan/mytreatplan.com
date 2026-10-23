@@ -113,7 +113,8 @@ class AccountStep(Step):
         return captcha.widget_context()
 
     def get_form_kwargs(self, pending):
-        # With a saved hash (Back, or a resumed signup) the passwords may stay empty.
+        # With a saved hash (Back within the same signup) the passwords may stay empty; a
+        # resumed signup has none, so they are required (plan-fix-resume-takeover).
         return {'has_password': bool(pending and pending.password)}
 
     def get_initial(self, pending):
@@ -151,7 +152,8 @@ class LegalStep(Step):
 
     Saving replaces the pending registration's choices: one LegalChoice per document,
     ticked or not, with the version shown and the time. They move to the user at account
-    creation (signup.views._create_account) and are copied by a resume (_take_over).
+    creation (signup.views._create_account). A resume (_take_over) never copies them:
+    the step is asked again (plan-fix-resume-takeover).
     """
 
     slug = 'legal'

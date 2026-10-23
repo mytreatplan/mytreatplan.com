@@ -156,9 +156,9 @@ def national_number(e164):
 class AccountForm(StyledForm):
     """Step 1: personal, contact and login data (signup-fields.md; the CAPTCHA is entry 9).
 
-    With `has_password` (the pending registration has a saved hash: Back, or a resumed
-    signup) the passwords may stay empty, which keeps that hash; once either is filled in
-    every password rule applies.
+    With `has_password` (the pending registration has a saved hash: Back within the same
+    signup; a resumed signup has none) the passwords may stay empty, which keeps that
+    hash; once either is filled in every password rule applies.
 
     External checks (breached password, disposable domain) that could not be made are
     listed in `unavailable_checks` as (field, check) pairs; the view logs them.

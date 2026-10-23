@@ -580,8 +580,9 @@ def _take_over(request, matched_pk, attempt):
             old = PendingRegistration.objects.active().select_for_update().get(pk=matched_pk)
             # Step 1 is next (review); the old row's later steps are not reachable.
             new = old.copy_to_new_row(attempt=attempt, step=STEPS[0].slug)
-            # The legal choices too: a legal step done before is skipped on Continue.
-            old.legal_choices.all().copy_to(pending_registration=new)
+            # Not the legal choices (nor the password): whoever made the old row chose
+            # them, and the resume code proves only the email. The legal step is asked
+            # again; the old row's choices go with it below.
             old_attempt_id = old.attempt_id
             old.delete()
             if own is not None and own.pk != old.pk:
@@ -599,8 +600,8 @@ def _take_over(request, matched_pk, attempt):
         _abandon_attempts([old_attempt_id], keep=attempt)
     eventlog.record(attempt, 'resumed', request=request, step=RESUME_STEP,
                     data={'attempt': str(old_attempt_id) if old_attempt_id else ''})
-    # Step 1 with the saved data; on Continue the steps already done (the legal step,
-    # the verified email) are skipped.
+    # Step 1 with the saved data and new passwords to set; on Continue the legal step
+    # is asked again and the verified email step is skipped.
     messages.success(request, _('We have restored your registration. Review your details '
                                 'and continue.'))
     return redirect(step_url(0))
