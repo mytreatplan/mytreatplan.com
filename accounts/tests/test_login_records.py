@@ -14,66 +14,23 @@ from django.utils import timezone
 
 from accounts import login_failures
 from accounts.erasure import erase_user, purge_erased
+from conftest import _assert_no_secrets
 from eventlog import retention
 from eventlog.models import Attempt, Event
-from signup.tests.conftest import capture_codes, clear_cache  # noqa: F401 - autouse
-from signup.tests.conftest import clock  # noqa: F401 - fixture
-from signup.tests.helpers import NORMALIZED, PASSWORD, _current_code, _wrong
-from signup.verification import EMAIL, MAX_CHECK_ATTEMPTS, PURPOSE_LOGIN
+from signup.tests.helpers import NORMALIZED, PASSWORD, _wrong
+from signup.verification import MAX_CHECK_ATTEMPTS
 
-from .test_login import _logged_in, _login, _login_with_code, doctor  # noqa: F401
-from .test_login_code import login_clock  # noqa: F401 - fixture
+from .helpers import (AGENT, IP, META, WRONG_PASSWORD, _failures, _logged_in, _login,
+                      _login_with_code, _logins, _messages, _post_code, _records, _right_code,
+                      _to_code, _wrong_password)
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
+pytestmark = [pytest.mark.django_db,
+              pytest.mark.usefixtures('capture_codes', 'clear_cache', 'portal_urls')]
 
 User = get_user_model()
 
-IP = '203.0.113.42'
-AGENT = 'Mozilla/5.0 (LoginRecordsBrowser)'
-META = {'REMOTE_ADDR': IP, 'HTTP_USER_AGENT': AGENT}
-WRONG_PASSWORD = 'wrong-password-123'
 UNKNOWN_TYPED = '  Nobody.Here@Example.COM '
 UNKNOWN_NORMALIZED = 'nobody.here@example.com'
-CODE_PAGE = '/en/login/code/'
-
-
-@pytest.fixture
-def records_clock(login_clock, monkeypatch):
-    """The login clock, also seen by the failure counters."""
-    monkeypatch.setattr('accounts.login_failures._now', login_clock)
-    return login_clock
-
-
-def _records(**filters):
-    return list(Event.objects.filter(attempt__kind=Attempt.LOGIN, **filters)
-                .select_related('attempt').order_by('created_at', 'id'))
-
-
-def _failures():
-    return _records(event='login_failed')
-
-
-def _logins():
-    return _records(event='login')
-
-
-def _wrong_password(client, email=NORMALIZED):
-    response = _login(client, email=email, password=WRONG_PASSWORD, extra=META)
-    assert response.status_code == 200 and not _logged_in(client)
-    return response
-
-
-def _to_code(client):
-    assert _login(client, extra=META)['Location'] == '/en/login/verify/'
-    assert client.post('/en/login/verify/', {'contact': 'email'})['Location'] == CODE_PAGE
-
-
-def _right_code():
-    return _current_code(EMAIL, NORMALIZED, PURPOSE_LOGIN)
-
-
-def _post_code(client, code, **data):
-    return client.post(CODE_PAGE, {'code': code, **data}, **META)
 
 
 def _count(counter, doctor):
@@ -83,28 +40,21 @@ def _count(counter, doctor):
 def _no_secrets(events, *secrets):
     """None of `secrets` (the passwords and codes submitted) in any column of `events`."""
     assert secrets and events
-    for event in events:
-        text = ' '.join([json.dumps(event.data), event.step, event.event, event.field,
-                         event.reason, event.attempt.outcome, event.attempt.kind])
-        for secret in secrets:
-            assert secret not in text, f'{secret!r} leaked into {text!r}'
-
-
-def _messages(sentry_capture):
-    """The messages of the captured Sentry events (not their breadcrumbs)."""
-    return [event.get('logentry', {}).get('message') or event.get('message')
-            for event in sentry_capture.events]
+    _assert_no_secrets(secrets, *(' '.join([json.dumps(event.data), event.step, event.event,
+                                            event.field, event.reason, event.attempt.outcome,
+                                            event.attempt.kind]) for event in events),
+                       show_leak=True)
 
 
 # --- Login ------------------------------------------------------------------------------
 
-def test_login_with_code_is_recorded_and_resets_the_counters(client, doctor, records_clock):
+def test_login_with_code_is_recorded_and_resets_the_counters(client, doctor, lock_clock):
     _wrong_password(client)
     assert _count(login_failures.PASSWORD, doctor) == 1
 
     before = timezone.now()
-    _to_code(client)
-    response = _post_code(client, _right_code())
+    _to_code(client, extra=META)
+    response = _post_code(client, _right_code(), extra=META)
 
     assert response['Location'] == '/en/welcome/'
     [record] = _logins()
@@ -118,9 +68,10 @@ def test_login_with_code_is_recorded_and_resets_the_counters(client, doctor, rec
     assert _failures() == []
 
 
-def test_remembered_login_is_recorded_without_a_code(client, doctor, records_clock):
-    _to_code(client)
-    assert _post_code(client, _right_code(), remember='on')['Location'] == '/en/welcome/'
+def test_remembered_login_is_recorded_without_a_code(client, doctor, lock_clock):
+    _to_code(client, extra=META)
+    response = _post_code(client, _right_code(), extra=META, remember='on')
+    assert response['Location'] == '/en/welcome/'
     client.post('/en/logout/')
     _wrong_password(client)
     assert _count(login_failures.PASSWORD, doctor) == 1
@@ -146,6 +97,15 @@ def test_first_wrong_password_leaves_no_record(client, doctor):
     assert _count(login_failures.CODE, doctor) == 0
 
 
+def test_a_failure_without_a_user_agent_is_recorded_with_an_empty_one(client, doctor):
+    for _ in range(2):
+        response = _login(client, password=WRONG_PASSWORD, extra={'REMOTE_ADDR': IP})
+        assert response.status_code == 200 and not _logged_in(client)
+
+    [record] = _failures()
+    assert record.data == {'count': 2, 'ip': IP, 'user_agent': ''}
+
+
 def test_second_and_later_wrong_passwords_are_recorded(client, doctor):
     for _ in range(3):
         _wrong_password(client)
@@ -164,12 +124,12 @@ def test_second_and_later_wrong_passwords_are_recorded(client, doctor):
 
 def test_wrong_codes_are_counted_apart_from_passwords(client, doctor):
     _wrong_password(client)
-    _to_code(client)
+    _to_code(client, extra=META)
     wrong = _wrong(_right_code())
 
-    _post_code(client, wrong)
+    _post_code(client, wrong, extra=META)
     assert _failures() == []
-    _post_code(client, wrong)
+    _post_code(client, wrong, extra=META)
 
     [record] = _failures()
     assert record.attempt.account_id == doctor.pk
@@ -181,10 +141,10 @@ def test_wrong_codes_are_counted_apart_from_passwords(client, doctor):
 
 
 def test_the_fifth_code_counts_as_code_expired(client, doctor):
-    _to_code(client)
+    _to_code(client, extra=META)
     wrong = _wrong(_right_code())
     for _ in range(MAX_CHECK_ATTEMPTS):
-        response = _post_code(client, wrong)
+        response = _post_code(client, wrong, extra=META)
 
     # The 5th wrong code also locks the account (entry 5): back to the login page.
     assert response['Location'] == '/en/login/'
@@ -216,7 +176,7 @@ def test_unknown_email_is_recorded_from_the_second_failure(client, doctor):
 
 # --- Reset and expiry -------------------------------------------------------------------
 
-def test_a_login_resets_the_run(client, doctor, records_clock):
+def test_a_login_resets_the_run(client, doctor, lock_clock):
     _wrong_password(client)
     _login_with_code(client, extra=META)
     client.post('/en/logout/')
@@ -227,9 +187,9 @@ def test_a_login_resets_the_run(client, doctor, records_clock):
     assert _count(login_failures.PASSWORD, doctor) == 1
 
 
-def test_a_run_expires_24_hours_after_its_last_failure(client, doctor, records_clock):
+def test_a_run_expires_24_hours_after_its_last_failure(client, doctor, lock_clock):
     _wrong_password(client)
-    records_clock.advance(24 * 60 * 60 + 1)
+    lock_clock.advance(24 * 60 * 60 + 1)
 
     _wrong_password(client)
 
@@ -237,9 +197,9 @@ def test_a_run_expires_24_hours_after_its_last_failure(client, doctor, records_c
     assert _count(login_failures.PASSWORD, doctor) == 1
 
 
-def test_a_run_within_24_hours_goes_on(client, doctor, records_clock):
+def test_a_run_within_24_hours_goes_on(client, doctor, lock_clock):
     _wrong_password(client)
-    records_clock.advance(24 * 60 * 60 - 1)
+    lock_clock.advance(24 * 60 * 60 - 1)
 
     _wrong_password(client)
 
@@ -262,7 +222,7 @@ def test_unavailable_captcha_is_an_event_log_record(client, doctor, turnstile, c
 
 # --- Erased account ---------------------------------------------------------------------
 
-def test_records_outlive_the_purged_account(client, doctor, records_clock, settings):
+def test_records_outlive_the_purged_account(client, doctor, lock_clock, settings):
     settings.ACCOUNT_ERASURE_RETENTION_DAYS = 30
     _wrong_password(client)
     _wrong_password(client)
@@ -341,7 +301,7 @@ def test_a_failing_account_lookup_still_shows_the_generic_error(client, doctor,
     check of the credentials does not."""
     from types import SimpleNamespace
 
-    from accounts import views
+    from accounts import login_guard
     from accounts.forms import INVALID_LOGIN_MESSAGE
 
     def fail(email):
@@ -349,7 +309,7 @@ def test_a_failing_account_lookup_still_shows_the_generic_error(client, doctor,
 
     _wrong_password(client)  # the next one would be recorded
     broken = SimpleNamespace(_default_manager=SimpleNamespace(by_email=fail))
-    monkeypatch.setattr(views, 'get_user_model', lambda: broken)
+    monkeypatch.setattr(login_guard, 'get_user_model', lambda: broken)
     response = _login(client, password=WRONG_PASSWORD, extra=META)
     sentry_sdk.flush()
 

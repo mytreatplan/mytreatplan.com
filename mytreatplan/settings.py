@@ -98,14 +98,16 @@ TURNSTILE_SECRET_KEY = (config('TURNSTILE_SECRET_KEY', default='')
 TURNSTILE_VERIFY_URL = (config('TURNSTILE_VERIFY_URL', default='')
                         or 'https://challenges.cloudflare.com/turnstile/v0/siteverify')
 
-# Per-IP limits of the signup and the login (signup.limits), per client IP and fixed one-hour window.
-# Sized for demand peaks where many people share one venue IP (conferences, congresses,
-# courses, webinars); change them in settings.env and restart, no deploy needed.
+# Per-IP limits of the signup, the login and the password reset (signup.limits), per
+# client IP and fixed one-hour window. Sized for demand peaks where many people share one
+# venue IP (conferences, congresses, courses, webinars); change them in settings.env and
+# restart, no deploy needed. Signup-named, but they also serve the login and the reset:
+# SIGNUP_IP_LIMITS and its SIGNUP_IP_LIMIT_* env names stay as they are.
 SIGNUP_IP_LIMITS = {
     'signup_starts': config('SIGNUP_IP_LIMIT_STARTS', default=60, cast=int),
     'email_checks': config('SIGNUP_IP_LIMIT_EMAIL_CHECKS', default=180, cast=int),
     'code_sends': config('SIGNUP_IP_LIMIT_CODE_SENDS', default=120, cast=int),
-    # Login password submissions (accounts.views, epic-login entry 5, decision 2).
+    # Login password submissions (accounts.login_guard, epic-login entry 5, decision 2).
     'login_attempts': config('SIGNUP_IP_LIMIT_LOGIN_ATTEMPTS', default=60, cast=int),
     # Password reset requests (accounts.password_reset, epic-login entry 10, decision 1).
     'reset_requests': config('SIGNUP_IP_LIMIT_RESET_REQUESTS', default=20, cast=int),

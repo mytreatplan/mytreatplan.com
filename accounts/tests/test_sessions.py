@@ -14,33 +14,23 @@ from accounts import sessions
 from accounts.sessions import (IDLE_LIMIT, IDLE_MESSAGE, REPLACED_MESSAGE, SEEN_SESSION_KEY,
                                SESSION_GRACE, end_all_sessions)
 from accounts.views import PENDING_LOGIN_SESSION_KEY
-from signup.tests.conftest import capture_codes, clear_cache  # noqa: F401 - autouse
-from signup.tests.conftest import clock  # noqa: F401 - fixture
 from signup.tests.helpers import PASSWORD, _complete, _step1
 from signup.views import SEEN_SESSION_KEY as SIGNUP_SEEN
 
-from .test_login import _html, _logged_in, _login, _login_with_code, doctor  # noqa: F401
-from .test_remembered_device import _login_with_code as _login_remembering
-from .test_remembered_device import _mark
+from .helpers import (LOGIN, WELCOME, _during_the_view, _html, _logged_in, _login,
+                      _login_remembering, _login_with_code, _mark)
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
+pytestmark = [pytest.mark.django_db,
+              pytest.mark.usefixtures('capture_codes', 'clear_cache', 'portal_urls')]
 
 User = get_user_model()
 
-WELCOME, LOGIN = '/en/welcome/', '/en/login/'
 REPLACED = str(REPLACED_MESSAGE)
 IDLE = str(IDLE_MESSAGE)
 REPLACED_ES = ('Se ha cerrado su sesión porque se ha iniciado sesión con su cuenta en otro '
                'dispositivo.')
 IDLE_ES = ('Su sesión ha finalizado tras 15 minutos sin actividad. Vuelva a iniciar '
            'sesión.')
-
-
-@pytest.fixture
-def idle_clock(clock, monkeypatch):  # noqa: F811
-    """The signup clock (limits, fake provider), also the sessions' idle clock."""
-    monkeypatch.setattr('accounts.sessions._now', clock)
-    return clock
 
 
 def _browser(lang='en', contact='email'):
@@ -189,17 +179,6 @@ def test_simultaneous_logins_the_loser_replaces_the_winner(doctor, monkeypatch):
     assert c.get(WELCOME)['Location'] == f'{LOGIN}?next={WELCOME}'
     assert REPLACED in _html(c.get(LOGIN))
     assert b.get(WELCOME).status_code == 200
-
-
-def _during_the_view(monkeypatch, action):
-    """Run `action` inside the welcome view, before it renders."""
-    import accounts.views
-    real_render = accounts.views.render
-
-    def render(*args, **kwargs):
-        action()
-        return real_render(*args, **kwargs)
-    monkeypatch.setattr(accounts.views, 'render', render)
 
 
 def test_replaced_during_a_request_goes_to_login(doctor, monkeypatch):
@@ -387,11 +366,6 @@ def test_end_all_sessions_without_a_session(doctor):
 
 
 # --- Admin (decision 3) ---------------------------------------------------------------------
-
-@pytest.fixture
-def staff():
-    return User.objects.create_superuser('staff@example.net', PASSWORD)
-
 
 def _admin_browser(staff):
     browser = Client()

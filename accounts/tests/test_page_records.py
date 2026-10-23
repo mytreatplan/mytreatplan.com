@@ -19,21 +19,15 @@ from accounts import page_records
 from accounts.sessions import IDLE_LIMIT, end_all_sessions
 from eventlog import retention
 from eventlog.models import Attempt, Event
-from signup.tests.conftest import capture_codes, clear_cache  # noqa: F401 - autouse
-from signup.tests.conftest import clock  # noqa: F401 - fixture
 from signup.tests.helpers import PASSWORD
 from signup.tests.urls_portal import urlpatterns as portal_urlpatterns
 
-from .test_sessions import _during_the_view, idle_clock  # noqa: F401 - fixture
+from .helpers import AGENT, IP, META, WELCOME, _during_the_view
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('page_urls')]
+pytestmark = [pytest.mark.django_db,
+              pytest.mark.usefixtures('capture_codes', 'clear_cache', 'page_urls')]
 
 User = get_user_model()
-
-WELCOME = '/en/welcome/'
-IP = '203.0.113.58'
-AGENT = 'Mozilla/5.0 (PageRecordsBrowser)'
-META = {'REMOTE_ADDR': IP, 'HTTP_USER_AGENT': AGENT}
 
 
 # Test-only pages (this module is the test URLconf): a JSON answer, a file, a 403, a 500,
@@ -72,6 +66,7 @@ def page_urls(settings):
     settings.ROOT_URLCONF = __name__
 
 
+# This module's own Doctor and staff (created directly), in place of conftest.py's.
 @pytest.fixture
 def doctor():
     return User.objects.create_user('doctor.pages@example.net', PASSWORD)
@@ -245,7 +240,7 @@ def test_non_html_response_is_not_recorded(doctor, url):
     assert _records() == []
 
 
-def test_session_ended_for_idleness_is_not_recorded(doctor, idle_clock):  # noqa: F811
+def test_session_ended_for_idleness_is_not_recorded(doctor, idle_clock):
     browser = _browser(doctor)
     browser.get(WELCOME)
     idle_clock.advance(IDLE_LIMIT + 1)
@@ -260,7 +255,7 @@ def test_session_ended_for_idleness_is_not_recorded(doctor, idle_clock):  # noqa
 
 
 def test_session_ended_for_idleness_on_the_login_page_is_not_recorded(doctor,
-                                                                        idle_clock):  # noqa: F811
+                                                                        idle_clock):
     browser = _browser(doctor)
     idle_clock.advance(IDLE_LIMIT + 1)
 

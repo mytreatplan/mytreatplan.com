@@ -4,19 +4,19 @@ import time
 import pytest
 
 
-@pytest.fixture(autouse=True)
-def capture_codes(caplog):
-    """Let caplog see the fake provider's code lines (that logger does not propagate)."""
+def codes_captured(caplog):
+    """Let caplog see the fake provider's code lines (that logger does not propagate).
+    The body of `capture_codes` (also accounts/tests/conftest.py's, opt-in there)."""
     logger = logging.getLogger('signup.verification')
     logger.addHandler(caplog.handler)
     yield caplog
     logger.removeHandler(caplog.handler)
 
 
-@pytest.fixture(autouse=True)
-def clear_cache(request):
-    """Start every database test with an empty cache (the resend limits and the fake
-    provider's codes live there)."""
+def cache_cleared(request):
+    """Start a database test with an empty cache (the resend limits and the fake
+    provider's codes live there). The body of `clear_cache` (also accounts/tests/
+    conftest.py's, opt-in there)."""
     if request.node.get_closest_marker('django_db') is None:
         yield
         return
@@ -26,6 +26,17 @@ def clear_cache(request):
     cache.clear()
     yield
     cache.clear()
+
+
+@pytest.fixture(autouse=True)
+def capture_codes(caplog):
+    yield from codes_captured(caplog)
+
+
+@pytest.fixture(autouse=True)
+def clear_cache(request):
+    """Every database test starts with an empty cache (`cache_cleared`)."""
+    yield from cache_cleared(request)
 
 
 class Clock:

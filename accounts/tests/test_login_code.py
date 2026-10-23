@@ -9,34 +9,26 @@ import re
 import pytest
 from django.contrib.auth import SESSION_KEY, get_user_model
 
-from accounts import login_failures, views
+from accounts import login_failures, login_guard, views
 from accounts.forms import INVALID_LOGIN_MESSAGE, mask_email, mask_phone
 from accounts.views import CODE_PAGE, PENDING_LOGIN_SESSION_KEY
 from signup import limits
 from signup.steps import CODE_STATE_SESSION_KEY
-from signup.tests.conftest import capture_codes, clear_cache  # noqa: F401 - autouse
-from signup.tests.conftest import clock  # noqa: F401 - fixture
 from signup.tests.helpers import MOBILE_E164, NORMALIZED, PASSWORD, _current_code, _wrong
 from signup.verification import (CODE_TTL_SECONDS, EMAIL, FAKE_NO_WHATSAPP_NUMBER,
                                  FAKE_SEND_FAILS_NUMBER, MAX_CHECK_ATTEMPTS, PURPOSE_LOGIN,
                                  SMS, CheckFailed, FakeVerificationProvider)
 
-from .test_login import _html, _logged_in, _login, _login_with_code, doctor  # noqa: F401
+from .helpers import (CODE, VERIFY, _deactivate, _html, _logged_in, _login, _login_with_code,
+                      _post_code, _right_code, _to_code)
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
+pytestmark = [pytest.mark.django_db,
+              pytest.mark.usefixtures('capture_codes', 'clear_cache', 'portal_urls')]
 
 User = get_user_model()
 
 MASKED_EMAIL = 'a•••@example.com'
 MASKED_PHONE = '+34 ••• ••• 374'
-VERIFY, CODE = '/en/login/verify/', '/en/login/code/'
-
-
-@pytest.fixture
-def login_clock(clock, monkeypatch):
-    """The signup clock (limits, fake provider), also seen by the pending login."""
-    monkeypatch.setattr('accounts.views._now', clock)
-    return clock
 
 
 def _pending(client):
@@ -45,24 +37,6 @@ def _pending(client):
 
 def _choose(client, contact='email', lang='en'):
     return client.post(f'/{lang}/login/verify/', {'contact': contact})
-
-
-def _to_code(client, contact='email', lang='en'):
-    """The password, then the choice: the code page is next."""
-    assert _login(client, lang=lang)['Location'] == f'/{lang}/login/verify/'
-    response = _choose(client, contact, lang)
-    assert response['Location'] == f'/{lang}/login/code/'
-    return response
-
-
-def _code(contact='email', email=NORMALIZED, phone=MOBILE_E164):
-    if contact == 'email':
-        return _current_code(EMAIL, email, PURPOSE_LOGIN)
-    return _current_code(SMS, phone, PURPOSE_LOGIN)
-
-
-def _post_code(client, code, lang='en'):
-    return client.post(f'/{lang}/login/code/', {'code': code})
 
 
 def _set_phone(doctor, phone):
@@ -151,7 +125,7 @@ def test_choose_email_sends_the_code_to_the_email(client, doctor, capture_codes)
     _to_code(client, 'email')
 
     assert _pending(client)['contact'] == 'email'
-    assert _code('email')
+    assert _right_code('email')
     assert limits.seconds_since_last_send(NORMALIZED, PURPOSE_LOGIN) is not None
     assert '(login, en)' in _code_lines(capture_codes)[-1]
     html = _html(client.get(CODE))
@@ -168,7 +142,7 @@ def test_choose_email_sends_the_code_to_the_email(client, doctor, capture_codes)
 def test_choose_mobile_sends_by_whatsapp(client, doctor, capture_codes):
     _to_code(client, 'mobile')
 
-    assert _code('mobile')
+    assert _right_code('mobile')
     assert 'Verification code for whatsapp' in _code_lines(capture_codes)[-1]
     html = _html(client.get(CODE))
     assert 'data-sent="whatsapp"' in html and MASKED_PHONE in html
@@ -185,21 +159,21 @@ def test_choose_mobile_falls_back_to_sms(client, doctor):
     assert 'data-sms-fallback' in html and 'data-sent="sms"' in html
     assert '+34 ••• ••• 001' in html
     assert 'data-sms>' not in html  # sent by SMS already
-    response = _post_code(client, _code('mobile', phone=FAKE_NO_WHATSAPP_NUMBER))
+    response = _post_code(client, _right_code('mobile', phone=FAKE_NO_WHATSAPP_NUMBER))
     assert response['Location'] == '/en/welcome/'
 
 
 def test_choosing_the_same_contact_again_within_the_cooldown_sends_nothing(client, doctor,
                                                                           login_clock):
     _to_code(client, 'email')
-    code = _code('email')
+    code = _right_code('email')
     login_clock.advance(10)
 
     _choose(client, 'email')
 
     html = _html(client.get(CODE))
     assert 'data-cooldown' not in html and 'data-sent="email"' in html
-    assert _code('email') == code
+    assert _right_code('email') == code
 
 
 def test_switching_contact_sends_to_the_other(client, doctor):
@@ -209,7 +183,7 @@ def test_switching_contact_sends_to_the_other(client, doctor):
     assert _to_code_choice['Location'] == CODE
     assert _pending(client)['contact'] == 'mobile'
     assert 'data-sent="whatsapp"' in _html(client.get(CODE))
-    assert _post_code(client, _code('mobile'))['Location'] == '/en/welcome/'
+    assert _post_code(client, _right_code('mobile'))['Location'] == '/en/welcome/'
 
 
 # --- Right code -----------------------------------------------------------------------------
@@ -219,7 +193,7 @@ def test_right_code_logs_in(client, doctor, contact):
     _login(client, next='/es/welcome/')
     _choose(client, contact)
 
-    response = _post_code(client, _code(contact))
+    response = _post_code(client, _right_code(contact))
 
     assert response.status_code == 302
     assert response['Location'] == '/es/welcome/'
@@ -242,7 +216,7 @@ def test_session_key_changes_at_login(client, doctor):
     _to_code(client)
     before = client.session.session_key
 
-    _post_code(client, _code())
+    _post_code(client, _right_code())
 
     assert client.session.session_key != before
 
@@ -252,7 +226,7 @@ def test_a_signup_code_does_not_log_in(client, doctor):
     _to_code(client, 'email')
     FakeVerificationProvider().send(EMAIL, NORMALIZED, 'signup', 'en')
     signup_code = _current_code(EMAIL, NORMALIZED, 'signup')
-    if signup_code == _code('email'):  # one chance in a million
+    if signup_code == _right_code('email'):  # one chance in a million
         pytest.skip('the two codes happen to match')
 
     response = _post_code(client, signup_code)
@@ -267,7 +241,7 @@ def test_wrong_code_is_refused(client, doctor, caplog):
     _to_code(client)
 
     with caplog.at_level(logging.INFO, logger='accounts.views'):
-        response = _post_code(client, _wrong(_code()))
+        response = _post_code(client, _wrong(_right_code()))
 
     assert response.status_code == 200
     assert response.context['form'].has_error('code', 'invalid_code')
@@ -277,7 +251,7 @@ def test_wrong_code_is_refused(client, doctor, caplog):
     assert 'login code rejected: reasons=invalid_code' in [
         r.getMessage() for r in caplog.records if r.name == 'accounts.views']
     # The right one still works.
-    assert _post_code(client, _code())['Location'] == '/en/welcome/'
+    assert _post_code(client, _right_code())['Location'] == '/en/welcome/'
 
 
 def test_empty_code_is_required(client, doctor):
@@ -292,10 +266,10 @@ def test_empty_code_is_required(client, doctor):
 def test_rejections_go_through_the_one_hook(client, doctor, monkeypatch):
     _to_code(client)
     seen = []
-    monkeypatch.setattr(views, 'login_code_rejected',
+    monkeypatch.setattr(login_guard, 'login_code_rejected',
                         lambda request, user, form: seen.append((user.pk, form.errors)))
 
-    _post_code(client, _wrong(_code()))
+    _post_code(client, _wrong(_right_code()))
     assert len(seen) == 1 and seen[0][0] == doctor.pk
 
     # Not a code: an empty submit, a non-code action, a check the provider couldn't make.
@@ -311,14 +285,14 @@ def test_rejections_go_through_the_one_hook(client, doctor, monkeypatch):
 
     # No longer valid (the 5th wrong attempt) counts.
     for _ in range(MAX_CHECK_ATTEMPTS - 1):
-        _post_code(client, '000000' if _code() != '000000' else '111111')
+        _post_code(client, '000000' if _right_code() != '000000' else '111111')
     assert len(seen) == MAX_CHECK_ATTEMPTS
     assert seen[-1][1].as_data()['code'][0].code == 'code_expired'
 
 
 def test_five_wrong_codes_invalidate_it_and_a_new_one_works(client, doctor, login_clock):
     _to_code(client)
-    wrong = _wrong(_code())
+    wrong = _wrong(_right_code())
     for _ in range(MAX_CHECK_ATTEMPTS - 1):
         assert _post_code(client, wrong).context['form'].has_error('code', 'invalid_code')
     # Not the lockout's 5th wrong code in a row (entry 5, test_lockout.py): only the
@@ -337,7 +311,7 @@ def test_five_wrong_codes_invalidate_it_and_a_new_one_works(client, doctor, logi
     response = client.post(CODE, {'action': 'resend'})
     assert response['Location'] == CODE
     assert 'We have sent you a new code.' in _html(client.get(CODE))
-    assert _post_code(client, _code())['Location'] == '/en/welcome/'
+    assert _post_code(client, _right_code())['Location'] == '/en/welcome/'
 
 
 # --- Resend / SMS ----------------------------------------------------------------------------
@@ -366,12 +340,12 @@ def test_resend_after_the_cooldown_and_the_hourly_limit(client, doctor, login_cl
     html = _html(client.get(CODE))
     assert 'data-hourly-limit' in html and 'data-support' in html
     assert 'You have asked for too many codes.' in html
-    assert _post_code(client, _code())['Location'] == '/en/welcome/'
+    assert _post_code(client, _right_code())['Location'] == '/en/welcome/'
 
 
 def test_send_by_sms_instead(client, doctor, login_clock, capture_codes):
     _to_code(client, 'mobile')
-    whatsapp_code = _code('mobile')
+    whatsapp_code = _right_code('mobile')
     login_clock.advance(limits.COOLDOWN_SECONDS + 1)
 
     assert client.post(CODE, {'action': 'sms'})['Location'] == CODE
@@ -382,7 +356,7 @@ def test_send_by_sms_instead(client, doctor, login_clock, capture_codes):
     assert 'data-sent="sms"' in html and 'data-sms-fallback' not in html
     assert 'data-sms>' not in html
     # A mobile has one code, whichever channel carried it.
-    assert _code('mobile') == whatsapp_code
+    assert _right_code('mobile') == whatsapp_code
 
     # A resend now goes by SMS too.
     login_clock.advance(limits.COOLDOWN_SECONDS + 1)
@@ -468,12 +442,7 @@ def test_pending_login_is_valid_just_before_its_end(client, doctor, login_clock)
     _to_code(client)
     login_clock.advance(CODE_TTL_SECONDS - 5)
 
-    assert _post_code(client, _code())['Location'] == '/en/welcome/'
-
-
-def _deactivate(doctor):
-    doctor.is_active = False
-    doctor.save(update_fields=['is_active'])
+    assert _post_code(client, _right_code())['Location'] == '/en/welcome/'
 
 
 def _change_password(doctor):
@@ -498,7 +467,7 @@ def _change_email(doctor):
                                     _change_phone, _change_email])
 def test_account_changed_while_pending_refuses_the_code(client, doctor, change):
     _to_code(client)
-    code = _code()
+    code = _right_code()
     change(User.objects.get(pk=doctor.pk))
 
     response = _post_code(client, code)
@@ -508,7 +477,7 @@ def test_account_changed_while_pending_refuses_the_code(client, doctor, change):
     assert PENDING_LOGIN_SESSION_KEY not in client.session
     assert 'Your login has expired. Please log in again.' in _html(client.get('/en/login/'))
     # Refused before it was checked.
-    assert _code() == code
+    assert _right_code() == code
 
 
 def test_account_changed_between_the_check_and_the_login(client, doctor, monkeypatch):
@@ -522,7 +491,7 @@ def test_account_changed_between_the_check_and_the_login(client, doctor, monkeyp
         return code
     monkeypatch.setattr(views.LoginCodeForm, 'clean_code', clean_then_deactivate)
 
-    response = _post_code(client, _code())
+    response = _post_code(client, _right_code())
 
     assert response['Location'] == '/en/login/'
     assert not _logged_in(client)
@@ -581,9 +550,9 @@ def test_spanish_pages_and_code(client, doctor, capture_codes):
     assert 'Hemos enviado un código de 6 dígitos por WhatsApp a' in html
     assert 'para iniciar sesión.' in html and 'Recibir el código de otra forma' in html
 
-    response = _post_code(client, _wrong(_code('mobile')), lang='es')
+    response = _post_code(client, _wrong(_right_code('mobile')), lang='es')
     assert 'Este código no es correcto. Revíselo o solicite uno nuevo.' in _html(response)
-    assert _post_code(client, _code('mobile'), lang='es')['Location'] == '/es/welcome/'
+    assert _post_code(client, _right_code('mobile'), lang='es')['Location'] == '/es/welcome/'
 
 
 def test_spanish_expired_message(client, doctor, login_clock):
@@ -676,7 +645,7 @@ def test_login_page_ends_an_earlier_pending_login(client, doctor, settings, outc
 
     assert PENDING_LOGIN_SESSION_KEY not in client.session
     assert client.get(VERIFY)['Location'] == '/en/login/'
-    assert client.post(CODE, {'code': _code()})['Location'] == '/en/login/'
+    assert client.post(CODE, {'code': _right_code()})['Location'] == '/en/login/'
     assert not _logged_in(client)
 
 
@@ -699,4 +668,4 @@ def test_relogin_within_the_cooldown_shows_the_wait_not_sent(client, doctor, log
     assert _pending(client)['sent'] is True
     html = _html(client.get(CODE))
     assert 'data-sent="email"' in html and 'data-no-code' not in html
-    assert _post_code(client, _code())['Location'] == '/en/welcome/'
+    assert _post_code(client, _right_code())['Location'] == '/en/welcome/'

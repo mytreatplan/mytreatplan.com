@@ -1,6 +1,6 @@
 """The event log API: `start_attempt`, `record` and `end_attempt` (plus `get_attempt`), and
-`record_activity`, one self-contained record tied to an account (login records, epic-login
-entry 4; later page records).
+`record_activity`, one self-contained record tied to an account (login and password reset
+records, epic-login entries 4 and 10; page records, entry 7).
 
 Every signup step and every login record logs through it. Logging never breaks the flow it
 logs: any failure is caught, reported to Sentry by event type and error class only (no
@@ -19,8 +19,8 @@ logger = logging.getLogger(__name__)
 
 
 def report_failure(action, error, event=''):
-    """Report a failed log write (or a failed step around one, such as the login
-    counters) without any personal value: the action, the event type and the error class."""
+    """Report a failed log write (or a failed step around one, such as a page record's
+    checks) without any personal value: the action, the event type and the error class."""
     what = f'{action} {event}'.strip()
     message = f'Event log write failed: {what} ({type(error).__name__})'
     logger.warning(message)

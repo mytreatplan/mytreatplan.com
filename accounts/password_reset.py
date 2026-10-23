@@ -42,7 +42,6 @@ import logging
 import threading
 import time
 
-import sentry_sdk
 from django import forms
 from django.conf import settings
 from django.contrib import messages
@@ -54,10 +53,8 @@ from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.views import (PasswordResetConfirmView, PasswordResetDoneView,
                                        PasswordResetView)
 from django.core.cache import cache
-from django.core.exceptions import ValidationError
 from django.core.mail import EmailMessage
 from django.db import connections
-from django.forms.utils import ErrorDict
 from django.http import HttpResponseRedirect
 from django.shortcuts import render
 from django.template.loader import render_to_string
@@ -76,10 +73,13 @@ from eventlog import service as eventlog
 from eventlog.models import Attempt
 from eventlog.service import client_ip
 from signup import captcha, limits
-from signup.forms import BLOCKED_MESSAGE, BLOCKED_RATE_LIMIT, FIELD_CLASSES, StyledForm
+from signup.forms import FIELD_CLASSES, StyledForm, refuse
 
 from . import login_failures
+from .cache_mutex import cache_mutex
 from .crypto import email_index, normalize_email_for_index
+from .login_guard import (CHECK_UNAVAILABLE_EVENT, REJECTED_EVENT, record_unavailable_captcha,
+                          report_error, reserve_ip_attempt)
 from .password_validation import BREACHED_PASSWORD_CHECK, collect_unavailable_checks
 from .sessions import end_all_sessions
 
@@ -94,8 +94,6 @@ REQUEST_STEP = 'password-reset'  # the request page
 NEW_PASSWORD_STEP = 'password-reset-new'  # the new-password page
 REQUESTED_EVENT = 'password_reset_requested'
 DONE_EVENT = 'password_reset_done'
-IP_BLOCKED_EVENT = 'rejected'
-CHECK_UNAVAILABLE_EVENT = 'check_unavailable'
 # What a request led to (`reason` of `password_reset_requested`).
 MAIL_QUEUED = 'mail_queued'  # an active account: the background job counts and sends
 UNKNOWN_EMAIL = 'unknown_email'  # no account (an erased account's email is unknown)
@@ -105,7 +103,8 @@ EMAIL_RATE_LIMITED = 'rate_limited_email'  # `rejected`, field `email`, from the
 # The per-email limit (decision 1): mails a window, per email blind index.
 MAILS_PER_HOUR = 3
 MAIL_WINDOW_SECONDS = 3600
-# The per-email counter's lock covers only a read-then-write (as accounts.login_failures).
+# The per-email counter's lock covers only a read-then-write (accounts.cache_mutex, as
+# accounts.login_failures).
 MUTEX_SECONDS = 5
 MUTEX_PAUSE = 0.05
 MUTEX_TRIES = 20
@@ -129,18 +128,10 @@ def _sleep(seconds):
 def _report(action, error):
     """Report a failed step (a counter, the lookup, the send) without any personal value:
     the action and the error class only."""
-    message = f'Password reset error: {action} ({type(error).__name__})'
-    logger.warning(message)
-    with sentry_sdk.new_scope() as scope:
-        scope.set_tag('password_reset.action', action)
-        sentry_sdk.capture_message(message, level='error')
+    report_error(logger, 'Password reset error', 'password_reset.action', action, error)
 
 
 # --- The per-email limit (decision 1) ---------------------------------------------------
-
-class CounterBusy(Exception):
-    """The per-email counter's lock was not got within the wait."""
-
 
 def _mail_key(email):
     return f'password-reset:mails:{email_index(email)}'
@@ -150,22 +141,14 @@ def reserve_mail(email):
     """Count one mail to `email` in the last MAIL_WINDOW_SECONDS, if under MAILS_PER_HOUR.
     Returns whether the mail may go. The times are kept by the email's blind index."""
     key = _mail_key(email)
-    for attempt in range(MUTEX_TRIES + 1):
-        if cache.add(key + ':mutex', 1, timeout=MUTEX_SECONDS):
-            break
-        if attempt < MUTEX_TRIES:
-            _sleep(MUTEX_PAUSE)
-    else:
-        raise CounterBusy(key)
-    try:
+    with cache_mutex(key, seconds=MUTEX_SECONDS, pause=MUTEX_PAUSE, tries=MUTEX_TRIES,
+                     sleep=_sleep):
         now = _now()
         times = [t for t in (cache.get(key) or []) if now - t < MAIL_WINDOW_SECONDS]
         if len(times) >= MAILS_PER_HOUR:
             return False
         cache.set(key, times + [now], timeout=MAIL_WINDOW_SECONDS + 60)
         return True
-    finally:
-        cache.delete(key + ':mutex')
 
 
 # --- The mail -----------------------------------------------------------------------------
@@ -221,7 +204,7 @@ def mail_job(user, email, language, site_url, request_data):
         _report('reserve_mail', error)
         allowed = True
     if not allowed:
-        eventlog.record_activity(Attempt.LOGIN, IP_BLOCKED_EVENT, account_id=user.pk,
+        eventlog.record_activity(Attempt.LOGIN, REJECTED_EVENT, account_id=user.pk,
                                  step=REQUEST_STEP, field='email', reason=EMAIL_RATE_LIMITED,
                                  data=dict(request_data))
         return
@@ -264,33 +247,13 @@ class ResetRequestForm(PasswordResetForm):
         accounts = get_user_model()._default_manager.by_email(email).filter(is_active=True)
         return (user for user in accounts if user.has_usable_password())
 
-    def refuse(self, code):
-        """Only signup's generic BLOCKED_MESSAGE (the CAPTCHA failed): the email is not
-        checked."""
-        self._errors = ErrorDict()
-        self.cleaned_data = {}
-        self.add_error(None, ValidationError(BLOCKED_MESSAGE, code=code))
-
 
 def _ip_blocked(request):
     """Reserve one of the IP's hourly reset requests; True when over the limit (its first
     block in the window is recorded). A limit error lets the request go on."""
-    try:
-        if limits.ip_reserve(request, limits.RESET_REQUESTS) is not None:
-            return False
-    except Exception as error:  # noqa: BLE001 - the limit must never break the page
-        _report('ip_reserve', error)
-        return False
-    try:
-        first = limits.first_block(request, limits.RESET_REQUESTS)
-    except Exception as error:  # noqa: BLE001 - the record must never lift the block
-        _report('first_block', error)
-        first = False
-    if first:
-        eventlog.record_activity(Attempt.LOGIN, IP_BLOCKED_EVENT, request=request,
-                                 step=REQUEST_STEP, field='ip', reason=BLOCKED_RATE_LIMIT,
-                                 data={'counter': limits.RESET_REQUESTS})
-    return True
+    blocked, _reservation = reserve_ip_attempt(request, limits.RESET_REQUESTS,
+                                               step=REQUEST_STEP, report=_report)
+    return blocked
 
 
 def _record_request(request, reason, account_id=None, email=None):
@@ -338,13 +301,12 @@ class RequestView(PasswordResetView):
         result = captcha.verify_turnstile(request.POST.get(captcha.TOKEN_FIELD, ''),
                                           client_ip(request))
         if result == captcha.FAILED:
-            form.refuse('captcha_failed')
+            # Only signup's generic BLOCKED_MESSAGE: the email is not checked.
+            refuse(form, 'captcha_failed')
             return self.form_invalid(form)
         if result == captcha.UNAVAILABLE:
             # The request goes on (as the login: the limits are the guard meanwhile).
-            eventlog.record_activity(Attempt.LOGIN, CHECK_UNAVAILABLE_EVENT, request=request,
-                                     step=REQUEST_STEP, field='captcha',
-                                     reason=captcha.TURNSTILE_CHECK)
+            record_unavailable_captcha(request, REQUEST_STEP)
         if not form.is_valid():
             return self.form_invalid(form)
         if not _ip_blocked(request):
