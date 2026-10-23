@@ -3,7 +3,7 @@ title: 'Fix the resume takeover'
 type: 'bugfix'
 ticket: ''
 created: '2026-10-23'
-status: 'built'
+status: 'done'
 baseline_revision: '4e857e6f3deeb0d133a5831d75ae3af7349d8153'
 route: 'oneshot'
 route_source: 'auto'
@@ -69,3 +69,8 @@ After the patches (2026-10-23): the full suite gives 1,281 passed, 3 failed (the
 
 **Commands:**
 - The local suite command (test keys, SQLite), outside the sandbox for the browser tests. Expected: only the 3 known PostgreSQL-only tests fail.
+
+## Staging
+
+- PR #40 merged on 2026-10-23. The master CI run 39939848164 passed (1,284 tests on PostgreSQL 17) and deployed to staging.
+- The user closed the plan on 2026-10-23 without reporting the manual takeover check from the PR description. That check (resume another browser's row: the password is required and the legal step is unticked) was not confirmed in this session.
