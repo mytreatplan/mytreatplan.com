@@ -17,8 +17,9 @@ SECRET_KEY, never the plain IP; an IPv6 address counts as its /64 network (one c
 usually holds a whole /64). A request reserves its count first (`ip_reserve`: the
 read-check-increment under a per-IP-and-counter lock held for milliseconds, waited for
 up to a second), so parallel requests cannot overshoot, and gives it back if its action
-then fails (`ip_refund`). A block is logged once per IP, counter and window
-(`first_block`).
+then fails (`ip_refund`). A block is logged once per IP, counter, window and flow
+(`first_block`): the code-send counter is shared by signup and login, and each logs
+its own first block.
 """
 import hashlib
 import hmac
@@ -228,7 +229,11 @@ def ip_refund(request, counter, reservation):
         release_ip_lock(request, counter)
 
 
-def first_block(request, counter):
-    """True for the first block of this IP and counter in this hour's window (it is
-    logged); later blocks in the window are not, so blocked traffic writes nothing."""
-    return cache.add(_ip_key(request, counter) + ':blocked', 1, timeout=IP_COUNT_TIMEOUT)
+def first_block(request, counter, flow=''):
+    """True for the first block of this IP, counter and `flow` in this hour's window (it
+    is logged); later blocks in the window are not, so blocked traffic writes nothing.
+    `flow` separates the logs sharing a counter (`login` for login code sends; signup's
+    is empty)."""
+    suffix = f':{flow}' if flow else ''
+    return cache.add(_ip_key(request, counter) + ':blocked' + suffix, 1,
+                     timeout=IP_COUNT_TIMEOUT)

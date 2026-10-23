@@ -8,16 +8,20 @@ import re
 
 import pytest
 from django.contrib.auth import SESSION_KEY, get_user_model
+from django.contrib.sessions.backends.db import SessionStore
 
 from accounts import login_failures, login_guard, views
 from accounts.forms import INVALID_LOGIN_MESSAGE, mask_email, mask_phone
 from accounts.views import CODE_PAGE, PENDING_LOGIN_SESSION_KEY
+from eventlog import service as eventlog
+from eventlog.models import Attempt, Event
 from signup import limits
-from signup.steps import CODE_STATE_SESSION_KEY
+from signup.steps import BLOCKED, CODE_STATE_SESSION_KEY, send_code
 from signup.tests.helpers import MOBILE_E164, NORMALIZED, PASSWORD, _current_code, _wrong
 from signup.verification import (CODE_TTL_SECONDS, EMAIL, FAKE_NO_WHATSAPP_NUMBER,
                                  FAKE_SEND_FAILS_NUMBER, MAX_CHECK_ATTEMPTS, NO_CODE,
-                                 PURPOSE_LOGIN, SMS, CheckFailed, FakeVerificationProvider)
+                                 PURPOSE_LOGIN, PURPOSE_SIGNUP, SMS, CheckFailed,
+                                 FakeVerificationProvider)
 
 from .helpers import (CODE, VERIFY, _deactivate, _html, _logged_in, _login, _login_with_code,
                       _post_code, _right_code, _to_code)
@@ -709,3 +713,75 @@ def test_relogin_within_the_cooldown_shows_the_wait_not_sent(client, doctor, log
     html = _html(client.get(CODE))
     assert 'data-sent="email"' in html and 'data-no-code' not in html
     assert _post_code(client, _right_code())['Location'] == '/en/welcome/'
+
+
+# --- The per-IP code-send limit (signup retrospective R4) ---------------------------------
+
+@pytest.fixture
+def no_code_sends(settings):
+    settings.SIGNUP_IP_LIMITS = {**settings.SIGNUP_IP_LIMITS, limits.CODE_SENDS: 0}
+
+
+def _ip_blocks():
+    return list(Event.objects.filter(event='rejected', field='ip',
+                                     attempt__kind=Attempt.LOGIN))
+
+
+def test_an_ip_blocked_login_code_send_is_recorded_once(client, doctor, no_code_sends):
+    _to_code(client)
+    client.post(CODE, {'action': 'resend'})
+
+    assert limits.seconds_since_last_send(NORMALIZED, PURPOSE_LOGIN) is None
+    [event] = _ip_blocks()  # the resend's block, in the same hour, is not recorded again
+    assert event.attempt.account_id == doctor.pk
+    assert (event.step, event.reason) == (login_guard.VERIFY_STEP, 'blocked: rate limit')
+    assert event.data['counter'] == limits.CODE_SENDS
+
+
+def test_a_blocked_login_resend_is_recorded_at_the_code_page(client, doctor, settings,
+                                                            login_clock):
+    _to_code(client)  # sent: the IP's limit is not reached yet
+    settings.SIGNUP_IP_LIMITS = {**settings.SIGNUP_IP_LIMITS, limits.CODE_SENDS: 0}
+    login_clock.advance(limits.COOLDOWN_SECONDS + 1)
+
+    client.post(CODE, {'action': 'resend'})
+
+    [event] = _ip_blocks()
+    assert (event.step, event.attempt.account_id) == (login_guard.CODE_STEP, doctor.pk)
+
+
+def test_a_failing_block_marker_still_refuses_the_login_send(client, doctor, no_code_sends,
+                                                            monkeypatch, caplog):
+    def fail(*args, **kwargs):
+        raise RuntimeError('cache down')
+
+    monkeypatch.setattr(limits, 'first_block', fail)
+    _to_code(client)
+
+    assert limits.seconds_since_last_send(NORMALIZED, PURPOSE_LOGIN) is None
+    assert not _ip_blocks()
+    assert 'Login code send block record failed: error=RuntimeError' in caplog.text
+
+
+def test_after_a_login_block_a_signup_block_from_the_ip_is_still_logged(client, doctor,
+                                                                        no_code_sends, rf):
+    _to_code(client)  # the login send is blocked and recorded
+    request = rf.post('/en/signup/verify-email/')  # the same IP as the test client
+    request.session = SessionStore()
+    attempt = eventlog.start_attempt(Attempt.SIGNUP)
+
+    outcome = send_code(request, attempt, 'verify-email', 'someone@example.com',
+                        PURPOSE_SIGNUP, EMAIL)
+
+    assert outcome.status == BLOCKED
+    assert len(_ip_blocks()) == 1
+    [event] = Event.objects.filter(attempt=attempt, event='rejected', field='ip')
+    assert (event.step, event.data['counter']) == ('verify-email', limits.CODE_SENDS)
+
+
+def test_a_login_block_leaves_signups_first_block_to_signup(rf):
+    request = rf.get('/')
+    assert limits.first_block(request, limits.CODE_SENDS, flow=PURPOSE_LOGIN)
+    assert limits.first_block(request, limits.CODE_SENDS)
+    assert not limits.first_block(request, limits.CODE_SENDS, flow=PURPOSE_LOGIN)
+    assert not limits.first_block(request, limits.CODE_SENDS)

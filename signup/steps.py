@@ -29,6 +29,7 @@ from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy as _
 
 from eventlog import service as eventlog
+from eventlog.models import Attempt
 
 from accounts.crypto import email_index
 from accounts.models import phone_index_or_blank
@@ -40,9 +41,9 @@ from .forms import (BLOCKED_MESSAGE, BLOCKED_RATE_LIMIT, OTP_NOT_DELIVERED, OTP_
                     OTP_SEND_FAILED, AccountForm, EmailCodeForm, LegalForm, MobileCodeForm,
                     national_number)
 from .models import PendingRegistration
-from .verification import (CODE_TTL_SECONDS, EMAIL, MAX_CHECK_ATTEMPTS, PURPOSE_SIGNUP, SMS,
-                           WHATSAPP, ChannelUnavailable, VerificationError, contact_kind,
-                           get_provider)
+from .verification import (CODE_TTL_SECONDS, EMAIL, MAX_CHECK_ATTEMPTS, PURPOSE_LOGIN,
+                           PURPOSE_SIGNUP, SMS, WHATSAPP, ChannelUnavailable,
+                           VerificationError, contact_kind, get_provider)
 
 logger = logging.getLogger(__name__)
 
@@ -272,14 +273,17 @@ def _store_outcome(request, page, outcome):
     request.session[CODE_STATE_SESSION_KEY] = states
 
 
-def send_code(request, attempt, page, contact, purpose, channel, resend=False):
+def send_code(request, attempt, page, contact, purpose, channel, resend=False,
+              login_record=None):
     """Send a code to `contact` within our limits (signup.limits) and log it.
 
     A mobile goes by `channel` (WhatsApp, or SMS when asked); if WhatsApp cannot deliver
     to the number the code goes by SMS at once (`fallback`). Returns a SendOutcome:
     SENT (logged `code_sent`; a resend's with the reason `OTP not delivered`); COOLDOWN or
     HOURLY (not sent; the hourly limit is logged `rejected`); BLOCKED
-    (not sent: the per-IP limit on code sends, logged `rejected` with field `ip`); or
+    (not sent: the per-IP limit on code sends, logged `rejected` with field `ip`; a login
+    send, with no attempt, is recorded in the login records: `login_record` is its
+    (account id, step)); or
     FAILED (the provider failed: logged `code_send_failed` and reported to Sentry, with
     no personal data). The page's session state is updated (`code_state`). A short lock
     per contact and purpose makes parallel sends (a double click) answer COOLDOWN.
@@ -294,13 +298,13 @@ def send_code(request, attempt, page, contact, purpose, channel, resend=False):
         return outcome
     try:
         return _send_code_locked(request, attempt, page, contact, purpose, channel, resend,
-                                 field, log_data)
+                                 field, log_data, login_record)
     finally:
         limits.release_send_lock(contact, purpose)
 
 
 def _send_code_locked(request, attempt, page, contact, purpose, channel, resend, field,
-                      log_data):
+                      log_data, login_record):
     check = limits.check_send(contact, purpose)
     if not check.allowed:
         status = HOURLY if check.hourly_blocked else COOLDOWN
@@ -313,7 +317,7 @@ def _send_code_locked(request, attempt, page, contact, purpose, channel, resend,
     # The per-IP limit: the send is counted first, and given back if it fails.
     reservation = limits.ip_reserve(request, limits.CODE_SENDS)
     if reservation is None:
-        return _ip_blocked(request, attempt, page, channel, log_data)
+        return _ip_blocked(request, attempt, page, channel, log_data, purpose, login_record)
     sent = False
     try:
         outcome = _send(request, attempt, page, contact, purpose, channel, resend, field,
@@ -334,9 +338,24 @@ def log_ip_blocked(request, get_attempt, step, counter, data=None):
                         reason=BLOCKED_RATE_LIMIT, data={**(data or {}), 'counter': counter})
 
 
-def _ip_blocked(request, attempt, page, channel, log_data):
-    """Not sent: the per-IP limit (or its lock not got). Logged once per IP and window."""
-    log_ip_blocked(request, lambda: attempt, page, limits.CODE_SENDS, log_data)
+def _ip_blocked(request, attempt, page, channel, log_data, purpose, login_record):
+    """Not sent: the per-IP limit (or its lock not got). Logged once per IP, window and
+    flow: signup's in its attempt; a login send's in the login records (signup R4)."""
+    if purpose == PURPOSE_LOGIN:
+        account_id, step = login_record or (None, page)
+        try:
+            first = limits.first_block(request, limits.CODE_SENDS, flow=PURPOSE_LOGIN)
+        except Exception as error:  # noqa: BLE001 - the record must never lift the block
+            logger.error('Login code send block record failed: error=%s',
+                         type(error).__name__)
+            first = False
+        if first:
+            eventlog.record_activity(Attempt.LOGIN, 'rejected', request=request,
+                                     account_id=account_id, step=step, field='ip',
+                                     reason=BLOCKED_RATE_LIMIT,
+                                     data={'counter': limits.CODE_SENDS})
+    else:
+        log_ip_blocked(request, lambda: attempt, page, limits.CODE_SENDS, log_data)
     outcome = SendOutcome(BLOCKED, channel, False, 0)
     _store_outcome(request, page, outcome)
     return outcome
