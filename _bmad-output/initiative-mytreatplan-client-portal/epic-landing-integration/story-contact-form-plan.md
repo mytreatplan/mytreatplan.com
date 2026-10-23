@@ -3,7 +3,7 @@ title: 'Contact form'
 type: 'feature'
 ticket: '5'
 created: '2026-10-23'
-status: 'built'
+status: 'done'
 baseline_revision: '303252ab15ed3c56651170ed6c419b2b259e7b9f'
 route: 'full'
 route_source: 'auto'
@@ -153,3 +153,7 @@ After the patches (2026-10-23), on SQLite with Chromium (sandbox lifted): the fu
 - The local suite command (test keys, SQLite), outside the sandbox for the browser tests -- expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check`, `compilemessages -l es` -- expected: no changes, OK.
 
+
+## Staging
+
+PR #45 merged as 56cf729 (2026-10-23). CI on master (run 40026335388, PostgreSQL 17): 1,457 passed; deploy-staging succeeded. The user added `CONTACT_INBOX` to the server's settings.env, `check --deploy` passed, and staging checks 1–5 from the PR were confirmed: the form in EN and ES (no club question, privacy line), the field error, a real message delivered to webform@mytreatplan.com from noreply with Reply-To the sender, the read-only admin entry with mail "Sent", and the layout and Spanish wording.
