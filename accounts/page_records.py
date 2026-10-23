@@ -1,9 +1,12 @@
-"""Page-request records (epic-login entry 7, CAP-4): every full page shown to a logged-in
-user is an event-log record of kind `page` (eventlog.service.record_activity), tied to the
-account's pk.
+"""Page-request records (epic-login entry 7, CAP-4): every full page of the registered area
+shown to a logged-in user is an event-log record of kind `page`
+(eventlog.service.record_activity), tied to the account's pk.
 
-Recorded: a GET by an authenticated user answered with a `text/html` page, status 200 or an
-error status (4xx/5xx, decision 3), admin pages included (decision 1). htmx full-page loads
+Recorded: a GET by an authenticated user of a portal page (`is_portal_path`: the routes of
+signup.urls and accounts.urls, under a language prefix, and the admin, QA A4) answered
+with a `text/html` page, status 200 or an error status (4xx/5xx, decision 3), admin pages
+included (decision 1). The public site (mytp_publicsite) is never recorded; a path that
+resolves to no view (a 404) is recorded only under a portal prefix. htmx full-page loads
 (boosted navigation, history restores) count as pages (decision 4). Not recorded: htmx
 partial updates (`HX-Request` without `HX-Boosted` or `HX-History-Restore-Request`),
 static files, redirects and other statuses, other methods, streamed or non-HTML
@@ -31,6 +34,12 @@ from eventlog.service import record_activity, report_failure
 PAGE_VIEW = 'page_view'
 STEP_MAX_LENGTH = 50
 
+# The portal's paths (QA A4, decision 1), after the language prefix: the first segments of
+# signup.urls and accounts.urls (a new portal route needs its prefix here; a test checks
+# they match). The admin sits at the root, outside the language prefixes.
+PORTAL_PREFIXES = ('signup/', 'login', 'logout/', 'welcome/', 'password-reset/', 'reset/')
+ADMIN_PREFIX = '/admin/'
+
 
 def _is_static(path):
     """Whether `path` is a static or media file's URL. A prefix of `/` alone is no file
@@ -55,14 +64,28 @@ def _is_partial(request):
                 and not headers.get('HX-History-Restore-Request'))
 
 
+def is_portal_path(path):
+    """Whether `path` (a request's `path_info`) is the portal's: the admin, or one of the
+    PORTAL_PREFIXES after a language prefix. Resolved or not (a 404 under a portal prefix
+    counts); the public site's pages never."""
+    if path.startswith(ADMIN_PREFIX):
+        return True
+    language, _, rest = path[1:].partition('/')
+    if not path.startswith('/') or language not in dict(settings.LANGUAGES):
+        return False
+    return rest.startswith(PORTAL_PREFIXES)
+
+
 def is_recorded(request, response):
-    """Whether this request and its response are a full page shown to a logged-in user."""
+    """Whether this request and its response are a full portal page shown to a logged-in
+    user."""
     status = response.status_code
     user = getattr(request, 'user', None)  # None when an outer middleware answered
     return (request.method == 'GET'
             and user is not None and user.is_authenticated
             and not _is_partial(request)
             and not _is_static(request.path)
+            and is_portal_path(request.path_info)
             and (status == 200 or status >= 400)
             and not getattr(response, 'streaming', False)
             and _is_html(response))

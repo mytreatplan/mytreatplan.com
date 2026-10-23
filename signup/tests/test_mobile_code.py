@@ -132,10 +132,33 @@ def test_switch_to_sms_after_a_minute_counts_as_a_resend(client, caplog, clock):
     sent = _events('code_sent')[-1]
     assert (sent.data['channel'], sent.data['fallback'], sent.data['resend']) == (
         'sms', False, True)
+    assert sent.reason == 'OTP not delivered'  # "Code not received" (QA A7)
     assert len(limits._sends(MOBILE_E164, PURPOSE_SIGNUP, clock())) == 2
     # One code per mobile, whichever channel carried it (as with Twilio).
     assert _current_code(SMS, MOBILE_E164) == whatsapp_code
     assert _mobile_code(client)['Location'] == '/en/welcome/'
+
+
+def test_mobile_resend_is_logged_otp_not_delivered(client, clock):
+    """QA A7: "Send a new code" on the mobile page (sent) logs `OTP not delivered`."""
+    _to_mobile_step(client)
+    clock.advance(60)
+
+    client.post(MOBILE_URL, {'action': 'resend'})
+
+    first, resent = _events('code_sent')[-2:]
+    assert (first.step, first.reason) == ('verify-mobile', '')
+    assert (resent.step, resent.reason) == ('verify-mobile', 'OTP not delivered')
+    assert resent.data['resend'] is True
+
+
+def test_resend_not_sent_logs_no_otp_not_delivered(client, clock):
+    """Within the cooldown nothing is sent, so nothing says the code was not received."""
+    _to_mobile_step(client)
+
+    client.post(MOBILE_URL, {'action': 'resend'})
+
+    assert [e.reason for e in _events('code_sent')] == ['', '']  # the email's, the mobile's
 
 
 # --- Cooldown, hourly limit ------------------------------------------------------------

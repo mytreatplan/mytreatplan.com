@@ -155,11 +155,11 @@ def test_signup_rules_leave_activity_records_of_3_years_alone():
 # --- Activity records: 5 calendar years (epic-login entry 8) ---------------------------
 
 def test_activity_kinds_and_period():
-    assert retention.ACTIVITY_KINDS == (Attempt.LOGIN, Attempt.PAGE)
+    assert retention.ACTIVITY_KINDS == (Attempt.LOGIN, Attempt.PAGE, Attempt.ACCOUNT)
     assert retention.ACTIVITY_RETENTION == relativedelta(years=5)
 
 
-@pytest.mark.parametrize('kind', [Attempt.LOGIN, Attempt.PAGE])
+@pytest.mark.parametrize('kind', [Attempt.LOGIN, Attempt.PAGE, Attempt.ACCOUNT])
 def test_activity_record_5_years_and_a_day_old_is_deleted(kind):
     now = timezone.now()
     old = _activity(kind, now - FIVE_YEARS - DAY, events=2)
@@ -221,7 +221,7 @@ def test_open_old_attempt_is_never_anonymized_or_deleted():
     assert all(event.data['email'] == EMAIL for event in attempt.events.all())
 
 
-@pytest.mark.parametrize('kind', [Attempt.LOGIN, Attempt.PAGE])
+@pytest.mark.parametrize('kind', [Attempt.LOGIN, Attempt.PAGE, Attempt.ACCOUNT])
 def test_open_old_activity_attempt_is_never_deleted(kind):
     attempt = _activity(kind, None)
     Attempt.objects.filter(pk=attempt.pk).update(

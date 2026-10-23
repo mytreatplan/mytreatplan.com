@@ -34,7 +34,9 @@ def client(client):
 
 
 def _events(attempt=None):
-    attempt = attempt or Attempt.objects.get()
+    """The events of `attempt`, by default the one signup attempt (a completed signup
+    also leaves its auto-login's login record, QA A2)."""
+    attempt = attempt or Attempt.objects.get(kind=Attempt.SIGNUP)
     return list(attempt.events.all())
 
 
@@ -61,6 +63,7 @@ def test_happy_path(client, caplog):
 
     _step1(client)
     attempt = Attempt.objects.get()
+    assert attempt.kind == Attempt.SIGNUP
     assert client.session[ATTEMPT_SESSION_KEY] == str(attempt.pk)
     assert PendingRegistration.objects.get().attempt == attempt
     _legal(client)
@@ -109,7 +112,7 @@ def test_a_new_signup_after_completion_is_a_new_attempt(client, caplog):
     client.logout()
 
     _step1(client, email='bea@example.com')
-    assert Attempt.objects.count() == 2
+    assert Attempt.objects.filter(kind=Attempt.SIGNUP).count() == 2
     assert Attempt.objects.filter(ended_at__isnull=True).count() == 1
 
 
@@ -198,6 +201,9 @@ def test_resend(client, clock):
     events = _events()
     assert [e.event for e in events] == ['step_saved', 'step_saved', 'code_sent', 'code_sent']
     assert events[-1].data['resend'] is True
+    # "Code not received" (QA A7): the resend is logged `OTP not delivered`, the first
+    # send is not.
+    assert (events[2].reason, events[-1].reason) == ('', 'OTP not delivered')
     assert events[-1].data['email'] == NORMALIZED
     _assert_request_data(events[-1])
 
@@ -236,6 +242,7 @@ def test_signup_completes_when_the_log_cannot_be_written(client, caplog, monkeyp
     assert response['Location'] == '/en/welcome/'
     assert User.objects.get().email == NORMALIZED
     assert not Event.objects.exists()
+    # The signup attempt only: the auto-login's record (QA A2) has no event, so none.
     assert Attempt.objects.get().outcome == 'completed'
     assert any('step_saved' in message for message in captured)
     assert any('completed' in message for message in captured)
@@ -266,7 +273,7 @@ def test_raw_rows_hold_ciphertext(client, caplog):
     with connection.cursor() as cursor:
         cursor.execute('SELECT data FROM eventlog_event')
         rows = [row[0] for row in cursor.fetchall()]
-    assert len(rows) == 7
+    assert len(rows) == 8  # the signup attempt's 7 events and the auto-login's record
     for stored in rows:
         assert ENCRYPTED.match(stored)
         for plaintext in (NORMALIZED, CLIENT_IP, 'EventLogTest', FIRST_NAME, LAST_NAME,

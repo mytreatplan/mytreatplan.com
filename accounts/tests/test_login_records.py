@@ -17,12 +17,13 @@ from accounts.erasure import erase_user, purge_erased
 from conftest import _assert_no_secrets
 from eventlog import retention
 from eventlog.models import Attempt, Event
-from signup.tests.helpers import NORMALIZED, PASSWORD, _wrong
+from signup.forms import BLOCKED_MESSAGE
+from signup.tests.helpers import NORMALIZED, PASSWORD, _complete, _wrong
 from signup.verification import MAX_CHECK_ATTEMPTS
 
-from .helpers import (AGENT, IP, META, WRONG_PASSWORD, _failures, _logged_in, _login,
-                      _login_with_code, _logins, _messages, _post_code, _records, _right_code,
-                      _to_code, _wrong_password)
+from .helpers import (AGENT, IP, META, WRONG_PASSWORD, _deactivate, _failures, _logged_in,
+                      _login, _login_with_code, _logins, _messages, _post_code, _records,
+                      _right_code, _to_code, _wrong_password)
 
 pytestmark = [pytest.mark.django_db,
               pytest.mark.usefixtures('capture_codes', 'clear_cache', 'portal_urls')]
@@ -85,6 +86,57 @@ def test_remembered_login_is_recorded_without_a_code(client, doctor, lock_clock)
     assert (remembered.step, remembered.reason) == ('login', 'remembered_device')
     assert remembered.data == {'code_needed': False, 'ip': IP, 'user_agent': AGENT}
     assert _count(login_failures.PASSWORD, doctor) == 0
+
+
+# --- Signup's auto-login (QA A2) ----------------------------------------------------------
+
+def test_signup_auto_login_is_recorded(client):
+    before = timezone.now()
+    client.defaults.update(META)
+
+    response = _complete(client)
+
+    assert response['Location'] == '/en/welcome/' and _logged_in(client)
+    user = User.objects.get()
+    [record] = _logins()
+    assert record.attempt.account_id == user.pk
+    assert record.attempt.outcome == 'login' and record.created_at >= before
+    assert (record.step, record.field, record.reason) == ('signup', '', 'signup')
+    assert record.data == {'code_needed': True, 'ip': IP, 'user_agent': AGENT}
+    _no_secrets([record], PASSWORD)
+
+
+def test_portal_login_is_recorded_once(client, doctor, lock_clock):
+    _login_with_code(client, extra=META)
+
+    [record] = _logins()
+    assert record.reason == 'code'
+
+
+def test_admin_login_is_not_a_signup_login(client, staff):
+    response = client.post('/admin/login/', {'username': 'staff@example.net',
+                                              'password': PASSWORD}, **META)
+
+    assert response.status_code == 302 and _logged_in(client)
+    assert _logins() == []
+
+
+def test_forced_login_is_not_recorded(client, doctor):
+    client.force_login(doctor)
+
+    assert _logins() == []
+
+
+def test_login_code_resend_logs_no_signup_event(client, doctor, login_clock):
+    """QA A7 is the signup and resume pages' only: the login code page has no attempt."""
+    _to_code(client, extra=META)
+    login_clock.advance(60)
+    before = set(Event.objects.values_list('pk', flat=True))
+
+    assert client.post('/en/login/code/', {'action': 'resend'})['Location'] == '/en/login/code/'
+
+    assert not Event.objects.exclude(pk__in=before).exists()
+    assert not Event.objects.filter(reason='OTP not delivered').exists()
 
 
 # --- Wrong passwords --------------------------------------------------------------------
@@ -154,6 +206,75 @@ def test_the_fifth_code_counts_as_code_expired(client, doctor):
         'code_expired']
     assert records[-1].field == 'code'
     assert records[-1].data['count'] == MAX_CHECK_ATTEMPTS
+
+
+# --- Deactivated account (QA A14) --------------------------------------------------------
+
+def test_deactivated_account_right_password_is_counted_as_inactive(client, doctor):
+    """QA A14, decision 2: counted like any failure (from the 2nd on recorded), with the
+    reason `inactive_account`, and the generic error."""
+    from accounts.forms import INVALID_LOGIN_MESSAGE
+
+    _deactivate(doctor)
+
+    for _ in range(3):
+        response = _login(client, extra=META)
+        assert response.status_code == 200 and not _logged_in(client)
+        assert response.context['form'].non_field_errors() == [INVALID_LOGIN_MESSAGE]
+
+    second, third = _failures()
+    for record, count in ((second, 2), (third, 3)):
+        assert record.attempt.account_id == doctor.pk
+        assert (record.event, record.step, record.field, record.reason) == (
+            'login_failed', 'login', 'password', 'inactive_account')
+        assert record.data == {'count': count, 'ip': IP, 'user_agent': AGENT}
+    _no_secrets([second, third], PASSWORD)
+    assert _count(login_failures.PASSWORD, doctor) == 3
+    # Its hash is untouched (checked without the setter).
+    assert User.objects.get(pk=doctor.pk).password == doctor.password
+
+
+@pytest.mark.parametrize('last', [PASSWORD, WRONG_PASSWORD])
+def test_deactivated_account_locks_whichever_the_fifth_guess(client, doctor, last):
+    """4 wrong passwords then the right one lock exactly as 5 wrong ones: the lockout
+    cannot reveal the right guess."""
+    _deactivate(doctor)
+    for _ in range(login_failures.LOCK_THRESHOLD - 1):
+        _wrong_password(client)
+
+    response = _login(client, password=last, extra=META)
+
+    assert response.status_code == 200 and not _logged_in(client)
+    assert response.context['form'].non_field_errors() == [BLOCKED_MESSAGE]
+    assert login_failures.is_locked(account_id=doctor.pk)
+    [lock] = _records(event='account_locked')
+    assert lock.attempt.account_id == doctor.pk
+    assert lock.reason == ('inactive_account' if last == PASSWORD else 'wrong_password')
+    assert lock.data['count'] == login_failures.LOCK_THRESHOLD
+
+
+def test_deactivated_account_wrong_password_is_counted(client, doctor):
+    _deactivate(doctor)
+
+    _wrong_password(client)
+    _wrong_password(client)
+
+    [record] = _failures()
+    assert (record.attempt.account_id, record.reason) == (doctor.pk, 'wrong_password')
+    assert _count(login_failures.PASSWORD, doctor) == 2
+
+
+def test_erased_account_right_password_counts_as_unknown(client, doctor, settings):
+    """An erased account is not a deactivated one: its email is unknown (its password is
+    unusable anyway)."""
+    from .helpers import _erase
+
+    _erase(doctor, settings)
+    _login(client, extra=META)
+    _login(client, extra=META)
+
+    [record] = _failures()
+    assert (record.attempt.account_id, record.reason) == (None, 'unknown_email')
 
 
 # --- Unknown email ----------------------------------------------------------------------
@@ -236,7 +357,8 @@ def test_records_outlive_the_purged_account(client, doctor, lock_clock, settings
     assert not User.objects.filter(pk=pk).exists()
 
     records = Event.objects.filter(attempt__account_id=pk).order_by('created_at', 'id')
-    assert [r.event for r in records] == ['login_failed', 'login']
+    # The purge leaves the account's own record (QA A6), tested in test_erasure.py.
+    assert [r.event for r in records] == ['login_failed', 'login', 'account_purged']
 
 
 def test_erased_email_counts_as_unknown(client, doctor, settings):

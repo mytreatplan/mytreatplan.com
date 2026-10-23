@@ -72,6 +72,8 @@ FAILURE_REASONS = {
     'code_expired': 'OTP verification failed',
     'rate_limited': 'OTP rate limited',
     'send_failed': 'OTP send failed',
+    # A resend or the switch to SMS asked for ("Code not received", QA A7).
+    'not_delivered': 'OTP not delivered',
     'check_failed': 'OTP check failed',
     'captcha_failed': 'blocked: captcha',
     'rate_limited_ip': 'blocked: rate limit',
@@ -81,6 +83,7 @@ PHONE_EXISTS = FAILURE_REASONS['phone_registered']
 EMAIL_PENDING = FAILURE_REASONS['email_pending']
 OTP_RATE_LIMITED = FAILURE_REASONS['rate_limited']
 OTP_SEND_FAILED = FAILURE_REASONS['send_failed']
+OTP_NOT_DELIVERED = FAILURE_REASONS['not_delivered']
 BLOCKED_CAPTCHA = FAILURE_REASONS['captcha_failed']
 BLOCKED_RATE_LIMIT = FAILURE_REASONS['rate_limited_ip']
 

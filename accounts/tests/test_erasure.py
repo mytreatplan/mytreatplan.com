@@ -3,12 +3,14 @@ matrix, the purge job and its schedule."""
 from datetime import timedelta
 
 import pytest
+from dateutil.relativedelta import relativedelta
 from django.contrib.admin.models import CHANGE, LogEntry
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group, Permission
 from django.core.exceptions import ImproperlyConfigured
 from django.core.management import call_command
 from django.test import Client
+from django.db import connection
 from django.utils import timezone
 
 from accounts.crypto import email_index, phone_index
@@ -364,8 +366,108 @@ def test_purge_keeps_the_activity_records_for_their_5_years(staff):
     assert eventlog_retention.delete_old_activity() == (0, 0)
 
     records = Event.objects.filter(attempt__account_id=pk).order_by('attempt__kind')
-    assert [r.attempt.kind for r in records] == [Attempt.LOGIN, Attempt.PAGE]
-    assert all(r.data == data for r in records)
+    # With the purge's own record (QA A6).
+    assert [r.attempt.kind for r in records] == [Attempt.ACCOUNT, Attempt.LOGIN, Attempt.PAGE]
+    assert all(r.data == data for r in records[1:])
+
+
+def test_purge_leaves_one_account_record_with_the_encrypted_email(staff):
+    """QA A6: before the account goes, one `account` record (`account_purged`) tied to its
+    pk, holding only its email, encrypted, so its 5-year records can be tied to it."""
+    user = _user()
+    pk = user.pk
+    erase_user(user, by=staff)
+    before = timezone.now()
+
+    assert purge_erased(now=User.objects.get(pk=pk).purge_after) == 1
+
+    assert not User.objects.filter(pk=pk).exists()
+    [record] = Event.objects.filter(attempt__account_id=pk)
+    assert record.attempt.kind == Attempt.ACCOUNT == 'account'
+    assert record.attempt.outcome == record.event == 'account_purged'
+    assert record.attempt.ended_at >= before
+    assert (record.step, record.field, record.reason) == ('purge', '', '')
+    # Read by pk, it decrypts to the email, and holds nothing more.
+    assert record.data == {'email': EMAIL}
+    with connection.cursor() as cursor:
+        cursor.execute(f'SELECT data FROM {Event._meta.db_table} WHERE id = %s', [record.pk])
+        [stored] = cursor.fetchone()
+    for value in (EMAIL, FIRST_NAME, LAST_NAME, PHONE):
+        assert value not in str(stored)
+    assert EMAIL not in ' '.join([record.step, record.event, record.field, record.reason,
+                                  record.attempt.kind, record.attempt.outcome])
+
+
+def test_purge_record_is_kept_5_years_then_deleted(staff):
+    """QA A6: an activity record, never anonymized, deleted 5 calendar years after it."""
+    user = _user()
+    pk = user.pk
+    erase_user(user, by=staff)
+    purge_erased(now=User.objects.get(pk=pk).purge_after)
+    later = timezone.now() + timedelta(days=800)
+
+    eventlog_retention.anonymize(now=later)
+    eventlog_retention.delete_old(now=later)
+    almost = timezone.now() + relativedelta(years=5) - timedelta(days=1)
+    assert eventlog_retention.delete_old_activity(now=almost) == (0, 0)
+    [record] = Event.objects.filter(attempt__account_id=pk)
+    assert record.data == {'email': EMAIL}
+
+    past = timezone.now() + relativedelta(years=5) + timedelta(days=1)
+    assert eventlog_retention.delete_old_activity(now=past) == (1, 1)
+    assert not Event.objects.filter(attempt__account_id=pk).exists()
+
+
+def test_purge_keeps_an_account_whose_email_cannot_be_read(staff, sentry_capture):
+    """An undecryptable email stops only its own account: reported without values, kept
+    for the next run; the rest of the batch is purged."""
+    import json
+
+    import sentry_sdk
+
+    broken, purged = _user(), _user('other@example.org', phone='')
+    for user in (broken, purged):
+        erase_user(user, by=staff)
+    with connection.cursor() as cursor:
+        cursor.execute(f'UPDATE {User._meta.db_table} SET email = %s WHERE id = %s',
+                       ['enc:v1:test1:not-a-ciphertext', broken.pk])
+
+    assert purge_erased(now=timezone.now() + timedelta(days=31)) == 1
+    sentry_sdk.flush()
+
+    assert User.objects.filter(pk=broken.pk).exists()
+    assert not User.objects.filter(pk=purged.pk).exists()
+    assert not Event.objects.filter(attempt__account_id=broken.pk).exists()
+    [record] = Event.objects.filter(attempt__account_id=purged.pk)
+    assert record.data == {'email': 'other@example.org'}
+    messages = [e.get('logentry', {}).get('message') or e.get('message')
+                for e in sentry_capture.events]
+    assert any(m and m.startswith('Account purge error: read_email (') for m in messages)
+    text = json.dumps(sentry_capture.events)
+    assert 'not-a-ciphertext' not in text and 'other@example.org' not in text
+
+
+def test_purge_keeps_an_account_whose_record_cannot_be_written(staff, monkeypatch):
+    """The record is the only tie left to the person: without it (record_activity, which
+    reports its own failures, returns None) the account waits for the next purge."""
+    kept, purged = _user(), _user('other@example.org', phone='')
+    for user in (kept, purged):
+        erase_user(user, by=staff)
+    real = service.record_activity
+
+    def record_activity(*args, account_id=None, **kwargs):
+        if account_id == kept.pk:
+            return None
+        return real(*args, account_id=account_id, **kwargs)
+    monkeypatch.setattr('accounts.erasure.record_activity', record_activity)
+
+    assert purge_erased(now=timezone.now() + timedelta(days=31), batch_size=1) == 1
+    assert User.objects.filter(pk=kept.pk).exists()
+    assert not User.objects.filter(pk=purged.pk).exists()
+
+    monkeypatch.setattr('accounts.erasure.record_activity', real)
+    assert purge_erased(now=timezone.now() + timedelta(days=31)) == 1
+    assert not User.objects.filter(pk=kept.pk).exists()
 
 
 def test_purge_works_in_batches(staff):

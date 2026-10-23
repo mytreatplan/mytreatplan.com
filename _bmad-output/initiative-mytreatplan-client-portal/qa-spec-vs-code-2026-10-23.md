@@ -7,21 +7,21 @@ This QA run is read-only. Three reviewers compared the signup spec (`epic-client
 | # | Spec says | Code does | Where |
 |---|---|---|---|
 | A1 | Terms and Conditions must be accepted (signup CAP-4) | Required checkboxes exist only for published documents. With no Terms or Conditions version published, the legal step passes and the account is created without acceptance. This only happens if the documents are unpublished in the admin. | `signup/forms.py:368-384`; account creation in `signup/views.py` |
-| A2 | Every successful login leaves a record (login CAP-3) | Signup's auto-login after account creation leaves no login record. | `signup/views.py:401` |
+| A2 | Every successful login leaves a record (login CAP-3) | Signup's auto-login after account creation leaves no login record. **Fixed by plan-qa-fix-records-and-privacy.** | `signup/views.py:401` |
 | A3 | Login CAPTCHA, second factor, lockout and records (login CAP-1/3/5/7) | The admin login (`/admin/`) has none of them. The second factor and CAPTCHA are deferred to the admin epics; the lockout and records are not recorded anywhere. | `mytreatplan/urls.py:27` |
-| A4 | Page records cover the registered area (login CAP-4) | Every HTML page shown to a logged-in user is recorded, including public marketing pages. | `accounts/page_records.py:58-68` |
-| A5 | Failures from the 2nd onwards are recorded (login CAP-3) | The first failure after a lock, or after the 24 h window, is not recorded. Attempts during a lock are refused before they are counted, so only the IP's first block is recorded. | `accounts/login_failures.py:108-125`, `accounts/login_guard.py:173` |
-| A6 | An erased account's activity is kept as proof of behaviour (login Constraints) | After the purge, records hold only the user pk, and nothing links it to a person. | `eventlog/models.py`, `accounts/erasure.py` |
-| A7 | "Code not received" is logged as `OTP not delivered` (failure policies) | The reason is never logged. | none |
+| A4 | Page records cover the registered area (login CAP-4) | Every HTML page shown to a logged-in user is recorded, including public marketing pages. **Fixed by plan-qa-fix-records-and-privacy.** | `accounts/page_records.py:58-68` |
+| A5 | Failures from the 2nd onwards are recorded (login CAP-3) | The first failure after a lock, or after the 24 h window, is not recorded. Attempts during a lock are refused before they are counted, so only the IP's first block is recorded. **Fixed by plan-qa-fix-records-and-privacy.** | `accounts/login_failures.py:108-125`, `accounts/login_guard.py:173` |
+| A6 | An erased account's activity is kept as proof of behaviour (login Constraints) | After the purge, records hold only the user pk, and nothing links it to a person. **Fixed by plan-qa-fix-records-and-privacy.** | `eventlog/models.py`, `accounts/erasure.py` |
+| A7 | "Code not received" is logged as `OTP not delivered` (failure policies) | The reason is never logged. **Fixed by plan-qa-fix-records-and-privacy.** | none |
 | A8 | "Page closed mid-wizard" is logged as `abandoned` (failure policies) | Nothing is logged when a page closes. `abandoned` is only an attempt outcome on a resume or a superseding signup; otherwise the attempt ends `timeout`. | `signup/views.py:598`, `signup/retention.py:42` |
 | A9 | Every piece of signup data is logged, and blocks log their reason (CAP-10, failure policies) | An IP-limit block is logged once per IP, counter and hour. | `signup/steps.py:304-311`, `signup/limits.py:231` |
 | A10 | Resend gives a new code; the UI says "We have sent you a new code" | A resend within 10 minutes repeats the same code, and its validity counts from the first send. | `signup/steps.py:414,468` |
 | A11 | Support contact is shown after repeated failures (otp-verification) | It is shown at once on a plain 10-minute expiry, and never after repeated checks that can't be made. | `signup/steps.py:367-380` |
 | A12 | "Blocked until the hourly window resets" (failure policies) | The window is rolling: the next send is allowed 1 h after the oldest of the last 4 sends. | `signup/limits.py:70-85` |
 | A13 | The reset request needs the CAPTCHA (login CAP-5) | When the CAPTCHA can't be checked, the reset request goes through (only login's equivalent was decided, 3.1). | `accounts/password_reset.py:307-309` |
-| A14 | A deactivated account gets the same message (login CAP-1) | Its right password is also counted and recorded as `wrong_password`, and can lock it. | `accounts/login_guard.py:160-166` |
+| A14 | A deactivated account gets the same message (login CAP-1) | Its right password is also counted and recorded as `wrong_password`, and can lock it. **Fixed by plan-qa-fix-records-and-privacy.** | `accounts/login_guard.py:160-166` |
 | A15 | The reset link works once (login CAP-2) | It works until the password is set, and any login in between invalidates it: Django's token includes `last_login`. | `accounts/password_reset.py` |
-| A16 | No personal data in Sentry | Emails and IPs are redacted from free text; phone numbers are not. | `mytreatplan/sentry.py:42-46` |
+| A16 | No personal data in Sentry | Emails and IPs are redacted from free text; phone numbers are not. **Fixed by plan-qa-fix-records-and-privacy.** | `mytreatplan/sentry.py:42-46` |
 | A17 | How-found "e-mail"; no field lengths specified | The label reads "E-mail"; lengths are 254/150/32/200; "Others" stays visible without JavaScript. | `accounts/models.py:29`, `signup/forms.py`, `step_account.html:39` |
 
 ## B. Decided in story plans, spec text out of date

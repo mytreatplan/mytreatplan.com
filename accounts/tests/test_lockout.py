@@ -81,6 +81,108 @@ def test_locked_account_refuses_the_right_password(client, doctor, lock_clock, m
     assert len(_locks()) == 1
 
 
+def _blocked_records():
+    return [r for r in _failures() if r.reason == 'blocked: locked']
+
+
+def test_every_attempt_during_a_lock_is_recorded(client, doctor, lock_clock):
+    """QA A5: each attempt refused because of the lock is a `login_failed` record, reason
+    `blocked: locked`, not counted (the lockout itself is unchanged)."""
+    _lock_by_passwords(client)
+    assert _blocked_records() == []
+
+    for password in (PASSWORD, WRONG_PASSWORD):
+        _assert_blocked(_login(client, password=password, extra=META))
+
+    first, second = _blocked_records()
+    for record in (first, second):
+        assert record.attempt.account_id == doctor.pk
+        assert (record.event, record.step, record.field, record.reason) == (
+            'login_failed', 'login', '', 'blocked: locked')
+        assert record.data == {'ip': IP, 'user_agent': AGENT}
+        assert PASSWORD not in json.dumps(record.data)
+        assert WRONG_PASSWORD not in json.dumps(record.data)
+    assert login_failures.failure_count(login_failures.PASSWORD, account_id=doctor.pk) == 0
+    assert len(_locks()) == 1
+    # The same 10 minutes: then the right password logs in.
+    lock_clock.advance(login_failures.LOCK_SECONDS + 1)
+    assert _login_with_code(client, extra=META)['Location'] == WELCOME
+
+
+def test_attempt_for_a_locked_unknown_email_is_recorded_with_the_email(client, doctor,
+                                                                       lock_clock):
+    for _ in range(login_failures.LOCK_THRESHOLD):
+        _wrong_password(client, email=UNKNOWN)
+
+    _assert_blocked(_login(client, email=UNKNOWN.upper(), extra=META))
+
+    [record] = _blocked_records()
+    assert record.attempt.account_id is None
+    assert record.data == {'email': UNKNOWN, 'ip': IP, 'user_agent': AGENT}
+
+
+def test_code_submission_during_a_lock_is_recorded(client, doctor, lock_clock):
+    _to_code(client, extra=META)
+    login_failures.lock(account_id=doctor.pk)
+
+    assert _post_code(client, _right_code(), extra=META)['Location'] == LOGIN
+
+    [record] = _blocked_records()
+    assert record.attempt.account_id == doctor.pk
+    assert (record.step, record.reason) == ('login-code', 'blocked: locked')
+
+
+def test_contact_choice_during_a_lock_is_recorded_with_its_step(client, doctor,
+                                                                lock_clock):
+    assert _login(client, extra=META)['Location'] == VERIFY
+    login_failures.lock(account_id=doctor.pk)
+
+    assert client.post(VERIFY, {'contact': 'email'}, **META)['Location'] == LOGIN
+
+    [record] = _blocked_records()
+    assert (record.step, record.reason) == ('login-verify', 'blocked: locked')
+
+
+@pytest.mark.parametrize('url', [CODE, VERIFY])
+def test_second_factor_page_shown_during_a_lock_is_not_recorded(client, doctor,
+                                                                lock_clock, url):
+    """Only a submission is an attempt: opening (or refreshing) the page is not."""
+    _to_code(client, extra=META)
+    login_failures.lock(account_id=doctor.pk)
+
+    assert client.get(url, **META)['Location'] == LOGIN
+
+    assert _blocked_records() == []
+
+
+def test_attempts_during_a_lock_count_against_the_ip(client, doctor, login_limit,
+                                                     lock_clock):
+    """Refused by the lock, an attempt keeps its IP attempt: past the IP's limit the
+    attempts are refused by the limit, and no longer recorded as `blocked: locked`."""
+    login_failures.lock(email=UNKNOWN)
+    for _ in range(login_limit):
+        _assert_blocked(_login(client, email=UNKNOWN, extra=META))
+    assert len(_blocked_records()) == login_limit
+
+    for _ in range(3):
+        _assert_blocked(_login(client, email=UNKNOWN, extra=META))
+
+    assert len(_blocked_records()) == login_limit
+    assert len(_ip_blocks()) == 1
+
+
+def test_the_locking_code_is_not_recorded_as_blocked(client, doctor, lock_clock):
+    """The 5th wrong code is the lock itself (`account_locked`), not an attempt refused
+    during it."""
+    _to_code(client, extra=META)
+    wrong = _wrong(_right_code())
+    for _ in range(login_failures.LOCK_THRESHOLD):
+        _post_code(client, wrong, extra=META)
+
+    assert len(_locks()) == 1
+    assert _blocked_records() == []
+
+
 def test_locked_account_refuses_a_remembered_device(client, doctor, lock_clock):
     _to_code(client, extra=META)
     assert client.post(CODE, {'code': _right_code(), 'remember': 'on'})['Location'] == WELCOME
@@ -302,17 +404,19 @@ def test_failed_captcha_is_not_counted_against_the_ip(client, doctor, login_limi
     assert _ip_blocks() == []
 
 
-def test_locked_and_empty_submissions_are_given_back_to_the_ip(client, doctor, settings,
-                                                               lock_clock):
-    """Only submissions that reach the credentials check count against the IP."""
-    settings.SIGNUP_IP_LIMITS = {**settings.SIGNUP_IP_LIMITS, limits.LOGIN_ATTEMPTS: 6}
+def test_empty_submissions_are_given_back_to_the_ip(client, doctor, settings,
+                                                   lock_clock):
+    """Empty submissions do not count against the IP; locked ones do (QA A5: each is
+    recorded, so the IP's limit bounds them)."""
+    settings.SIGNUP_IP_LIMITS = {**settings.SIGNUP_IP_LIMITS, limits.LOGIN_ATTEMPTS: 7}
     _lock_by_passwords(client, email=UNKNOWN)  # 5 counted
+    _assert_blocked(_wrong_password(client, email=UNKNOWN))  # locked: the 6th
     for _ in range(3):
-        _assert_blocked(_wrong_password(client, email=UNKNOWN))  # locked: given back
         _login(client, password='', extra=META)  # empty: given back
 
-    assert _login(client, extra=META)['Location'] == VERIFY  # the 6th
+    assert _login(client, extra=META)['Location'] == VERIFY  # the 7th
     assert _ip_blocks() == []
+    _assert_blocked(_login(client, extra=META))  # the 8th: over the limit
 
 
 # --- Errors -----------------------------------------------------------------------------
@@ -401,6 +505,8 @@ def test_lock_set_during_the_password_check_still_refuses(client, doctor, monkey
     _assert_blocked(response)
     assert PENDING_LOGIN_SESSION_KEY not in client.session
     assert not _logged_in(client)
+    [record] = _failures()
+    assert (record.attempt.account_id, record.reason) == (doctor.pk, 'blocked: locked')
 
 
 def test_remembered_device_locked_during_the_password_check(client, doctor, monkeypatch):

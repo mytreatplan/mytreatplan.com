@@ -239,16 +239,50 @@ def test_redact_keeps_times_and_versions():
     assert mytp_sentry.redact(text) == text
 
 
+# Phone numbers (QA A16): the forms the portal stores and shows.
+PHONES = ('+34 622 918 374', '622918374', '+34622918374', '+1 (415) 555-2671',
+          '+34-622-918-374')
+
+
+@pytest.mark.parametrize('phone', PHONES)
+def test_redact_phone_numbers(phone):
+    assert mytp_sentry.redact(f'send failed to {phone}.') == 'send failed to [redacted].'
+    assert mytp_sentry.redact(f'Key (phone)=({phone})') == 'Key (phone)=([redacted])'
+
+
+@pytest.mark.parametrize('text', [
+    'HTTP 404 then 500 for id 1234',  # statuses and short IDs
+    'status 200 301 404 503',  # space-separated groups without a +
+    'price 1234.56 EUR, order 12345678',  # 8 digits at most
+    'pk=42 took 3.14159265358 s',  # a decimal
+    'uuid 123e4567-e89b-12d3-a456-426614174000',
+    'Twilio error 60200 (HTTP 400)',
+])
+def test_redact_keeps_short_numbers(text):
+    assert mytp_sentry.redact(text) == text
+
+
+def test_scrub_event_redacts_phone_numbers_in_breadcrumbs():
+    event = {'breadcrumbs': {'values': [
+        {'category': 'log', 'message': 'code sent to +34 622 918 374 (whatsapp)'}]}}
+
+    scrubbed = mytp_sentry.scrub_event(event, {})
+
+    assert scrubbed['breadcrumbs']['values'][0]['message'] == (
+        'code sent to [redacted] (whatsapp)')
+
+
 def test_error_messages_and_logs_reach_sentry_redacted(sentry_capture):
     detail = ('duplicate key value violates unique constraint "accounts_user_email_key"\n'
               'DETAIL:  Key (email)=(ana@example.com) already exists. '
-              'Client 203.0.113.9 / 2001:db8::7')
+              'Client 203.0.113.9 / 2001:db8::7, phone +34622918374')
     try:
         raise IntegrityError(detail)
     except IntegrityError:
         sentry_sdk.capture_exception()
-    logging.getLogger('mytp.test').error('signup failed for %s from %s',
-                                         'bob@example.org', '198.51.100.7')
+    logging.getLogger('mytp.test').error('signup failed for %s from %s (%s)',
+                                         'bob@example.org', '198.51.100.7', '622918374')
+    sentry_sdk.capture_message('code not sent to +34 622 918 374 (HTTP 429)')
     sentry_sdk.flush()
 
     events = sentry_capture.events
@@ -263,8 +297,10 @@ def test_error_messages_and_logs_reach_sentry_redacted(sentry_capture):
         for e in events])
     assert '[redacted]' in text
     for secret in ('ana@example.com', 'bob@example.org', '203.0.113.9', '2001:db8::7',
-                   '198.51.100.7'):
+                   '198.51.100.7', '+34622918374', '622918374', '622 918 374'):
         assert secret not in text
+    # A status stays readable.
+    assert 'HTTP 429' in text
 
 
 @pytest.mark.django_db

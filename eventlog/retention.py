@@ -4,8 +4,9 @@ Signup attempts and every other kind but the activity records (signup entry 10, 
 `anonymize` clears their personal values 30 days after the attempt ends, `delete_old`
 deletes them 2 years after.
 
-Activity records (epic-login entry 8): login records (kind `login`, epic-login entry 4)
-and page records (kind `page`, epic-login entry 7) are a legal record. They are never
+Activity records (epic-login entry 8): login records (kind `login`, epic-login entry 4),
+page records (kind `page`, epic-login entry 7) and an erased account's purge record (kind
+`account`, its encrypted email, QA A6) are a legal record. They are never
 anonymized, keep their IP and User-Agent (encrypted in `Event.data`) intact, and
 `delete_old_activity` deletes them 5 calendar years after the attempt ends. They hold the
 account's pk with no foreign key, so they outlive an erased account's purge.
@@ -24,7 +25,7 @@ from .models import Attempt, Event
 
 # The activity kinds: kept intact for ACTIVITY_RETENTION, outside signup's rules. A new
 # activity kind is added here only.
-ACTIVITY_KINDS = (Attempt.LOGIN, Attempt.PAGE)
+ACTIVITY_KINDS = (Attempt.LOGIN, Attempt.PAGE, Attempt.ACCOUNT)
 
 ANONYMIZE_AFTER = timedelta(days=30)
 DELETE_AFTER = timedelta(days=730)
