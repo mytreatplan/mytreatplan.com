@@ -144,3 +144,5 @@ After the patches (2026-10-23), in the worktree, on SQLite with Chromium (sandbo
 **Commands:**
 - From this worktree, with the shared venv: `DATABASE_URL="sqlite:///$TMPDIR/qa1.sqlite3" "/Users/jadeandres/Library/CloudStorage/GoogleDrive-mytpdso@gmail.com/Mi unidad/Desarrollo Portal MyTreatplan/code/.venv/bin/python" -m pytest -q -p no:cacheprovider`, with the test keys, outside the sandbox for the browser tests. Expected: only the 3 known PostgreSQL-only tests fail.
 - `manage.py makemigrations --check`. Expected: no changes (the `account` kind is a free CharField value).
+
+Rebased onto master after PR #42 (R2/R3) merged (2026-10-23). One test needed changing: `/es/signup/` for a logged-in Doctor is now a redirect to welcome (R2), so it is not a page record. `test_signup_while_logged_in_redirects_and_is_not_recorded` covers that. Full suite on the rebased branch: 1,346 passed, 3 failed (the known PostgreSQL-only tests).

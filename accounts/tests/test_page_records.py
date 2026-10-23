@@ -182,13 +182,22 @@ def test_htmx_full_page_load_is_recorded(doctor, header):
     assert record.attempt.account_id == doctor.pk
 
 
-@pytest.mark.parametrize('url', ['/es/welcome/', '/es/signup/', '/en/password-reset/'])
+@pytest.mark.parametrize('url', ['/es/welcome/', '/en/password-reset/'])
 def test_other_portal_pages_are_recorded(doctor, url):
     response = _browser(doctor).get(url)
 
     assert response.status_code == 200
     [record] = _records()
     assert record.data['path'] == url
+
+
+def test_signup_while_logged_in_redirects_and_is_not_recorded(doctor):
+    """Since signup retro R2, signup sends a logged-in user to welcome: a redirect, so
+    no page record (the welcome page it leads to is recorded when it is shown)."""
+    response = _browser(doctor).get('/es/signup/')
+
+    assert response.status_code == 302
+    assert not _records()
 
 
 def test_admin_404_is_recorded(staff):
