@@ -357,11 +357,16 @@ class LegalForm(forms.Form):
 
     The hidden `shown` field carries the ids of the versions on the page. If any is no
     longer current when the form is sent (a version was published meanwhile), the form
-    is refused (`documents_changed`), unticked, and shows the current versions again."""
+    is refused (`documents_changed`), unticked, and shows the current versions again.
+
+    While the Terms or the Conditions have no published version, every submission is
+    refused (`documents_missing`): signup can't go on without them (CAP-4)."""
 
     error_messages = {
         'documents_changed': _('The documents have been updated. Please review them '
                                'again.'),
+        'documents_missing': _('Signup is not available right now. Please try again '
+                               'later.'),
     }
 
     shown = forms.CharField(required=False, widget=forms.HiddenInput)
@@ -384,6 +389,15 @@ class LegalForm(forms.Form):
             self.fields[kind] = field
 
     def clean(self):
+        missing = [kind for kind in LegalDocument.REQUIRED_KINDS if kind not in self.documents]
+        if missing:
+            # Reported to Sentry: an operator has to publish them in the admin.
+            logger.error('Signup legal step refused: no published version of %s',
+                         ', '.join(missing))
+            for kind in self.documents:  # only this error is shown and logged
+                self._errors.pop(kind, None)
+            raise forms.ValidationError(self.error_messages['documents_missing'],
+                                        code='documents_missing')
         submitted = set(filter(None, self.cleaned_data.get('shown', '').split(',')))
         if submitted != set(self.shown_ids.split(',')):
             # Nothing ticked on an older version counts: show the current ones, unticked.

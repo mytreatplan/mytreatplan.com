@@ -31,7 +31,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from eventlog import service as eventlog
 from eventlog.models import Attempt
-from legal.models import LegalChoice
+from legal.models import LegalChoice, LegalDocument
 
 from .forms import (BLOCKED_CAPTCHA, EMAIL_EXISTS, EMAIL_PENDING,
                     EMAIL_REGISTERED_MESSAGE, PHONE_EXISTS,
@@ -352,6 +352,10 @@ def _guard_step1(request, get_attempt, step, form, pending):
     return False, None
 
 
+class _LegalNotAccepted(Exception):
+    """The pending registration has no accepted Terms or Conditions (CAP-4)."""
+
+
 class _AlreadyRegistered(Exception):
     """The email or the mobile was registered while this signup was in progress."""
 
@@ -382,6 +386,12 @@ def _create_account(request, index, step, form, pending, attempt):
             # No database constraint on the mobile: this check guards the race.
             if phone_is_registered(pending.phone):
                 raise _AlreadyRegistered('phone')
+            # Never an account without the Terms and the Conditions (any version: one
+            # published since the legal step doesn't send the Doctor back).
+            accepted = set(pending.legal_choices.filter(accepted=True)
+                           .values_list('document__kind', flat=True))
+            if not set(LegalDocument.REQUIRED_KINDS) <= accepted:
+                raise _LegalNotAccepted
             user = user_model(email=pending.email, password=pending.password, **{
                 name: getattr(pending, name) for name in PendingRegistration.USER_FIELDS})
             user.save()
@@ -399,6 +409,12 @@ def _create_account(request, index, step, form, pending, attempt):
             request.session.pop(SESSION_KEY, None)
             request.session.pop(ATTEMPT_SESSION_KEY, None)
             login(request, user)
+    except _LegalNotAccepted:
+        legal_index, legal_step = get_step('legal')
+        eventlog.record(attempt, 'rejected', request=request, step=step.slug,
+                        field=legal_step.slug, reason='legal_not_accepted')
+        PendingRegistration.objects.filter(pk=pending.pk).update(step=legal_step.slug)
+        return redirect(step_url(legal_index))
     except PendingRegistration.DoesNotExist:
         # Already completed (e.g. the form was sent twice); start again.
         request.session.pop(SESSION_KEY, None)
