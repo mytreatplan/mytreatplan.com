@@ -244,6 +244,32 @@ def test_idle_post_is_not_processed(at_legal):
     assert not Attempt.objects.get().events.filter(step='legal').exists()
 
 
+def test_idle_cancel_post_still_cancels(at_legal):
+    """A confirmed cancel after 31 idle minutes removes the row, as at any other time
+    (plan-fix-signup-logged-in-and-idle-cancel)."""
+    _legal(at_legal)
+    _set_seen(at_legal, 31 * 60)
+    response = at_legal.post(CANCEL_URL)
+    assert response['Location'] == '/en/signup/'
+    assert _messages(response) == [CANCELLED_MESSAGE]
+    assert not PendingRegistration.objects.exists()
+    assert not LegalChoice.objects.exists()
+    attempt = Attempt.objects.get()
+    assert attempt.outcome == 'cancelled'
+    assert not attempt.events.filter(event='idle_timeout').exists()
+    assert not _signup_keys(at_legal)
+
+
+def test_idle_cancel_get_goes_to_step1(at_legal):
+    _set_seen(at_legal, 31 * 60)
+    response = at_legal.get(CANCEL_URL)
+    assert response['Location'] == '/en/signup/'
+    assert _messages(response) == [IDLE_MESSAGE]
+    assert not _signup_keys(at_legal)
+    assert Attempt.objects.get().events.last().event == 'idle_timeout'
+    assert PendingRegistration.objects.exists()
+
+
 def test_idle_live_email_check_answers_nothing_and_queues_the_message(at_legal):
     """The live check as the first request after the timeout: no offer, keys cleared, the
     idle message on the next page."""

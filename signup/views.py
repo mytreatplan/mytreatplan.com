@@ -8,7 +8,10 @@ The code also verifies the email; the saved data comes back into step 1 for revi
 Plus cancel and the idle timeout (signup entry 8): "Cancel registration" (`cancel`)
 removes the session's pending registration; after IDLE_TIMEOUT without a signup request
 the signup session keys are cleared (`idle_check`), the pending registration stays and
-the email check offers the resume.
+the email check offers the resume. A confirmed cancel is done whenever it comes.
+
+A logged-in user gets none of these pages: they go to the welcome page
+(`anonymous_only`).
 
 Plus the anti-abuse protections (signup entry 9): Cloudflare Turnstile on every step 1
 POST (signup.captcha), and the per-IP limits (signup.limits) on signup starts, live email
@@ -105,11 +108,23 @@ def idle_check(view):
     """Apply the idle timeout before a signup page. A request after the timeout is not
     processed: it goes to an empty step 1 with the idle message. (The live email check
     applies it itself: it answers with nothing, and the message shows on the next
-    page.)"""
+    page. Cancel applies it to its GET only: a confirmed cancel is always done.)"""
     @functools.wraps(view)
     def wrapper(request, *args, **kwargs):
         if _idle_timed_out(request):
             return redirect('signup')
+        return view(request, *args, **kwargs)
+    return wrapper
+
+
+def anonymous_only(view):
+    """Signup is for people without an account: a logged-in user goes to the welcome
+    page, as the login page does (plan-fix-signup-logged-in-and-idle-cancel). Nothing is
+    saved and the session's signup keys stay."""
+    @functools.wraps(view)
+    def wrapper(request, *args, **kwargs):
+        if request.user.is_authenticated:
+            return redirect('welcome')
         return view(request, *args, **kwargs)
     return wrapper
 
@@ -234,6 +249,7 @@ def _current_index(pending):
 
 
 @require_http_methods(['GET', 'HEAD', 'POST'])
+@anonymous_only
 @idle_check
 def signup(request, slug=None):
     if slug is None:
@@ -492,8 +508,8 @@ def check_email(request):
     for a registered email, the resume offer for an email in another active signup
     (logged `pending_found`), nothing otherwise. Reveals nothing of the matched signup.
     Returns the partial signup/_email_check.html (empty after the idle timeout, and when
-    the IP's live email checks limit is reached)."""
-    if _idle_timed_out(request):
+    the IP's live email checks limit is reached, and for a logged-in user)."""
+    if request.user.is_authenticated or _idle_timed_out(request):
         return render(request, 'signup/_email_check.html', {'email_check': None})
     if not _count_email_check(request):
         # Nothing about the email, nor that a limit was hit.
@@ -530,6 +546,7 @@ def _count_email_check(request):
 
 
 @require_http_methods(['GET', 'HEAD', 'POST'])
+@anonymous_only
 @idle_check
 def resume(request):
     """Offer, send and check the code (to the email) that resumes another signup in
@@ -652,19 +669,26 @@ def _cancel_back_url(request, pending):
 
 
 @require_http_methods(['GET', 'HEAD', 'POST'])
-@idle_check
+@anonymous_only
 def cancel(request):
     """"Cancel registration" (CAP-8). GET asks for confirmation; POST removes the
     session's pending registration (its legal choices go with it) through
     signup.retention.remove_pending: its attempt gets `purged` (reason `cancelled`) and
     ends `cancelled`. An open attempt with no row (step 1 never saved) ends `cancelled`
     too. The signup session keys are cleared and step 1 starts empty. The event log
-    keeps its values until the 30-day anonymization (eventlog.retention)."""
-    pending = _pending_registration(request)
+    keeps its values until the 30-day anonymization (eventlog.retention).
+
+    The idle timeout applies to the GET only: a confirmed cancel removes the row whenever
+    it comes (plan-fix-signup-logged-in-and-idle-cancel)."""
     if request.method != 'POST':
+        if _idle_timed_out(request):
+            return redirect('signup')
+        pending = _pending_registration(request)
         return render(request, 'signup/cancel.html', {
             'back_url': _cancel_back_url(request, pending)})
 
+    request.session[SEEN_SESSION_KEY] = _now()
+    pending = _pending_registration(request)
     attempt = eventlog.get_attempt(request.session.get(ATTEMPT_SESSION_KEY))
     if pending is not None:
         remove_pending(pending, CANCELLED)
