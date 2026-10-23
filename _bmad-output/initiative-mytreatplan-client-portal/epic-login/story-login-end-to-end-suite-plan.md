@@ -3,7 +3,7 @@ title: 'Login end-to-end suite'
 type: 'feature'
 ticket: '12'
 created: '2026-10-23'
-status: 'built'
+status: 'done'
 baseline_revision: '2cbfd48023578974145c27e4e5489a46f761f8e6'
 route: 'full'
 route_source: 'auto'
@@ -113,3 +113,5 @@ After the patches (2026-10-23), on SQLite with Chromium (sandbox lifted): `pytes
 - `pytest -m browser` 3 times. Expected: passes each time.
 
 **Results (2026-10-23):** `DATABASE_URL=sqlite:///$TMPDIR/full.sqlite3 pytest` outside the sandbox (Chromium cannot launch inside it): 1280 passed, only the 3 known PostgreSQL-only tests in `accounts/tests/test_crypto.py` failed. `pytest -m browser` 3 times in a row: 29 passed each time (20 earlier + 9 new). Not yet run in CI (PostgreSQL 17).
+
+CI on PostgreSQL 17, DEBUG off (PR #39): 1283 passed, none skipped (all 29 browser tests ran). Merged as `12f51dc`; the user reported (2026-10-23) that the staging deploy completed ok. Nothing to set up on staging.
