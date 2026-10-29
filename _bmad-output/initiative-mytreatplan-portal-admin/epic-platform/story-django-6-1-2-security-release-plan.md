@@ -3,7 +3,7 @@ title: 'Django 6.1.2 security release'
 type: 'chore'
 ticket: '3'
 created: '2026-10-29'
-status: 'built'
+status: 'done'
 baseline_revision: '9d137f33d5feba635e0abf55c6ad2e89d60730e8'
 route: 'oneshot'
 route_source: 'auto'
@@ -51,3 +51,9 @@ Oneshot route: a one-line pin change. Investigation against the 6.1.2 release no
 
 **Manual checks (if no CLI):**
 - After merge, the staging deploy succeeds and dev's `/healthz` answers 200.
+
+## Staging
+
+- Merged in PR #47 as merge commit 8ab7c54aa222e5049e1e9b304e62bef5b7ae9543 (2026-10-29).
+- CI run 40959085714 on master: test passed (1464 passed on PostgreSQL 17), deploy-staging succeeded.
+- Staging checks 1–3 (CI green, dev /healthz 200, public pages, signup and login unchanged): confirmed by the user.
