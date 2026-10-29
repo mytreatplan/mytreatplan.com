@@ -42,6 +42,7 @@ Choosing and buying cases. Not the case after purchase (epic-case-lifecycle).
 
 ## Notes
 
+- Decision (2026-10-29, epic-platform inception): this epic builds the patient-code generator (AD-5), using the prefix from the region profile.
 - Handoff: epic-clinical-ops creates the manual pending-payment work orders this epic lists.
 - Waits on epic 5 because: it needs resolver and products.
 - Waits on epic 6 because: it needs fiscal data and shipping addresses.

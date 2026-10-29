@@ -41,6 +41,7 @@ The channels, the contract and the client record. Each later epic adds its own e
 
 ## Notes
 
+- Decision (2026-10-29, epic-platform inception): this epic stores each site's Ed25519 signing keys, wrapped by the site's KMS through epic-platform's key provider (AD-4).
 - Handoff: epic-sales-finance shows the clients list and contact messages; epic-clinical-ops shows the clinical view; both extend this epic's client record.
 - Dropped from part 1: 1.6 (CRM forwarding), replaced by the contact-message event (user, 2026-10-25).
 - Waits on epic 1 because: it needs admin repo, job runner, REGION profile.

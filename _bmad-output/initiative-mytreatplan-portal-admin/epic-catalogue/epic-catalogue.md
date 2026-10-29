@@ -41,6 +41,7 @@ Definitions and the resolver. Not buying (epic-subscriptions, epic-ordering), no
 
 ## Notes
 
+- Decision (2026-10-29, epic-platform inception): this epic builds the Money type in mytp-core (AD-6, AD-10).
 - Handoff: epic-subscriptions and epic-ordering use the resolver and must not compute prices themselves.
 - Assumption: prices are fixed per currency, converted once on clone.
 - Waits on epic 2 because: it needs country map model.
