@@ -1,0 +1,169 @@
+# Epics of initiative-mytreatplan-portal-admin, in build order.
+
+[[epic]]
+id = 1
+slug = "epic-platform"
+title = "Two sites, two regions: platform baseline"
+covers = ["P14", "P1"]
+
+[[epic]]
+id = 2
+slug = "epic-regions"
+title = "Customers land in the right region"
+covers = ["P1"]
+after = [{ epic = 1, needs = "REGION profile and global UUIDs" }]
+
+[[epic]]
+id = 3
+slug = "epic-admin-access"
+title = "Staff sign in to the admin site by role"
+covers = ["P2"]
+after = [{ epic = 1, needs = "admin repo, admindev staging and CI" }]
+
+[[epic]]
+id = 4
+slug = "epic-admin-interface"
+title = "Admin and regions exchange data within the rules"
+covers = ["P3"]
+after = [
+  { epic = 1, needs = "admin repo, job runner, REGION profile" },
+  { epic = 3, needs = "admin users and roles for remote access" },
+]
+
+[[epic]]
+id = 5
+slug = "epic-catalogue"
+title = "Staff define what is sold, where and at what price"
+covers = ["P4"]
+after = [
+  { epic = 2, needs = "country map model" },
+  { epic = 3, needs = "admin roles and list conventions" },
+  { epic = 4, needs = "configuration channel" },
+]
+
+[[epic]]
+id = 6
+slug = "epic-doctor-profile"
+title = "Doctors keep their profile, fiscal data and maker logins"
+covers = ["P5"]
+after = [{ epic = 2, needs = "country map and home region" }]
+
+[[epic]]
+id = 7
+slug = "epic-payments"
+title = "Doctors pay and get invoiced by the right company"
+covers = ["P7", "P8"]
+after = [
+  { epic = 4, needs = "accounting feed" },
+  { epic = 5, needs = "billing rules: company, VAT, gateway" },
+  { epic = 6, needs = "fiscal entity on the order" },
+]
+
+[[epic]]
+id = 8
+slug = "epic-subscriptions"
+title = "Doctors choose and keep a subscription level"
+covers = ["P6", "P8"]
+after = [
+  { epic = 5, needs = "subscriptions, vouchers and the resolver" },
+  { epic = 7, needs = "order model, payments, invoices" },
+]
+
+[[epic]]
+id = 9
+slug = "epic-ordering"
+title = "Doctors order and pay for cases"
+covers = ["P8"]
+after = [
+  { epic = 5, needs = "resolver and products" },
+  { epic = 6, needs = "fiscal data and shipping addresses" },
+  { epic = 7, needs = "order model, checkout and invoices" },
+  { epic = 8, needs = "subscription discounts and voucher redemption" },
+]
+
+[[epic]]
+id = 10
+slug = "epic-case-lifecycle"
+title = "Doctors follow each case to approval"
+covers = ["P9"]
+after = [
+  { epic = 1, needs = "object storage and job runner" },
+  { epic = 9, needs = "work orders and patients" },
+]
+
+[[epic]]
+id = 11
+slug = "epic-clinical-ops"
+title = "Clinical staff run cases from the admin site"
+covers = ["P10"]
+after = [
+  { epic = 4, needs = "remote API and client record" },
+  { epic = 6, needs = "maker logins" },
+  { epic = 9, needs = "work orders and pending-payment list" },
+  { epic = 10, needs = "case stages and records" },
+]
+
+[[epic]]
+id = 12
+slug = "epic-appointments"
+title = "Doctors and specialists meet on schedule"
+covers = ["P11"]
+after = [
+  { epic = 10, needs = "case page appointments block" },
+  { epic = 11, needs = "specialist calendars, availability and assignment" },
+]
+
+[[epic]]
+id = 13
+slug = "epic-sales-finance"
+title = "Sales and finance run orders and accounts"
+covers = ["P12"]
+after = [
+  { epic = 4, needs = "client record and contact-message events" },
+  { epic = 5, needs = "vouchers" },
+  { epic = 7, needs = "invoices, refunds, credit notes, paid state" },
+  { epic = 9, needs = "orders and work orders" },
+  { epic = 11, needs = "admin-side patient creation" },
+]
+
+[[epic]]
+id = 14
+slug = "epic-support"
+title = "Doctors and staff get help"
+covers = ["P13"]
+after = [
+  { epic = 3, needs = "admin users and roles" },
+  { epic = 4, needs = "remote API for regional attachments" },
+]
+
+[[epic]]
+id = 15
+slug = "epic-eu-golive"
+title = "EU production go-live"
+covers = ["P14"]
+after = [
+  { epic = 1, needs = "its delivery verified on staging" },
+  { epic = 2, needs = "its delivery verified on staging" },
+  { epic = 3, needs = "its delivery verified on staging" },
+  { epic = 4, needs = "its delivery verified on staging" },
+  { epic = 5, needs = "its delivery verified on staging" },
+  { epic = 6, needs = "its delivery verified on staging" },
+  { epic = 7, needs = "its delivery verified on staging" },
+  { epic = 8, needs = "its delivery verified on staging" },
+  { epic = 9, needs = "its delivery verified on staging" },
+  { epic = 10, needs = "its delivery verified on staging" },
+  { epic = 11, needs = "its delivery verified on staging" },
+  { epic = 12, needs = "its delivery verified on staging" },
+  { epic = 13, needs = "its delivery verified on staging" },
+  { epic = 14, needs = "its delivery verified on staging" },
+]
+
+[[epic]]
+id = 16
+slug = "epic-uae-launch"
+title = "UAE instance live"
+covers = ["P15"]
+after = [
+  { epic = 7, needs = "gateway interface and invoicing" },
+  { epic = 15, needs = "EU go-live, for the production step only" },
+]

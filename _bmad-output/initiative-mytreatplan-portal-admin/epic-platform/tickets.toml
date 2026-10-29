@@ -1,0 +1,167 @@
+# Stories of epic-platform, in build order. Requirements E1–E9 are in epic-platform.md.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Site-aware deploy tooling"
+description = "Makes provision.sh, release.sh, the systemd units, job timers, nginx and the staging CI job take a site name (own Linux user, folder, socket, units, database and job list), defines the SITE setting that entries 5, 9 and 13 read, installs release.sh host-wide so any repo's CI can deploy its own tarball to its site, and moves today's dev site from /srv/mytp and the mytp user to per-site names."
+verify = "A push to master redeploys dev under its new per-site layout; provision.sh run for a second site name creates an isolated user, folder and units without touching dev; running it twice changes nothing."
+covers = ["E1"]
+after = []
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 2
+type = "spike"
+title = "Browser multipart upload to OVH Object Storage"
+description = "Proves, with a throwaway page on dev, that a browser uploads a 1 GB file straight to an OVH bucket through presigned multipart part URLs with Uppy @uppy/aws-s3, survives a dropped connection, that the bucket's CORS exposes ETag and a lifecycle rule aborts incomplete uploads; records the bucket settings and the Uppy version that work, for entry 11."
+verify = "A 1 GB file uploaded from Chrome and Safari arrives intact (checksum) after a forced network drop; an abandoned upload is cleaned up by the lifecycle rule; findings and the pinned Uppy version are written in the spike file."
+covers = ["E5"]
+after = []
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Django 6.1.2 security release"
+description = "Updates Django from 6.1.1 to 6.1.2 in requirements.txt and fixes anything the release notes require."
+verify = "The full test suite passes on 6.1.2 and dev deploys it."
+covers = ["E1"]
+after = []
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 4
+type = "story"
+title = "mytp-core package with field encryption and KMS"
+description = "Creates the private mytreatplan/mytp-core repo with tests, CI and semver tags; moves accounts/crypto.py, mytp_publicsite/kms.py and the generate_field_keys, generate_kms_field_key and kmscheck commands into it, leaving import shims for every migration that imports accounts.crypto; the portal's CI vendors the tagged wheel into its release tarball so servers need no GitHub access."
+verify = "The portal's full test suite passes on the mytp-core tag; dev deploys with the vendored wheel; all existing migrations still import; kmscheck passes on dev."
+covers = ["E7"]
+after = [1, 3]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Shared operations code in mytp-core"
+description = "Moves into mytp-core the Sentry init and scrubber (mytreatplan/sentry.py, extended to drop request bodies and named sensitive fields per AD-23), runjob with Sentry cron check-ins whose slugs include SITE, /healthz reporting site and region, and backupdb, so the admin site reuses them; the portal switches to the shared versions."
+verify = "The portal's tests pass using the shared modules; dev's /healthz reports its site; Sentry cron monitors on dev carry the site in their slugs; a test event with a patient-like field arrives scrubbed."
+covers = ["E7", "E4", "E9"]
+after = [4]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 6
+type = "story"
+title = "REGION profile module"
+description = "Adds the regions app with one profile per region (domains, region company, default time zone, languages, currencies, object-storage endpoint and bucket, KMS, gateways, patient-code prefix, invoice instance prefix) selected by REGION in settings.env; settings.py takes ALLOWED_HOSTS defaults, TIME_ZONE and LANGUAGES from it; /healthz (entry 5) reports the region; a test fails on region-name comparisons outside the module."
+verify = "dev runs with REGION=eu and its settings come from the eu profile; a test settings run with REGION=ae yields the ae values; the guard test fails when a region-name comparison is added elsewhere."
+covers = ["E2"]
+after = [5]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 7
+type = "story"
+title = "dev-ae staging site"
+description = "Brings up dev-ae.mytpdso.com on the staging host with REGION=ae through the site-aware tooling: DNS, certificate, its own database, settings.env, field keys from the EU KMS (staging only), and the staging CI job deploying it beside dev."
+verify = "A push to master deploys dev and dev-ae; dev-ae's /healthz reports site dev-ae and region ae; a signup on dev-ae lands in its own database."
+covers = ["E1", "E2"]
+after = [1, 6]
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Global uid on records that cross sites"
+description = "Adds an immutable, unique uid UUID with backfill to User, ContactMessage, LegalDocument and LegalChoice (eventlog Attempt and PendingRegistration already have UUID keys), and a test that every model marked as crossing sites has a uid or a UUID primary key."
+verify = "Migrations run on a copy of staging data and every existing row gets a distinct uid; the convention test fails for a crossing model without one."
+covers = ["E3"]
+after = [4]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Background task worker"
+description = "Installs django-tasks-db as the django.tasks backend after confirming it runs on Django 6.1, runs one worker systemd service per site through the site-aware tooling, adds the on_commit enqueue helper and the idempotency convention (keyed by record UUID, and by period for periodic effects), and monitors the worker with a SITE-named slug."
+verify = "A sample task enqueued on dev runs once on dev's worker; a killed worker is restarted by systemd and the task reruns without a double effect; the worker monitor shows a site-named slug."
+covers = ["E4"]
+after = [5, 6]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Admin site skeleton on admindev"
+description = "Creates the private mytreatplan/mytp-admin repo: a Django 6.1 project with the settings.env pattern, the AdminLTE 4.10 static layout, mytp-core's Sentry, runjob, healthz and backupdb, a django-tasks-db worker, noindex and a disallow-all robots.txt, its own field keys from the EU KMS, and CI that tests and deploys to admindev.mytpdso.com through the host's release.sh."
+verify = "A push to the admin repo's master deploys admindev behind the team password; it serves the empty AdminLTE layout with noindex; robots.txt disallows all; /healthz reports site admindev; a sample task runs on its worker."
+covers = ["E8", "E4"]
+after = [1, 5, 9]
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Regional object storage service"
+description = "Builds the storage service from the spike (entry 2): bucket settings from the region profile, presigned multipart upload endpoints and an Uppy widget, quarantine and clean prefixes with UUID object keys, presigned GET valid at most 5 minutes behind a permission-and-log hook, and deletion that keeps only the trace (object UUID, who, when); bucket encryption, CORS and lifecycle settings go in the runbook."
+verify = "On dev a 1 GB upload lands in quarantine under a UUID key; a download link expires after 5 minutes and its issue is logged; a delete task removes the object and leaves only the trace."
+covers = ["E5"]
+after = [2, 6, 9]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 12
+type = "story"
+title = "Virus scanning of uploads"
+description = "Installs ClamAV 1.4.6 or later with clamd through provision.sh, adds the scan task that moves a quarantined object to clean or rejects it, and rejects any file the scanner cannot fully scan (size or archive limits)."
+verify = "On dev the EICAR test file is rejected, a clean 1 GB file is promoted to clean, and a file above the scan limit is rejected."
+covers = ["E6"]
+after = [9, 11]
+hitl = true
+risk = "medium"
+unknown = "Whether the staging instance has the memory for clamd (about 1.2 GB) beside three sites, or needs a larger plan."
+
+[[entry]]
+id = 13
+type = "story"
+title = "Backups and monitoring per site"
+description = "Runs backupdb for each of dev, dev-ae and admindev under its own prefix, gives each a Sentry environment, and moves the restore test from a laptop to a server, per AD-24."
+verify = "Each staging site has a fresh encrypted backup under its own prefix; a restore test runs on a server and succeeds; Sentry shows three environments."
+covers = ["E9"]
+after = [7, 10, 12]
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 14
+type = "story"
+title = "Production checks for the EU go-live"
+description = "Writes this epic's production checks (per-site deploy, admin instance, backups and restore, KMS, storage, scanning, monitoring) into epic-eu-golive's Done when, as its Decision requires."
+verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
+covers = ["E1", "E9"]
+after = [13]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 15
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
+verify = "The test suites of the portal, the admin repo and mytp-core pass; deferred review findings are closed or recorded."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+hitl = false
+risk = "low"
