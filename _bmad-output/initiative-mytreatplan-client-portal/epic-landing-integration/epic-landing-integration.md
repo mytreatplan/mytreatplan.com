@@ -48,6 +48,8 @@ The public site and the platform. Not the Sign up and Login pages (epics 2 and 3
 
 ## Notes
 
+- Dropped: entry 6 (Forward contact messages to the CRM) — the in-house admin site replaces Zoho; contact messages reach it as an event in part 2, initiative-mytreatplan-portal-admin, epic-admin-interface (user, 2026-10-25/29). Removed from the `after` of entries 10 and 11.
+- Decision (user, 2026-10-29): entry 10 no longer keeps mytreatplan.ae on its current hosting; the UAE instance is part 2, epic-uae-launch.
 - Tracer bullet: entry 1. It runs the base layout, Home section and CI. It stops short of a deploy because hosting is undecided; deploys arrive with entry 8.
 - Decision (2026-10-08): CI is GitHub Actions; transactional email is SendGrid, owned by marketing together with Twilio.
 - Decision (2026-10-08): contact messages go to an inbox and are forwarded to a CRM. Zoho is likely; the choice is pending.
