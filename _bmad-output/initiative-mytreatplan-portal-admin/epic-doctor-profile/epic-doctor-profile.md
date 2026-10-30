@@ -20,7 +20,16 @@ A doctor can complete everything an order needs; the signal is a doctor on stagi
 
 ## Requirements
 
-Completed at inception from the initiative's P5 and the source.
+Source: the initiative's P5, the Annex I mockups and the architecture spine, AD-2, AD-5, AD-9, AD-14, AD-15, AD-18.
+
+- D1 (P5): The doctor area's layout and home page per the mockups, in EN and ES.
+- D2 (P5): Personal data and consents; country and login email read-only (changes come with the support area); new mobile and contact email confirmed by a code.
+- D3 (P5): An optional profile photo, regional only.
+- D4 (P5): Fiscal entities, field-encrypted; billing country in the site's region and not banned.
+- D5 (P5): Tax id checks per country and VIES, with a pending state and retries; the status feeds the resolver.
+- D6 (P5): Shipping addresses, field-encrypted.
+- D7 (P5): Maker logins, field-encrypted, never shown back; revealed to staff by epic-clinical-ops.
+- D8 (P5): Fiscal entities and shipping addresses in the admin client record.
 
 ## Done when
 
@@ -37,12 +46,20 @@ The doctor's own data. Not subscriptions, orders or the case pages.
 
 - parent — _bmad-output/initiative-mytreatplan-portal-admin/initiative-mytreatplan-portal-admin.md, section Requirements (P5)
 - reqs — ../MyTP_Reqs_Def_V1_21Oct2026_v3.docx (parent folder of the repo)
-- architecture — the part-2 architecture document (bmad-architecture), once written
+- architecture — architecture-portal-admin/architecture-portal-admin.md, AD-2, AD-5, AD-9, AD-14, AD-15, AD-18
 
 ## Notes
 
+- Tracer bullet: entry 1 (the doctor home on dev).
+- Lanes: one lane (1 → 2 → … → 9); entry 2 owns the settings shell, the profile model and the write pattern the others extend.
+- Decision (user, 2026-10-30): the doctor cannot change their country; a Sysadmin changes it on request, never to a banned country and only within the doctor's home region (another region means a new account).
+- Decision (user, 2026-10-30): no country or login-email change is possible until the support area (epic-support) exists; the profile says so.
+- Decision (user, 2026-10-30): a login-email change is entered by a Sysadmin and takes effect only after the doctor confirms a code sent to the new address.
+- Decision (user, 2026-10-30): a new mobile and a new contact email are each confirmed by a code.
+- Decision (user, 2026-10-30): when VIES is unavailable the entity is saved as pending and retried; VAT is charged until it is valid.
+- Decision (2026-10-30): after a mobile change the doctor's other sessions end and remembered devices are forgotten.
 - Handoff (2026-10-30, epic-catalogue inception): the fiscal entity's VIES status is passed to epic-catalogue's resolver (entry 12) as an input.
 - Handoff (2026-10-30, epic-admin-interface inception): profile changes keep going through the write path that emits client.updated (epic-admin-interface entry 8); this epic extends that payload with fiscal entities and shipping addresses.
 - Handoff: epic-clinical-ops reveals maker logins to the assigned clinical user and logs each view.
 - Source conflict: The Admin Site, Clients — Ormco contract acceptance; ignored by the user's decision, 2026-10-29.
-- Waits on epic 2 because: it needs country map and home region.
+- Waits on epics 2, 3, 4 and 5 because: country map and home region; mytp-core codes; client record sync and contract; the resolver's VIES input.

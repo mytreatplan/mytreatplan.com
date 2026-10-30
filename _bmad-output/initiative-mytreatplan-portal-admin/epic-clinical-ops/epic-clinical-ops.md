@@ -42,6 +42,7 @@ Staff-side case work. Not appointments (epic-appointments), not sales data (epic
 
 ## Notes
 
+- Handoff (2026-10-30, epic-doctor-profile inception): maker logins are revealed through the service function epic-doctor-profile entry 8 exposes, called over remote reads (4.5), each view logged in the region.
 - Handoff (2026-10-30, epic-admin-access inception): this epic applies the 'assigned only' scope for Clinical Users that epic-admin-access entry 6 defines, and uses its fresh-code check (entry 5) before patient-record downloads.
 - Handoff: stage changes made here reach the portal through the remote API (epic-case-lifecycle sends the messages).
 - Waits on epic 4 because: it needs remote API and client record.

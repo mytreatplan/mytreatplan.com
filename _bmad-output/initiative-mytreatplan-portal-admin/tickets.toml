@@ -47,7 +47,13 @@ id = 6
 slug = "epic-doctor-profile"
 title = "Doctors keep their profile, fiscal data and maker logins"
 covers = ["P5"]
-after = [{ epic = 2, needs = "country map and home region" }]
+after = [
+  { epic = 1, needs = "job runner (1.9) and virus scanning (1.12)" },
+  { epic = 2, needs = "country map and home region" },
+  { epic = 3, needs = "mytp-core codes (3.2)" },
+  { epic = 4, needs = "client record sync (4.8) and contract (4.2)" },
+  { epic = 5, needs = "the resolver's VIES input (5.12)" },
+]
 
 [[epic]]
 id = 7

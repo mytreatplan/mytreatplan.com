@@ -41,5 +41,6 @@ Support only. The knowledge base may start with little content.
 
 ## Notes
 
+- Handoff (2026-10-30, epic-doctor-profile inception): this epic adds a "change my country / login email" ticket type and the Sysadmin action that carries it out over a remote write: country only within the doctor's home region and never banned; login email only after the doctor confirms a code sent to the new address; both audited.
 - Waits on epic 3 because: it needs admin users and roles.
 - Waits on epic 4 because: it needs remote API for regional attachments.

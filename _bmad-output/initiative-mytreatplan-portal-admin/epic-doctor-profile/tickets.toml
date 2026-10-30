@@ -1,0 +1,122 @@
+# Stories of epic-doctor-profile, in build order. Requirements D1–D8 are in epic-doctor-profile.md.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Doctor area layout and home"
+description = "Tracer bullet: the signed-in doctor area from the Annex I mockups (header with home, patients, support, messages, settings, cart, avatar showing initials until entry 4, and logout; the home page with the greeting, the VirtuaOrtho and planning-services tiles, the 'start a case' bar, the profile card and the settings, messages and tutorials tiles), in EN and ES, linking to pages later epics fill."
+verify = "A signed-in doctor on dev sees the home page matching the mockup in EN and ES with their name, initials and profile card; links to unbuilt areas show a 'coming soon' page."
+covers = ["D1"]
+after = ["2.6"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Settings shell and personal data"
+description = "Owns the settings area (section navigation per the mockup, the profile model and the service-function pattern that emits 4.8's client.updated, AD-15) and the personal-data page: language, city, time zone, title, profession, landline and alternative email, and consents (privacy and terms, commercial information, and a new WhatsApp-contact consent kind with provisional text; the Ormco TPS kind stays off the page); country and login email are read-only with a note that changes come with the support area."
+verify = "The personal-data page on dev matches the mockup in EN and ES; edits to title, city and time zone are saved and reach admindev's client record; consents are saved with their time; country and login email cannot be edited."
+covers = ["D1", "D2"]
+after = [1, "4.8"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Code-confirmed mobile and contact email changes"
+description = "Lets a doctor change their mobile number and contact email, each taking effect only after a code sent to the new value (mytp-core codes, 3.2); a new mobile must not belong to another account (phone index); after a mobile change the doctor's other sessions end and remembered devices are forgotten, since the mobile is a 2FA channel."
+verify = "A new mobile on dev takes effect only after its code and then signs out other sessions; a mobile already used by another account is refused; a new contact email takes effect only after its code."
+covers = ["D2"]
+after = [2, "3.2"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Profile photo"
+description = "Adds an optional profile photo uploaded through the storage service (1.11) and virus scan (1.12), shown as the avatar through short-lived presigned links issued per page render; regional only and not sent to the admin site (adds its AD-2 row); deleting it keeps a trace without any patient code."
+verify = "A doctor uploads a photo on dev; it appears as the avatar only after the scan; the admin client record has no photo; deleting it removes the object and leaves the trace."
+covers = ["D3"]
+after = [3, "1.12"]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Fiscal entities"
+description = "Adds fiscal entities, several per doctor, each a person or a company with legal name, tax id, address and billing email field-encrypted (AD-2), one marked default; the billing country must belong to the site's region and not be banned (AD-14), otherwise it is not saved and a warning is shown; an entity epic-payments marks as used on an order cannot be hard-deleted."
+verify = "On dev a doctor adds a Spanish and a Portuguese entity and picks a default; a billing address in AE is refused with the warning; a banned country is refused; the tax id is encrypted in the database."
+covers = ["D4"]
+after = [4, "2.1"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Tax id checks and VIES"
+description = "Adds per-country tax id checks (Spain NIF, CIF and NIE checksums; Portugal NIF checksum; UAE TRN format; other countries free text) and a live VIES check for EU VAT numbers with status valid, invalid, pending or not applicable; when VIES is unavailable the entity is saved as pending and a job retries until VIES answers, VAT being charged as if invalid until then; this status is the input epic-catalogue's resolver (5.12) takes."
+verify = "An invalid NIF is refused; a valid DE VAT number becomes valid; with VIES stubbed unavailable the entity saves as pending and the retry job later marks it valid; the resolver receives the status."
+covers = ["D5"]
+after = [5, "1.9", "5.12"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Shipping addresses"
+description = "Adds shipping addresses, several per doctor with one default, field-encrypted (AD-2), offered first when ordering (required for VirtuaOrtho in epic-ordering)."
+verify = "A doctor adds two addresses on dev and sets a default; the address fields are encrypted in the database."
+covers = ["D6"]
+after = [6]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Maker logins"
+description = "Adds the doctor's logins to aligner makers' platforms (Invisalign, Ormco Spark, Angel Aligner, Solventum, Smartee, other with a name), field-encrypted in the region, never shown back on the portal (only 'saved' and the date), replaceable and deletable, with a hint recommending an auxiliary profile; exposes the service function epic-clinical-ops will call over remote reads (4.5) to reveal one, logged there."
+verify = "A doctor saves an Invisalign login; the page shows only that it is saved and when; the database holds it encrypted; replacing it overwrites the old one; no maker login is ever sent to the admin site."
+covers = ["D7"]
+after = [7]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Profile data in the admin client record"
+description = "Extends 4.8's client.updated payload and the contract (4.2) with fiscal entities (with VIES status) and shipping addresses, keeping maker logins and the photo out (AD-2)."
+verify = "A new fiscal entity or address on dev appears in the client record on admindev; an edit updates it; no maker login or photo reaches admindev."
+covers = ["D8"]
+after = [8, "4.2"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Production checks for the EU go-live"
+description = "Writes this epic's production checks (doctor home, personal data, code-confirmed changes, photo, fiscal entities with VIES, shipping addresses, maker logins, client record) into epic-eu-golive's Done when."
+verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
+covers = []
+after = [9]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
+verify = "The portal's test suite passes; deferred review findings are closed or recorded."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+hitl = false
+risk = "low"
