@@ -1,0 +1,15 @@
+# Rendered by deploy/provision.sh to /etc/systemd/system/mytp-__SITE__-gunicorn.socket,
+# one per site (__SITE__ is the site name, e.g. dev).
+# systemd owns the socket, so Gunicorn restarts (deploys) queue requests instead of
+# dropping them. Owner mytp-__SITE__ (the release health check), group www-data (Nginx).
+[Unit]
+Description=MyTreatplan Gunicorn socket (site __SITE__)
+
+[Socket]
+ListenStream=/run/mytp-__SITE__-gunicorn.sock
+SocketUser=mytp-__SITE__
+SocketGroup=www-data
+SocketMode=0660
+
+[Install]
+WantedBy=sockets.target

@@ -79,8 +79,10 @@ jobs:
       - name: Run tests
         run: pytest
 
-  # Every push to master that passes `test` goes live on https://dev.mytpdso.com.
-  # Server setup and the secrets are described in deploy/README.md.
+  # Every push to master that passes `test` goes live on https://dev.mytpdso.com, the
+  # staging host's `dev` site (user mytp-dev, home /srv/mytp-dev), through the host-wide
+  # release command that deploy/provision.sh installs. Server setup and the secrets are
+  # described in deploy/README.md.
   deploy-staging:
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
@@ -95,6 +97,7 @@ jobs:
 
     env:
       SHA: ${{ github.sha }}
+      SITE: dev
 
     steps:
       - uses: actions/checkout@v5
@@ -129,7 +132,7 @@ jobs:
           cat > ~/.ssh/config <<CONFIG
           Host staging
             HostName $STAGING_HOST
-            User mytp
+            User mytp-$SITE
             IdentityFile ~/.ssh/deploy_key
             IdentitiesOnly yes
             BatchMode yes
@@ -154,13 +157,12 @@ jobs:
       - name: Upload release
         if: steps.tip.outputs.latest == 'true'
         run: |
-          scp release.tar.gz "staging:/srv/mytp/incoming/$SHA.tar.gz"
-          scp deploy/release.sh "staging:/srv/mytp/incoming/$SHA-release.sh"
+          scp release.tar.gz "staging:/srv/mytp-$SITE/incoming/$SHA.tar.gz"
 
       - name: Release
         if: steps.tip.outputs.latest == 'true'
         run: |
-          ssh staging bash "/srv/mytp/incoming/$SHA-release.sh" "$SHA" "/srv/mytp/incoming/$SHA.tar.gz"
+          ssh staging /usr/local/bin/mytp-release "$SITE" "$SHA" "/srv/mytp-$SITE/incoming/$SHA.tar.gz"
 
       - name: Remove SSH key
         if: always()

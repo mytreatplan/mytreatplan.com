@@ -1,27 +1,42 @@
 #!/usr/bin/env bash
-# Idempotent server setup for the MyTreatplan staging host (Debian 13).
+# Idempotent server setup for one site on a MyTreatplan staging host (Debian 13).
 #
-# Run on the server as the login user (debian), from a checkout or copy of deploy/
-# (run it again after changing deploy/jobs.conf):
+# Run on the server as the login user (debian), from a checkout or copy of the site's
+# repo deploy/ (run it again after changing deploy/jobs.conf):
 #
-#     bash deploy/provision.sh dev.mytpdso.com <htpasswd-user>
+#     bash deploy/provision.sh <site> <domain> <htpasswd-user>
+#     bash deploy/provision.sh dev dev.mytpdso.com <htpasswd-user>
+#
+# Host-wide (shared by every site): packages, SSH hardening, firewall, the ACME webroot,
+# certbot.timer and the release command /usr/local/bin/mytp-release (deploy/release.sh).
+# Per site <site>: Linux user mytp-<site>, home /srv/mytp-<site>, sudoers rule
+# /etc/sudoers.d/mytp-<site>-deploy, units mytp-<site>-gunicorn.{socket,service} and
+# mytp-<site>-job@<job>.{service,timer}, password file /etc/nginx/mytp-<site>.htpasswd,
+# Nginx site mytp-<site>.conf and the domain's certificate. A run for one site never
+# touches another site's files, units, timers or Nginx config.
 #
 # It uses sudo for every privileged step. The basic auth password is asked for only
-# when <htpasswd-user> is not yet in the password file; it is never echoed or stored
-# in plain text. A second run changes nothing and reports "No changes".
+# when <htpasswd-user> is not yet in the site's password file; it is never echoed or
+# stored in plain text. A second run changes nothing and reports "No changes".
 #
 # Optional: CERTBOT_EMAIL=ops@example.com to register the Let's Encrypt account with
 # an address (expiry notices). Without it the account is registered without email.
 set -euo pipefail
 
+SITE_RE='^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$'
+
 usage() {
-    echo "Usage: $0 <domain> <htpasswd-user>" >&2
+    echo "Usage: $0 <site> <domain> <htpasswd-user>" >&2
     exit 2
 }
 
-[[ $# -eq 2 ]] || usage
-DOMAIN=$1
-HTPASSWD_USER=$2
+[[ $# -eq 3 ]] || usage
+SITE=$1
+DOMAIN=$2
+HTPASSWD_USER=$3
+# The site name goes into user, path, unit and file names: lowercase letters, digits and
+# '-', starting with a letter, not ending with '-', at most 20 characters.
+[[ $SITE =~ $SITE_RE ]] || { echo "Invalid site name: '$SITE' (allowed: $SITE_RE)" >&2; exit 2; }
 [[ $DOMAIN =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid domain: $DOMAIN" >&2; exit 2; }
 [[ $HTPASSWD_USER =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Invalid htpasswd user: $HTPASSWD_USER" >&2; exit 2; }
 if [[ $EUID -eq 0 ]]; then
@@ -30,10 +45,15 @@ if [[ $EUID -eq 0 ]]; then
 fi
 
 DEPLOY_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-APP_USER=mytp
-APP_HOME=/srv/mytp
-HTPASSWD_FILE=/etc/nginx/mytp.htpasswd
-NGINX_SITE=/etc/nginx/sites-available/mytp.conf
+APP_USER=mytp-$SITE
+APP_HOME=/srv/mytp-$SITE
+HTPASSWD_FILE=/etc/nginx/mytp-$SITE.htpasswd
+NGINX_SITE=/etc/nginx/sites-available/mytp-$SITE.conf
+NGINX_ENABLED=/etc/nginx/sites-enabled/mytp-$SITE.conf
+SUDOERS_FILE=/etc/sudoers.d/mytp-$SITE-deploy
+GUNICORN=mytp-$SITE-gunicorn
+JOB=mytp-$SITE-job
+RELEASE_COMMAND=/usr/local/bin/mytp-release
 CERT_FILE=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
 PACKAGES=(nginx certbot python3-certbot-nginx python3-venv python3-pip gettext libpq5 ufw apache2-utils curl
     postgresql-client age openssl)
@@ -61,6 +81,11 @@ install_file() {
     sudo install -m "$mode" -o "${owner%%:*}" -g "${owner##*:}" "$src" "$dest"
     changed "$dest"
     return 0
+}
+
+# render TEMPLATE DEST -- the template with __SITE__ replaced by the site name.
+render() {
+    sed "s/__SITE__/$SITE/g" "$1" >"$2"
 }
 
 # ensure_dir PATH MODE OWNER:GROUP
@@ -118,8 +143,21 @@ if ! grep -q "^Status: active" <<<"$ufw_status"; then
     changed "ufw enabled"
 fi
 
-# --- App user and directories -----------------------------------------------
-step "App user and directories"
+# --- ACME webroot and certificate renewal (host-wide) --------------------------
+step "Certificate renewal"
+ensure_dir /var/www/letsencrypt 0755 root:root
+if ! systemctl is-enabled --quiet certbot.timer 2>/dev/null; then
+    sudo systemctl enable --now certbot.timer
+    changed "certbot.timer enabled"
+fi
+
+# --- Release command (host-wide) --------------------------------------------------
+# Every site's CI runs it as that site's user: mytp-release <site> <git-sha> <tarball>.
+step "Release command"
+install_file "$DEPLOY_DIR/release.sh" "$RELEASE_COMMAND" 0755 root:root || true
+
+# --- App user and directories (site) ----------------------------------------------
+step "App user and directories ($SITE)"
 if ! id "$APP_USER" >/dev/null 2>&1; then
     sudo useradd --system --user-group --home-dir "$APP_HOME" --shell /bin/bash "$APP_USER"
     changed "user $APP_USER"
@@ -140,48 +178,51 @@ if ! sudo test -f "$APP_HOME/.ssh/authorized_keys"; then
     sudo install -m 0600 -o "$APP_USER" -g "$APP_USER" /dev/null "$APP_HOME/.ssh/authorized_keys"
     changed "$APP_HOME/.ssh/authorized_keys (empty; add the deploy key, see deploy/README.md)"
 fi
-ensure_dir /var/www/letsencrypt 0755 root:root
 
-# --- sudoers: restart the app service only -----------------------------------
-step "sudoers"
-sudo visudo -cqf "$DEPLOY_DIR/sudoers/mytp-deploy" >/dev/null
-install_file "$DEPLOY_DIR/sudoers/mytp-deploy" /etc/sudoers.d/mytp-deploy 0440 root:root || true
+# --- sudoers: restart the site's app service only ---------------------------------
+step "sudoers ($SITE)"
+render "$DEPLOY_DIR/sudoers/deploy.template" "$WORK/sudoers"
+sudo visudo -cqf "$WORK/sudoers" >/dev/null
+install_file "$WORK/sudoers" "$SUDOERS_FILE" 0440 root:root || true
 sudo visudo -cq >/dev/null
 
 # --- systemd units -----------------------------------------------------------
-step "systemd units"
+step "systemd units ($SITE)"
 units_changed=0
-for unit in mytp-gunicorn.socket mytp-gunicorn.service; do
-    if install_file "$DEPLOY_DIR/systemd/$unit" "/etc/systemd/system/$unit" 0644 root:root; then
+for kind in socket service; do
+    render "$DEPLOY_DIR/systemd/gunicorn.$kind.template" "$WORK/gunicorn.$kind"
+    if install_file "$WORK/gunicorn.$kind" "/etc/systemd/system/$GUNICORN.$kind" 0644 root:root; then
         units_changed=1
     fi
 done
 if ((units_changed)); then
     sudo systemctl daemon-reload
 fi
-if ! systemctl is-enabled --quiet mytp-gunicorn.socket; then
-    sudo systemctl enable mytp-gunicorn.socket
-    changed "mytp-gunicorn.socket enabled"
+if ! systemctl is-enabled --quiet "$GUNICORN.socket"; then
+    sudo systemctl enable "$GUNICORN.socket"
+    changed "$GUNICORN.socket enabled"
 fi
-if ! systemctl is-active --quiet mytp-gunicorn.socket; then
-    sudo systemctl start mytp-gunicorn.socket
-    changed "mytp-gunicorn.socket started"
+if ! systemctl is-active --quiet "$GUNICORN.socket"; then
+    sudo systemctl start "$GUNICORN.socket"
+    changed "$GUNICORN.socket started"
 elif ((units_changed)); then
     # A socket cannot restart while its service runs; the service comes back on the
     # next request (socket activation).
-    sudo systemctl stop mytp-gunicorn.service mytp-gunicorn.socket
-    sudo systemctl start mytp-gunicorn.socket
+    sudo systemctl stop "$GUNICORN.service" "$GUNICORN.socket"
+    sudo systemctl start "$GUNICORN.socket"
 fi
 
 # --- Scheduled jobs (deploy/jobs.conf) ----------------------------------------
-# One mytp-job@<name>.timer per line of jobs.conf, firing mytp-job@<name>.service.
-# Timers no longer listed are stopped and removed.
-step "Scheduled jobs"
+# One mytp-<site>-job@<name>.timer per line of jobs.conf, firing
+# mytp-<site>-job@<name>.service. This site's timers no longer listed are stopped and
+# removed; other sites' timers are never looked at.
+step "Scheduled jobs ($SITE)"
 jobs_changed=0
-if install_file "$DEPLOY_DIR/systemd/mytp-job@.service" /etc/systemd/system/mytp-job@.service 0644 root:root; then
+render "$DEPLOY_DIR/systemd/job@.service.template" "$WORK/job@.service"
+if install_file "$WORK/job@.service" "/etc/systemd/system/$JOB@.service" 0644 root:root; then
     jobs_changed=1
 fi
-timer_template=$(<"$DEPLOY_DIR/systemd/mytp-job.timer.template")
+timer_template=$(sed "s/__SITE__/$SITE/g" "$DEPLOY_DIR/systemd/job.timer.template")
 job_names=()
 changed_timers=()
 while IFS='|' read -r name _command schedule extra || [[ -n $name ]]; do
@@ -196,25 +237,27 @@ while IFS='|' read -r name _command schedule extra || [[ -n $name ]]; do
     job_names+=("$name")
     timer=${timer_template//__NAME__/"$name"}
     timer=${timer//__SCHEDULE__/"$schedule"}
-    printf '%s\n' "$timer" >"$WORK/mytp-job@$name.timer"
-    if install_file "$WORK/mytp-job@$name.timer" "/etc/systemd/system/mytp-job@$name.timer" 0644 root:root; then
+    printf '%s\n' "$timer" >"$WORK/$JOB@$name.timer"
+    if install_file "$WORK/$JOB@$name.timer" "/etc/systemd/system/$JOB@$name.timer" 0644 root:root; then
         jobs_changed=1
         changed_timers+=("$name")
     fi
 done <"$DEPLOY_DIR/jobs.conf"
-for path in /etc/systemd/system/mytp-job@*.timer; do
+# "$JOB@" ends in '@', and site names have no '@', so this matches only this site's
+# timers (mytp-dev-job@* never matches mytp-dev-ae-job@*).
+for path in "/etc/systemd/system/$JOB@"*.timer; do
     [[ -e $path ]] || continue
-    name=${path#/etc/systemd/system/mytp-job@}
+    name=${path#"/etc/systemd/system/$JOB@"}
     name=${name%.timer}
     listed=0
     for wanted in "${job_names[@]}"; do
         [[ $wanted == "$name" ]] && listed=1
     done
     if ((!listed)); then
-        sudo systemctl disable --now "mytp-job@$name.timer" >/dev/null 2>&1 || true
+        sudo systemctl disable --now "$JOB@$name.timer" >/dev/null 2>&1 || true
         sudo rm -f "$path"
         jobs_changed=1
-        changed "removed mytp-job@$name.timer"
+        changed "removed $JOB@$name.timer"
     fi
 done
 if ((jobs_changed)); then
@@ -224,7 +267,7 @@ fi
 # schedules from it, and release.sh warns when a release's copy differs.
 install_file "$DEPLOY_DIR/jobs.conf" "$APP_HOME/shared/jobs.conf" 0644 "$APP_USER:$APP_USER" || true
 for name in "${job_names[@]}"; do
-    timer=mytp-job@$name.timer
+    timer=$JOB@$name.timer
     if ! systemctl is-enabled --quiet "$timer"; then
         sudo systemctl enable "$timer" >/dev/null 2>&1
         changed "$timer enabled"
@@ -239,7 +282,7 @@ for name in "${job_names[@]}"; do
 done
 
 # --- Basic auth --------------------------------------------------------------
-step "Basic auth"
+step "Basic auth ($SITE)"
 if ! sudo test -f "$HTPASSWD_FILE" || ! sudo cut -d: -f1 "$HTPASSWD_FILE" | grep -qxF "$HTPASSWD_USER"; then
     read -rsp "Basic auth password for '$HTPASSWD_USER': " password; echo
     read -rsp "Repeat password: " password2; echo
@@ -262,25 +305,27 @@ fi
 # --- Nginx site --------------------------------------------------------------
 # render_nginx FULL(0|1): HTTP-only until the certificate exists.
 render_nginx() {
-    sed "s/__DOMAIN__/$DOMAIN/g" "$DEPLOY_DIR/nginx/mytp.conf.template" >"$WORK/mytp.conf"
+    sed -e "s/__DOMAIN__/$DOMAIN/g" -e "s/__SITE__/$SITE/g" "$DEPLOY_DIR/nginx/site.conf.template" \
+        >"$WORK/site.conf"
     if [[ $1 == 0 ]]; then
-        sed -i '/^# __HTTPS_BEGIN__/,$d' "$WORK/mytp.conf"
+        sed -i '/^# __HTTPS_BEGIN__/,$d' "$WORK/site.conf"
     fi
-    if install_file "$WORK/mytp.conf" "$NGINX_SITE" 0644 root:root; then
+    if install_file "$WORK/site.conf" "$NGINX_SITE" 0644 root:root; then
         sudo nginx -t -q
         sudo systemctl reload nginx
     fi
 }
 
-step "Nginx"
+step "Nginx ($SITE)"
+# Host-wide: the Debian default site would answer for unknown names.
 if [[ -L /etc/nginx/sites-enabled/default ]]; then
     sudo rm /etc/nginx/sites-enabled/default
     changed "removed default Nginx site"
 fi
-if [[ $(readlink /etc/nginx/sites-enabled/mytp.conf || true) != "$NGINX_SITE" ]]; then
+if [[ $(readlink "$NGINX_ENABLED" || true) != "$NGINX_SITE" ]]; then
     # Install the site file first so the link never dangles.
     sudo test -f "$NGINX_SITE" || render_nginx 0
-    sudo ln -sfn "$NGINX_SITE" /etc/nginx/sites-enabled/mytp.conf
+    sudo ln -sfn "$NGINX_SITE" "$NGINX_ENABLED"
     sudo nginx -t -q
     sudo systemctl reload nginx
     changed "enabled Nginx site"
@@ -296,7 +341,7 @@ if ! systemctl is-active --quiet nginx; then
 fi
 
 # --- TLS certificate (Let's Encrypt) -----------------------------------------
-step "TLS certificate"
+step "TLS certificate ($DOMAIN)"
 if ! sudo test -f "$CERT_FILE"; then
     resolved=$(getent ahostsv4 "$DOMAIN" | awk '{print $1}' | sort -u || true)
     local_ips=$(ip -4 -o addr show scope global | awk '{split($4, a, "/"); print a[1]}')
@@ -316,10 +361,6 @@ if ! sudo test -f "$CERT_FILE"; then
         } >&2
     fi
 fi
-if ! systemctl is-enabled --quiet certbot.timer 2>/dev/null; then
-    sudo systemctl enable --now certbot.timer
-    changed "certbot.timer enabled"
-fi
 
 echo
 if ((CHANGES)); then
@@ -328,5 +369,6 @@ else
     echo "No changes."
 fi
 if ! sudo test -f "$APP_HOME/shared/settings.env"; then
-    echo "Next: create $APP_HOME/shared/settings.env from deploy/staging.env.example (see deploy/README.md)."
+    echo "Next: create $APP_HOME/shared/settings.env from deploy/staging.env.example, with SITE=$SITE"
+    echo "(see deploy/README.md)."
 fi

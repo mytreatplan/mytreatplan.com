@@ -10,10 +10,12 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.1/ref/settings/
 """
 
+import re
 from pathlib import Path
 
 import dj_database_url
 from decouple import Config, Csv, RepositoryEmpty, RepositoryEnv
+from django.core.exceptions import ImproperlyConfigured
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -41,6 +43,18 @@ CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='', cast=Csv())
 # sitemap and robots.txt URLs are built from it (never from the request host), so a
 # staging deploy sets its own host here.
 SITE_URL = config('SITE_URL', default='https://mytreatplan.com').rstrip('/')
+
+# The deployment's site name on its host (epic-platform entry 1): each site has its own
+# Linux user mytp-<SITE>, home SITE_HOME and units (deploy/provision.sh). Staging runs
+# `dev`, `dev-ae` and `admindev` side by side. Server paths below derive from it; the
+# release command refuses to deploy when settings.env names another site. Same pattern
+# as deploy/provision.sh.
+SITE = config('SITE', default='dev')
+if not re.fullmatch(r'[a-z]([a-z0-9-]{0,18}[a-z0-9])?', SITE):
+    raise ImproperlyConfigured(
+        f'SITE must be lowercase letters, digits and "-" (at most 20, starting with a '
+        f'letter, not ending with "-"), got {SITE!r}')
+SITE_HOME = Path('/srv') / f'mytp-{SITE}'
 
 # The Privacy and Terms pages show draft texts (ported from mytreatplan.ae) until the
 # lawyer supplies the mytreatplan.com versions. While this is False, `check --deploy`
@@ -173,8 +187,8 @@ BACKUP_S3_SECRET_KEY = config('BACKUP_S3_SECRET_KEY', default='')
 BACKUP_PREFIX = config('BACKUP_PREFIX', default='')
 BACKUP_AGE_RECIPIENT = config('BACKUP_AGE_RECIPIENT', default='')
 # Where the encrypted dump is written before the upload: a 0700 directory owned by the
-# app user (deploy/provision.sh creates it). Only ciphertext is ever written there.
-BACKUP_TMP_DIR = config('BACKUP_TMP_DIR', default='/srv/mytp/shared/backup-tmp')
+# site's app user (deploy/provision.sh creates it). Only ciphertext is ever written there.
+BACKUP_TMP_DIR = config('BACKUP_TMP_DIR', default=str(SITE_HOME / 'shared' / 'backup-tmp'))
 
 # Upload spike (epic-platform entry 2; removed by entry 11): a staff-only page on dev
 # that uploads files from the browser straight to an OVHcloud Object Storage bucket with
@@ -197,10 +211,10 @@ UPLOAD_SPIKE_CORS_ORIGINS = config('UPLOAD_SPIKE_CORS_ORIGINS', default='', cast
 # accounts.crypto.KMSKeyProvider).
 # KMS_ENDPOINT is the regional REST endpoint, https://<region>.okms.ovh.net (the region
 # lives only here). The server authenticates with an access certificate (mutual TLS):
-# KMS_CLIENT_CERT and KMS_CLIENT_KEY are paths to PEM files in /srv/mytp/shared/ (mode
-# 600); KMS_CA_FILE is optional (default: system CAs). All empty by default; `manage.py
-# kmscheck` refuses to run and names the first missing key. See deploy/README.md,
-# "Keys (KMS)".
+# KMS_CLIENT_CERT and KMS_CLIENT_KEY are paths to PEM files in the site's shared/
+# folder, /srv/mytp-<site>/shared/ (mode 600); KMS_CA_FILE is optional (default: system
+# CAs). All empty by default; `manage.py kmscheck` refuses to run and names the first
+# missing key. See deploy/README.md, "Keys (KMS)".
 KMS_ENDPOINT = config('KMS_ENDPOINT', default='')
 KMS_OKMS_ID = config('KMS_OKMS_ID', default='')
 KMS_SERVICE_KEY_ID = config('KMS_SERVICE_KEY_ID', default='')

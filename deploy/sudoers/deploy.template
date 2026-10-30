@@ -1,0 +1,4 @@
+# Rendered by deploy/provision.sh to /etc/sudoers.d/mytp-__SITE__-deploy (0440, checked with
+# visudo -c), one per site (__SITE__ is the site name, e.g. dev).
+# The site's deploy user may restart that site's app service and nothing else.
+mytp-__SITE__ ALL=(root) NOPASSWD: /usr/bin/systemctl restart mytp-__SITE__-gunicorn

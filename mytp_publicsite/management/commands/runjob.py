@@ -2,7 +2,7 @@
 
     python manage.py runjob <name>
 
-Started by deploy/run-job.sh (systemd mytp-job@<name>.service). When Sentry is on it
+Started by deploy/run-job.sh (systemd mytp-<site>-job@<name>.service). When Sentry is on it
 sends an `in_progress` check-in, then `ok` or `error`, to the monitor
 `mytp-<environment>-<name>` (created or updated from the job's schedule), so a failed
 or missed run raises a Sentry alert. A failing job also exits non-zero, which fails

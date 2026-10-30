@@ -16,7 +16,7 @@ JOBS_FILE = Path(settings.BASE_DIR) / 'deploy' / 'jobs.conf'
 # The copy deploy/provision.sh installed along with the timers. On the server the
 # schedules come from it, so the Sentry monitors always match what the timers do,
 # even if a release ships a jobs.conf that hasn't been provisioned yet.
-INSTALLED_JOBS_FILE = Path('/srv/mytp/shared/jobs.conf')
+INSTALLED_JOBS_FILE = Path(settings.SITE_HOME) / 'shared' / 'jobs.conf'
 NAME_RE = re.compile(r'^[a-z0-9][a-z0-9_-]*$')
 
 _DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']

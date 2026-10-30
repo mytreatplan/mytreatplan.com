@@ -54,7 +54,7 @@ _AGE_RECIPIENT_RE = re.compile(r'^age1[0-9a-z]{20,}$')
 _VERSION_RE = re.compile(r'\(PostgreSQL\)\s+(\d+)')
 REDACTED = '[redacted]'
 # Part files older than this are left over from a killed run (the job's max runtime
-# is 60 minutes; see runjob and mytp-job@.service).
+# is 60 minutes; see runjob and mytp-<site>-job@.service).
 STALE_PART_SECONDS = 2 * 60 * 60
 
 
