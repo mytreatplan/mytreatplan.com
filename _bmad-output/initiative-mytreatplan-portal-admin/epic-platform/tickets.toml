@@ -131,7 +131,6 @@ covers = ["E6"]
 after = [9, 11]
 hitl = true
 risk = "medium"
-unknown = "Whether the staging instance has the memory for clamd (about 1.2 GB) beside three sites, or needs a larger plan."
 
 [[entry]]
 id = 13

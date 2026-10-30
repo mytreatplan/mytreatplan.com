@@ -106,3 +106,11 @@ context:
 
 **Manual checks (if no CLI):**
 - On staging, a person runs the README runbook over SSH, then the acceptance checks above.
+
+## Staging
+
+- Merged in PR #49 as merge commit a2abe94babfd2faaed637587f17b398f37e34217 (2026-10-30). The PR's CI first failed on the flaky browser test `signup/tests/browser/test_failure_policies.py::test_row5_email_in_a_pending_registration` and passed on re-run (deferred-work entry).
+- Runbook "Move dev to the per-site layout" run by Claude over SSH with the user's go-ahead (2026-10-30), steps 2–8: deploy/ copied; old site stopped; provision `dev` (38 changes); shared files carried over (no old path left, SITE=dev); deploy key installed; CI run 41035750675 re-run: test and deploy-staging green. Downtime about 10 minutes.
+- Checks: `current` → releases/a2abe94…; `mytp-dev-gunicorn.socket` active; 6 `mytp-dev-job@*` timers, 0 `mytp-job@*`; `mytp-dev-job@clearsessions` result success; provision re-run "No changes."; https://dev.mytpdso.com/healthz 200.
+- Throwaway site `tmpcheck` provisioned (own user, home, 6 timers, nginx site), dev's units/nginx/sudoers byte-identical before and after, dev re-run "No changes."; tmpcheck removed the same hour.
+- Pending: the user checks public pages, signup and login on dev; step 10 (delete /srv/mytp, user mytp, old units) on 2026-10-31 with the user's OK.

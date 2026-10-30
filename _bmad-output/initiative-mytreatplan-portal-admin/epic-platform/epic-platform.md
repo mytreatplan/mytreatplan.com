@@ -53,6 +53,7 @@ The platform both sites stand on. Not the country map or routing (epic-regions),
 
 ## Notes
 
+- Decision (2026-10-30): entry 12's memory question is settled: the staging instance has 6.7 GB RAM (6.1 GB available with dev running), enough for clamd beside three sites.
 - Tracer bullet: entry 1. dev redeploys under the per-site layout, proving the tooling every other site uses.
 - Least certain: entry 2 (the OVH browser upload), run at once in parallel with entries 1 and 3.
 - Lanes: deploy tooling (1 → 7, then 10, 13); shared code (3 → 4 → 5 → 6 → 9); storage (2 → 11 → 12).
