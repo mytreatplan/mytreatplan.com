@@ -109,3 +109,10 @@ context:
 **Manual checks (if no CLI):**
 - On dev, as staff: 1 GB upload in Chrome and in Safari, one with Wi-Fi off for ~30 s; compare `shasum -a 256` of the local file with the downloaded object.
 - `manage.py upload_spike_bucket --inspect` the next day shows no incomplete upload left.
+
+## Staging
+
+- Merged in PR #48 as merge commit c80c774ba63f8c6838eb3821667fd6fb568e4924 (2026-10-30).
+- CI run 41020471632 on master: 1539 passed on PostgreSQL 17; deploy-staging succeeded.
+- Check 1 (deploy ok, `/en/upload-spike/` 404 with the setting off): confirmed by the user.
+- Checks 2–7 (bucket, settings on dev, `--apply`, browser tests T0–T7, results table): pending, run by the user; the plan stays `built` until the findings are recorded.
