@@ -3,7 +3,7 @@ title: 'Global uid on records that cross sites'
 type: 'feature'
 ticket: '8'
 created: '2026-10-30'
-status: 'built'
+status: 'done'
 baseline_revision: 'a07788629b9996f5fa8ecc2f2cb3aadc89882e27'
 route: 'full'
 route_source: 'auto'
@@ -81,3 +81,8 @@ context:
 - Portal full suite, from the repo root (non-secret test keys; venv `../.venv`; browser tests need the sandbox off): `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU="; export DATABASE_URL="sqlite:///$TMPDIR/x18.sqlite3"; ../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: all pass except the 3 known PostgreSQL-only tests in `accounts/tests/test_crypto.py`.
 - `../.venv/bin/python manage.py makemigrations --check --dry-run` -- expected: no changes after the new migrations.
 - If a local PostgreSQL is available: migrate a database with sample rows forward from the previous state -- expected: distinct uids.
+
+## Staging
+
+- Merged in PR #53 as merge commit 9c96f2ec87487cdcd6b72d5552a65d38ac04f075 (2026-10-30). CI run 41083711340 on master: test and deploy-staging green; migrations applied before the switch.
+- Read-only check on dev by Claude over SSH (user's OK): User 2 rows / 2 distinct uids / 0 empty; ContactMessage 1/1/0; LegalDocument 5/5/0; LegalChoice 4/4/0. /healthz 200.
