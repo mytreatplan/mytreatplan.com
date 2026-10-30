@@ -3,7 +3,7 @@ title: 'REGION profile module'
 type: 'feature'
 ticket: '6'
 created: '2026-10-30'
-status: 'built'
+status: 'done'
 baseline_revision: 'a07788629b9996f5fa8ecc2f2cb3aadc89882e27'
 route: 'full'
 route_source: 'auto'
@@ -102,3 +102,9 @@ Profile values (defaults; staging overrides domains through settings.env):
 - Portal full suite, from the repo root (non-secret test keys; venv `../.venv`; browser tests need the sandbox off): `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU="; export DATABASE_URL="sqlite:///$TMPDIR/x.sqlite3"; ../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: all pass except the 3 known PostgreSQL-only tests in `accounts/tests/test_crypto.py`.
 - mytp-core tests from a clean clone of `v0.2.1` -- expected: all pass.
 - `../.venv/bin/python manage.py check` -- expected: no issues.
+
+## Staging
+
+- Merged in PR #52 as merge commit 1f374d5 (2026-10-30), after #53. CI run 41084903122 on master: test and deploy-staging green; no re-provision needed. mytp-core v0.2.1 CI green.
+- https://dev.mytpdso.com/healthz answers `ok` / `site: dev` / `region: eu`.
+- The user confirmed EN and ES pages, signup and login work on dev (2026-10-30).
