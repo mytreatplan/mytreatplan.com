@@ -1,0 +1,101 @@
+# Stories of epic-regions, in build order. Requirements R1–R6 are in epic-regions.md.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Country map with its starting lists"
+description = "Adds the regions app's country map (state eu, ae or banned per country) as a model shaped for the admin site's configuration snapshot (AD-3, AD-14) that will replace the seed later (epic-admin-interface channel, edits from epic-catalogue), seeded with the agreed lists, plus the lookup helper that answers a country's state and the other region's site and signup URLs (from the 1.6 profile domains); entries 3 and 5 and epic-doctor-profile's billing-country block use it."
+verify = "After migrate, AE, SA, TR, EG, MA and ZA read ae, IR and NG read banned, ES and US read eu; the helper answers for every country signup offers (including non-ISO phonenumbers regions such as XK); a test fails if the seed and the decision list diverge."
+covers = ["R1"]
+after = ["1.6"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Home region recorded at signup"
+description = "Adds an immutable home_region to User, set from the instance's region profile (1.6) when the account is created and never recomputed from the map; existing accounts get eu; the User migration goes after 1.8's uid migration."
+verify = "A new signup on dev stores eu and on dev-ae stores ae; changing the country map afterwards leaves both unchanged; existing users read eu after the migration."
+covers = ["R2"]
+after = ["1.6", "1.7", "1.8"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Signup country check"
+description = "In signup step 1, a country mapped to the other region shows a warning with a link to that region's signup page from entry 1's helper (the doctor may still continue), and a banned country cannot continue; texts in EN and ES."
+verify = "On dev, signing up with SA shows the .ae link and allows continuing, IR is refused with a clear message, ES passes with no warning; the mirror holds on dev-ae."
+covers = ["R3"]
+after = [1, 2, "1.7"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Geo-IP country database"
+description = "Installs the DB-IP Lite country database (MMDB, CC BY 4.0) on each site with a monthly job in deploy/jobs.conf that downloads and atomically swaps it, and a lookup helper returning a request's country, with a test-only override header settable on staging for checks."
+verify = "The job downloads and swaps the database on dev; the helper returns ES for a Spanish IP and SA for a Saudi IP in tests; a corrupt download keeps the previous database."
+covers = ["R4"]
+after = ["1.5"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Region suggestion bar"
+description = "On public pages, a slim dismissible top bar suggests the other region's site when entry 4 maps the visitor's country there (entry 1's helper gives the URL), with a remembered 'stay here' cookie; no bar for bots, banned countries or the visitor's own region; the DB-IP attribution is shown; the cookie is added to the Privacy notes for the lawyer."
+verify = "On dev with the staging override set to SA, the bar links to mytreatplan.ae and 'Stay here' hides it on later pages; ES and a crawler see no bar; the mirror holds on dev-ae."
+covers = ["R4"]
+after = [1, 4, "1.7"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Region company in the footer and legal pages"
+description = "Replaces the footer's hard-coded 'MyTPDSO Limited · Company number 815526' with the region company from the 1.6 profile, and makes legal documents region-specific (a data migration gives existing documents and choices region eu; uniqueness becomes region + kind + version); .com keeps its current texts and dev-ae serves placeholder texts, both flagged provisional until the lawyer's .com texts arrive and epic-uae-launch brings the UAE company's."
+verify = "dev's footer names the .com company and dev-ae's the UAE company; each site serves its own region's Privacy and Terms; provisional documents are marked as such; existing acceptances still point at their documents."
+covers = ["R5"]
+after = [5, "1.6", "1.7", "1.8"]
+hitl = false
+risk = "medium"
+unknown = "The final .com legal texts naming the Irish (and Spanish) company, from the lawyer."
+
+[[entry]]
+id = 7
+type = "story"
+title = "mytreatplan.es redirect"
+description = "Adds an optional per-site extra-domain setting to provision and the nginx template; when set (only for the production EU site) it renders a server block answering mytreatplan.es and www.mytreatplan.es with a 301 to mytreatplan.com (path kept) and includes them in the certificate."
+verify = "A test renders the template with and without the extra domains and finds the 301 block only with them; the rendered config passes nginx -t on staging without the option set."
+covers = ["R6"]
+after = ["1.1"]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Production checks for the EU go-live"
+description = "Writes this epic's production checks (the .es 301 with curl, the suggestion bar on mytreatplan.com, region company and legal texts, home region on a real signup) into epic-eu-golive's Done when."
+verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
+covers = ["R6"]
+after = [3, 5, 6, 7]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
+verify = "The full test suite passes; deferred review findings are closed or recorded."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8]
+hitl = false
+risk = "low"
