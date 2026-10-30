@@ -52,6 +52,9 @@ class PendingRegistration(models.Model):
     `phone_verified_at` that of the mobile (signup entry 7).
     """
 
+    # AD-5: crosses sites; its UUID primary key is its global id.
+    CROSSES_SITES = True
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = EncryptedEmailField(max_length=254)
     email_index = models.CharField(max_length=BLIND_INDEX_LENGTH, db_index=True, editable=False)

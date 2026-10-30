@@ -10,9 +10,12 @@ A `LegalChoice` is the evidence of one decision: which version was shown, whethe
 accepted, and when. It belongs to a pending registration while the signup is in progress
 (gone with it), then to the user (kept: a user with choices cannot be deleted).
 """
+import uuid
+
 from django.conf import settings
 from django.db import models, transaction
 from django.db.models import Max, Q
+from django.db.models.functions import UUID4
 from django.utils import timezone, translation
 
 
@@ -43,7 +46,13 @@ class LegalDocument(models.Model):
 
     # Kinds that must be accepted to sign up; the others are optional.
     REQUIRED_KINDS = (Kind.TERMS, Kind.CONDITIONS)
+    CROSSES_SITES = True
 
+    # AD-5: the id other sites know this record by (the integer key never leaves the
+    # instance). Set once, never changed, never shown in a form. The database default
+    # gives rows inserted without it (the previous release during a deploy) their own.
+    uid = models.UUIDField(default=uuid.uuid4, db_default=UUID4(), unique=True,
+                           editable=False)
     kind = models.CharField(max_length=30, choices=Kind.choices)
     # Set on the first save: the previous version of this kind + 1.
     version = models.PositiveIntegerField(editable=False)
@@ -101,6 +110,13 @@ class LegalChoice(models.Model):
     """One decision on one document version: accepted or not, and when. Owned by a
     pending registration (signup in progress) or by a user, never both."""
 
+    CROSSES_SITES = True
+
+    # AD-5: the id other sites know this record by (the integer key never leaves the
+    # instance). Set once, never changed, never shown in a form. The database default
+    # gives rows inserted without it (the previous release during a deploy) their own.
+    uid = models.UUIDField(default=uuid.uuid4, db_default=UUID4(), unique=True,
+                           editable=False)
     document = models.ForeignKey(LegalDocument, on_delete=models.PROTECT, related_name='choices')
     accepted = models.BooleanField()
     decided_at = models.DateTimeField()

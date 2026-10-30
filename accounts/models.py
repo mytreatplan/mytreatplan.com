@@ -1,5 +1,8 @@
+import uuid
+
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models.functions import UUID4
 from django.utils.translation import gettext_lazy as _
 from django_countries.fields import CountryField
 
@@ -67,7 +70,14 @@ class User(AbstractUser):
     is blank.
     """
 
+    CROSSES_SITES = True
+
     username = None
+    # AD-5: the id other sites know this record by (the integer key never leaves the
+    # instance). Set once, never changed, never shown in a form. The database default
+    # gives rows inserted without it (the previous release during a deploy) their own.
+    uid = models.UUIDField(default=uuid.uuid4, db_default=UUID4(), unique=True,
+                           editable=False)
     email = EncryptedEmailField(_('email address'), max_length=254)
     email_index = models.CharField(max_length=BLIND_INDEX_LENGTH, unique=True, editable=False)
     title = models.CharField(_('title'), max_length=10, choices=Title.choices, blank=True)

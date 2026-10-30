@@ -1027,6 +1027,10 @@ msgid "Erasure"
 msgstr "Borrado"
 
 #: accounts/admin.py
+msgid "Global id"
+msgstr "Identificador global"
+
+#: accounts/admin.py
 #: templates/admin/accounts/user/erase_confirmation.html
 msgid "Erase account"
 msgstr "Borrar cuenta"

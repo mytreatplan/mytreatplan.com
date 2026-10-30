@@ -5,7 +5,10 @@ field (encryption policy, "Personal fields"), the three yes/no answers, when it 
 and what became of the mail to CONTACT_INBOX. Kept until an admin deletes it (decision 1):
 no automatic deletion. The admin is read-only, plus delete.
 """
+import uuid
+
 from django.db import models
+from django.db.models.functions import UUID4
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
@@ -30,6 +33,13 @@ class MailStatus(models.TextChoices):
 
 
 class ContactMessage(models.Model):
+    CROSSES_SITES = True
+
+    # AD-5: the id other sites know this record by (the integer key never leaves the
+    # instance). Set once, never changed, never shown in a form. The database default
+    # gives rows inserted without it (the previous release during a deploy) their own.
+    uid = models.UUIDField(default=uuid.uuid4, db_default=UUID4(), unique=True,
+                           editable=False)
     first_name = EncryptedCharField(_('first name'), max_length=NAME_MAX_LENGTH)
     middle_name = EncryptedCharField(_('middle name or initial'), max_length=NAME_MAX_LENGTH,
                                      blank=True)

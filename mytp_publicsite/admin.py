@@ -13,7 +13,7 @@ class ContactMessageAdmin(admin.ModelAdmin):
     list_display = ('sent_at', 'sender', 'country', 'mail_status')
     list_filter = ('mail_status',)
     fields = ('sent_at', 'first_name', 'middle_name', 'surname', 'country', 'phone', 'email',
-              'aligners', 'club', 'decision', 'mail_status')
+              'aligners', 'club', 'decision', 'mail_status', 'uid')
     readonly_fields = fields
     date_hierarchy = 'sent_at'
 

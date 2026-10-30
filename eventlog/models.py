@@ -32,6 +32,9 @@ class Attempt(models.Model):
     # An erased account's purge (accounts.erasure, QA A6): its pk and encrypted email.
     ACCOUNT = 'account'
 
+    # AD-5: crosses sites; its UUID primary key is its global id.
+    CROSSES_SITES = True
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     kind = models.CharField(max_length=30)
     started_at = models.DateTimeField(default=timezone.now)
