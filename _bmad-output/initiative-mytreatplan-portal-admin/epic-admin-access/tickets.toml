@@ -1,0 +1,144 @@
+# Stories of epic-admin-access, in build order. Requirements A1–A9 are in epic-admin-access.md.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Admin users and roles"
+description = "Adds the admin site's own user model (UUID primary key, email login, display name, title, active, time zone, field-encrypted contact data with the admin's keys, never hard-deleted; AD-5, AD-22) with exactly one role each (Sysadmin, Financial Manager, Commercial Manager, Commercial Regional Manager with one or more regions, Clinical Manager, Clinical User), the admin's region registry seeded with eu and ae (code, name, instance URL; epic-admin-interface uses it), a command that creates the first Sysadmin, and password sign-in to an empty dashboard frame (2FA arrives in entry 4)."
+verify = "On admindev, the Sysadmin created by the command signs in with a password and sees the Sysadmin dashboard frame; saving a user without a role, or a Commercial Regional Manager without a region, is refused."
+covers = ["A1"]
+after = ["1.10"]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Verification provider and codes in mytp-core"
+description = "Moves into mytp-core the verification provider interface, the Twilio Verify client and code send/check, with send limits and event logging as per-site hooks (the portal keeps signup.limits, captcha, login_guard and eventlog behind those hooks); the portal switches to them with no behaviour change and vendors a new mytp-core minor version."
+verify = "The portal's full suite passes unchanged on the new mytp-core tag; mytp-core's tests cover send and check with a fake provider; dev's login with a code still works."
+covers = ["A2"]
+after = ["1.5"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Remembered devices, lockout and single session in mytp-core"
+description = "Moves into mytp-core remember-this-device, the failure lockout counters with a notifier hook, and the single-session middleware, with a per-site policy (remember period, channels, lockout notifier, fresh-code requirement for sensitive actions); the portal switches with no behaviour change and vendors a new minor version."
+verify = "The portal's full suite passes unchanged on the new tag; mytp-core's tests cover the 90-day and 7-day policies, the lockout rule and the single session."
+covers = ["A2"]
+after = [2]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Admin 2FA sign-in"
+description = "Puts mytp-core's 2FA on the admin login with the admin policy: a branded page with only the 'contact support' message (no signup, no reset link), codes by email or SMS from a separate Twilio Verify service whose ID the user types into admindev's settings.env, remember-this-device for 7 days, the portal's lockout rule alerting Sysadmins (logged until entry 11's inbox), the single session, and the admin's database cache for the counters."
+verify = "On admindev a user signs in with password and code, is not asked again on the same device for 7 days, is locked for 10 minutes after 5 failures, and the login page has no signup or reset link."
+covers = ["A2"]
+after = [1, 3]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Fresh-code check for sensitive actions"
+description = "Adds a decorator and page that require a fresh code before an action marked sensitive, using mytp-core's code check and the policy's fresh-code flag and ignoring remember-this-device; its first user is the patient-record download in epic-clinical-ops."
+verify = "A sample sensitive action on admindev asks for a code even on a remembered device; the code works for that one action; a wrong code counts toward the lockout."
+covers = ["A2"]
+after = [4]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Permission matrix and role dashboards"
+description = "Defines the permission matrix (role × area × action) in one module used by every admin view and menu (AD-17), with region limits for the Commercial Regional Manager in a form the remote-access token can carry (epic-admin-interface), the 'assigned only' scope that epic-clinical-ops fills for Clinical Users, and a dashboard frame per role with a widget slot later epics fill."
+verify = "Each of the six roles sees only its areas in the menu and gets 403 on another area's URL; the matrix test covers every role and area."
+covers = ["A3", "A4"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 7
+type = "story"
+title = "List conventions"
+description = "Adds the shared list components on django-tables2 3.0.1 and django-filter 26.2 (sorting, search in POST bodies, CSV export of centrally stored data, fixed columns id, created, status, view more, entry 6's region filter applied) and the HTMX confirmation dialog every change uses (AD-11)."
+verify = "A sample list on admindev sorts, filters by a POSTed search, exports CSV with the fixed columns, shows only eu rows to a Commercial Regional Manager limited to eu, and a change asks for confirmation before saving."
+covers = ["A5"]
+after = [6]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Audit log"
+description = "Records every change made on the admin site (actor UUID, action, object, before and after values with sensitive fields masked, time) through the service layer, with a Sysadmin-only list using the list conventions."
+verify = "Creating, editing and deactivating a sample record each add an audit row with before and after values; masked fields never show their values; only Sysadmins see the list."
+covers = ["A6"]
+after = [7]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Admin user management"
+description = "Lets Sysadmins list, add, edit, deactivate and logically delete admin users and set roles and regions, and reset a password to a temporary one shown once to the Sysadmin and never emailed; the user must change it after password and code (the shared password-change form entry 11 reuses); deactivated users cannot sign in; all audited."
+verify = "A Sysadmin creates a Clinical User, resets their password, and the user is made to change it after password and code; deactivating blocks sign-in; each step appears in the audit log."
+covers = ["A7"]
+after = [5, 8]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Emergency Sysadmin reset over SSH"
+description = "Adds a management command, run on the server over SSH, that resets a Sysadmin's password to a temporary one and clears their lockout and remembered devices, logged to the audit log, plus its runbook in the admin repo's README."
+verify = "Running the command on admindev lets the Sysadmin sign in with the temporary password and a code and forces a new password; the audit log names the command as actor."
+covers = ["A8"]
+after = [9]
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 11
+type = "story"
+title = "My profile, messages and alerts"
+description = "Adds My profile (name, contact data, time zone, own password change with entry 9's form) and an in-app inbox with an unread badge that other code posts alerts to (first: lockout alerts to Sysadmins from entry 4)."
+verify = "A user edits their profile and time zone and changes their password; a lockout on another account puts an unread alert in each Sysadmin's inbox and the badge drops when it is read."
+covers = ["A9"]
+after = [7, 9]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 12
+type = "story"
+title = "Production checks for the EU go-live"
+description = "Writes this epic's production checks (2FA sign-in per role, lockout, fresh-code check, emergency reset, audit log, inbox alert) into epic-eu-golive's Done when."
+verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
+covers = ["A2"]
+after = [5, 9, 10, 11]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 13
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
+verify = "The admin repo's and mytp-core's test suites pass; deferred review findings are closed or recorded."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+hitl = false
+risk = "low"

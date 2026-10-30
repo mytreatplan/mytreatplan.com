@@ -41,6 +41,7 @@ The channels, the contract and the client record. Each later epic adds its own e
 
 ## Notes
 
+- Handoff (2026-10-30, epic-admin-access inception): remote-access tokens carry the role and permitted regions in the form epic-admin-access entry 6 exposes; the admin's region registry (entry 1) lists the instances.
 - Decision (2026-10-29, epic-platform inception): this epic stores each site's Ed25519 signing keys, wrapped by the site's KMS through epic-platform's key provider (AD-4).
 - Handoff: epic-sales-finance shows the clients list and contact messages; epic-clinical-ops shows the clinical view; both extend this epic's client record.
 - Dropped from part 1: 1.6 (CRM forwarding), replaced by the contact-message event (user, 2026-10-25).
