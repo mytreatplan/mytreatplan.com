@@ -1,8 +1,8 @@
 ---
 title: 'Spike findings: browser multipart upload to OVH Object Storage'
 plan: 'spike-browser-multipart-upload-to-ovh-object-storage-plan.md'
-ticket: '2'
-status: 'awaiting human tests'
+spike_entry: 'epic-platform 2'
+results: 'awaiting human tests'
 cited_by: 'epic-platform entry 11 (the real storage service)'
 ---
 
