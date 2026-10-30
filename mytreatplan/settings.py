@@ -17,6 +17,8 @@ import dj_database_url
 from decouple import Config, Csv, RepositoryEmpty, RepositoryEnv
 from django.core.exceptions import ImproperlyConfigured
 
+from regions.profiles import DEFAULT_REGION, UnknownRegion, get_profile
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -35,14 +37,35 @@ SECRET_KEY = config('SECRET_KEY')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=False, cast=bool)
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='', cast=Csv())
+
+# The region this deployment serves (architecture AD-13): `eu` (mytreatplan.com) or `ae`
+# (mytreatplan.ae). It selects the profile in regions/profiles.py, which gives the
+# default hosts and site URL below, the time zone, the languages and the other
+# region-specific values (settings.REGION_PROFILE). Read them from the profile; never
+# compare REGION with a region name (regions/tests/test_guard.py).
+REGION = config('REGION', default='') or DEFAULT_REGION
+try:
+    REGION_PROFILE = get_profile(REGION)
+except UnknownRegion as exc:
+    raise ImproperlyConfigured(str(exc)) from None
+
+# The three below default to the region's production domains; settings.env overrides
+# them (staging sets its own host). With DEBUG on, Django's local hosts are allowed as well.
+ALLOWED_HOSTS = config(
+    'ALLOWED_HOSTS', cast=Csv(),
+    default=','.join([*REGION_PROFILE.domains,
+                      *(['.localhost', '127.0.0.1', '[::1]'] if DEBUG else [])]))
 # Origins (scheme + host) trusted for unsafe requests over HTTPS, e.g. https://dev.mytpdso.com.
-CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default='', cast=Csv())
+CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default=','.join(REGION_PROFILE.origins),
+                              cast=Csv())
 
 # Public address of the site, without a trailing slash. Canonical, Open Graph, hreflang,
 # sitemap and robots.txt URLs are built from it (never from the request host), so a
 # staging deploy sets its own host here.
-SITE_URL = config('SITE_URL', default='https://mytreatplan.com').rstrip('/')
+SITE_URL = config('SITE_URL', default=REGION_PROFILE.site_url).rstrip('/')
+
+# The region's object-storage endpoint (AD-9): the profile's default, settings.env overrides.
+STORAGE_ENDPOINT = config('STORAGE_ENDPOINT', default=REGION_PROFILE.storage_endpoint)
 
 # The deployment's site name on its host (epic-platform entry 1): each site has its own
 # Linux user mytp-<SITE>, home SITE_HOME and units (deploy/provision.sh). Staging runs
@@ -288,6 +311,8 @@ INSTALLED_APPS = [
     # /healthz, backups; its field key checks (mytp_core.E001, E002) and the commands
     # generate_field_keys, generate_kms_field_key, kmscheck, runjob and backupdb.
     'mytp_core.apps.MytpCoreConfig',
+    # The REGION profile (AD-13): no models; regions/profiles.py is plain data.
+    'regions.apps.RegionsConfig',
     'accounts.apps.AccountsConfig',
     'eventlog.apps.EventlogConfig',
     'signup.apps.SignupConfig',
@@ -430,19 +455,18 @@ PASSWORD_RESET_TIMEOUT = 3600
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
 
-# English is the default; every public page lives under /en/ or /es/ (see urls.py).
+# English is the default; every public page lives under a language prefix such as /en/
+# or /es/ (see urls.py). The languages are the region's (REGION_PROFILE): EU en and es.
 LANGUAGE_CODE = 'en'
 
-LANGUAGES = [
-    ('en', 'English'),
-    ('es', 'Español'),
-]
+LANGUAGES = REGION_PROFILE.language_choices
 
 # Spanish catalogue: locale/es/LC_MESSAGES/django.po. The compiled .mo is not
 # committed; build it with `python manage.py compilemessages`.
 LOCALE_PATHS = [BASE_DIR / 'locale']
 
-TIME_ZONE = 'Europe/Madrid'
+# The region's default time zone (REGION_PROFILE): EU Europe/Madrid.
+TIME_ZONE = REGION_PROFILE.time_zone
 
 USE_I18N = True
 

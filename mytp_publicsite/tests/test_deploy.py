@@ -139,6 +139,7 @@ def test_staging_env_example_has_no_secrets():
     assert values['DB_SSLMODE'] == 'verify-full'
     assert values['DB_SSLROOTCERT'] == '/srv/mytp-dev/shared/db-ca.pem'
     assert values['SITE'] == 'dev'
+    assert values['REGION'] == 'eu'
 
 
 # --- Site-aware deploy tooling (epic-platform entry 1) ---------------------------------
