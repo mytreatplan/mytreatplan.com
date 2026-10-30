@@ -41,6 +41,7 @@ The doctor's own data. Not subscriptions, orders or the case pages.
 
 ## Notes
 
+- Handoff (2026-10-30, epic-admin-interface inception): profile changes keep going through the write path that emits client.updated (epic-admin-interface entry 8); this epic extends that payload with fiscal entities and shipping addresses.
 - Handoff: epic-clinical-ops reveals maker logins to the assigned clinical user and logs each view.
 - Source conflict: The Admin Site, Clients — Ormco contract acceptance; ignored by the user's decision, 2026-10-29.
 - Waits on epic 2 because: it needs country map and home region.

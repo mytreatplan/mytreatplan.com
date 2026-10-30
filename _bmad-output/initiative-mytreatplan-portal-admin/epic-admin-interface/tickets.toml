@@ -1,0 +1,133 @@
+# Stories of epic-admin-interface, in build order. Requirements I1–I10 are in epic-admin-interface.md.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Signed ping between admindev and dev"
+description = "Tracer bullet: the smallest signed round trip in both directions. mytp-core gains Ed25519 request tokens (PyJWT EdDSA; iss, aud, iat, exp at most 60 s, jti replay cache, kid, hash of method, path and body), several public keys per peer looked up by kid (for rotation), and a key-generation command; peers come from the admin's region registry (3.1) on the admin side and settings on the portal; each site's private key is wrapped by its KMS; the portal's new integration app serves /api/v1/ping and the admin calls it, and the reverse; every interface call, accepted or refused, is logged on the receiving site."
+verify = "admindev's ping to dev and dev's ping to admindev both succeed and are logged; a replayed jti, an expired token, a wrong audience, a tampered body, or an unknown iss or kid is refused with 401 and logged."
+covers = ["I1", "I2"]
+after = ["1.4", "1.10", "3.1"]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Contract definitions and contract tests in mytp-core"
+description = "Fixes the contract format for mytp-core (pydantic 2 models exported as JSON Schema, version pinned in mytp-core), adopting entry 1's /api/v1 path and error shape as is: the event envelope {event_id, type, version, aggregate_id, aggregate_version, sequence, occurred_at, region, payload}, the error shape, the amount shape {amount, currency} that epic-catalogue's Money type serializes to, versioning (the admin serves n and n−1; readers ignore unknown fields and event types; AD-12); contract tests reject patient fields in central payloads (AD-23) and floats in amounts."
+verify = "mytp-core's contract tests pass; a payload carrying a patient name or a float amount fails them; an event with an unknown field still parses; a version n−1 request is still served."
+covers = ["I3"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Outbox and event ingest"
+description = "Adds the portal's outbox (written in the same transaction as the change, per-aggregate sequence, attempts, next retry and last error on the row, delivered rows purged after 30 days) with a dispatcher task, and the admin's ingest endpoint that checks the event's region matches the signing site, deduplicates on event_id, applies an aggregate only for a higher version, keeps only event ids for dedupe, and lists rejected events as failed for an operator; the accounting feed rides on this outbox, so epic-payments only adds event types."
+verify = "A sample event written on dev reaches admindev once even when the dispatcher is killed and rerun; with admindev down it waits and is delivered after; an older version is ignored; an event claiming the wrong region is rejected and shown as failed; delivered rows older than 30 days are purged."
+covers = ["I4"]
+after = [1, 2, "1.9"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Configuration snapshot channel"
+description = "Adds the admin's signed, versioned configuration snapshot endpoint and the portal's pull job (every 5 minutes and on a signed nudge) that applies a higher-version snapshot atomically and keeps the last one when the admin site is down or the snapshot needs a newer instance; the first payload is the admin directory (AD-22); epic-catalogue later adds the catalogue, billing rules, vouchers and the country map shaped by 2.1."
+verify = "A change to an admin user's display name reaches dev and dev-ae within 5 minutes, or at once after a nudge; with admindev stopped, dev keeps serving with the last snapshot; a lower or unsigned snapshot is refused."
+covers = ["I5"]
+after = [3, "1.7"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Remote read framework and regional access log"
+description = "Adds remote reads: the token carries admin UUID, role and permitted regions; the instance checks the permission matrix (3.6) itself, omits fields by role, and writes the regional access log (who, role, from where, what, when) before returning data, refusing if it cannot (a new log, not eventlog's best-effort record); responses are no-store; the admin's client and rendering helpers never persist responses (AD-23); 1.11's download hook writes to this log; one staging-only sample record model behind a setting, removed when epic-ordering's patients exist."
+verify = "An admin user reads the sample record on dev and on dev-ae, and each access is logged in that region; with the log table unwritable the read is refused; a Clinical User outside the matrix gets 403; the admin database holds nothing of the record."
+covers = ["I6"]
+after = [4, "3.6", "1.11"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Idempotent versioned remote writes"
+description = "Adds remote writes on the same framework: an idempotency key and the entity version on every write, 409 for a stale version, the change going through the instance's service function (AD-15) and logged, with a sample write on the staging-only sample record."
+verify = "A retried write with the same key applies once; a write with an old version gets 409; the write appears in the regional access log."
+covers = ["I7"]
+after = [5]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Hub lookups"
+description = "Adds AD-3's fourth channel: signed live reads from a region to admin-owned data, limited to what the spine allows (specialist availability and slot holds come with epic-appointments), with a sample lookup; when the admin site is down the caller gets a clear 'unavailable' and nothing else is affected."
+verify = "dev's sample lookup to admindev succeeds and is logged on admindev; with admindev stopped, the lookup returns 'unavailable' and the rest of dev works."
+covers = ["I10"]
+after = [5]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Client record sync and erasure"
+description = "Sends each doctor's account and profile as full-state client.updated events with versions and tombstones from the portal's write path (AD-15), stores the client record on the admin site encrypted with the admin's keys, adds the admin's per-aggregate re-sync request, and emits client.erased inside part-1's logical erase (accounts/erasure.py erase_user) so the admin deletes the record (AD-18); epic-doctor-profile extends this payload."
+verify = "A signup on dev and on dev-ae each appear as a client on admindev with their home region; a profile change updates it; a re-sync rebuilds it; erasing the account on dev removes it from admindev; the record's personal fields are encrypted in the admin database."
+covers = ["I8"]
+after = [3, "2.2"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Contact messages to the admin site"
+description = "Makes contact messages an aggregate copied centrally like client records (full-state events with a version, tombstone on deletion; aggregate id from 1.8's uid), stored on the admin site encrypted for epic-sales-finance's list; part-1 story 1.6 was never built, so nothing is removed."
+verify = "A contact form sent on dev arrives on admindev as one stored message, also after admindev was down when it was sent; deleting it on dev removes it on admindev."
+covers = ["I9"]
+after = [8, "1.8"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Interface operations"
+description = "Adds nginx peer-IP allowlisting of /api/ on production sites (a provision option), the signing-key rotation and revocation runbook using entry 1's kid overlap, and monitoring: an alert when the outbox has undelivered events older than 15 minutes or the config snapshot is older than 1 hour."
+verify = "The rendered nginx config restricts /api/ only with the option set; following the runbook rotates admindev's key without a failed call; an artificially stuck outbox raises the alert on dev."
+covers = ["I2", "I4", "I5"]
+after = [3, 4, "1.13", "2.7"]
+hitl = true
+risk = "medium"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Production checks for the EU go-live"
+description = "Writes this epic's production checks (signed calls both ways, outbox delivery and catch-up, snapshot apply, remote reads and writes with logging, hub lookups, client sync and erasure, contact messages, alerts) into epic-eu-golive's Done when."
+verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
+covers = []
+after = [6, 7, 9, 10]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 12
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
+verify = "The portal's, the admin repo's and mytp-core's test suites pass; deferred review findings are closed or recorded."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+hitl = false
+risk = "low"

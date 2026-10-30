@@ -28,6 +28,7 @@ covers = ["P3"]
 after = [
   { epic = 1, needs = "admin repo, job runner, REGION profile" },
   { epic = 3, needs = "admin users and roles for remote access" },
+  { epic = 2, needs = "home region on the client record (2.2)" },
 ]
 
 [[epic]]

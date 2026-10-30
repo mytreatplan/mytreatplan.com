@@ -3,7 +3,7 @@ title: 'mytp-core package with field encryption and KMS'
 type: 'refactor'
 ticket: '4'
 created: '2026-10-30'
-status: 'built'
+status: 'done'
 baseline_revision: '7218109afb9e995830d47c0b66f8547546ec3c3e'
 route: 'full'
 route_source: 'auto'
@@ -103,3 +103,10 @@ context:
 
 **Manual checks (if no CLI):**
 - After the merge, dev deploys, `mytp-dev-job@kmscheck` succeeds, and signup/login (encrypted fields) work.
+
+## Staging
+
+- Merged in PR #50 as merge commit a1105367f2f65a1944c31c3f78a45e46ae3cd6c3 (2026-10-30). mytp-core v0.1.0 CI green on PostgreSQL (master and tag).
+- The first deploy (CI run 41046629920) failed before the switch: the host's /usr/local/bin/mytp-release was still 1.1's copy, so pip ran outside the release folder and missed `vendor/`. dev kept serving. With the user's OK, Claude copied the merged deploy/ and re-ran provision for dev (1 change: mytp-release), then re-ran the deploy: green.
+- Checks by Claude over SSH: current → releases/a110536…; mytp-core 0.1.0 installed from the vendored wheel; mytp-dev-job@kmscheck ok; both dev users decrypt and are found by email blind index with the KMS provider (counts only printed); /healthz 200.
+- The read-only deploy key on mytp-core and the portal's MYTP_CORE_DEPLOY_KEY secret were deleted (distribution decision).
