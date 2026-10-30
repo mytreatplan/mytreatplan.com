@@ -162,16 +162,34 @@ CACHES = {
 # Error reporting and job monitoring (Sentry, EU region: the DSN host is *.de.sentry.io).
 # Off unless SENTRY_DSN is set, so local development and CI send nothing. The release
 # is the git SHA: RELEASE_SHA from the environment, else the REVISION file release.sh
-# writes into each release directory. See mytreatplan/sentry.py for the scrubbing.
+# writes into each release directory. See mytp_core.sentry for the scrubbing: request
+# data, emails, IPs, phone numbers and the named sensitive fields (password, token, name,
+# patient, ...) never leave the server; MYTP_SENTRY_SENSITIVE_FIELDS adds field names.
+# The verification providers log on `signup.verification` (the fake with the signup
+# codes; Twilio's failures reach Sentry through the callers' `signup.steps` errors), so
+# that logger never reaches Sentry.
 SENTRY_DSN = config('SENTRY_DSN', default='')
 SENTRY_ENVIRONMENT = config('SENTRY_ENVIRONMENT', default='development')
 _revision_file = BASE_DIR / 'REVISION'
 SENTRY_RELEASE = config(
     'RELEASE_SHA',
     default=_revision_file.read_text().strip() if _revision_file.is_file() else '')
+MYTP_SENTRY_IGNORED_LOGGERS = ('signup.verification',)
+MYTP_SENTRY_SENSITIVE_FIELDS = ()
+# Keys that keep their value although they contain a field name (the reset step's tag).
+MYTP_SENTRY_SAFE_KEYS = ('password_reset.action',)
 if SENTRY_DSN:
-    from mytreatplan.sentry import init_sentry
-    init_sentry(SENTRY_DSN, SENTRY_ENVIRONMENT, SENTRY_RELEASE)
+    from mytp_core.sentry import init_sentry
+    init_sentry(SENTRY_DSN, SENTRY_ENVIRONMENT, SENTRY_RELEASE,
+                ignored_loggers=MYTP_SENTRY_IGNORED_LOGGERS,
+                sensitive_fields=MYTP_SENTRY_SENSITIVE_FIELDS,
+                safe_keys=MYTP_SENTRY_SAFE_KEYS)
+
+# Scheduled jobs (mytp-core `runjob`): the release's deploy/jobs.conf and the copy
+# deploy/provision.sh installs with the timers (used when present, so the Sentry monitors
+# match the timers). Each job checks in on the Sentry cron monitor `mytp-<SITE>-<job>`.
+MYTP_JOBS_FILE = BASE_DIR / 'deploy' / 'jobs.conf'
+MYTP_INSTALLED_JOBS_FILE = SITE_HOME / 'shared' / 'jobs.conf'
 
 # Off-region database backups (story 1.14): `manage.py backupdb` dumps the database,
 # encrypts it with `age` for BACKUP_AGE_RECIPIENT (a public key; the private identity
@@ -189,6 +207,9 @@ BACKUP_AGE_RECIPIENT = config('BACKUP_AGE_RECIPIENT', default='')
 # Where the encrypted dump is written before the upload: a 0700 directory owned by the
 # site's app user (deploy/provision.sh creates it). Only ciphertext is ever written there.
 BACKUP_TMP_DIR = config('BACKUP_TMP_DIR', default=str(SITE_HOME / 'shared' / 'backup-tmp'))
+# Objects are named <BACKUP_PREFIX><MYTP_BACKUP_BASENAME>-<UTC time>.dump.age; the name
+# deploy/restore-db.sh and the existing dumps use.
+MYTP_BACKUP_BASENAME = 'mytreatplan'
 
 # Upload spike (epic-platform entry 2; removed by entry 11): a staff-only page on dev
 # that uploads files from the browser straight to an OVHcloud Object Storage bucket with
@@ -263,9 +284,9 @@ INSTALLED_APPS = [
     'django.contrib.sitemaps',
     # Countries and their names in English and Spanish (signup step 1).
     'django_countries',
-    # Shared code (mytp-core, AD-10): field encryption, blind index, KMS; its field key
-    # checks (mytp_core.E001, E002) and the commands generate_field_keys,
-    # generate_kms_field_key and kmscheck.
+    # Shared code (mytp-core, AD-10): field encryption, blind index, KMS, Sentry, jobs,
+    # /healthz, backups; its field key checks (mytp_core.E001, E002) and the commands
+    # generate_field_keys, generate_kms_field_key, kmscheck, runjob and backupdb.
     'mytp_core.apps.MytpCoreConfig',
     'accounts.apps.AccountsConfig',
     'eventlog.apps.EventlogConfig',
@@ -487,7 +508,7 @@ MAILERS = {
 # Django's defaults, plus the verification providers' lines at INFO on the console (stderr:
 # the server journal on staging): the fake's code line in development, Twilio Verify's
 # send and check outcomes on staging. That logger is kept out of Sentry (see
-# mytreatplan/sentry.py), so codes never leave the server.
+# MYTP_SENTRY_IGNORED_LOGGERS), so codes never leave the server.
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,

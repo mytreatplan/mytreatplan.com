@@ -148,7 +148,7 @@ curl -sI http://dev.mytpdso.com/.well-known/acme-challenge/test  # 404, not 401
 Open the site in a browser: valid certificate, password prompt, pages render with styles.
 
 ```sh
-curl -s https://dev.mytpdso.com/healthz                  # ok (no password needed)
+curl -s https://dev.mytpdso.com/healthz                  # ok, site: dev (no password needed)
 ```
 
 ### 8. Sentry (errors and scheduled jobs)
@@ -166,7 +166,7 @@ curl -s https://dev.mytpdso.com/healthz                  # ok (no password neede
    `staging` → send an email to **devops@mytreatplan.com**. Add the address as a team member or use
    Settings → Notifications so it can receive mail.
 5. Crons: nothing to create by hand. The first run of each job creates its monitor
-   (`mytp-staging-<name>`, schedule taken from `jobs.conf`, 30 min margin, 60 min max
+   (`mytp-<site>-<name>`, e.g. `mytp-dev-clearsessions`, schedule taken from `jobs.conf`, 30 min margin, 60 min max
    runtime). After the first run, open Crons → the monitor → Edit and set
    **Notify** to devops@mytreatplan.com (failed, missed and timed-out check-ins).
 6. On the server, put the DSN in `/srv/mytp-dev/shared/settings.env`:
@@ -213,17 +213,21 @@ curl -s https://dev.mytpdso.com/healthz                  # ok (no password neede
 
    ```sh
    systemctl list-timers 'mytp-dev-job@*'                # lists purgepending and eventlogretention
-   sudo systemctl start mytp-dev-job@purgepending        # Sentry Crons: mytp-staging-purgepending ok
-   sudo systemctl start mytp-dev-job@eventlogretention   # Sentry Crons: mytp-staging-eventlogretention ok
+   sudo systemctl start mytp-dev-job@purgepending        # Sentry Crons: mytp-dev-purgepending ok
+   sudo systemctl start mytp-dev-job@eventlogretention   # Sentry Crons: mytp-dev-eventlogretention ok
    sudo journalctl -u mytp-dev-job@purgepending -n 20    # counts only, no personal values
    sudo journalctl -u mytp-dev-job@eventlogretention -n 20
    ```
 
    Then set both monitors' notifications in Sentry → Crons (step 8.5).
 
-Personal data never goes to Sentry: `mytreatplan/sentry.py` sets `send_default_pii=False`,
-sends no request bodies or local variables, and strips cookies, headers, query strings,
-user email and IP in `before_send`. Locally and in CI `SENTRY_DSN` is unset, so nothing is sent.
+Personal data never goes to Sentry: `mytp_core.sentry` (the mytp-core package) sets
+`send_default_pii=False`, sends no request bodies or local variables, and in
+`before_send` strips cookies, headers, query strings, user email and IP, redacts emails,
+IPs and phone numbers in messages and data, and replaces the values of named sensitive
+fields (password, token, key, email, phone, name, patient, address, iban, ...) in extra
+data, contexts, tags and breadcrumbs. The `signup.verification` logger never reaches
+Sentry (`MYTP_SENTRY_IGNORED_LOGGERS` in settings). Locally and in CI `SENTRY_DSN` is unset, so nothing is sent.
 
 ### 9. UptimeRobot
 
@@ -240,8 +244,8 @@ user email and IP in `before_send`. Locally and in CI `SENTRY_DSN` is unset, so 
    arrives; then `sudo systemctl start mytp-dev-gunicorn.socket` (the service starts on the
    next request) → an up alert. Staging is unavailable to the team meanwhile.
 
-`/healthz` answers `ok` (200) when the app can run `SELECT 1` on the database, else
-`unavailable` (503). It reveals nothing else, and is the only path without the password.
+`/healthz` answers `ok` and `site: <site>` (200) when the app can run `SELECT 1` on the
+database, else `unavailable` (503); the first line is always `ok` or `unavailable`. It reveals nothing else, and is the only path without the password.
 
 ### 10. Off-region backups
 
@@ -339,7 +343,7 @@ encrypted `pg_dump` to Object Storage in **SBG** (`manage.py backupdb`). See
 
    The object appears in the SBG container. Downloaded, it starts with
    `age-encryption.org/v1` and is unreadable without the key. In Sentry, Crons now has
-   `mytp-staging-backupdb` with an ok check-in: set its **Notify** to
+   `mytp-dev-backupdb` with an ok check-in: set its **Notify** to
    devops@mytreatplan.com (step 8.5).
 8. **Alert check.** A run with wrong bucket credentials must fail and alert (the env var
    beats `settings.env`):
@@ -460,7 +464,7 @@ only this server an access certificate for it, and proves the server can use it 
 
    ```sh
    systemctl list-timers 'mytp-dev-job@*'          # lists kmscheck
-   sudo systemctl start mytp-dev-job@kmscheck      # Sentry Crons: mytp-staging-kmscheck ok
+   sudo systemctl start mytp-dev-job@kmscheck      # Sentry Crons: mytp-dev-kmscheck ok
    ```
 
    Set the monitor's **Notify** to devops@mytreatplan.com (step 8.5).
@@ -714,7 +718,7 @@ backwards-compatible.
 
 Jobs are listed in `deploy/jobs.conf`, one per line: `name | manage.py command | schedule`.
 The schedule is a systemd `OnCalendar` in UTC, e.g. `*-*-* 03:30:00 UTC` (daily) or
-`Mon *-*-* 02:00 UTC` (weekly); `mytp_publicsite/jobs.py` lists the forms supported
+`Mon *-*-* 02:00 UTC` (weekly); `mytp_core/jobs.py` (mytp-core) lists the forms supported
 (they must also map to the Sentry monitor's crontab, and the tests check every line).
 
 `provision.sh` installs the timers and a copy of the `jobs.conf` it used at
@@ -724,8 +728,10 @@ Sentry monitors always match the timers. A deploy that changes `jobs.conf` does 
 the timers: `release.sh` prints a warning, and you must re-run `provision.sh`.
 
 Each job runs as `mytp-dev` in `/srv/mytp-dev/current` via `deploy/run-job.sh dev <name>` →
-`manage.py runjob <name>`, which sends Sentry cron check-ins (in progress, then ok or
-error). A missed run (host down, timer gone) shows as a missed check-in in Sentry; a
+`manage.py runjob <name>` (from mytp-core), which sends Sentry cron check-ins (in progress,
+then ok or error) to the monitor `mytp-<site>-<name>`, e.g. `mytp-dev-clearsessions`. The
+site name (`SITE`), not the Sentry environment, tells the monitors apart, since several
+sites on one host share the environment `staging`. A missed run (host down, timer gone) shows as a missed check-in in Sentry; a
 failed run exits non-zero, so the unit is marked failed. Timers are `Persistent=true`:
 a run missed while the host was down happens at boot.
 
@@ -739,8 +745,27 @@ To add a job:
 3. After its first run, set the Sentry monitor's notifications (step 8.5).
 
 To remove a job: delete its line, merge, re-run `provision.sh` (it stops and removes the
-timer), then in Sentry → Crons delete (or disable) the monitor `mytp-staging-<name>`;
+timer), then in Sentry → Crons delete (or disable) the monitor `mytp-<site>-<name>`;
 otherwise it keeps raising missed check-in alerts.
+
+**One-off, after the merge of epic-platform entry 5 (mytp-core 0.2.0).** The monitors were
+named after the Sentry environment (`mytp-staging-<name>`); they are now named after the
+site. Nothing needs re-provisioning (`release.sh` is unchanged):
+
+1. After the deploy, run one job by hand and check its check-in lands on the new monitor,
+   and that `/healthz` names the site:
+
+   ```sh
+   sudo systemctl start mytp-dev-job@clearsessions   # Sentry Crons: mytp-dev-clearsessions ok
+   curl -s https://dev.mytpdso.com/healthz           # ok / site: dev
+   ```
+
+2. Each new `mytp-dev-<name>` monitor appears at its job's first run; set its **Notify**
+   to devops@mytreatplan.com (step 8.5).
+3. In Sentry → Crons, delete the six old monitors `mytp-staging-clearsessions`,
+   `mytp-staging-purgepending`, `mytp-staging-eventlogretention`, `mytp-staging-backupdb`,
+   `mytp-staging-kmscheck` and `mytp-staging-purgeerased`; otherwise they raise missed
+   check-in alerts.
 
 Run a job by hand / read its logs:
 
@@ -931,7 +956,7 @@ it is **erased**, for example when the user asks (GDPR art. 17).
   (see [Scheduled jobs](#scheduled-jobs)), then:
 
   ```sh
-  sudo systemctl start mytp-dev-job@purgeerased      # Sentry Crons: mytp-staging-purgeerased ok
+  sudo systemctl start mytp-dev-job@purgeerased      # Sentry Crons: mytp-dev-purgeerased ok
   sudo journalctl -u mytp-dev-job@purgeerased -n 20  # the count only
   ```
 
@@ -1323,7 +1348,7 @@ secret is printed: settings files are copied and edited in place, and only count
    systemctl is-active mytp-dev-gunicorn.socket    # active
    systemctl list-timers 'mytp-dev-job@*'          # one per line of jobs.conf
    systemctl list-timers 'mytp-job@*'              # 0 timers listed
-   sudo systemctl start mytp-dev-job@clearsessions # Sentry Crons: mytp-staging-clearsessions ok (same monitors as before)
+   sudo systemctl start mytp-dev-job@clearsessions # Sentry Crons: mytp-dev-clearsessions ok
    bash ~/deploy/provision.sh dev dev.mytpdso.com <htpasswd-user>   # No changes.
    ```
 

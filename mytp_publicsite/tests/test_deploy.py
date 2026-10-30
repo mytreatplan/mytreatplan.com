@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 from django.conf import settings
 
+from mytp_core import jobs as core_jobs
+
 REPO = Path(settings.BASE_DIR)
 DEPLOY = REPO / 'deploy'
 WORKFLOW = REPO / '.github' / 'workflows' / 'ci.yml'
@@ -177,7 +179,7 @@ def test_site_templates_use_the_site_placeholder(template):
 
 @pytest.mark.parametrize('path', [
     *SCRIPTS, WORKFLOW, DEPLOY / 'staging.env.example', DEPLOY / 'jobs.conf',
-    REPO / 'mytreatplan' / 'settings.py', REPO / 'mytp_publicsite' / 'jobs.py',
+    REPO / 'mytreatplan' / 'settings.py', Path(core_jobs.__file__),
 ], ids=lambda p: p.name)
 def test_no_single_site_layout_names_remain(path):
     match = OLD_LAYOUT.search(path.read_text())
@@ -243,13 +245,12 @@ def test_scripts_and_settings_share_the_site_pattern():
 
 
 def test_site_home_derives_from_site():
-    from mytp_publicsite import jobs
+    from mytp_core import jobs
 
     assert settings.SITE_HOME == Path('/srv') / f'mytp-{settings.SITE}'
     assert re.fullmatch(SITE_RE[1:-1], settings.SITE)
-    text = (REPO / 'mytp_publicsite' / 'jobs.py').read_text()
-    assert "INSTALLED_JOBS_FILE = Path(settings.SITE_HOME) / 'shared' / 'jobs.conf'" in text
-    assert jobs.JOBS_FILE.is_file()
+    assert jobs.installed_jobs_file() == settings.SITE_HOME / 'shared' / 'jobs.conf'
+    assert jobs.release_jobs_file().is_file()
 
 
 def test_bad_site_setting_is_refused():

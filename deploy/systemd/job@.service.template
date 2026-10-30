@@ -14,7 +14,7 @@ User=mytp-__SITE__
 Group=mytp-__SITE__
 WorkingDirectory=/srv/mytp-__SITE__
 ExecStart=/bin/bash /srv/mytp-__SITE__/current/deploy/run-job.sh __SITE__ %i
-# Same as the Sentry monitor's max runtime (mytp_publicsite runjob).
+# Same as the Sentry monitor's max runtime (runjob, in the mytp_core package).
 TimeoutStartSec=60min
 SyslogIdentifier=mytp-__SITE__-job-%i
 PrivateTmp=true

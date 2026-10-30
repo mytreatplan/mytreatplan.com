@@ -17,10 +17,12 @@ from django.test import override_settings
 from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
 
-import mytp_publicsite.views
-from mytp_publicsite import jobs
-from mytp_publicsite.management.commands import runjob
-from mytreatplan import sentry as mytp_sentry
+# The shared operations code lives in mytp-core (epic-platform entry 5); these tests
+# check the portal's wiring of it and keep the story 1.9 cases.
+import mytp_core.views
+from mytp_core import jobs
+from mytp_core import sentry as mytp_sentry
+from mytp_core.management.commands import runjob
 from signup.twilio_verify import TWILIO_PROVIDER
 
 REPO = django_settings.BASE_DIR
@@ -51,15 +53,18 @@ class _FakeCursor:
 @pytest.fixture
 def db_up(monkeypatch):
     executed = []
-    monkeypatch.setattr(mytp_publicsite.views.connection, 'cursor', lambda: _FakeCursor(executed))
+    monkeypatch.setattr(mytp_core.views.connection, 'cursor', lambda: _FakeCursor(executed))
     return executed
 
 
-def test_healthz_ok(client, db_up):
+def test_healthz_ok(client, db_up, settings):
+    settings.SITE = 'dev'
+
     response = client.get('/healthz')
 
     assert response.status_code == 200
-    assert response.content == b'ok'
+    # First line `ok` (UptimeRobot), then the site (AD-24).
+    assert response.content == b'ok\nsite: dev\n'
     assert response['Content-Type'].startswith('text/plain')
     assert 'no-cache' in response['Cache-Control']
     assert db_up == ['SELECT 1']
@@ -68,12 +73,13 @@ def test_healthz_ok(client, db_up):
 def test_healthz_db_down(client, monkeypatch):
     def broken_cursor():
         raise OperationalError('connection to server at "db.internal" failed: secret detail')
-    monkeypatch.setattr(mytp_publicsite.views.connection, 'cursor', broken_cursor)
+    monkeypatch.setattr(mytp_core.views.connection, 'cursor', broken_cursor)
 
     response = client.get('/healthz')
 
     assert response.status_code == 503
-    assert response.content == b'unavailable'
+    assert response.content.decode().splitlines()[0] == 'unavailable'
+    assert b'ok' not in response.content and b'db.internal' not in response.content
 
 
 def test_healthz_head_allowed_post_refused(client, db_up):
@@ -134,6 +140,26 @@ def test_sentry_on_with_dsn(monkeypatch, init_calls):
     assert kwargs['before_send'] is mytp_sentry.scrub_event
     assert kwargs['max_request_body_size'] == 'never'
     assert kwargs['include_local_variables'] is False
+
+
+def test_sentry_settings_ignore_the_code_logger():
+    assert django_settings.MYTP_SENTRY_IGNORED_LOGGERS == ('signup.verification',)
+    assert isinstance(django_settings.MYTP_SENTRY_SENSITIVE_FIELDS, tuple)
+    assert django_settings.MYTP_SENTRY_SAFE_KEYS == ('password_reset.action',)
+
+
+@pytest.mark.parametrize('tag', ['login_failures.action', 'password_reset.action',
+                                 'erasure.action', 'contact.action', 'contact.limit',
+                                 'eventlog.action', 'eventlog.event'])
+def test_portal_sentry_tags_keep_their_value(sentry_capture, tag):
+    """The tags the portal sets (report_error, eventlog, contact) are not redacted."""
+    with sentry_sdk.new_scope() as scope:
+        scope.set_tag(tag, 'send_email')
+        sentry_sdk.capture_message('a step failed', level='error')
+    sentry_sdk.flush()
+
+    [event] = sentry_capture.events
+    assert event['tags'][tag] == 'send_email'
 
 
 def test_scrub_event_removes_personal_data():
@@ -272,6 +298,35 @@ def test_scrub_event_redacts_phone_numbers_in_breadcrumbs():
         'code sent to [redacted] (whatsapp)')
 
 
+def test_scrub_event_replaces_named_sensitive_fields():
+    """AD-23 (epic-platform entry 5): patient-like and credential fields in extra,
+    contexts and breadcrumb data are replaced by the redaction marker."""
+    event = {
+        'extra': {'patient_name': 'Lucia Ortega', 'password': 'pw-123', 'step': 'review'},
+        'contexts': {'signup': {'token': 'tok-456', 'email': 'ana@example.com'}},
+        'breadcrumbs': {'values': [{'category': 'log', 'data': {'patient': 'Lucia Ortega'}}]},
+    }
+
+    scrubbed = mytp_sentry.scrub_event(event, {})
+
+    assert scrubbed['extra'] == {'patient_name': '[redacted]', 'password': '[redacted]',
+                                 'step': 'review'}
+    assert scrubbed['contexts'] == {'signup': {'token': '[redacted]', 'email': '[redacted]'}}
+    assert scrubbed['breadcrumbs']['values'][0]['data'] == {'patient': '[redacted]'}
+
+
+@pytest.mark.django_db
+def test_patient_field_in_extra_never_leaves_the_site(sentry_capture):
+    with sentry_sdk.new_scope() as scope:
+        scope.set_extra('patient_name', 'Lucia Ortega Ruiz')
+        sentry_sdk.capture_message('case update failed', level='error')
+    sentry_sdk.flush()
+
+    [event] = sentry_capture.events
+    assert event['extra']['patient_name'] == '[redacted]'
+    assert 'Lucia Ortega Ruiz' not in json.dumps(event)
+
+
 def test_error_messages_and_logs_reach_sentry_redacted(sentry_capture):
     detail = ('duplicate key value violates unique constraint "accounts_user_email_key"\n'
               'DETAIL:  Key (email)=(ana@example.com) already exists. '
@@ -360,7 +415,7 @@ def test_failed_code_send_reaches_sentry_without_personal_data(sentry_capture):
 # --- Jobs: jobs.conf and the runner ---------------------------------------------------
 
 def test_jobs_conf_declares_clearsessions_daily():
-    declared = jobs.load_jobs(jobs.JOBS_FILE)
+    declared = jobs.load_jobs(jobs.release_jobs_file())
 
     job = declared['clearsessions']
     assert (job.command, job.args) == ('clearsessions', ())
@@ -396,9 +451,14 @@ def test_oncalendar_rejects_wrapping_weekday_ranges(dow):
         jobs.oncalendar_to_crontab(f'{dow} *-*-* 06:00 UTC')
 
 
-def test_jobs_file_prefers_provisioned_copy(tmp_path, monkeypatch):
-    monkeypatch.setattr(jobs, 'INSTALLED_JOBS_FILE', tmp_path / 'jobs.conf')
-    assert jobs.jobs_file() == jobs.JOBS_FILE  # not provisioned: the release's copy
+def test_jobs_files_are_the_release_and_provisioned_copies():
+    assert jobs.release_jobs_file() == REPO / 'deploy' / 'jobs.conf'
+    assert jobs.installed_jobs_file() == django_settings.SITE_HOME / 'shared' / 'jobs.conf'
+
+
+def test_jobs_file_prefers_provisioned_copy(tmp_path, settings):
+    settings.MYTP_INSTALLED_JOBS_FILE = tmp_path / 'jobs.conf'
+    assert jobs.jobs_file() == jobs.release_jobs_file()  # not provisioned: the release's copy
 
     (tmp_path / 'jobs.conf').write_text('clearsessions | clearsessions | *-*-* 05:00 UTC\n')
 
@@ -446,6 +506,7 @@ class _FakeSentry:
 def job_env(monkeypatch, settings):
     """runjob with a fake Sentry and a recorded inner command."""
     settings.SENTRY_ENVIRONMENT = 'staging'
+    settings.SITE = 'dev'  # the slug names the site, not the environment
     checkins, ran = [], []
     fake = _FakeSentry(active=True)
 
@@ -474,7 +535,7 @@ def test_runjob_ok_checks_in(job_env):
 
     assert ran == [('clearsessions', ())]
     assert [c['status'] for c in checkins] == ['in_progress', 'ok']
-    assert {c['monitor_slug'] for c in checkins} == {'mytp-staging-clearsessions'}
+    assert {c['monitor_slug'] for c in checkins} == {'mytp-dev-clearsessions'}
     assert checkins[1]['check_in_id'] == 'checkin-1'
     config = checkins[0]['monitor_config']
     assert config['schedule'] == {'type': 'crontab', 'value': '30 3 * * *'}
@@ -490,7 +551,7 @@ def test_runjob_failure_checks_in_error_and_exits_non_zero(job_env):
 
     assert ran == [('failing', ('--now',))]
     assert [c['status'] for c in checkins] == ['in_progress', 'error']
-    assert checkins[1]['monitor_slug'] == 'mytp-staging-broken'
+    assert checkins[1]['monitor_slug'] == 'mytp-dev-broken'
     assert fake.exceptions == 1
 
 
@@ -511,7 +572,7 @@ def test_runjob_unknown_job(job_env):
 
 def test_jobs_conf_commands_exist():
     available = get_commands()
-    for job in jobs.load_jobs(jobs.JOBS_FILE).values():
+    for job in jobs.load_jobs(jobs.release_jobs_file()).values():
         assert job.command in available, job.name
 
 

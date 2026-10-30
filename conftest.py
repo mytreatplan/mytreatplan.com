@@ -172,18 +172,16 @@ def portal_urls(settings):
 # --- Shared by several apps' tests ----------------------------------------------------------
 
 @pytest.fixture
-def release_jobs(monkeypatch, tmp_path):
-    """runjob reads the release's deploy/jobs.conf (no provisioned copy)."""
-    from mytp_publicsite import jobs
-
-    monkeypatch.setattr(jobs, 'INSTALLED_JOBS_FILE', tmp_path / 'missing.conf')
+def release_jobs(settings, tmp_path):
+    """runjob (mytp-core) reads the release's deploy/jobs.conf (no provisioned copy)."""
+    settings.MYTP_INSTALLED_JOBS_FILE = tmp_path / 'missing.conf'
 
 
 def _runjob_with(monkeypatch, sentry):
-    """runjob with `sentry` as its sentry_sdk, the release's jobs.conf, and its check-ins
-    recorded; returns the list they are recorded in."""
-    from mytp_publicsite import jobs
-    from mytp_publicsite.management.commands import runjob
+    """runjob (mytp-core) with `sentry` as its sentry_sdk, the release's jobs.conf, and its
+    check-ins recorded; returns the list they are recorded in."""
+    from mytp_core import jobs
+    from mytp_core.management.commands import runjob
 
     checkins = []
 
@@ -192,7 +190,7 @@ def _runjob_with(monkeypatch, sentry):
         return 'checkin-1'
     monkeypatch.setattr(runjob, 'sentry_sdk', sentry)
     monkeypatch.setattr(runjob, 'capture_checkin', capture_checkin)
-    monkeypatch.setattr(runjob, 'load_jobs', lambda: jobs.load_jobs(jobs.JOBS_FILE))
+    monkeypatch.setattr(runjob, 'load_jobs', lambda: jobs.load_jobs(jobs.release_jobs_file()))
     return checkins
 
 
@@ -209,14 +207,23 @@ class _CaptureTransport(Transport):
 
 @pytest.fixture
 def sentry_capture(monkeypatch):
-    """A real Sentry client (via init_sentry) whose events stay in memory."""
-    from mytreatplan import sentry as mytp_sentry
+    """A real Sentry client (via mytp-core's init_sentry, with the portal's settings) whose
+    events stay in memory."""
+    from django.conf import settings
+
+    from mytp_core import sentry as core_sentry
 
     transport = _CaptureTransport()
     real_init = sentry_sdk.init
     monkeypatch.setattr(sentry_sdk, 'init',
                         lambda **kwargs: real_init(transport=transport, **kwargs))
-    mytp_sentry.init_sentry('https://public@o1.ingest.de.sentry.io/2', 'test', 'abc123')
+    # Restored afterwards.
+    monkeypatch.setattr(core_sentry, '_site_sensitive_fields', ())
+    monkeypatch.setattr(core_sentry, '_safe_keys', core_sentry.DEFAULT_SAFE_KEYS)
+    core_sentry.init_sentry('https://public@o1.ingest.de.sentry.io/2', 'test', 'abc123',
+                            ignored_loggers=settings.MYTP_SENTRY_IGNORED_LOGGERS,
+                            sensitive_fields=settings.MYTP_SENTRY_SENSITIVE_FIELDS,
+                            safe_keys=settings.MYTP_SENTRY_SAFE_KEYS)
     yield transport
     sentry_sdk.get_global_scope().set_client(None)
 

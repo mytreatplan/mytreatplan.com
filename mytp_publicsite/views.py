@@ -1,7 +1,6 @@
 import json
 
 from django.conf import settings
-from django.db import connection
 from django.http import HttpResponse
 from django.shortcuts import render
 from django.templatetags.static import static
@@ -153,17 +152,3 @@ def robots_txt(request):
         f'Sitemap: {settings.SITE_URL}/sitemap.xml',
     ]
     return HttpResponse('\n'.join(lines) + '\n', content_type='text/plain; charset=utf-8')
-
-
-@never_cache
-@require_safe
-def healthz(request):
-    """Uptime probe (UptimeRobot, outside basic auth). Says only `ok` or `unavailable`:
-    no versions, settings or error details."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute('SELECT 1')
-            cursor.fetchone()
-    except Exception:
-        return HttpResponse('unavailable', status=503, content_type='text/plain; charset=utf-8')
-    return HttpResponse('ok', content_type='text/plain; charset=utf-8')

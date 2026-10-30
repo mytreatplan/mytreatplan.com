@@ -18,8 +18,8 @@ from django.conf import settings as django_settings
 from django.core.management import CommandError, call_command
 
 from conftest import _assert_no_secrets, _runjob_with
-from mytp_publicsite import jobs
-from mytp_publicsite.management.commands import backupdb
+from mytp_core import jobs
+from mytp_core.management.commands import backupdb
 from mytp_publicsite.tests.test_monitoring import _FakeSentry
 
 REPO = Path(django_settings.BASE_DIR)
@@ -376,7 +376,7 @@ def test_backupdb_never_deletes():
 # --- Through runjob: Sentry --------------------------------------------------------------
 
 def test_backupdb_job_declared_nightly():
-    job = jobs.load_jobs(jobs.JOBS_FILE)['backupdb']
+    job = jobs.load_jobs(jobs.release_jobs_file())['backupdb']
     assert (job.command, job.args) == ('backupdb', ())
     assert job.schedule == '*-*-* 02:30:00 UTC'
     assert job.crontab == '30 2 * * *'
@@ -384,13 +384,14 @@ def test_backupdb_job_declared_nightly():
 
 def test_runjob_backupdb_ok_checks_in(backup_env, monkeypatch, settings):
     settings.SENTRY_ENVIRONMENT = 'staging'
+    settings.SITE = 'dev'  # the slug names the site, not the environment
     fake = _FakeSentry(active=True)
     checkins = _runjob_with(monkeypatch, fake)
 
     call_command('runjob', 'backupdb')
 
     assert [c['status'] for c in checkins] == ['in_progress', 'ok']
-    assert checkins[0]['monitor_slug'] == 'mytp-staging-backupdb'
+    assert checkins[0]['monitor_slug'] == 'mytp-dev-backupdb'
     assert fake.exceptions == 0
 
 

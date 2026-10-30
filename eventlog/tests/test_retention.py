@@ -15,7 +15,7 @@ from django.utils import timezone
 from conftest import _runjob_with
 from eventlog import retention, service
 from eventlog.models import Attempt, Event
-from mytp_publicsite import jobs
+from mytp_core import jobs
 from mytp_publicsite.tests.test_monitoring import _FakeSentry
 
 pytestmark = pytest.mark.django_db
@@ -291,6 +291,7 @@ def test_job_applies_the_activity_rule_and_prints_counts_only(release_jobs, caps
 
 def test_job_checks_in_to_its_existing_monitor(monkeypatch, settings):
     settings.SENTRY_ENVIRONMENT = 'staging'
+    settings.SITE = 'dev'  # the slug names the site, not the environment
     fake = _FakeSentry(active=True)
     checkins = _runjob_with(monkeypatch, fake)
     _activity(Attempt.LOGIN, timezone.now() - FIVE_YEARS - DAY)
@@ -298,12 +299,13 @@ def test_job_checks_in_to_its_existing_monitor(monkeypatch, settings):
     call_command('runjob', 'eventlogretention')
 
     assert [c['status'] for c in checkins] == ['in_progress', 'ok']
-    assert {c['monitor_slug'] for c in checkins} == {'mytp-staging-eventlogretention'}
+    assert {c['monitor_slug'] for c in checkins} == {'mytp-dev-eventlogretention'}
     assert not Attempt.objects.exists()
 
 
 def test_job_failure_checks_in_error(monkeypatch, settings):
     settings.SENTRY_ENVIRONMENT = 'staging'
+    settings.SITE = 'dev'  # the slug names the site, not the environment
     fake = _FakeSentry(active=True)
     checkins = _runjob_with(monkeypatch, fake)
 
@@ -319,6 +321,6 @@ def test_job_failure_checks_in_error(monkeypatch, settings):
 
 
 def test_jobs_conf_schedules_retention_daily():
-    job = jobs.load_jobs(jobs.JOBS_FILE)['eventlogretention']
+    job = jobs.load_jobs(jobs.release_jobs_file())['eventlogretention']
     assert (job.command, job.args) == ('eventlog_retention', ())
     assert job.crontab == '45 3 * * *'

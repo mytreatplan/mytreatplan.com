@@ -18,7 +18,7 @@ from django.core.management import CommandError, call_command
 from conftest import _assert_no_secrets, _runjob_with
 # The package's module: kmscheck calls its functions, so the fixture patches them there.
 from mytp_core import kms
-from mytp_publicsite import jobs
+from mytp_core import jobs
 from mytp_publicsite.tests.test_monitoring import _FakeSentry
 
 REPO = Path(django_settings.BASE_DIR)
@@ -194,7 +194,7 @@ def test_runjob_field_key_failure_reaches_sentry_without_secrets(
 # --- Through runjob: Sentry -------------------------------------------------------------------
 
 def test_kmscheck_job_declared_daily():
-    job = jobs.load_jobs(jobs.JOBS_FILE)['kmscheck']
+    job = jobs.load_jobs(jobs.release_jobs_file())['kmscheck']
     assert (job.command, job.args) == ('kmscheck', ())
     assert job.schedule == '*-*-* 04:00:00 UTC'
     assert job.crontab == '0 4 * * *'
@@ -202,13 +202,14 @@ def test_kmscheck_job_declared_daily():
 
 def test_runjob_kmscheck_ok_checks_in(kms_env, monkeypatch, settings):
     settings.SENTRY_ENVIRONMENT = 'staging'
+    settings.SITE = 'dev'  # the slug names the site, not the environment
     fake = _FakeSentry(active=True)
     checkins = _runjob_with(monkeypatch, fake)
 
     call_command('runjob', 'kmscheck')
 
     assert [c['status'] for c in checkins] == ['in_progress', 'ok']
-    assert checkins[0]['monitor_slug'] == 'mytp-staging-kmscheck'
+    assert checkins[0]['monitor_slug'] == 'mytp-dev-kmscheck'
 
 
 @pytest.mark.parametrize('case', ['mismatch', 'auth', 'expiring'])
