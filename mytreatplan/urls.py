@@ -47,10 +47,24 @@ def portal_urlpatterns():
     return list(portal_patterns) if settings.PORTAL_ENABLED else []
 
 
+# Upload spike (epic-platform entry 2; entry 11 deletes it): a staff-only page and its
+# signing endpoint, served under the language prefixes only when UPLOAD_SPIKE_ENABLED is
+# True (dev only). The views also answer 404 while the setting is off.
+upload_spike_patterns = [
+    path('upload-spike/', include('upload_spike.urls')),
+]
+
+
+def upload_spike_urlpatterns():
+    """The upload spike's routes when UPLOAD_SPIKE_ENABLED is on, otherwise none."""
+    return list(upload_spike_patterns) if settings.UPLOAD_SPIKE_ENABLED else []
+
+
 # Public pages live under /en/ and /es/. A bare / is redirected by LocaleMiddleware
 # to the visitor's language (Accept-Language), falling back to English.
 urlpatterns += i18n_patterns(
     path('', include('mytp_publicsite.urls')),
     *portal_urlpatterns(),
+    *upload_spike_urlpatterns(),
     prefix_default_language=True,
 )

@@ -176,6 +176,22 @@ BACKUP_AGE_RECIPIENT = config('BACKUP_AGE_RECIPIENT', default='')
 # app user (deploy/provision.sh creates it). Only ciphertext is ever written there.
 BACKUP_TMP_DIR = config('BACKUP_TMP_DIR', default='/srv/mytp/shared/backup-tmp')
 
+# Upload spike (epic-platform entry 2; removed by entry 11): a staff-only page on dev
+# that uploads files from the browser straight to an OVHcloud Object Storage bucket with
+# presigned S3 multipart (Uppy), and `manage.py upload_spike_bucket` to set and inspect
+# the bucket's CORS, lifecycle and encryption. Off by default; on only in dev's
+# settings.env. The bucket is a staging-only one (not the backup bucket) and its S3 user
+# can reach only that bucket. The keys are typed into settings.env on the server only;
+# the browser never sees them. UPLOAD_SPIKE_CORS_ORIGINS lists the origins the bucket's
+# CORS allows (comma-separated; default SITE_URL).
+UPLOAD_SPIKE_ENABLED = config('UPLOAD_SPIKE_ENABLED', default=False, cast=bool)
+UPLOAD_SPIKE_S3_ENDPOINT = config('UPLOAD_SPIKE_S3_ENDPOINT', default='')
+UPLOAD_SPIKE_S3_REGION = config('UPLOAD_SPIKE_S3_REGION', default='')
+UPLOAD_SPIKE_S3_BUCKET = config('UPLOAD_SPIKE_S3_BUCKET', default='')
+UPLOAD_SPIKE_S3_ACCESS_KEY = config('UPLOAD_SPIKE_S3_ACCESS_KEY', default='')
+UPLOAD_SPIKE_S3_SECRET_KEY = config('UPLOAD_SPIKE_S3_SECRET_KEY', default='')
+UPLOAD_SPIKE_CORS_ORIGINS = config('UPLOAD_SPIKE_CORS_ORIGINS', default='', cast=Csv())
+
 # OVHcloud KMS (story 1.15): data keys for field encryption are wrapped by a service key
 # in an OKMS domain in France (encryption policy; the key provider, story 2.12, is
 # accounts.crypto.KMSKeyProvider).
@@ -237,6 +253,9 @@ INSTALLED_APPS = [
     # Legal documents (versioned, English and Spanish) and the choices made on them.
     'legal.apps.LegalConfig',
     'mytp_publicsite.apps.MytpPublicsiteConfig',
+    # Upload spike (epic-platform entry 2): no models; its routes are served only with
+    # UPLOAD_SPIKE_ENABLED. Entry 11 deletes the app.
+    'upload_spike.apps.UploadSpikeConfig',
 ]
 
 MIDDLEWARE = [

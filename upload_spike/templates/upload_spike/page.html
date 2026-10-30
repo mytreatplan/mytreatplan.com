@@ -1,0 +1,56 @@
+{% extends "portal_base.html" %}
+{% load static %}
+{% comment %}
+Upload spike (epic-platform entry 2): staff only, dev only, English only (not in the
+translation catalogue). Uppy uploads straight to the spike bucket; this site only signs
+each S3 request (upload_spike.s3). Its styles are inline so the app stays removable in
+one piece (Tailwind does not scan it). Entry 11 deletes this page.
+{% endcomment %}
+
+{% block title %}Upload spike &mdash; MyTreatPlan{% endblock %}
+
+{% block head %}{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/uppy.min.css' %}">
+<style>
+  .spike h1{font-size:28px;font-weight:900;line-height:1.2}
+  .spike h2{margin-top:32px;font-size:20px;font-weight:900}
+  .spike p{margin-top:8px;font-size:15px;line-height:1.5}
+  .spike .note{font-size:14px;opacity:.75}
+  .spike .alert{margin-top:16px;padding:12px 20px;border:1px solid currentColor;border-radius:12px}
+  .spike #upload-spike{margin-top:24px}
+  .spike #upload-spike-results{margin-top:12px;font-size:14px;word-break:break-all}
+  .spike #upload-spike-results li{margin-top:12px;padding:12px;border:1px solid #ccc;border-radius:12px}
+  .spike #upload-spike-results a{text-decoration:underline}
+  .spike #upload-spike-log{margin-top:12px;max-height:320px;overflow:auto;padding:12px;border:1px solid #ccc;border-radius:12px;font-size:12px;line-height:1.4;white-space:pre-wrap}
+</style>
+<script src="{% static 'js/uppy.min.js' %}" defer></script>
+<script src="{% static 'upload_spike/upload-spike.js' %}" defer></script>
+{% endblock %}
+
+{% block portal_content %}
+<div class="spike">
+<h1>Upload spike</h1>
+<p>
+  Staff-only test page. Files go straight from this browser to the bucket
+  <strong>{{ bucket|default:"(not set)" }}</strong> at {{ endpoint|default:"(no endpoint)" }}.
+  Files over 5&nbsp;MiB use S3 multipart. Do not upload patient data.
+</p>
+
+{% if missing_setting %}
+<p class="alert" role="alert">{{ missing_setting }} is not set in settings.env, so nothing can be signed.</p>
+{% endif %}
+
+<div id="upload-spike"
+     data-sign-url="{% url 'upload_spike:sign' %}"
+     data-object-url="{% url 'upload_spike:object' %}"
+     data-csrf-token="{{ csrf_token }}"></div>
+
+<h2>Stored objects</h2>
+<p class="note">Read back from the bucket (HeadObject) after each upload. The download link is valid for 5 minutes.</p>
+<ul id="upload-spike-results"></ul>
+
+<h2>Event log</h2>
+<p class="note">Copy it into the findings file after each test.</p>
+<pre id="upload-spike-log"></pre>
+</div>
+{% endblock %}
