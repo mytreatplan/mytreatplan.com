@@ -127,8 +127,10 @@ fi
 
 log "Building venv"
 python3 -m venv "$RELEASE/venv"
-"$RELEASE/venv/bin/pip" install --quiet --disable-pip-version-check --no-cache-dir \
-    -r "$RELEASE/requirements.txt" </dev/null
+# From the release folder: requirements.txt names the vendored mytp-core wheel by a path
+# relative to it (./vendor/...), and pip resolves such paths from the working directory.
+(cd "$RELEASE" && ./venv/bin/pip install --quiet --disable-pip-version-check --no-cache-dir \
+    -r requirements.txt </dev/null)
 
 manage() { (cd "$RELEASE" && ./venv/bin/python manage.py "$@" </dev/null); }
 log "compilemessages"

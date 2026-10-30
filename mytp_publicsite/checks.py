@@ -4,6 +4,7 @@ from django.conf import settings
 from django.core.checks import Error, register
 
 from accounts.crypto import DEFAULT_KEY_PROVIDER, KMS_PROVIDER as KMS_KEY_PROVIDER
+from accounts.crypto import uses_kms_provider
 from signup.twilio_verify import TWILIO_PROVIDER
 from signup.verification import FAKE_PROVIDER
 
@@ -89,10 +90,11 @@ def check_field_key_provider(app_configs, **kwargs):
     (story 2.12): the encryption policy wants them wrapped by the KMS.
 
     Runs only with `check --deploy`. Fails while DEBUG is off and FIELD_KEY_PROVIDER is
-    not the KMS provider.
+    not the KMS provider, compared by class, so `accounts.crypto.KMSKeyProvider` and
+    `mytp_core.crypto.KMSKeyProvider` both pass.
     """
     provider = getattr(settings, 'FIELD_KEY_PROVIDER', '') or DEFAULT_KEY_PROVIDER
-    if settings.DEBUG or provider == KMS_KEY_PROVIDER:
+    if settings.DEBUG or uses_kms_provider():
         return []
     return [Error(
         f'FIELD_KEY_PROVIDER is {provider!r}: the field encryption keys are not wrapped by '
