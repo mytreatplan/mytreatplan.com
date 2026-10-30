@@ -17,8 +17,8 @@ class LegalDocumentAdmin(admin.ModelAdmin):
     list_filter = ('kind',)
     ordering = ('kind', '-version')
     fields = ('kind', 'version', 'title_en', 'title_es', 'body_en', 'body_es', 'published_at',
-              'preview_en', 'preview_es', 'created_at')
-    readonly_fields = ('version', 'preview_en', 'preview_es', 'created_at')
+              'preview_en', 'preview_es', 'created_at', 'uid')
+    readonly_fields = ('version', 'preview_en', 'preview_es', 'created_at', 'uid')
     # No bulk actions: the bulk delete would bypass the per-object rule.
     actions = None
 
@@ -67,7 +67,7 @@ class LegalDocumentAdmin(admin.ModelAdmin):
 class LegalChoiceAdmin(admin.ModelAdmin):
     list_display = ('document', 'accepted', 'decided_at', 'user', 'pending_registration')
     list_filter = ('document__kind', 'accepted')
-    fields = ('document', 'accepted', 'decided_at', 'user', 'pending_registration')
+    fields = ('document', 'accepted', 'decided_at', 'user', 'pending_registration', 'uid')
     readonly_fields = fields
 
     def has_add_permission(self, request, obj=None):
