@@ -12,7 +12,7 @@ from django.utils import timezone
 from eventlog import service as eventlog
 from eventlog.models import Attempt, Event
 from legal.models import LegalChoice, LegalDocument
-from mytp_publicsite import jobs
+from mytp_core import jobs
 from signup import retention
 from signup.models import ACTIVE_FOR, PendingRegistration
 
@@ -260,6 +260,6 @@ def test_job_runs_the_command_and_prints_counts_only(release_jobs, capsys):
 
 
 def test_jobs_conf_schedules_purge_hourly():
-    job = jobs.load_jobs(jobs.JOBS_FILE)['purgepending']
+    job = jobs.load_jobs(jobs.release_jobs_file())['purgepending']
     assert (job.command, job.args) == ('purge_pending_signups', ())
     assert job.crontab == '15 * * * *'

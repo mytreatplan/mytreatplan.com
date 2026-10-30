@@ -19,7 +19,7 @@ from eventlog import retention as eventlog_retention
 from eventlog import service
 from eventlog.models import Attempt, Event
 from legal.models import LegalChoice, LegalDocument
-from mytp_publicsite import jobs
+from mytp_core import jobs
 from signup.forms import email_is_registered, phone_is_registered
 
 pytestmark = pytest.mark.django_db
@@ -495,7 +495,7 @@ def test_job_prints_only_the_count(staff, release_jobs, capsys, settings):
 
 
 def test_jobs_conf_schedules_the_purge_daily():
-    job = jobs.load_jobs(jobs.JOBS_FILE)['purgeerased']
+    job = jobs.load_jobs(jobs.release_jobs_file())['purgeerased']
     assert (job.command, job.args) == ('purge_erased_accounts', ())
     assert job.crontab == '15 4 * * *'
 

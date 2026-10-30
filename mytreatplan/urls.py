@@ -20,8 +20,9 @@ from django.contrib import admin
 from django.contrib.sitemaps.views import sitemap
 from django.urls import include, path
 
+from mytp_core.views import healthz
 from mytp_publicsite.sitemaps import PublicPagesSitemap
-from mytp_publicsite.views import healthz, robots_txt
+from mytp_publicsite.views import robots_txt
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -29,7 +30,8 @@ urlpatterns = [
     path('robots.txt', robots_txt, name='robots_txt'),
     path('sitemap.xml', sitemap, {'sitemaps': {'pages': PublicPagesSitemap}},
          name='django.contrib.sitemaps.views.sitemap'),
-    # Uptime probe; Nginx serves it without basic auth. Not in the sitemap.
+    # Uptime probe (mytp-core: `ok` and `site: <SITE>`, or `unavailable`); Nginx serves it
+    # without basic auth. Not in the sitemap.
     path('healthz', healthz, name='healthz'),
 ]
 
