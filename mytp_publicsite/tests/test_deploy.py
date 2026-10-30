@@ -101,13 +101,16 @@ def test_deploy_job_skips_superseded_commits_before_upload(deploy_job):
         assert steps[i]['if'] == f"steps.{tip_id}.outputs.latest == 'true'"
 
 
-def test_sudoers_allows_only_the_app_restart():
+def test_sudoers_allows_only_the_app_and_worker_restarts():
     rules = [
         line for line in (DEPLOY / 'sudoers' / 'deploy.template').read_text().splitlines()
         if line.strip() and not line.lstrip().startswith('#')
     ]
     assert rules == [
-        'mytp-__SITE__ ALL=(root) NOPASSWD: /usr/bin/systemctl restart mytp-__SITE__-gunicorn']
+        'mytp-__SITE__ ALL=(root) NOPASSWD: /usr/bin/systemctl restart mytp-__SITE__-gunicorn',
+        'mytp-__SITE__ ALL=(root) NOPASSWD: /usr/bin/systemctl stop mytp-__SITE__-worker',
+        'mytp-__SITE__ ALL=(root) NOPASSWD: /usr/bin/systemctl restart mytp-__SITE__-worker',
+    ]
 
 
 def test_nginx_template_auth_redirect_and_proxy_headers():
@@ -150,6 +153,7 @@ SITE_TEMPLATES = [
     DEPLOY / 'systemd' / 'gunicorn.service.template',
     DEPLOY / 'systemd' / 'job@.service.template',
     DEPLOY / 'systemd' / 'job.timer.template',
+    DEPLOY / 'systemd' / 'worker.service.template',
     DEPLOY / 'nginx' / 'site.conf.template',
 ]
 # Names of the single-site layout. `/srv/mytp` followed by anything but `-<site>`.
@@ -218,6 +222,10 @@ def test_rendered_units_for_dev():
     assert 'ExecStart=/bin/bash /srv/mytp-dev/current/deploy/run-job.sh dev %i' in job
     sudoers = _render(DEPLOY / 'sudoers' / 'deploy.template', 'dev')
     assert 'mytp-dev ALL=(root) NOPASSWD: /usr/bin/systemctl restart mytp-dev-gunicorn' in sudoers
+    assert 'mytp-dev ALL=(root) NOPASSWD: /usr/bin/systemctl restart mytp-dev-worker' in sudoers
+    worker = _render(DEPLOY / 'systemd' / 'worker.service.template', 'dev')
+    assert 'User=mytp-dev' in worker and 'Group=mytp-dev' in worker
+    assert 'WorkingDirectory=/srv/mytp-dev/current' in worker
 
 
 def test_provision_names_every_per_site_artifact_from_the_site():
@@ -231,6 +239,7 @@ def test_provision_names_every_per_site_artifact_from_the_site():
         'SUDOERS_FILE=/etc/sudoers.d/mytp-$SITE-deploy',
         'GUNICORN=mytp-$SITE-gunicorn',
         'JOB=mytp-$SITE-job',
+        'WORKER=mytp-$SITE-worker',
         'RELEASE_COMMAND=/usr/local/bin/mytp-release',
         'install_file "$DEPLOY_DIR/release.sh" "$RELEASE_COMMAND" 0755 root:root',
     ):
@@ -335,3 +344,84 @@ def test_release_checks_the_site_in_settings_env():
     for step in ('flock -w 600 9', 'manage migrate --noinput', 'point_current_at "$PREVIOUS"',
                  'KEEP_RELEASES=5'):
         assert step in script, step
+
+
+# --- Background task worker (AD-8, epic-platform entry 9) --------------------------------
+
+def _unit_lines(text):
+    """The unit's directives, with backslash continuations joined."""
+    joined = re.sub(r'\\\n\s*', ' ', text)
+    return [line.strip() for line in joined.splitlines()
+            if line.strip() and not line.lstrip().startswith('#')]
+
+
+def test_worker_unit_runs_db_worker_in_the_live_release_as_the_site_user():
+    lines = _unit_lines(_render(DEPLOY / 'systemd' / 'worker.service.template', 'dev'))
+    assert 'Type=exec' in lines
+    assert 'User=mytp-dev' in lines and 'Group=mytp-dev' in lines
+    assert 'WorkingDirectory=/srv/mytp-dev/current' in lines
+    # Interrupted tasks go back to the queue before the worker starts.
+    assert ('ExecStartPre=/srv/mytp-dev/current/venv/bin/python manage.py '
+            'requeue_interrupted_tasks') in lines
+    exec_start = next(line for line in lines if line.startswith('ExecStart='))
+    assert exec_start.startswith(
+        'ExecStart=/srv/mytp-dev/current/venv/bin/python manage.py db_worker ')
+    # Every queue, not only `default`.
+    assert '--no-reload' in exec_start and "--queue-name '*'" in exec_start
+    # systemd brings a killed or crashed worker back, but gives up on one that keeps failing.
+    assert 'Restart=always' in lines
+    assert 'StartLimitIntervalSec=300' in lines and 'StartLimitBurst=10' in lines
+    assert 'KillSignal=SIGTERM' in lines
+    assert 'WantedBy=multi-user.target' in lines
+    assert 'NoNewPrivileges=true' in lines
+
+
+def test_provision_installs_enables_and_starts_the_worker():
+    script = (DEPLOY / 'provision.sh').read_text()
+    for line in (
+        'render "$DEPLOY_DIR/systemd/worker.service.template" "$WORK/worker.service"',
+        'install_file "$WORK/worker.service" "/etc/systemd/system/$WORKER.service" 0644 root:root',
+        'sudo systemctl enable "$WORKER.service"',
+        'sudo systemctl "$worker_action" "$WORKER.service"',
+    ):
+        assert line in script, line
+    # Installed, enabled and started only when the live release ships the worker.
+    block = script[script.index('step "Task worker ($SITE)"'):script.index('# --- Scheduled jobs')]
+    guard = block.index("sudo grep -qi '^django-tasks-db==' \"$APP_HOME/current/requirements.txt\"")
+    assert guard < block.index('install_file "$WORK/worker.service"')
+    assert guard < block.index('sudo systemctl enable "$WORKER.service"')
+    assert 'worker_action=restart' in block
+    # A worker that cannot start warns; the later steps (jobs, Nginx, TLS) still run.
+    assert 'exit 1' not in block and 'WARNING: $WORKER did not $worker_action' in block
+    assert re.search(r'^django-tasks-db==', (REPO / 'requirements.txt').read_text(), re.M | re.I)
+
+
+def test_release_restarts_the_worker_after_the_switch_and_on_rollback():
+    script = (DEPLOY / 'release.sh').read_text()
+    assert 'WORKER=mytp-$SITE-worker' in script
+    # The exact commands the sudoers rules allow.
+    assert 'sudo -n /usr/bin/systemctl stop "$WORKER"' in script
+    assert 'sudo -n /usr/bin/systemctl restart "$WORKER"' in script
+    assert 'systemctl is-active --quiet "$WORKER"' in script
+    # A site whose unit is not enabled (not provisioned with it) deploys as before.
+    assert 'has_worker() { systemctl is-enabled --quiet "$WORKER" 2>/dev/null; }' in script
+    # Stopped before migrate, started after the switch: never old code on the new schema.
+    stop = script.index('\nstop_worker\n')
+    migrate = script.index('\nmanage migrate --noinput')
+    switch = script.index('point_current_at "$RELEASE"')
+    live = script.index('if ((restart_status == 0)) && healthy && restart_worker; then')
+    rollback = script.index('point_current_at "$PREVIOUS"', live)
+    assert stop < migrate < switch < live < rollback
+    # Every rollback restarts both services on the previous release.
+    after = script[rollback:script.index('exit 1', rollback)]
+    assert 'restart_app' in after and 'restart_worker' in after
+    # A failure before the switch starts the stopped worker again on the unchanged release.
+    on_error = script[script.index('on_build_error() {'):script.index("trap 'on_build_error")]
+    assert 'if ((worker_stopped)); then' in on_error and 'restart_worker' in on_error
+
+
+def test_two_sites_have_their_own_workers():
+    dev = _render(DEPLOY / 'systemd' / 'worker.service.template', 'dev')
+    dev_ae = _render(DEPLOY / 'systemd' / 'worker.service.template', 'dev-ae')
+    assert '/srv/mytp-dev/' in dev and '/srv/mytp-dev/' not in dev_ae
+    assert 'SyslogIdentifier=mytp-dev-ae-worker' in dev_ae

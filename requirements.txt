@@ -7,6 +7,10 @@ cffi==2.1.1
 cryptography==50.0.2
 dj-database-url==3.1.2
 django-countries==9.1.0
+django-stubs-ext==6.1.2
+# The django.tasks database backend (AD-8, epic-platform entry 9): declares Django
+# 5.2/6.0; Django 6.1 is proven by the tests (they run its worker) and CI on PostgreSQL 17.
+django-tasks-db==0.13.0
 Django==6.1.2
 gunicorn==26.2.0
 jmespath==1.1.0
@@ -24,4 +28,4 @@ sqlparse==0.6.0
 typing_extensions==4.16.0
 urllib3==2.8.0
 # Shared code (mytp-core, AD-10): the wheel of a tag, rebuilt by scripts/vendor-mytp-core.sh.
-./vendor/mytp_core-0.2.1-py3-none-any.whl
+./vendor/mytp_core-0.3.0-py3-none-any.whl

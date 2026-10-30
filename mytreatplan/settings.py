@@ -322,7 +322,21 @@ INSTALLED_APPS = [
     # Upload spike (epic-platform entry 2): no models; its routes are served only with
     # UPLOAD_SPIKE_ENABLED. Entry 11 deletes the app.
     'upload_spike.apps.UploadSpikeConfig',
+    # The django.tasks database backend (AD-8, epic-platform entry 9): its table of
+    # queued and finished tasks, and the commands db_worker (systemd
+    # mytp-<site>-worker) and prune_db_task_results (the `prunetasks` job).
+    'django_tasks_db',
 ]
+
+# Background tasks (AD-8): written against django.tasks, run by the site's one worker
+# (`manage.py db_worker`, deploy/systemd/worker.service.template) from the database
+# queue. Task code imports django.tasks and mytp_core.tasks only (enqueue_on_commit,
+# run_once), never the backend; retries that matter live on business rows.
+TASKS = {
+    'default': {
+        'BACKEND': 'django_tasks_db.DatabaseBackend',
+    },
+}
 
 MIDDLEWARE = [
     # First, so the noindex header also lands on redirects and errors from the rest.
@@ -545,5 +559,15 @@ LOGGING = {
             'level': 'INFO',
             'propagate': False,
         },
+        # Background tasks (AD-8): skipped repeat effects, the heartbeat and the sample
+        # task, in the worker's journal (journalctl -u mytp-<site>-worker). Record UUIDs
+        # only, never personal data.
+        'mytp_core.tasks': {'handlers': ['console'], 'level': 'INFO'},
+        # Each task's start and end (id and path), and a failed task's ERROR with its
+        # traceback (which also reaches Sentry). Its own console handler: propagating to
+        # Django's `django` logger would print only with DEBUG on, and db_worker adds no
+        # handler of its own once an ancestor has one.
+        'django.tasks': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
+        'mytp_publicsite.tasks': {'handlers': ['console'], 'level': 'INFO'},
     },
 }

@@ -1,0 +1,46 @@
+# Rendered by deploy/provision.sh to /etc/systemd/system/mytp-__SITE__-worker.service, one
+# per site (__SITE__ is the site name, e.g. dev). The site's one background task worker
+# (architecture AD-8): django-tasks-db's `manage.py db_worker` in the site's live release
+# (/srv/mytp-__SITE__/current), as mytp-__SITE__ with the release's settings.env, every
+# queue. Deploys stop it before `migrate` and start it after the switch
+# (deploy/release.sh, deploy/sudoers/deploy.template), so it never runs old code on the
+# new schema. Logs: journalctl -u mytp-__SITE__-worker.
+[Unit]
+Description=MyTreatplan background task worker (site __SITE__)
+After=network-online.target
+Wants=network-online.target
+# A worker that keeps failing (10 starts within 5 minutes) is left failed instead of
+# retrying for ever; the heartbeat monitor then alerts. Clear it with a restart.
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+# `systemctl restart` fails when ExecStartPre or the exec of ExecStart fails, so a
+# release whose worker cannot start (bad settings, database unreachable) is rolled back.
+Type=exec
+User=mytp-__SITE__
+Group=mytp-__SITE__
+# `current` is resolved when the service starts, so a restart picks up a new release.
+WorkingDirectory=/srv/mytp-__SITE__/current
+# Only this worker runs the site's tasks, and it is stopped now: a task still marked
+# running was interrupted (the worker was killed) and goes back to the queue. Its effects
+# are idempotent (mytp_core.tasks.run_once), so none happens twice.
+ExecStartPre=/srv/mytp-__SITE__/current/venv/bin/python manage.py requeue_interrupted_tasks
+ExecStart=/srv/mytp-__SITE__/current/venv/bin/python manage.py db_worker \
+    --queue-name '*' \
+    --interval 1 \
+    --no-reload
+Restart=always
+RestartSec=5
+# SIGTERM lets the running task finish; after TimeoutStopSec systemd kills it, and the
+# next start requeues that task.
+KillSignal=SIGTERM
+TimeoutStopSec=60
+SyslogIdentifier=mytp-__SITE__-worker
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

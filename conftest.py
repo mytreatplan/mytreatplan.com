@@ -57,6 +57,16 @@ def pytest_configure(config):
     settings.TWILIO_VERIFY_SERVICE_SID = ''
     settings.TWILIO_WHATSAPP_ENABLED = False
 
+    # django-tasks-db's table has JSON fields, so Django's system checks ask the database
+    # whether it supports them. PostgreSQL (CI, servers) answers without a connection;
+    # SQLite (local runs) opens one, which tests without database access may not. Every
+    # SQLite Python 3.13 ships has JSON support, so say so up front (for every connection
+    # object the suite creates, hence on the class).
+    from django.db import connections
+    if any(connections[alias].vendor == 'sqlite' for alias in connections):
+        from django.db.backends.sqlite3.base import DatabaseWrapper as SQLiteWrapper
+        SQLiteWrapper.features_class.supports_json_field = True
+
 
 class NetworkAccessInTests(RuntimeError):
     """A test tried to reach the network. Not an OSError, so no "check unavailable"

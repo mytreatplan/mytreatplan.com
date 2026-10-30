@@ -10,7 +10,8 @@
 # Host-wide (shared by every site): packages, SSH hardening, firewall, the ACME webroot,
 # certbot.timer and the release command /usr/local/bin/mytp-release (deploy/release.sh).
 # Per site <site>: Linux user mytp-<site>, home /srv/mytp-<site>, sudoers rule
-# /etc/sudoers.d/mytp-<site>-deploy, units mytp-<site>-gunicorn.{socket,service} and
+# /etc/sudoers.d/mytp-<site>-deploy, units mytp-<site>-gunicorn.{socket,service},
+# mytp-<site>-worker.service (background tasks) and
 # mytp-<site>-job@<job>.{service,timer}, password file /etc/nginx/mytp-<site>.htpasswd,
 # Nginx site mytp-<site>.conf and the domain's certificate. A run for one site never
 # touches another site's files, units, timers or Nginx config.
@@ -53,6 +54,7 @@ NGINX_ENABLED=/etc/nginx/sites-enabled/mytp-$SITE.conf
 SUDOERS_FILE=/etc/sudoers.d/mytp-$SITE-deploy
 GUNICORN=mytp-$SITE-gunicorn
 JOB=mytp-$SITE-job
+WORKER=mytp-$SITE-worker
 RELEASE_COMMAND=/usr/local/bin/mytp-release
 CERT_FILE=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
 PACKAGES=(nginx certbot python3-certbot-nginx python3-venv python3-pip gettext libpq5 ufw apache2-utils curl
@@ -179,7 +181,7 @@ if ! sudo test -f "$APP_HOME/.ssh/authorized_keys"; then
     changed "$APP_HOME/.ssh/authorized_keys (empty; add the deploy key, see deploy/README.md)"
 fi
 
-# --- sudoers: restart the site's app service only ---------------------------------
+# --- sudoers: restart the site's app service and task worker only -----------------
 step "sudoers ($SITE)"
 render "$DEPLOY_DIR/sudoers/deploy.template" "$WORK/sudoers"
 sudo visudo -cqf "$WORK/sudoers" >/dev/null
@@ -210,6 +212,44 @@ elif ((units_changed)); then
     # next request (socket activation).
     sudo systemctl stop "$GUNICORN.service" "$GUNICORN.socket"
     sudo systemctl start "$GUNICORN.socket"
+fi
+
+# --- Background task worker (AD-8) --------------------------------------------
+# One mytp-<site>-worker.service per site: `manage.py db_worker` in the live release.
+# deploy/release.sh stops it before `migrate` and starts it after every switch. It is
+# installed, enabled and started only when the live release ships the worker
+# (django-tasks-db in its requirements.txt); until then nothing is installed, release.sh
+# skips the worker, and provision.sh must run again once such a release is live.
+step "Task worker ($SITE)"
+if sudo test -f "$APP_HOME/current/requirements.txt" \
+    && sudo grep -qi '^django-tasks-db==' "$APP_HOME/current/requirements.txt"; then
+    render "$DEPLOY_DIR/systemd/worker.service.template" "$WORK/worker.service"
+    worker_changed=0
+    if install_file "$WORK/worker.service" "/etc/systemd/system/$WORKER.service" 0644 root:root; then
+        worker_changed=1
+        sudo systemctl daemon-reload
+    fi
+    if ! systemctl is-enabled --quiet "$WORKER.service"; then
+        sudo systemctl enable "$WORKER.service" >/dev/null 2>&1
+        changed "$WORKER.service enabled"
+    fi
+    worker_action=""
+    if ! systemctl is-active --quiet "$WORKER.service"; then
+        worker_action=start
+    elif ((worker_changed)); then
+        worker_action=restart
+    fi
+    if [[ -n $worker_action ]]; then
+        # A worker that cannot start must not stop the remaining steps (jobs, Nginx, TLS).
+        if sudo systemctl "$worker_action" "$WORKER.service"; then
+            changed "$WORKER.service ${worker_action}ed"
+        else
+            echo "  WARNING: $WORKER did not $worker_action; see: sudo journalctl -u $WORKER -n 50" >&2
+        fi
+    fi
+else
+    echo "  note: the live release has no task worker yet; $WORKER is not installed."
+    echo "  Run this script again once a release with django-tasks-db is live."
 fi
 
 # --- Scheduled jobs (deploy/jobs.conf) ----------------------------------------
