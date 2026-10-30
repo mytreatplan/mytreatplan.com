@@ -42,6 +42,7 @@ Staff-side case work. Not appointments (epic-appointments), not sales data (epic
 
 ## Notes
 
+- Handoff (2026-10-30, epic-ordering inception): this epic requests named stage transitions from epic-ordering's stage machine, creates manual patients and work orders through its services (entries 1 and 9), and uses its work-order events without patient data for workload figures (entry 8).
 - Handoff (2026-10-30, epic-doctor-profile inception): maker logins are revealed through the service function epic-doctor-profile entry 8 exposes, called over remote reads (4.5), each view logged in the region.
 - Handoff (2026-10-30, epic-admin-access inception): this epic applies the 'assigned only' scope for Clinical Users that epic-admin-access entry 6 defines, and uses its fresh-code check (entry 5) before patient-record downloads.
 - Handoff: stage changes made here reach the portal through the remote API (epic-case-lifecycle sends the messages).

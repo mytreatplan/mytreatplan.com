@@ -50,6 +50,7 @@ The doctor's own data. Not subscriptions, orders or the case pages.
 
 ## Notes
 
+- Handoff (2026-10-30, epic-ordering inception): the case wizard links to entry 8's maker-logins settings page when a login is missing.
 - Tracer bullet: entry 1 (the doctor home on dev).
 - Lanes: one lane (1 → 2 → … → 9); entry 2 owns the settings shell, the profile model and the write pattern the others extend.
 - Decision (user, 2026-10-30): the doctor cannot change their country; a Sysadmin changes it on request, never to a banned country and only within the doctor's home region (another region means a new account).

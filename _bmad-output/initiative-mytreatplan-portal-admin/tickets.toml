@@ -85,6 +85,7 @@ slug = "epic-ordering"
 title = "Doctors order and pay for cases"
 covers = ["P8"]
 after = [
+  { epic = 1, needs = "storage and virus scan (1.11, 1.12)" },
   { epic = 5, needs = "resolver and products" },
   { epic = 6, needs = "fiscal data and shipping addresses" },
   { epic = 7, needs = "order model, checkout and invoices" },

@@ -20,7 +20,15 @@ Doctors order cases without help; the signal is a doctor on staging ordering a T
 
 ## Requirements
 
-Completed at inception from the initiative's P8 and the source.
+Source: the initiative's P8 (the rest after epic-payments and epic-subscriptions), the requirements document's purchasing workflow, and the architecture spine, AD-2, AD-5, AD-6, AD-15, AD-16, AD-20, AD-21, AD-23.
+
+- O1 (P8): Patients (regional, field-encrypted) with the patient code, the patient list and portrait, and the name lookup for invoices.
+- O2 (P8): Product pages and the start-a-case links.
+- O3 (P8): The case wizard: TPS by maker or in-house, VirtuaOrtho ranges and add-ons; maker login and shipping address checks.
+- O4 (P8): The cart and checkout with try-me vouchers.
+- O5 (P8): The ICE deduction.
+- O6 (P8): Work orders per patient-service with the case stage machine (AD-21), work-order events without patient data, and the order emails.
+- O7 (P8): Manual pending-payment work orders on the doctor's home page.
 
 ## Done when
 
@@ -38,10 +46,19 @@ Choosing and buying cases. Not the case after purchase (epic-case-lifecycle).
 
 - parent — _bmad-output/initiative-mytreatplan-portal-admin/initiative-mytreatplan-portal-admin.md, section Requirements (P8)
 - reqs — ../MyTP_Reqs_Def_V1_21Oct2026_v3.docx (parent folder of the repo)
-- architecture — the part-2 architecture document (bmad-architecture), once written
+- architecture — architecture-portal-admin/architecture-portal-admin.md, AD-2, AD-5, AD-6, AD-15, AD-16, AD-20, AD-21, AD-23
 
 ## Notes
 
+- Tracer bullet: entry 1 (a patient, an ICE paid with the fake gateway, its work order in pending assignment); it owns the patient and work-order models, the patient-code generator and the case stage machine in mytp-core.
+- Lanes: one lane (1 → … → 9).
+- Decision (user, 2026-10-30): a paid ICE is deducted once, with no time limit, from the first later planning (TPS or VirtuaOrtho) for the same patient.
+- Decision (user, 2026-10-30): a live ICE work order closes automatically when the planning is paid; otherwise one live work order per patient blocks new services.
+- Decision (user, 2026-10-30): a named maker needs a saved maker login before ordering; the wizard warns and links to the maker-logins settings page ('not decided yet' and 'other' excepted).
+- Decision (2026-10-30): the ICE deduction applies only within the same billing company and currency, uses the ICE line's snapshot net amount, and is reserved, consumed and released like a voucher.
+- Decision (2026-10-30): one service per patient per order; the one-live rule is checked again at payment; a pending-payment manual work order does not block other services until paid.
+- Decision (2026-10-30): this epic sends the order confirmation and payment receipt emails; epic-payments sends none of its own besides the bank-transfer reminder.
+- Assumption: retainers can be ordered only after a finished treatment for that patient (tested with a fixture until epic-case-lifecycle finishes cases).
 - Handoff (2026-10-30, epic-subscriptions inception): pending-payment work orders are priced with the doctor's effective tier when they are added to an order (entry 1's rule).
 - Decision (2026-10-29, epic-platform inception): this epic builds the patient-code generator (AD-5), using the prefix from the region profile.
 - Handoff: epic-clinical-ops creates the manual pending-payment work orders this epic lists.

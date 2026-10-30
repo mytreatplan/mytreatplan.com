@@ -42,6 +42,7 @@ The case on the portal. Staff actions are epic-clinical-ops's; appointments are 
 
 ## Notes
 
+- Handoff (2026-10-30, epic-ordering inception): the case stage machine (stages, transitions, one live work order per patient) is built by epic-ordering entry 1 in mytp-core; this epic reacts to it and extends the patient list built in epic-ordering entry 2 with stage, history and comments.
 - Handoff: epic-clinical-ops moves stages through the remote API; this epic reacts and sends the messages.
 - Handoff: epic-appointments fills the appointments block this epic leaves on the patient file.
 - Waits on epic 1 because: it needs object storage and job runner.

@@ -1,0 +1,122 @@
+# Stories of epic-ordering, in build order. Requirements O1–O7 are in epic-ordering.md.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Patients, work orders and a first ICE order"
+description = "Tracer bullet and shared core: the regional patient model (name and surname or a code of the doctor's choosing, field-encrypted, comments, status; marked as crossing sites) with the patient-code generator (region prefix from 1.6 + 8 random Crockford base32 characters, never reused; AD-5) and the create-patient service epic-clinical-ops reuses (AD-15); the work-order model with the case stage machine as a mytp-core minor release (the full stage list, allowed transitions, one live work order per patient; AD-21) that epic-case-lifecycle reacts to and epic-clinical-ops requests named transitions on; the patient-name lookup for invoices (7.10); and the thinnest path: an ICE for a new patient ordered through 7.1 with the fake gateway creates its work order in 'pending assignment'."
+verify = "On dev a doctor creates a patient, gets an EU-XXXXXXXX code, orders and pays an ICE with the fake gateway; a work order in 'pending assignment' exists; the invoice PDF shows the name next to the code; the stage machine refuses a transition it does not allow."
+covers = ["O1", "O6"]
+after = ["7.10", "8.1"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Patient list and portrait"
+description = "Adds the basic patient list (code, name, status, created; epic-case-lifecycle later adds stage, history and comments) and the optional patient portrait uploaded through the storage service and scan (1.11, 1.12), regional only."
+verify = "On dev the list shows a doctor's patients with code and status; a portrait appears only after the scan."
+covers = ["O1"]
+after = [1, "1.12"]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Case wizard: patient and TPS"
+description = "Adds the wizard's patient step (choose or create) and the TPS branch: maker (Invisalign, Ormco Spark, Angel Aligner, Solventum, Smartee, not decided yet, other with a name) or in-house printing, then ICE, short, medium or long, one arch (-25%) and Junior I/II on medium only; for a named maker without a saved login the wizard warns and links to 6.8's maker-logins settings page and does not allow ordering until it is saved ('not decided yet' and 'other' excepted); a patient with a live work order cannot get a new service unless it is the planning after an ICE."
+verify = "On dev the wizard adds a medium Invisalign TPS with Junior II to the cart; without a saved Invisalign login it shows the warning with the link and refuses; 'not decided yet' passes; a patient with a live non-ICE work order is refused."
+covers = ["O3"]
+after = [2, "6.8"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Case wizard: VirtuaOrtho"
+description = "Adds the VirtuaOrtho branch, offered only where the resolver includes it: One or DigitalTwin, then short, medium, long, ODB, retainers (assumption: only after a finished treatment for that patient, tested with a fixture until epic-case-lifecycle finishes cases) or Spark on Demand (One only, 4–9 aligners, one or both arches), Byte Sync as an add-on, Junior only on medium; a shipping address (6.7) is required."
+verify = "On dev an Iberia Advanced doctor (8.5 or a fixture, with 5.13's seed) adds a DigitalTwin medium with Byte Sync; Spark on Demand refuses 3 or 10 aligners; without a shipping address the wizard asks for one; a rest-of-EU doctor never sees the branch."
+covers = ["O3"]
+after = [3, "6.7", "5.13"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Product pages and start-a-case links"
+description = "Adds the VirtuaOrtho, planning-services and education pages (texts from the catalogue, per language, showing only what the resolver offers) and points 6.1's 'start a case' bar and tiles at the wizard."
+verify = "An Advanced Iberia doctor sees VirtuaOrtho products on its page and an Advanced rest-of-EU doctor does not; the bar opens the wizard."
+covers = ["O2"]
+after = [4]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Cart and checkout"
+description = "Adds the cart grouped by patient (one service per patient per order), stored regionally in the database across sign-ins (adds its AD-2 row), with 'add another' or 'finish order', and checkout through 7.1 with a try-me voucher option through 8.4 (a voucher covering everything makes a €0 order); the cart never spans two billing companies (AD-16), and the one-live-work-order rule is checked again at payment."
+verify = "A doctor adds two patients' services, signs out and back in, and still sees the cart; checkout with a try-me voucher pays once in the Redsys test environment; the voucher cannot be used again; a second service for the same patient is refused."
+covers = ["O4"]
+after = [5, "8.4", "7.3"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 7
+type = "story"
+title = "ICE deduction"
+description = "Deducts a paid ICE once from the first later planning (TPS or VirtuaOrtho) for the same patient, no time limit, only within the same billing company and currency, using the ICE line's snapshot net amount (AD-6) as the resolver's ICE input (5.12); the deduction is reserved when the order is created, consumed on payment and released on cancel or expiry (7.1 hooks); a refunded ICE gives none."
+verify = "Ordering a medium TPS for a patient with a paid ICE deducts the ICE's paid net amount; two pending orders cannot both deduct it; a cancelled order releases it; a refunded ICE deducts nothing."
+covers = ["O5"]
+after = [6]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Work orders per service and order emails"
+description = "On the paid hook creates one work order per patient-service in 'pending assignment', closes a live ICE work order when its planning is paid, emits work-order events without patient data (stage, product category, region; a contract type) for epic-clinical-ops' workload figures, and sends the order confirmation and payment receipt emails (patients by code; epic-payments sends no such emails)."
+verify = "Paying an order for two patients creates two work orders; paying a planning after an ICE closes the ICE work order; admindev receives the events without names; the emails name patients by code only."
+covers = ["O6"]
+after = [7]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Pending-payment work orders"
+description = "Adds the create-manual-work-order service epic-clinical-ops calls over remote writes and shows those work orders on 6.1's home page as 'pending payment' (not live until paid), each addable to the cart and priced with the doctor's effective tier when added (8.1)."
+verify = "A manual work order created through the service appears on the home page, is added to the cart at the doctor's current tier price, does not block other services, and once paid becomes a live work order."
+covers = ["O7"]
+after = [8]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Production checks for the EU go-live"
+description = "Writes this epic's production checks (patients and codes, wizard branches with maker-login warning, cart and checkout with voucher, ICE deduction, work orders and emails, pending-payment list) into epic-eu-golive's Done when."
+verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
+covers = []
+after = [9]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
+verify = "The portal's and mytp-core's test suites pass; deferred review findings are closed or recorded."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+hitl = false
+risk = "low"
