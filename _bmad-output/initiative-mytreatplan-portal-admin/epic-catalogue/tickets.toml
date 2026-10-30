@@ -1,0 +1,166 @@
+# Stories of epic-catalogue, in build order. Requirements C1–C12 are in epic-catalogue.md.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Money type in mytp-core"
+description = "Adds mytp-core's Money type (Decimal quantized to 0.01 plus ISO 4217 code EUR, AED or USD, arithmetic only within one currency, half-up rounding, the {amount, currency} JSON shape of 4.2's contract) as a new minor release vendored into the portal and installed in the admin site (AD-6)."
+verify = "mytp-core's tests prove no float is accepted, mixed currencies refuse to add, rounding is half up, and the JSON shape round-trips; both sites import it."
+covers = ["C1"]
+after = ["4.2"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Catalogue tracer: one product priced on dev"
+description = "Tracer bullet and shared setup: the admin catalogue apps with their migrations, the catalogue rows in 3.6's permission matrix, lists on 3.7 and audit through 3.8, a snapshot section registry each later entry adds its section to, the portal's read-only catalogue tables, and the thin slice of each piece: a minimal product (name, category, net price) linked to a minimal subscription (tier, country group, TPS discount) published in the snapshot and priced by a minimal resolver on dev."
+verify = "Creating the product and subscription on admindev makes the resolver on dev return the product at the discounted price for an ES test doctor and nothing for a US one; both changes are in the audit log."
+covers = ["C2", "C7", "C10", "C11"]
+after = [1, "4.4", "3.7", "3.8", "2.1"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Country groups and country-map editing"
+description = "Adds named country groups (Iberia, rest of EU, UAE, and 'rest of world' as the catch-all for countries in no other group) reused by subscriptions and billing rules, and the country-map editor (eu, ae, banned per country, AD-14), each publishing its snapshot section, replacing 2.1's seed as the source."
+verify = "A group edited on admindev reaches dev and dev-ae; a country absent from every named group falls in rest of world; moving a country to banned on admindev makes dev's signup refuse it after one sync."
+covers = ["C3"]
+after = [2, "2.3"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Providers and provider products"
+description = "Adds providers (code, type, status, fiscal and payment info field-encrypted with the admin's keys, contact, validity, comments) and their products with dated prices (face and discounted, validity from and to) so the cost at any date can be looked up; logical deletion only; the snapshot section carries only provider-product costs, never provider details."
+verify = "A provider product priced 100 until 30 June and 90 from 1 July returns the right cost for dates either side; deactivating a provider hides it from new links but keeps history; the regions receive costs only."
+covers = ["C4"]
+after = [3]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Products: core"
+description = "Completes products' core: status, public texts per language (EN, ES; English fallback), internal code and notes, category (TPS branded, TPS in-house, Initial Case Evaluation, VirtuaOrtho One, VirtuaOrtho DigitalTwin, ODB, retainers, Spark on Demand, subscription, education), validity, net price per currency, never hard-deleted (AD-6), with its snapshot section."
+verify = "Every product type in the requirements document can be entered with texts and price; a deactivated product is marked inactive on dev but stays readable for past orders."
+covers = ["C5"]
+after = [4]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Products: add-ons, quantities, calls and costs"
+description = "Adds to products the add-ons (Byte Sync, Junior I/II on medium only, one arch -25%, ODB DigitalTwin +320), per-aligner pricing with minimum and maximum quantity (Spark on Demand), call allowance and call length, and linked provider products for cost, including variable monthly costs such as Dental Monitoring, for epic-sales-finance's margins."
+verify = "Byte Sync adds 120 to any case, Junior is offered only on medium, Spark on Demand prices 4–9 aligners per arch option, and a product's cost at a date sums its linked provider costs."
+covers = ["C5"]
+after = [5]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Clone a product into another currency"
+description = "Adds the clone function on the admin site: a daily job stores the ECB EUR→USD reference rate, AED is computed through the fixed 3.6725 USD peg, the rate is pre-filled and editable, and the converted net price is rounded to whole units; the clone is a separate product with its own fixed price."
+verify = "Cloning a 249 EUR product into AED pre-fills the rate from the stored ECB rate and the peg, rounds to a whole number, and later rate changes leave the clone's price unchanged."
+covers = ["C6"]
+after = [6]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Subscriptions in full"
+description = "Completes subscriptions: internal code and texts, public name and description per language, country group, tier (Basic, Advanced, Premium), standard or manual (manual ones hidden from doctors without them), linked products, a configurable discount per product category (the standard TPS discount applies only to plain TPS; VirtuaOrtho 0%), extras such as Premium's extra VirtuaOrtho call and longer calls (for epic-appointments), price per currency and period, and exactly one default per tier and country group, with its snapshot section."
+verify = "Two defaults for the same tier and group are refused; Advanced Iberia offers VirtuaOrtho while Advanced rest-of-EU does not; a manual 'Ormco Premium' is invisible to doctors without it; Premium's call extras reach dev."
+covers = ["C7"]
+after = [7]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Billing companies and billing rules"
+description = "Adds the billing companies (UAE, Ireland, Spain: legal name, address, tax ids, legal time zone; consistent with 1.6's region-profile company) and the billing rules (country group × product category → company, VAT rate or exemption text, gateway id matching 1.6's gateway ids and epic-payments' adapters, available yes or no), one rule per pair; invoice series per company and instance stay with epic-payments (AD-7)."
+verify = "For ES, PT, IE, DE, US and AE test countries each category resolves to the expected company, VAT or exemption text and gateway on dev; a missing rule makes the product unavailable rather than unpriced."
+covers = ["C8"]
+after = [8]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Voucher definitions"
+description = "Adds voucher definitions: subscription and try-me types, generated codes, validity dates, region, fixed amount and currency, general or for one doctor (client UUID from 4.8), deactivation; each voucher is published only to its region; redemption is epic-subscriptions (AD-20)."
+verify = "Staff create a general try-me voucher and a doctor-specific subscription voucher; each gets a unique generated code and appears on dev only when its region is eu."
+covers = ["C9"]
+after = [9, "4.8"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Snapshot rules for the catalogue"
+description = "Settles how the catalogue travels: per-region payloads (vouchers and region-specific objects reach only their region; a handoff to 4.4 if its endpoint serves one payload), deactivation carried and never deletion, the portal's catalogue tables read-only with no write path (AD-3, AD-16)."
+verify = "A voucher for ae never appears on dev; deactivating an object on admindev leaves it readable on dev for past orders; a write to a portal catalogue table outside the snapshot apply fails a test."
+covers = ["C10"]
+after = [10]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 12
+type = "story"
+title = "Full pricing function on the portal"
+description = "Completes the resolver: given a doctor's country, home region and subscription, the fiscal entity's VIES status (an input; epic-doctor-profile checks VIES), an ICE amount and a voucher (inputs from epic-ordering and epic-subscriptions; voucher currency must match), it returns offered products with net price, subscription discount, billing company, VAT rate or exemption text and gateway, applying net → subscription discount → ICE → voucher → floor 0 → VAT; one order has one company, currency and gateway (AD-16)."
+verify = "For seed doctors the resolver returns the documented prices; a DE doctor with valid VIES billed by the Irish company gets the reverse-charge text; VirtuaOrtho lines carry no subscription discount; a voucher in another currency is refused."
+covers = ["C11"]
+after = [11]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 13
+type = "story"
+title = "Staging catalogue seed"
+description = "Adds a command that loads the requirements document's catalogue (TPS branded and in-house, ICE, VirtuaOrtho ranges, add-ons, retainers, Spark on Demand) and the Basic/Advanced/Premium grid for Iberia, rest of EU, UAE and rest of world on admindev, marked as staging data."
+verify = "Running the command on admindev publishes the full grid; dev and dev-ae show the documented prices for one doctor per group."
+covers = ["C12"]
+after = [12]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 14
+type = "story"
+title = "Production checks for the EU go-live"
+description = "Writes this epic's production checks (catalogue sync, resolver prices per group, billing rules per country, voucher publication per region, rate job) into epic-eu-golive's Done when."
+verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
+covers = []
+after = [13]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 15
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
+verify = "The portal's, the admin repo's and mytp-core's test suites pass; deferred review findings are closed or recorded."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+hitl = false
+risk = "low"
