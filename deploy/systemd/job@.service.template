@@ -1,0 +1,23 @@
+# Rendered by deploy/provision.sh to /etc/systemd/system/mytp-__SITE__-job@.service, one
+# per site (__SITE__ is the site name, e.g. dev). One scheduled job from the site's
+# jobs.conf, run in the site's live release as mytp-__SITE__; the instance name (%i) is
+# the job name. Fired by mytp-__SITE__-job@<name>.timer, rendered from job.timer.template.
+# Logs: journalctl -u 'mytp-__SITE__-job@<name>'.
+[Unit]
+Description=MyTreatplan scheduled job %i (site __SITE__)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=mytp-__SITE__
+Group=mytp-__SITE__
+WorkingDirectory=/srv/mytp-__SITE__
+ExecStart=/bin/bash /srv/mytp-__SITE__/current/deploy/run-job.sh __SITE__ %i
+# Same as the Sentry monitor's max runtime (mytp_publicsite runjob).
+TimeoutStartSec=60min
+SyslogIdentifier=mytp-__SITE__-job-%i
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+UMask=0027

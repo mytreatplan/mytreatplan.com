@@ -32,9 +32,10 @@ class Command(BaseCommand):
                                '(at most 32 characters).')
         entry = f'{key_id}:{new_key()}'
         out = self.stdout.write
-        out('# New field keys. Store them in /srv/mytp/shared/settings.env (or your local')
-        out('# settings.env) and in the team password manager. Never commit, log or paste them')
-        out('# in a chat or ticket. A lost key cannot be reissued: its data stays unreadable.')
+        out('# New field keys. Store them in /srv/mytp-<site>/shared/settings.env (or your')
+        out('# local settings.env) and in the team password manager. Never commit, log or')
+        out('# paste them in a chat or ticket. A lost key cannot be reissued: its data stays')
+        out('# unreadable.')
         if rotate:
             out('# Put this entry FIRST in FIELD_ENCRYPTION_KEYS, keep the current entries after')
             out('# it, restart, then run `manage.py reencrypt_fields`.')

@@ -1,0 +1,15 @@
+# Rendered by deploy/provision.sh to /etc/systemd/system/mytp-__SITE__-job@__NAME__.timer,
+# one per line of the site's deploy/jobs.conf (__SITE__ is the site name; __NAME__ and
+# __SCHEDULE__ come from that line).
+[Unit]
+Description=MyTreatplan scheduled job __NAME__ (site __SITE__, deploy/jobs.conf)
+
+[Timer]
+OnCalendar=__SCHEDULE__
+# Run at boot if the host was down when the job was due.
+Persistent=true
+AccuracySec=1min
+Unit=mytp-__SITE__-job@__NAME__.service
+
+[Install]
+WantedBy=timers.target

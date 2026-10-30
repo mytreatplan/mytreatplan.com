@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
-# Installs one release on the server and makes it live only if every step succeeds.
-# Runs as the app user (mytp); the deploy-staging CI job copies it with the tarball:
+# Installs one release of one site on the server and makes it live only if every step
+# succeeds. provision.sh installs it host-wide as /usr/local/bin/mytp-release, so any
+# repo's CI can deploy to its site; it runs as that site's user (mytp-<site>):
 #
-#     bash release.sh <git-sha> <tarball>
+#     mytp-release <site> <git-sha> <tarball>
+#     mytp-release dev 0123abc /srv/mytp-dev/incoming/0123abc.tar.gz
+#
+# The site must be provisioned (/srv/mytp-<site> exists) and its settings.env must say
+# SITE=<site>.
 #
 # Flow: unpack to releases/<sha> (with a REVISION file holding the SHA), build its
 # venv, compilemessages, collectstatic, migrate, createcachetable. Only then switch `current`, restart Gunicorn and check
@@ -10,20 +15,27 @@
 # Keeps the last 5 releases.
 set -euo pipefail
 
-APP_HOME=${APP_HOME:-/srv/mytp}
+SITE_RE='^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$'
 KEEP_RELEASES=5
-SOCKET=/run/mytp-gunicorn.sock
-SERVICE=mytp-gunicorn
 HEALTH_PATH=/robots.txt
 HEALTH_TRIES=15
 
 log() { echo "==> $*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
 
-[[ $# -eq 2 ]] || die "usage: $0 <git-sha> <tarball>"
-SHA=$1
-TARBALL=$2
+[[ $# -eq 3 ]] || die "usage: $0 <site> <git-sha> <tarball>"
+SITE=$1
+SHA=$2
+TARBALL=$3
+[[ $SITE =~ $SITE_RE ]] || die "invalid site name: '$SITE' (allowed: $SITE_RE)"
 [[ $SHA =~ ^[0-9a-f]{7,40}$ ]] || die "not a git sha: $SHA"
+
+APP_HOME=/srv/mytp-$SITE
+APP_USER=mytp-$SITE
+SOCKET=/run/mytp-$SITE-gunicorn.sock
+SERVICE=mytp-$SITE-gunicorn
+[[ -d $APP_HOME ]] || die "site '$SITE' is not provisioned: $APP_HOME is missing (run deploy/provision.sh)"
+[[ $(id -un) == "$APP_USER" ]] || die "run this as $APP_USER, not $(id -un)"
 [[ -f $TARBALL ]] || die "tarball not found: $TARBALL"
 
 RELEASES=$APP_HOME/releases
@@ -31,20 +43,28 @@ SHARED=$APP_HOME/shared
 CURRENT=$APP_HOME/current
 RELEASE=$RELEASES/$SHA
 
-# The tarball and this script are one-off uploads.
-cleanup() { rm -f "$TARBALL" "$APP_HOME/incoming/$SHA-release.sh"; }
+# The tarball is a one-off upload.
+cleanup() { rm -f "$TARBALL"; }
 trap cleanup EXIT
 
-# One release at a time on this host (CI also serialises deploys).
+# One release at a time per site (CI also serialises deploys).
 exec 9>"$APP_HOME/.release.lock"
 flock -w 600 9 || die "another release is still running"
 
 [[ -f $SHARED/settings.env ]] || die "$SHARED/settings.env is missing (see deploy/README.md)"
 
+# The value of KEY in settings.env (last line wins), without quotes or spaces.
+env_value() {
+    grep -E "^$1=" "$SHARED/settings.env" | tail -n1 | cut -d= -f2- | tr -d "\"' "
+}
+# The app derives its paths from SITE; a copied settings.env must not point at another site.
+env_site=$(env_value SITE || true)
+[[ $env_site == "$SITE" ]] || die "SITE in $SHARED/settings.env is '${env_site}', expected '$SITE'"
+
 # Health check: a request through the Gunicorn socket, as Nginx would send it.
 site_host() {
     local hosts
-    hosts=$(grep -E '^ALLOWED_HOSTS=' "$SHARED/settings.env" | tail -n1 | cut -d= -f2- | tr -d "\"' ")
+    hosts=$(env_value ALLOWED_HOSTS || true)
     echo "${hosts%%,*}"
 }
 healthy() {

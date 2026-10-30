@@ -3,7 +3,7 @@
     https://<region>.okms.ovh.net/api/<okmsId>/v1/servicekey/<keyId>[/datakey[/decrypt]]
 
 The server authenticates with an access certificate (mutual TLS): KMS_CLIENT_CERT and
-KMS_CLIENT_KEY are PEM files in /srv/mytp/shared/ (mode 600), KMS_CA_FILE optionally
+KMS_CLIENT_KEY are PEM files in /srv/mytp-<site>/shared/ (mode 600), KMS_CA_FILE optionally
 replaces the system CAs. Only the standard library is used (urllib, ssl, json); the field
 key provider accounts.crypto.KMSKeyProvider (story 2.12) builds on it.
 

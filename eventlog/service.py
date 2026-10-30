@@ -33,7 +33,7 @@ def report_failure(action, error, event=''):
 
 def client_ip(request):
     """The client IP: the last X-Forwarded-For entry (the one our Nginx appended,
-    deploy/nginx/mytp.conf.template), else REMOTE_ADDR."""
+    deploy/nginx/site.conf.template), else REMOTE_ADDR."""
     forwarded = request.META.get('HTTP_X_FORWARDED_FOR', '')
     entries = [entry.strip() for entry in forwarded.split(',') if entry.strip()]
     if entries:

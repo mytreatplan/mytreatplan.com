@@ -1,0 +1,32 @@
+# Rendered by deploy/provision.sh to /etc/systemd/system/mytp-__SITE__-gunicorn.service,
+# one per site (__SITE__ is the site name, e.g. dev).
+# Serves the site's active release (/srv/mytp-__SITE__/current) on the socket from
+# mytp-__SITE__-gunicorn.socket. Deploys restart it with
+# `sudo systemctl restart mytp-__SITE__-gunicorn` (deploy/sudoers/deploy.template).
+[Unit]
+Description=MyTreatplan Gunicorn (Django, site __SITE__)
+Requires=mytp-__SITE__-gunicorn.socket
+After=network.target
+
+[Service]
+Type=notify
+NotifyAccess=main
+User=mytp-__SITE__
+Group=mytp-__SITE__
+# `current` is resolved when the service starts, so a restart picks up a new release.
+WorkingDirectory=/srv/mytp-__SITE__/current
+ExecStart=/srv/mytp-__SITE__/current/venv/bin/gunicorn mytreatplan.wsgi:application \
+    --workers 3 \
+    --timeout 30 \
+    --access-logfile - \
+    --error-logfile -
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=10
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

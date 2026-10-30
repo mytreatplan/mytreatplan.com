@@ -124,7 +124,7 @@ def backup_env(tmp_path, monkeypatch, settings):
     monkeypatch.setitem(django_settings.DATABASES, 'default', {
         'ENGINE': 'django.db.backends.postgresql', 'NAME': 'mytreatplan', 'USER': 'mytp',
         'PASSWORD': DB_PASSWORD, 'HOST': 'db.gra.example', 'PORT': 20184,
-        'OPTIONS': {'sslmode': 'verify-full', 'sslrootcert': '/srv/mytp/shared/db-ca.pem'},
+        'OPTIONS': {'sslmode': 'verify-full', 'sslrootcert': '/srv/mytp-dev/shared/db-ca.pem'},
     })
 
     s3 = FakeS3()
@@ -167,7 +167,7 @@ def test_backup_runs_pg_dump_with_tls_and_password_only_in_env(backup_env):
     assert env['PGUSER'] == 'mytp'
     assert env['PGDATABASE'] == 'mytreatplan'
     assert env['PGSSLMODE'] == 'verify-full'
-    assert env['PGSSLROOTCERT'] == '/srv/mytp/shared/db-ca.pem'
+    assert env['PGSSLROOTCERT'] == '/srv/mytp-dev/shared/db-ca.pem'
     assert 'PGSERVICE' not in env
     age_args = (log / 'age.args').read_text().split()
     assert age_args == ['--encrypt', '--recipient', RECIPIENT]
@@ -568,7 +568,10 @@ def test_provision_installs_backup_packages_and_temp_dir():
 
 def test_backup_tmp_dir_default_matches_provision():
     text = (REPO / 'mytreatplan' / 'settings.py').read_text()
-    assert "config('BACKUP_TMP_DIR', default='/srv/mytp/shared/backup-tmp')" in text
+    assert ("config('BACKUP_TMP_DIR', default=str(SITE_HOME / 'shared' / 'backup-tmp'))"
+            in text)
+    # provision.sh creates "$APP_HOME/shared/backup-tmp" with APP_HOME=/srv/mytp-$SITE.
+    assert 'APP_HOME=/srv/mytp-$SITE' in (DEPLOY / 'provision.sh').read_text()
 
 
 def test_staging_env_example_lists_backup_settings_without_secrets():

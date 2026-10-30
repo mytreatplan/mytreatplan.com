@@ -518,12 +518,12 @@ def test_jobs_conf_commands_exist():
 # --- Deploy files ---------------------------------------------------------------------
 
 def test_nginx_healthz_without_basic_auth():
-    https = (DEPLOY / 'nginx' / 'mytp.conf.template').read_text().split('\n# __HTTPS_BEGIN__\n', 1)[1]
+    https = (DEPLOY / 'nginx' / 'site.conf.template').read_text().split('\n# __HTTPS_BEGIN__\n', 1)[1]
     block = re.search(r'location = /healthz \{(.*?)\}', https, re.S)
     assert block, 'no exact-match /healthz location in the HTTPS server'
     body = block.group(1)
     assert 'auth_basic off;' in body
-    assert 'proxy_pass http://mytp_gunicorn;' in body
+    assert 'proxy_pass http://mytp-__SITE__-gunicorn;' in body
     assert 'proxy_set_header Host $host;' in body
     assert 'proxy_set_header X-Forwarded-Proto $scheme;' in body
     # Everything else keeps the password.
@@ -531,17 +531,17 @@ def test_nginx_healthz_without_basic_auth():
 
 
 def test_job_service_unit():
-    unit = (DEPLOY / 'systemd' / 'mytp-job@.service').read_text()
+    unit = (DEPLOY / 'systemd' / 'job@.service.template').read_text()
     assert 'Type=oneshot' in unit
-    assert 'User=mytp' in unit and 'Group=mytp' in unit
-    assert 'ExecStart=/bin/bash /srv/mytp/current/deploy/run-job.sh %i' in unit
+    assert 'User=mytp-__SITE__' in unit and 'Group=mytp-__SITE__' in unit
+    assert 'ExecStart=/bin/bash /srv/mytp-__SITE__/current/deploy/run-job.sh __SITE__ %i' in unit
 
 
 def test_job_timer_template():
-    timer = (DEPLOY / 'systemd' / 'mytp-job.timer.template').read_text()
+    timer = (DEPLOY / 'systemd' / 'job.timer.template').read_text()
     assert 'OnCalendar=__SCHEDULE__' in timer
     assert 'Persistent=true' in timer
-    assert 'Unit=mytp-job@__NAME__.service' in timer
+    assert 'Unit=mytp-__SITE__-job@__NAME__.service' in timer
     assert 'WantedBy=timers.target' in timer
 
 
@@ -555,9 +555,14 @@ def test_run_job_script_runs_runjob_in_current():
 def test_provision_installs_job_timers():
     script = (DEPLOY / 'provision.sh').read_text()
     assert '"$DEPLOY_DIR/jobs.conf"' in script
-    assert 'mytp-job@.service' in script
-    assert 'mytp-job.timer.template' in script
-    assert 'disable --now "mytp-job@$name.timer"' in script
+    assert 'JOB=mytp-$SITE-job' in script
+    assert '"$DEPLOY_DIR/systemd/job@.service.template"' in script
+    assert '"$DEPLOY_DIR/systemd/job.timer.template"' in script
+    assert '"/etc/systemd/system/$JOB@$name.timer"' in script
+    assert 'disable --now "$JOB@$name.timer"' in script
+    # Unlisted-timer cleanup looks only at this site's timers.
+    assert 'for path in "/etc/systemd/system/$JOB@"*.timer; do' in script
+    assert 'mytp-job@' not in script.replace('mytp-<site>-job@', '')
     assert ('install_file "$DEPLOY_DIR/jobs.conf" "$APP_HOME/shared/jobs.conf" 0644 '
             '"$APP_USER:$APP_USER"') in script
 
