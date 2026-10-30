@@ -476,7 +476,7 @@ registrations' email) with AES-256-GCM, and finds emails through a blind index
 - `BLIND_INDEX_KEY`: its own base64 32-byte key.
 
 Do this **before the merge**: the deploy runs `migrate`, which refuses to run without
-valid keys (check errors `accounts.E001` / `accounts.E002`, naming the setting), and
+valid keys (check errors `mytp_core.E001` / `mytp_core.E002`, naming the setting), and
 whose data migration encrypts the existing users and pending registrations in place. A
 deploy without the keys fails at `migrate` and the previous release stays live.
 
@@ -1037,8 +1037,9 @@ on purpose.
 (`POST .../servicekey/<keyId>/datakey`), gets it both plain and wrapped by the service
 key, encrypts with the plain one in memory and stores only the wrapped one next to the
 data. To read, it sends the wrapped key to `POST .../datakey/decrypt`. The service key
-never leaves the KMS. `mytp_publicsite/kms.py` is the client (standard library only);
-the field key provider `accounts.crypto.KMSKeyProvider` (story 2.12) builds on it. The
+never leaves the KMS. `mytp_core.kms` (the mytp-core package) is the client (standard
+library only); the field key provider `accounts.crypto.KMSKeyProvider` (story 2.12; a
+re-export of `mytp_core.crypto.KMSKeyProvider`, either path works) builds on it. The
 wrapped field keys live in `settings.env` (`FIELD_KMS_KEYS`, `BLIND_INDEX_KMS_KEY`), not
 next to the data; each is unwrapped once per process (`datakey/decrypt`) and the plain key
 stays in the process's memory only: never in a log, an error, Sentry, the database, the

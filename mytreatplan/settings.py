@@ -242,7 +242,9 @@ KMS_CA_FILE = config('KMS_CA_FILE', default='')
 # FIELD_ENCRYPTION_KEYS may still hold plain keys during a move to the KMS, for
 # decryption only. `check` parses them without calling the KMS; `kmscheck` unwraps them.
 # The default is the constant accounts.crypto.DEFAULT_KEY_PROVIDER, typed out here because
-# settings load before any app module can be imported.
+# settings load before any app module can be imported. The code lives in mytp-core
+# (mytp_core.crypto); accounts.crypto re-exports it, and FIELD_KEY_PROVIDER may name
+# either path (mytp_core.crypto.KMSKeyProvider works the same).
 FIELD_KEY_PROVIDER = config('FIELD_KEY_PROVIDER', default='accounts.crypto.EnvKeyProvider')
 FIELD_ENCRYPTION_KEYS = config('FIELD_ENCRYPTION_KEYS', default='')
 BLIND_INDEX_KEY = config('BLIND_INDEX_KEY', default='')
@@ -261,6 +263,10 @@ INSTALLED_APPS = [
     'django.contrib.sitemaps',
     # Countries and their names in English and Spanish (signup step 1).
     'django_countries',
+    # Shared code (mytp-core, AD-10): field encryption, blind index, KMS; its field key
+    # checks (mytp_core.E001, E002) and the commands generate_field_keys,
+    # generate_kms_field_key and kmscheck.
+    'mytp_core.apps.MytpCoreConfig',
     'accounts.apps.AccountsConfig',
     'eventlog.apps.EventlogConfig',
     'signup.apps.SignupConfig',

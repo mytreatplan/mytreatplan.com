@@ -1,7 +1,10 @@
 """Story 2.2: encrypted personal fields, blind index, key provider, Argon2id, data migration.
 
 One test (or group) per row of the plan's I/O matrix, plus "no key material in any output".
-The keys here are fixed test values, never real ones.
+The keys here are fixed test values, never real ones. The code moved to mytp-core
+(epic-platform entry 4), together with its unit tests (primitives, blind index, the check
+matrix, generate_field_keys); these are the portal's integration tests: its models, admin,
+migrations, reencrypt_fields, wsgi.py and runbook.
 """
 import base64
 import io
@@ -46,93 +49,6 @@ def raw_row(table, pk, *columns):
 def assert_no_key_material(text):
     for secret in KEY_MATERIAL:
         assert secret not in text
-
-
-# --- Encryption primitives ------------------------------------------------------------------
-
-def test_round_trip_and_format():
-    stored = crypto.encrypt('Ana García', 'accounts.user.first_name')
-
-    match = ENC_RE.match(stored)
-    assert match and match['key_id'] == 'test1'
-    blob = base64.b64decode(stored.rsplit(':', 1)[1])
-    assert len(blob) == 12 + len('Ana García'.encode()) + 16  # nonce | ciphertext | tag
-    assert crypto.decrypt(stored, 'accounts.user.first_name') == 'Ana García'
-
-
-def test_random_nonce_per_value():
-    assert crypto.encrypt('ana@example.com', 'a.b.c') != crypto.encrypt('ana@example.com', 'a.b.c')
-
-
-def test_value_copied_to_another_field_fails():
-    stored = crypto.encrypt('Ana', 'accounts.user.first_name')
-    with pytest.raises(crypto.DecryptionError):
-        crypto.decrypt(stored, 'accounts.user.last_name')
-
-
-def test_tampered_value_fails():
-    """Matrix: one byte changed -> decryption error."""
-    stored = crypto.encrypt('ana@example.com', 'accounts.user.email')
-    prefix, token = stored.rsplit(':', 1)
-    blob = bytearray(base64.b64decode(token))
-    blob[20] ^= 0x01
-    tampered = f'{prefix}:{base64.b64encode(bytes(blob)).decode()}'
-
-    with pytest.raises(crypto.DecryptionError) as error:
-        crypto.decrypt(tampered, 'accounts.user.email')
-    message = str(error.value)
-    assert 'ana@example.com' not in message and token not in message and tampered not in message
-
-
-def test_unknown_key_id_fails_clearly():
-    """Matrix: a key id the provider does not have -> clear error, no plaintext/ciphertext."""
-    stored = crypto.encrypt('ana@example.com', 'accounts.user.email')
-    unknown = stored.replace(':test1:', ':gone:')
-
-    with pytest.raises(crypto.DecryptionError) as error:
-        crypto.decrypt(unknown, 'accounts.user.email')
-    message = str(error.value)
-    assert "'gone'" in message and 'FIELD_ENCRYPTION_KEYS' in message
-    assert 'ana@example.com' not in message and unknown.rsplit(':', 1)[1] not in message
-    assert_no_key_material(message)
-
-
-@pytest.mark.parametrize('stored', ['ana@example.com', '', 'enc:v2:test1:AAAA', 'enc:v1:test1:!!',
-                                    'enc:v1:test1:QUFB'])
-def test_malformed_stored_value_fails(stored):
-    """Never returns the stored text or an empty value."""
-    with pytest.raises(crypto.DecryptionError) as error:
-        crypto.decrypt(stored, 'accounts.user.email')
-    assert 'ana@example.com' not in str(error.value)
-
-
-# --- Blind index ----------------------------------------------------------------------------
-
-def test_blind_index_is_hmac_sha256_hex_of_the_normalized_value():
-    import hashlib
-    import hmac
-
-    key = base64.b64decode(TEST_BLIND_INDEX_KEY)
-    expected = hmac.new(key, b'ana.garcia@example.com', hashlib.sha256).hexdigest()
-    assert crypto.email_index(' Ana.Garcia@EXAMPLE.com ') == expected
-    assert crypto.email_index('ana.garcia@example.com') == expected
-    assert re.fullmatch(r'[0-9a-f]{64}', expected)
-
-
-def test_blind_index_uses_its_own_key(settings):
-    before = crypto.email_index('ana@example.com')
-    settings.BLIND_INDEX_KEY = ROTATED_KEY
-    assert crypto.email_index('ana@example.com') != before
-
-
-@pytest.mark.parametrize('raw, normalized', [
-    ('+34 600 11 22 33', '+34600112233'),
-    ('(+34) 600-112-233', '+34600112233'),
-    ('34600112233', '+34600112233'),
-])
-def test_phone_normalization(raw, normalized):
-    assert crypto.normalize_phone_for_index(raw) == normalized
-    assert crypto.phone_index(raw) == crypto.blind_index(normalized)
 
 
 # --- Models ---------------------------------------------------------------------------------
@@ -329,38 +245,11 @@ def test_rotation_with_reencrypt_fields(settings):
 # --- Missing or malformed keys --------------------------------------------------------------
 
 def _key_errors():
-    return [e for e in run_checks() if e.id in ('accounts.E001', 'accounts.E002')]
+    return [e for e in run_checks() if e.id in ('mytp_core.E001', 'mytp_core.E002')]
 
 
 def test_valid_keys_pass_the_check():
     assert _key_errors() == []
-
-
-@pytest.mark.parametrize('setting, value, error_id', [
-    ('FIELD_ENCRYPTION_KEYS', '', 'accounts.E001'),
-    ('FIELD_ENCRYPTION_KEYS', 'no-colon-here', 'accounts.E001'),
-    ('FIELD_ENCRYPTION_KEYS', 'k1:not base64!', 'accounts.E001'),
-    ('FIELD_ENCRYPTION_KEYS', f'k1:{base64.b64encode(b"short").decode()}', 'accounts.E001'),
-    ('FIELD_ENCRYPTION_KEYS', f'bad id:{ROTATED_KEY}', 'accounts.E001'),
-    ('FIELD_ENCRYPTION_KEYS', f'k1:{ROTATED_KEY},k1:{ROTATED_KEY}', 'accounts.E001'),
-    ('FIELD_ENCRYPTION_KEYS', f'k1:{ROTATED_KEY},', 'accounts.E001'),
-    ('BLIND_INDEX_KEY', '', 'accounts.E002'),
-    ('BLIND_INDEX_KEY', 'not base64!', 'accounts.E002'),
-    ('BLIND_INDEX_KEY', base64.b64encode(b'x' * 16).decode(), 'accounts.E002'),
-    ('BLIND_INDEX_KEY', TEST_FIELD_ENCRYPTION_KEYS.split(':', 1)[1], 'accounts.E002'),
-    ('FIELD_KEY_PROVIDER', 'accounts.crypto.NoSuchProvider', 'accounts.E001'),
-])
-def test_missing_or_malformed_key_is_a_check_error(settings, setting, value, error_id):
-    """Matrix: the app refuses to start; the message names the setting, never a value."""
-    setattr(settings, setting, value)
-
-    errors = _key_errors()
-    assert [e.id for e in errors] == [error_id]
-    message = errors[0].msg
-    assert setting in message
-    assert_no_key_material(message)
-    if value and setting != 'FIELD_KEY_PROVIDER':  # a provider path is not secret
-        assert value.split(':')[-1].rstrip(',') not in message
 
 
 def test_missing_keys_stop_check_and_migrate(settings):
@@ -373,46 +262,18 @@ def test_missing_keys_stop_check_and_migrate(settings):
         call_command('migrate', skip_checks=False, verbosity=0)
 
 
-def test_missing_key_never_falls_back(settings):
+def test_missing_keys_keep_their_messages_under_the_package_ids(settings):
+    """Matrix (mytp-core move): the same messages as before, registered once, by mytp_core."""
     settings.FIELD_ENCRYPTION_KEYS = ''
-    with pytest.raises(crypto.KeyConfigurationError):
-        crypto.encrypt('ana@example.com', 'accounts.user.email')
     settings.BLIND_INDEX_KEY = ''
-    with pytest.raises(crypto.KeyConfigurationError):
-        crypto.email_index('ana@example.com')
 
+    errors = [e for e in run_checks() if e.id.startswith(('accounts.', 'mytp_core.'))]
 
-# --- Key generation and "no key material in any output" -------------------------------------
-
-def test_generate_field_keys_prints_valid_new_keys(settings):
-    settings.FIELD_ENCRYPTION_KEYS = ''  # runs before any key exists
-    out = io.StringIO()
-    call_command('generate_field_keys', stdout=out)
-    text = out.getvalue()
-    values = dict(line.split('=', 1) for line in text.splitlines() if not line.startswith('#'))
-
-    keys = crypto.parse_key_list(values['FIELD_ENCRYPTION_KEYS'])
-    assert len(keys) == 1 and re.fullmatch(r'k\d{8}T\d{4}', keys[0][0])
-    assert len(crypto.decode_key(values['BLIND_INDEX_KEY'], 'BLIND_INDEX_KEY')) == 32
-    assert keys[0][1] != crypto.decode_key(values['BLIND_INDEX_KEY'], 'BLIND_INDEX_KEY')
-    assert_no_key_material(text)  # never echoes the configured keys
-
-    out = io.StringIO()
-    call_command('generate_field_keys', rotate=True, key_id='k2', stdout=out)
-    entries = [line for line in out.getvalue().splitlines() if not line.startswith('#')]
-    assert len(entries) == 1 and entries[0].startswith('k2:')
-    crypto.parse_key_list(entries[0])
-
-
-def test_no_key_material_in_reprs_and_errors():
-    provider = crypto.get_key_provider()
-    assert_no_key_material(repr(provider))
-    broken = ROTATED_KEY[:-1]  # not valid base64
-    with pytest.raises(crypto.KeyConfigurationError) as error:
-        crypto.parse_key_list(f'k1:{broken}')
-    assert broken not in str(error.value)
-    # The decoder's own exception is not chained (tracebacks show no key either).
-    assert error.value.__cause__ is None and error.value.__suppress_context__
+    assert [(e.id, e.msg) for e in errors] == [
+        ('mytp_core.E001', 'FIELD_ENCRYPTION_KEYS is empty. Generate keys with `manage.py '
+                           'generate_field_keys` and set FIELD_ENCRYPTION_KEYS.'),
+        ('mytp_core.E002', 'BLIND_INDEX_KEY is empty. Generate it with `manage.py '
+                           'generate_field_keys` and set BLIND_INDEX_KEY.')]
 
 
 # --- Data migration -------------------------------------------------------------------------

@@ -1,5 +1,4 @@
 from django.apps import AppConfig
-from django.core import checks
 
 
 class AccountsConfig(AppConfig):
@@ -9,12 +8,10 @@ class AccountsConfig(AppConfig):
     def ready(self):
         from django.contrib.auth.signals import user_logged_in
 
-        from .crypto import check_field_keys
         from . import login_guard
         from .sessions import on_user_logged_in
 
-        # Missing or malformed field keys stop `check`, `runserver` and `migrate`.
-        checks.register(check_field_keys, checks.Tags.security)
+        # The field key checks (mytp_core.E001, E002) are registered by the mytp_core app.
 
         # One session per account (accounts.sessions): every login, whichever its way.
         user_logged_in.connect(on_user_logged_in, dispatch_uid='accounts.one_session')

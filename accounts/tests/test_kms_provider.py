@@ -1,27 +1,28 @@
 """Story 2.12: the KMS key provider. One test (or group) per row of the plan's I/O matrix,
-plus "a plain key never reaches a log, an error or a repr".
+plus "a plain key never reaches a log, an error or a repr". The provider moved to mytp-core
+(epic-platform entry 4) with its unit tests; these are the portal's integration tests (its
+models, reencrypt_fields, wsgi.py, examples and runbook) and the provider paths.
 
 The KMS is a fake (`KMSClient.from_settings` returns it), so no network is used. The
 wrapped and plain keys here are fixed test values, never real ones.
 """
 import base64
-import hashlib
-import hmac
 import io
-import logging
 import runpy
-import threading
 from pathlib import Path
 
 import pytest
 from django.contrib.auth import authenticate, get_user_model
 from django.core.checks import run_checks
-from django.core.management import CommandError, call_command
+from django.core.management import call_command
 
+import mytp_core.crypto
+import mytp_core.kms
 from accounts import crypto
 from accounts.management.commands.reencrypt_fields import values_not_on_key
 from conftest import TEST_BLIND_INDEX_KEY, TEST_FIELD_ENCRYPTION_KEYS, _env_values
 from mytp_publicsite import kms
+from mytp_publicsite.checks import check_field_key_provider
 
 User = get_user_model()
 PASSWORD = 'violet-orbit-canyon-42'
@@ -100,174 +101,14 @@ def key_id_of_value(stored):
     return crypto.key_id_of(stored)
 
 
-# --- Matrix: encrypt, decrypt an older key, transition, unknown id ---------------------------
-
-def test_encrypt_uses_the_kms_key_and_unwraps_once(kms_keys):
-    first = crypto.encrypt('Ana', 'accounts.user.first_name')
-    second = crypto.encrypt('Bea', 'accounts.user.first_name')
-
-    assert key_id_of_value(first) == key_id_of_value(second) == 'k1'
-    assert crypto.decrypt(first, 'accounts.user.first_name') == 'Ana'
-    assert kms_keys.unwraps == [(SERVICE_KEY_ID, WRAPPED['W-k1'])]
-    assert isinstance(crypto.get_key_provider(), crypto.KMSKeyProvider)
-
-
-def test_building_the_provider_calls_no_kms(kms_keys):
-    crypto.get_key_provider()
-    assert kms_keys.unwraps == []
-
-
-def test_decrypt_value_on_an_older_kms_key(kms_keys, settings):
-    stored = crypto.encrypt('Ana', 'a.b.c')
-    settings.FIELD_KMS_KEYS = f'k2:{WRAPPED["W-k2"]},k1:{WRAPPED["W-k1"]}'
-
-    assert kms_keys.unwraps == [(SERVICE_KEY_ID, WRAPPED['W-k1'])]
-    kms_keys.unwraps.clear()
-    assert crypto.encrypt('x', 'a.b.c').startswith('enc:v1:k2:')
-    assert kms_keys.unwrapped == [WRAPPED['W-k2']]
-    assert crypto.decrypt(stored, 'a.b.c') == 'Ana'  # k1 unwrapped on first use
-    assert crypto.decrypt(stored, 'a.b.c') == 'Ana'
-    assert kms_keys.unwrapped == [WRAPPED['W-k2'], WRAPPED['W-k1']]
-
-
-def test_transition_from_plain_keys(kms_keys, settings):
-    settings.FIELD_KEY_PROVIDER = crypto.DEFAULT_KEY_PROVIDER
-    settings.FIELD_ENCRYPTION_KEYS = TEST_FIELD_ENCRYPTION_KEYS  # env key test1
-    stored = crypto.encrypt('Ana', 'a.b.c')
-    assert key_id_of_value(stored) == 'test1'
-
-    settings.FIELD_KEY_PROVIDER = KMS_PROVIDER
-    settings.FIELD_KMS_KEYS = f'k2:{WRAPPED["W-k2"]}'
-
-    assert crypto.decrypt(stored, 'a.b.c') == 'Ana'  # the plain key decrypts
-    assert kms_keys.unwraps == []
-    assert key_id_of_value(crypto.encrypt('x', 'a.b.c')) == 'k2'  # a KMS key is current
-
-
-def test_transition_key_id_also_in_kms_list_is_refused(kms_keys, settings):
-    settings.FIELD_ENCRYPTION_KEYS = f'k1:{TEST_FIELD_ENCRYPTION_KEYS.split(":", 1)[1]}'
-
-    with pytest.raises(crypto.KeyConfigurationError) as error:
-        crypto.get_key_provider()
-    assert 'FIELD_ENCRYPTION_KEYS' in str(error.value) and "'k1'" in str(error.value)
-    assert_no_secrets(error.value)
-
-
-def test_unknown_key_id(kms_keys, settings):
-    settings.FIELD_KEY_PROVIDER = crypto.DEFAULT_KEY_PROVIDER
-    settings.FIELD_ENCRYPTION_KEYS = TEST_FIELD_ENCRYPTION_KEYS
-    stored = crypto.encrypt('Ana García', 'a.b.c')
-    settings.FIELD_KEY_PROVIDER = KMS_PROVIDER
-    settings.FIELD_ENCRYPTION_KEYS = ''
-
-    with pytest.raises(crypto.DecryptionError) as error:
-        crypto.decrypt(stored, 'a.b.c')
-    message = str(error.value)
-    assert "'test1'" in message and 'FIELD_KMS_KEYS' in message
-    assert 'Ana' not in message and stored.rsplit(':', 1)[1] not in message
-    assert kms_keys.unwraps == []
-
-
-# --- Matrix: KMS down ------------------------------------------------------------------------
-
-def test_kms_failure_names_step_and_key_and_is_retried(kms_keys):
-    kms_keys.fail = kms.KMSError('connect', 'timed out')
-
-    with pytest.raises(crypto.KeyUnavailableError) as error:
-        crypto.encrypt('Ana', 'a.b.c')
-    message = str(error.value)
-    assert 'step connect failed' in message and "'k1'" in message
-    assert error.value.__cause__ is None and error.value.__suppress_context__
-    assert_no_secrets(message)
-
-    with pytest.raises(crypto.KeyUnavailableError):  # not cached: called again
-        crypto.encrypt('Ana', 'a.b.c')
-    assert len(kms_keys.unwraps) == 2
-
-    kms_keys.fail = None
-    assert key_id_of_value(crypto.encrypt('Ana', 'a.b.c')) == 'k1'
-    assert len(kms_keys.unwraps) == 3
-
-
-def test_kms_answer_of_the_wrong_size_is_refused(kms_keys, monkeypatch):
-    monkeypatch.setitem(PLAIN, 'W-k1', b'short')
-
-    with pytest.raises(crypto.KeyUnavailableError) as error:
-        crypto.encrypt('Ana', 'a.b.c')
-    assert "'k1'" in str(error.value)
-
-
-def test_kms_settings_missing_is_a_kms_error_naming_the_setting(settings):
-    """Without the fake: KMSClient.from_settings itself refuses, before any network call."""
-    settings.FIELD_KEY_PROVIDER = KMS_PROVIDER
-    settings.FIELD_KMS_KEYS = f'k1:{WRAPPED["W-k1"]}'
-    settings.KMS_ENDPOINT = ''
-
-    with pytest.raises(crypto.KeyUnavailableError) as error:
-        crypto.encrypt('Ana', 'a.b.c')
-    assert 'step settings failed' in str(error.value) and 'KMS_ENDPOINT' in str(error.value)
-    assert_no_secrets(error.value)
-
-
-def test_concurrent_first_use_unwraps_once(kms_keys):
-    provider = crypto.get_key_provider()
-    gate = threading.Barrier(8)
-    results = []
-
-    def use():
-        gate.wait()
-        results.append(provider.current_key())
-
-    threads = [threading.Thread(target=use) for _ in range(8)]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-
-    assert len(results) == 8 and len(set(results)) == 1
-    assert len(kms_keys.unwraps) == 1
-
-
 # --- Matrix: bad settings ------------------------------------------------------------------
 
 def _key_errors():
-    return [e for e in run_checks() if e.id in ('accounts.E001', 'accounts.E002')]
+    return [e for e in run_checks() if e.id in ('mytp_core.E001', 'mytp_core.E002')]
 
 
 def test_valid_kms_settings_pass_the_check_without_calling_the_kms(kms_keys):
     assert _key_errors() == []
-    assert kms_keys.unwraps == []
-
-
-@pytest.mark.parametrize('setting, value, error_id', [
-    ('FIELD_KMS_KEYS', '', 'accounts.E001'),
-    ('FIELD_KMS_KEYS', 'no-colon-here', 'accounts.E001'),
-    ('FIELD_KMS_KEYS', f'bad id:{WRAPPED["W-k1"]}', 'accounts.E001'),
-    ('FIELD_KMS_KEYS', 'k1:', 'accounts.E001'),
-    ('FIELD_KMS_KEYS', f'k1:{WRAPPED["W-k1"]} {WRAPPED["W-k2"]}', 'accounts.E001'),
-    ('FIELD_KMS_KEYS', f'k1:{WRAPPED["W-k1"]},k1:{WRAPPED["W-k2"]}', 'accounts.E001'),
-    ('FIELD_KMS_KEYS', f'k1:{WRAPPED["W-k1"]},', 'accounts.E001'),
-    ('FIELD_ENCRYPTION_KEYS', 'k0:not base64!', 'accounts.E001'),
-    ('BLIND_INDEX_KMS_KEY', '', 'accounts.E002'),
-    ('BLIND_INDEX_KMS_KEY', f'{WRAPPED["W-bi"]} x', 'accounts.E002'),
-    ('BLIND_INDEX_KMS_KEY', WRAPPED['W-k1'], 'accounts.E002'),
-])
-def test_malformed_kms_setting_is_a_check_error(kms_keys, settings, setting, value, error_id):
-    setattr(settings, setting, value)
-
-    errors = _key_errors()
-
-    assert [e.id for e in errors] == [error_id]
-    assert setting in errors[0].msg
-    assert_no_secrets(errors[0].msg)
-    assert kms_keys.unwraps == []
-
-
-def test_malformed_setting_raises_key_configuration_error(kms_keys, settings):
-    settings.FIELD_KMS_KEYS = 'k1'
-    with pytest.raises(crypto.KeyConfigurationError) as error:
-        crypto.encrypt('Ana', 'a.b.c')
-    assert 'FIELD_KMS_KEYS' in str(error.value)
     assert kms_keys.unwraps == []
 
 
@@ -284,35 +125,6 @@ def test_wsgi_refuses_a_malformed_kms_setting(kms_keys, settings):
     with pytest.raises(crypto.KeyConfigurationError) as error:
         runpy.run_path(WSGI_FILE)
     assert 'BLIND_INDEX_KMS_KEY' in str(error.value)
-
-
-# --- Matrix: blind index through the KMS -----------------------------------------------------
-
-def test_blind_index_uses_the_unwrapped_kms_key_once(kms_keys):
-    expected = hmac.new(PLAIN['W-bi'], b'ana@example.com', hashlib.sha256).hexdigest()
-
-    assert crypto.email_index('ANA@example.com ') == expected
-    assert crypto.email_index('ana@example.com') == expected
-    crypto.phone_index('+34 600 000 000')
-    assert kms_keys.unwrapped == [WRAPPED['W-bi']]
-
-
-def test_blind_index_kms_failure_is_retried(kms_keys):
-    kms_keys.fail = kms.KMSError('auth', 'HTTP 403 (unwrap)', 403)
-    with pytest.raises(crypto.KeyUnavailableError) as error:
-        crypto.email_index('ana@example.com')
-    assert 'BLIND_INDEX_KMS_KEY' in str(error.value) and 'step auth failed' in str(error.value)
-    assert_no_secrets(error.value)
-
-    kms_keys.fail = None
-    crypto.email_index('ana@example.com')
-    assert len(kms_keys.unwraps) == 2
-
-
-def test_kms_provider_ignores_the_plain_blind_index_key(kms_keys, settings):
-    settings.BLIND_INDEX_KEY = TEST_BLIND_INDEX_KEY
-    expected = hmac.new(PLAIN['W-bi'], b'ana@example.com', hashlib.sha256).hexdigest()
-    assert crypto.email_index('ana@example.com') == expected
 
 
 # --- Matrix: rotation (database) -------------------------------------------------------------
@@ -364,79 +176,40 @@ def test_staging_move_from_plain_keys_to_the_kms(kms_keys, settings):
     assert authenticate(username='ana@example.com', password=PASSWORD) == ana
 
 
-# --- Matrix: generate ----------------------------------------------------------------------
+# --- Provider paths (mytp-core move) ----------------------------------------------------------
 
-def test_generate_prints_only_the_entry(fake_kms, settings):
-    settings.FIELD_KMS_KEYS = ''
-    out, err = io.StringIO(), io.StringIO()
-    call_command('generate_kms_field_key', 'k2', stdout=out, stderr=err)
+@pytest.mark.parametrize('path', ['accounts.crypto.KMSKeyProvider',
+                                  'mytp_core.crypto.KMSKeyProvider'])
+def test_both_provider_paths_are_the_kms_provider(kms_keys, settings, path):
+    """Matrix: the live setting (accounts.crypto) and the new one (mytp_core.crypto) give the
+    same provider; the startup check and the deploy check (E004) treat both as KMS."""
+    settings.FIELD_KEY_PROVIDER = path
+    settings.DEBUG = False
 
-    assert out.getvalue() == f'k2:{WRAPPED["W-new"]}\n'
-    assert err.getvalue() == ''
-    assert fake_kms.generated == [(SERVICE_KEY_ID, 'mytp-field-k2', 256)]
-    assert_no_secrets(out.getvalue(), wrapped_too=False)
-    assert crypto.parse_wrapped_key_list(out.getvalue().strip()) == [('k2', WRAPPED['W-new'])]
-
-
-def test_generate_blind_index_prints_the_wrapped_value_only(fake_kms):
-    out = io.StringIO()
-    call_command('generate_kms_field_key', '--blind-index', stdout=out)
-
-    assert out.getvalue() == f'{WRAPPED["W-new"]}\n'
-    assert fake_kms.generated == [(SERVICE_KEY_ID, 'mytp-blind-index', 256)]
+    assert crypto.get_key_provider_class() is mytp_core.crypto.KMSKeyProvider
+    assert crypto.uses_kms_provider()
+    assert isinstance(crypto.get_key_provider(), crypto.KMSKeyProvider)
+    assert _key_errors() == []
+    assert check_field_key_provider(None) == []
+    stored = crypto.encrypt('Ana', 'accounts.user.first_name')
+    assert crypto.key_id_of(stored) == 'k1'
+    assert crypto.decrypt(stored, 'accounts.user.first_name') == 'Ana'
 
 
-@pytest.mark.parametrize('args, message', [
-    ([], 'Give the new key id'),
-    (['bad id'], 'The key id may hold'),
-    (['k1'], 'already in FIELD_KMS_KEYS'),
-    (['test1'], 'already in FIELD_KMS_KEYS or FIELD_ENCRYPTION_KEYS'),
-    (['k9', '--blind-index'], 'takes no key id'),
-])
-def test_generate_refuses_bad_arguments(kms_keys, settings, args, message):
-    settings.FIELD_ENCRYPTION_KEYS = TEST_FIELD_ENCRYPTION_KEYS
-    with pytest.raises(CommandError, match=message):
-        call_command('generate_kms_field_key', *args, stdout=io.StringIO())
-    assert kms_keys.generated == []
+@pytest.mark.parametrize('path', ['', 'accounts.crypto.EnvKeyProvider',
+                                  'mytp_core.crypto.EnvKeyProvider'])
+def test_both_env_provider_paths_are_not_kms(settings, path):
+    settings.FIELD_KEY_PROVIDER = path
+    assert crypto.get_key_provider_class() is mytp_core.crypto.EnvKeyProvider
+    assert not crypto.uses_kms_provider()
 
 
-def test_generate_kms_failure_is_safe(fake_kms):
-    fake_kms.fail = kms.KMSError('auth', 'HTTP 403 (generate)', 403)
-    out = io.StringIO()
-    with pytest.raises(CommandError) as error:
-        call_command('generate_kms_field_key', 'k2', stdout=out)
-    assert 'step auth failed' in str(error.value)
-    assert error.value.__cause__ is None
-    assert out.getvalue() == ''
-
-
-def test_generate_refuses_a_wrong_size_key(fake_kms):
-    fake_kms.next_plain = b'x' * 16
-    out = io.StringIO()
-    with pytest.raises(CommandError, match='16-byte'):
-        call_command('generate_kms_field_key', 'k2', stdout=out)
-    assert out.getvalue() == ''
-
-
-# --- A plain key never reaches a log, an error or a repr -------------------------------------
-
-@pytest.mark.django_db
-def test_plain_key_never_in_logs_or_repr(kms_keys, settings, caplog):
-    caplog.set_level(logging.DEBUG)
-    settings.FIELD_KMS_KEYS = f'k2:{WRAPPED["W-k2"]},k1:{WRAPPED["W-k1"]}'
-    User.objects.create_user('ana@example.com', PASSWORD, first_name='Ana')
-    User.objects.by_email('ana@example.com').get()
-    provider = crypto.get_key_provider()
-    provider.get_key('k1')
-    kms_keys.fail = kms.KMSError('unwrap', 'HTTP 400', 400)
-    settings.FIELD_KMS_KEYS = f'k3:{WRAPPED["W-k2"]}'
-    with pytest.raises(crypto.KeyUnavailableError) as error:
-        crypto.encrypt('x', 'a.b.c')
-
-    texts = [repr(provider), str(provider), repr(crypto.get_key_provider()), str(error.value),
-             caplog.text, *(record.getMessage() for record in caplog.records)]
-    assert_no_secrets(*texts)
-    assert 'k1' in repr(provider)
+def test_migrations_import_the_package_classes():
+    """Old migrations name accounts.crypto.*: the same classes as the package's."""
+    for name in ('EncryptedCharField', 'EncryptedEmailField', 'EncryptedJSONField',
+                 'encrypt_existing_rows'):
+        assert getattr(crypto, name) is getattr(mytp_core.crypto, name)
+    assert kms.KMSClient is mytp_core.kms.KMSClient
 
 
 # --- Settings and examples -----------------------------------------------------------------
