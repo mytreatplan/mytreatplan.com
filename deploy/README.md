@@ -20,11 +20,12 @@ database. This file uses `dev`; for another site replace `dev` in every name (se
 | DB CA | `/srv/mytp-dev/shared/db-ca.pem` |
 | App service | `mytp-dev-gunicorn.service` on socket `/run/mytp-dev-gunicorn.sock` (`mytp-dev-gunicorn.socket`) |
 | Web server | Nginx, `/etc/nginx/sites-available/mytp-dev.conf`, password file `/etc/nginx/mytp-dev.htpasswd` |
-| Deploy rights | `/etc/sudoers.d/mytp-dev-deploy`: `mytp-dev` may only restart `mytp-dev-gunicorn` |
+| Deploy rights | `/etc/sudoers.d/mytp-dev-deploy`: `mytp-dev` may only restart `mytp-dev-gunicorn` and stop or restart `mytp-dev-worker` |
 | Release command | `/usr/local/bin/mytp-release <site> <sha> <tarball>` (host-wide, from `release.sh`) |
 | Certificate | Let's Encrypt via certbot; renewed by `certbot.timer` |
 | Firewall | ufw: 22, 80, 443 only |
 | Scheduled jobs | `mytp-dev-job@<name>.timer` → `mytp-dev-job@<name>.service`, one per line of `jobs.conf` |
+| Background tasks | `mytp-dev-worker.service` (`manage.py db_worker`, django-tasks-db); heartbeat on Sentry monitor `mytp-dev-worker` ("Background tasks") |
 | Health URL | `https://dev.mytpdso.com/healthz` (no password), watched by UptimeRobot |
 | Off-region backups | nightly `backupdb` job → Object Storage SBG (`age`-encrypted); restore test: `restore-db.sh` |
 | Field keys | KMS-wrapped: `FIELD_KMS_KEYS`, `BLIND_INDEX_KMS_KEY` in `shared/settings.env` (`FIELD_KEY_PROVIDER=accounts.crypto.KMSKeyProvider`); password manager: key ids and wrapped values, never plain keys (step 12, "Keys (KMS)") |
@@ -36,8 +37,8 @@ Files in this folder:
 
 - `provision.sh <site> <domain> <htpasswd-user>`: idempotent setup of one site. Host-wide:
   packages, SSH hardening, firewall, certificate renewal and the release command.
-  Per site: user and directories, systemd units, scheduled job timers, sudoers, basic
-  auth, Nginx, certificate.
+  Per site: user and directories, systemd units (Gunicorn and the task worker), scheduled
+  job timers, sudoers, basic auth, Nginx, certificate.
 - `release.sh`: installs one release of one site; `provision.sh` installs it as
   `/usr/local/bin/mytp-release`, which CI runs.
 - `jobs.conf`: the scheduled jobs (name, `manage.py` command, schedule).
@@ -173,7 +174,7 @@ curl -s https://dev.mytpdso.com/healthz                  # ok, site: dev, region
 
    ```sh
    sudo -u mytp-dev nano /srv/mytp-dev/shared/settings.env   # SENTRY_DSN=https://...ingest.de.sentry.io/...
-   sudo systemctl restart mytp-dev-gunicorn
+   sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker
    ```
 
    `SENTRY_ENVIRONMENT=staging` is already there. The release is the git SHA (each
@@ -696,12 +697,17 @@ certificate.
 3. The release command refuses a site that was never provisioned (no `/srv/mytp-<site>`),
    another user than `mytp-<site>`, or a `settings.env` whose `SITE` differs. It unpacks
    to `releases/<sha>/`, links `settings.env`, builds the
-   venv, runs `compilemessages`, `collectstatic`, `migrate`, `createcachetable`.
-   If any step fails, the half-built release is removed, `current` is unchanged and the job
-   is red with that step's output.
-4. It switches `current`, runs `sudo systemctl restart mytp-dev-gunicorn` (the only sudo
-   right `mytp-dev` has) and requests `/robots.txt` through the socket. If that does not
-   answer 200, it switches back to the previous release, restarts, and the job is red.
+   venv, runs `compilemessages`, `collectstatic`, stops the task worker
+   (`sudo systemctl stop mytp-dev-worker`), runs `migrate`, `createcachetable`.
+   If any step fails, the half-built release is removed, `current` is unchanged, the
+   worker is started again and the job is red with that step's output.
+4. It switches `current`, runs `sudo systemctl restart mytp-dev-gunicorn` and requests
+   `/robots.txt` through the socket, then starts the worker
+   (`sudo systemctl restart mytp-dev-worker`) and checks it is still running 3 seconds
+   later; these are the only sudo rights `mytp-dev` has. The worker is stopped from
+   `migrate` to here, so it never runs the old code on the new schema. If either check
+   fails, it switches back to the previous release, restarts both, and the job is red. A
+   site whose worker unit is not enabled (not yet provisioned with it) skips the worker.
 5. It keeps the newest 5 releases (plus the live and previous one).
 
 Deploys run one at a time (concurrency group `deploy-staging`; the release command also
@@ -776,6 +782,87 @@ systemctl status mytp-dev-job@clearsessions        # last result
 sudo journalctl -u mytp-dev-job@clearsessions -n 100
 systemctl list-units --failed 'mytp-dev-job@*'
 ```
+
+## Background tasks
+
+On-demand work (outbox delivery, emails and SMS, webhooks, scans, timers on records) runs
+as Django `django.tasks` tasks (architecture AD-8), queued in the site's own database
+(django-tasks-db) and run by **one worker per site**: `mytp-dev-worker.service`, which
+runs `manage.py db_worker` in `/srv/mytp-dev/current` as `mytp-dev` with the site's
+`settings.env`. No Redis, no Celery. For now only a sample task and the heartbeat exist.
+
+- **Start, stop, restart.** `provision.sh` installs, enables and starts the unit
+  (`deploy/systemd/worker.service.template`) once the live release ships the worker
+  (django-tasks-db in its `requirements.txt`). Every release stops it before `migrate`
+  and starts it after the switch (`release.sh`); a release whose worker cannot start or
+  exits within 3 seconds is rolled back. systemd restarts a worker that dies
+  (`Restart=always`, 5 s apart) but gives up after 10 starts in 5 minutes (the unit is
+  then `failed` and the heartbeat alerts; fix the cause, then
+  `sudo systemctl restart mytp-dev-worker`). It runs the tasks of every queue.
+  The worker reads `settings.env` at start: after editing it, restart both,
+  `sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker`.
+- **Interrupted tasks.** Before each start, `manage.py requeue_interrupted_tasks`
+  (ExecStartPre) puts back in the queue any task still marked running: only this worker
+  runs the site's tasks, so such a task was interrupted (the worker was killed). Its
+  effects are idempotent, so none happens twice. Never run `manage.py db_worker` (or
+  that command) by hand while the unit runs.
+- **Idempotency.** Every task is keyed by its record's UUID (and by period for periodic
+  effects such as renewals) and wraps each effect in `mytp_core.tasks.run_once`, which
+  records it in the `mytp_core_taskeffect` table in the same transaction. Code enqueues a
+  task with `mytp_core.tasks.enqueue_on_commit`, so a rolled-back transaction enqueues
+  nothing. Retries that matter (outbox, webhooks, messages) are tracked on those business
+  rows; a failed task is not retried by the worker, and its ERROR reaches Sentry.
+- **Heartbeat.** The `workerheartbeat` job (every 5 minutes, `jobs.conf`) enqueues a
+  task; when the worker runs it, it checks in on the Sentry cron monitor
+  **`mytp-dev-worker`** (schedule `*/5 * * * *`, 3 minutes' margin). If the worker is down
+  or stuck, check-ins stop and Sentry raises a missed check-in alert. A heartbeat that
+  waited in the queue over 5 minutes is skipped, so a worker coming back does not report
+  its backlog as alive. The job itself has its own monitor (`mytp-dev-workerheartbeat`),
+  which tells a stopped timer apart from a stopped worker.
+- **Pruning.** The `prunetasks` job (daily at 04:30 UTC) deletes task results finished
+  more than 14 days ago (failed ones after 30 days); tasks waiting or running are kept.
+
+Check the worker and read its logs (task ids, task paths and record UUIDs only; never
+personal data):
+
+```sh
+systemctl status mytp-dev-worker
+sudo journalctl -u mytp-dev-worker -n 100
+cd /srv/mytp-dev/current
+sudo -u mytp-dev ./venv/bin/python manage.py enqueue_sample_task   # prints the record UUID
+sudo journalctl -u mytp-dev-worker -n 20        # "sample task effect for <uuid>", SUCCESSFUL
+```
+
+Enqueue it again with `--record <that uuid>`: the worker runs the task again but logs
+`effect sample.logged for <uuid> already done; skipped`.
+
+Check that a killed worker comes back and nothing runs twice:
+
+```sh
+sudo systemctl kill mytp-dev-worker              # SIGTERM: finishes its task, exits
+sleep 7; systemctl is-active mytp-dev-worker     # active (systemd restarted it)
+sudo systemctl kill -s KILL mytp-dev-worker      # killed outright, mid-task if busy
+sleep 7; sudo journalctl -u mytp-dev-worker -n 20   # "requeued N interrupted task(s)"
+```
+
+**One-off, after the merge of epic-platform entry 9 (mytp-core 0.3.0).** The release
+command, the sudoers rule, the worker unit and two job timers are new, so `provision.sh`
+must run again, **after** the merge's deploy has gone live: the worker unit is installed
+only once the live release ships the worker. Run before it, provision installs the rest
+but no worker (and the two new jobs fail until the release is live), so run it again
+after the deploy. On the server as `debian`, from a copy of the merged `deploy/`:
+
+1. `bash ~/deploy/provision.sh dev dev.mytpdso.com <htpasswd-user>`: it reports the new
+   sudoers file, `mytp-dev-worker.service` installed, enabled and started, the
+   `workerheartbeat` and `prunetasks` timers and `/usr/local/bin/mytp-release`.
+2. `systemctl status mytp-dev-worker` is active; run the sample task check above.
+3. Within 10 minutes, Sentry → Crons shows `mytp-dev-worker` and
+   `mytp-dev-workerheartbeat` (and `mytp-dev-prunetasks` after its first run, or
+   `sudo systemctl start mytp-dev-job@prunetasks`); set each one's **Notify** to
+   devops@mytreatplan.com (step 8.5).
+4. Check the alert: `sudo systemctl stop mytp-dev-worker`, wait about 10 minutes for the
+   missed check-in alert on `mytp-dev-worker`, then `sudo systemctl start mytp-dev-worker`
+   (the next heartbeat turns the monitor ok again).
 
 ## Twilio Verify
 
@@ -1225,6 +1312,7 @@ firewall, certificate renewal and the release command are shared by the host.
 | Settings | `/srv/mytp-<site>/shared/settings.env` with `SITE=<site>` |
 | App service | `mytp-<site>-gunicorn.service`, socket `mytp-<site>-gunicorn.socket` on `/run/mytp-<site>-gunicorn.sock` |
 | Scheduled jobs | `mytp-<site>-job@<job>.timer` → `mytp-<site>-job@<job>.service` |
+| Task worker | `mytp-<site>-worker.service`; Sentry monitor `mytp-<site>-worker` |
 | Nginx | `/etc/nginx/sites-available/mytp-<site>.conf`, password file `/etc/nginx/mytp-<site>.htpasswd` |
 | Deploy rights | `/etc/sudoers.d/mytp-<site>-deploy` |
 | Deploy | `/usr/local/bin/mytp-release <site> <sha> /srv/mytp-<site>/incoming/<sha>.tar.gz`, as `mytp-<site>` |
@@ -1252,7 +1340,9 @@ for f in /etc/systemd/system/mytp-$site-job@*.timer; do
 done
 sudo systemctl disable --now mytp-$site-gunicorn.socket
 sudo systemctl stop mytp-$site-gunicorn.service
+sudo systemctl disable --now mytp-$site-worker.service
 sudo rm -f /etc/systemd/system/mytp-$site-gunicorn.socket /etc/systemd/system/mytp-$site-gunicorn.service \
+    /etc/systemd/system/mytp-$site-worker.service \
     /etc/systemd/system/mytp-$site-job@.service /etc/systemd/system/mytp-$site-job@*.timer
 sudo systemctl daemon-reload
 sudo rm -f /etc/nginx/sites-enabled/mytp-$site.conf /etc/nginx/sites-available/mytp-$site.conf \
@@ -1429,7 +1519,7 @@ On the server as `debian`:
 ls -1t /srv/mytp-dev/releases/          # newest first
 readlink /srv/mytp-dev/current          # the live one
 sudo -u mytp-dev ln -sfn /srv/mytp-dev/releases/<previous-sha> /srv/mytp-dev/current
-sudo systemctl restart mytp-dev-gunicorn
+sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker
 ```
 
 This does not reverse database migrations. The next push to `master` deploys over it.
@@ -1454,6 +1544,7 @@ update `STAGING_SSH_KEY`. If the server is rebuilt, also refresh `STAGING_KNOWN_
 ```sh
 sudo journalctl -u mytp-dev-gunicorn -n 200    # app (Gunicorn) logs
 sudo journalctl -u 'mytp-dev-job@*' -n 200     # scheduled jobs
+sudo journalctl -u mytp-dev-worker -n 200      # background tasks (worker)
 sudo tail -f /var/log/nginx/error.log
 ```
 

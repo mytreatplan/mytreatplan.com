@@ -10,15 +10,20 @@
 # SITE=<site>.
 #
 # Flow: unpack to releases/<sha> (with a REVISION file holding the SHA), build its
-# venv, compilemessages, collectstatic, migrate, createcachetable. Only then switch `current`, restart Gunicorn and check
-# health through the socket. If the check fails, switch back, restart, exit non-zero.
-# Keeps the last 5 releases.
+# venv, compilemessages, collectstatic; stop the site's background task worker
+# (mytp-<site>-worker, when provision.sh installed and enabled it); migrate,
+# createcachetable. Only then switch `current`, restart Gunicorn and check health through
+# the socket, then start the worker and check it stays running. If a check fails, switch
+# back, restart both, exit non-zero; if a step fails before the switch, the worker is
+# started again on the unchanged release. Keeps the last 5 releases.
 set -euo pipefail
 
 SITE_RE='^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$'
 KEEP_RELEASES=5
 HEALTH_PATH=/robots.txt
 HEALTH_TRIES=15
+# Seconds the started worker must stay up before the release counts as live.
+WORKER_SETTLE=3
 
 log() { echo "==> $*"; }
 die() { echo "ERROR: $*" >&2; exit 1; }
@@ -34,6 +39,7 @@ APP_HOME=/srv/mytp-$SITE
 APP_USER=mytp-$SITE
 SOCKET=/run/mytp-$SITE-gunicorn.sock
 SERVICE=mytp-$SITE-gunicorn
+WORKER=mytp-$SITE-worker
 [[ -d $APP_HOME ]] || die "site '$SITE' is not provisioned: $APP_HOME is missing (run deploy/provision.sh)"
 [[ $(id -un) == "$APP_USER" ]] || die "run this as $APP_USER, not $(id -un)"
 [[ -f $TARBALL ]] || die "tarball not found: $TARBALL"
@@ -84,6 +90,37 @@ healthy() {
     return 1
 }
 restart_app() { sudo -n /usr/bin/systemctl restart "$SERVICE"; }
+# The background task worker (AD-8): stopped before `migrate` and started after the
+# switch, so no worker ever runs the old code on the new schema. A site whose unit is not
+# enabled (not provisioned with it yet, or a site with no worker) is skipped. The start
+# (`restart`, which also starts a stopped unit) fails when the worker cannot start (its
+# ExecStartPre loads the release's settings and database); a worker that exits right
+# after starting is caught by the is-active check.
+has_worker() { systemctl is-enabled --quiet "$WORKER" 2>/dev/null; }
+worker_stopped=0
+stop_worker() {
+    if ! has_worker; then
+        echo "no enabled $WORKER unit (deploy/provision.sh installs it); no worker to stop"
+        return 0
+    fi
+    sudo -n /usr/bin/systemctl stop "$WORKER"
+    worker_stopped=1
+    echo "worker $WORKER stopped"
+}
+restart_worker() {
+    if ! has_worker; then
+        echo "no enabled $WORKER unit (deploy/provision.sh installs it); worker not started"
+        return 0
+    fi
+    sudo -n /usr/bin/systemctl restart "$WORKER" || return 1
+    sleep "$WORKER_SETTLE"
+    if systemctl is-active --quiet "$WORKER"; then
+        echo "worker $WORKER started"
+        return 0
+    fi
+    echo "worker $WORKER is not running after start (journalctl -u $WORKER)" >&2
+    return 1
+}
 # Atomic switch of the `current` symlink.
 point_current_at() {
     ln -sfn "$1" "$CURRENT.tmp"
@@ -108,6 +145,9 @@ on_build_error() {
     if ((!switched)); then
         echo "ERROR: release $SHA failed before the switch; current release unchanged." >&2
         rm -rf "$RELEASE"
+        if ((worker_stopped)); then
+            restart_worker || echo "WARNING: the current release's worker did not start again." >&2
+        fi
     fi
 }
 trap 'on_build_error; cleanup' EXIT
@@ -137,6 +177,8 @@ log "compilemessages"
 manage compilemessages --ignore venv
 log "collectstatic"
 manage collectstatic --noinput --verbosity 0
+log "Stopping the task worker"
+stop_worker
 log "migrate"
 manage migrate --noinput
 log "createcachetable"
@@ -150,7 +192,7 @@ point_current_at "$RELEASE"
 restart_status=0
 restart_app || restart_status=$?
 
-if ((restart_status == 0)) && healthy; then
+if ((restart_status == 0)) && healthy && restart_worker; then
     log "Release $SHA is live"
 else
     echo "ERROR: release $SHA is not healthy after restart." >&2
@@ -159,7 +201,9 @@ else
         point_current_at "$PREVIOUS"
         restart_app || true
         healthy || echo "WARNING: the previous release is not healthy either." >&2
+        restart_worker || echo "WARNING: the previous release's worker is not running either." >&2
     else
+        # The worker (if any) stays stopped: there is no release for it to run.
         echo "No previous release to roll back to; removing current." >&2
         rm -f "$CURRENT"
     fi
