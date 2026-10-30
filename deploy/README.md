@@ -148,7 +148,7 @@ curl -sI http://dev.mytpdso.com/.well-known/acme-challenge/test  # 404, not 401
 Open the site in a browser: valid certificate, password prompt, pages render with styles.
 
 ```sh
-curl -s https://dev.mytpdso.com/healthz                  # ok, site: dev (no password needed)
+curl -s https://dev.mytpdso.com/healthz                  # ok, site: dev, region: eu (no password needed)
 ```
 
 ### 8. Sentry (errors and scheduled jobs)
@@ -757,7 +757,7 @@ site. Nothing needs re-provisioning (`release.sh` is unchanged):
 
    ```sh
    sudo systemctl start mytp-dev-job@clearsessions   # Sentry Crons: mytp-dev-clearsessions ok
-   curl -s https://dev.mytpdso.com/healthz           # ok / site: dev
+   curl -s https://dev.mytpdso.com/healthz           # ok / site: dev / region: eu
    ```
 
 2. Each new `mytp-dev-<name>` monitor appears at its job's first run; set its **Notify**

@@ -59,12 +59,13 @@ def db_up(monkeypatch):
 
 def test_healthz_ok(client, db_up, settings):
     settings.SITE = 'dev'
+    settings.REGION = 'eu'
 
     response = client.get('/healthz')
 
     assert response.status_code == 200
-    # First line `ok` (UptimeRobot), then the site (AD-24).
-    assert response.content == b'ok\nsite: dev\n'
+    # First line `ok` (UptimeRobot), then the site (AD-24) and the region (AD-13).
+    assert response.content == b'ok\nsite: dev\nregion: eu\n'
     assert response['Content-Type'].startswith('text/plain')
     assert 'no-cache' in response['Cache-Control']
     assert db_up == ['SELECT 1']

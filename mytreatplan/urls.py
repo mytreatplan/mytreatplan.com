@@ -30,8 +30,8 @@ urlpatterns = [
     path('robots.txt', robots_txt, name='robots_txt'),
     path('sitemap.xml', sitemap, {'sitemaps': {'pages': PublicPagesSitemap}},
          name='django.contrib.sitemaps.views.sitemap'),
-    # Uptime probe (mytp-core: `ok` and `site: <SITE>`, or `unavailable`); Nginx serves it
-    # without basic auth. Not in the sitemap.
+    # Uptime probe (mytp-core: `ok`, `site: <SITE>` and `region: <REGION>`, or
+    # `unavailable`); Nginx serves it without basic auth. Not in the sitemap.
     path('healthz', healthz, name='healthz'),
 ]
 

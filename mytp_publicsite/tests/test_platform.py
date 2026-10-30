@@ -49,6 +49,11 @@ def test_missing_secret_key_refuses_to_start(tmp_path):
     package.mkdir()
     shutil.copy(settings.BASE_DIR / 'mytreatplan' / 'settings.py', package / 'settings.py')
     (package / '__init__.py').touch()
+    # settings.py imports the region profiles (plain data, no Django).
+    regions = tmp_path / 'regions'
+    regions.mkdir()
+    shutil.copy(settings.BASE_DIR / 'regions' / 'profiles.py', regions / 'profiles.py')
+    (regions / '__init__.py').touch()
 
     env = {k: v for k, v in os.environ.items() if k not in {'SECRET_KEY', 'DJANGO_SETTINGS_MODULE'}}
     env['PYTHONPATH'] = str(tmp_path)
