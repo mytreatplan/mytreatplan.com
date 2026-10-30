@@ -42,6 +42,7 @@ Choosing and buying cases. Not the case after purchase (epic-case-lifecycle).
 
 ## Notes
 
+- Handoff (2026-10-30, epic-subscriptions inception): pending-payment work orders are priced with the doctor's effective tier when they are added to an order (entry 1's rule).
 - Decision (2026-10-29, epic-platform inception): this epic builds the patient-code generator (AD-5), using the prefix from the region profile.
 - Handoff: epic-clinical-ops creates the manual pending-payment work orders this epic lists.
 - Waits on epic 5 because: it needs resolver and products.

@@ -74,6 +74,9 @@ covers = ["P6", "P8"]
 after = [
   { epic = 5, needs = "subscriptions, vouchers and the resolver" },
   { epic = 7, needs = "order model, payments, invoices" },
+  { epic = 6, needs = "doctor home (6.1) and client-record extension (6.9)" },
+  { epic = 4, needs = "versioned remote writes (4.6)" },
+  { epic = 3, needs = "audit log (3.8)" },
 ]
 
 [[epic]]

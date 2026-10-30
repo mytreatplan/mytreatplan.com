@@ -1,0 +1,133 @@
+# Stories of epic-subscriptions, in build order. Requirements S1–S9 are in epic-subscriptions.md.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Subscription record and Basic at signup"
+description = "Tracer bullet and shared core: the doctor's subscription record (tier, subscription, start and end dates, billing period, auto-renew, status active, cancelled, past due or expired, manual flag, entity version for 4.6) behind one service function every later entry calls (AD-15), with the single 'effective tier and can-self-switch' rule (past due counts as the paid tier during grace, expired and Basic as Basic, manual blocks self-service on the server); the Basic default for the doctor's country group (5.8) assigned at signup, existing doctors backfilled; the resolver (5.12) prices with the effective tier."
+verify = "With 5.13's seed on admindev, a new signup on dev gets the Basic default for its group and the resolver prices TPS for it; existing doctors have Basic after the migration; a manual-flagged record refuses a self-service change in the service."
+covers = ["S1", "S2"]
+after = ["5.12", "5.13"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Upgrade screen and welcome page"
+description = "After signup the doctor sees the upgrade screen (the three levels, net prices for their group with '+ VAT where applicable', Basic marked as current, upgrade buttons leading to entry 5's purchase page, and 'not now'), then part-1's welcome page; doctors on a manual subscription see no upgrade buttons (checked with a fixture until entry 10 assigns them)."
+verify = "A new doctor on dev sees the upgrade screen with their group's net prices; 'not now' leads to the welcome page; a fixture doctor on 'Ormco Premium' sees no upgrade buttons."
+covers = ["S3"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Upgrade reminder"
+description = "Shows the current level and an upgrade link in the navigation and on the doctor home page (6.1, the 'dashboard'), hidden for Premium and manual subscriptions."
+verify = "Basic and Advanced doctors see the reminder in the navigation and on the home page; a Premium doctor does not."
+covers = ["S4"]
+after = [2, "6.1"]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Voucher redemption"
+description = "Builds redemption as a regional entity unique per voucher and doctor: reserved when an order is created, consumed on the paid hook, released on the cancelled or expired hook (7.1); validity, region, currency and doctor checks; usage events voucher.redeemed and voucher.released as contract types in a mytp-core release, received and stored on the admin site for epic-sales-finance's usage view (AD-20)."
+verify = "Through 7.1's order-creation service and the fake gateway, a voucher is reserved, consumed on payment, and released when a bank-transfer order expires; the same doctor cannot use it twice; another region's or currency's voucher is refused; admindev stores the usage events."
+covers = ["S5"]
+after = [1, "7.5", "5.10"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Buy Advanced or Premium"
+description = "Lets a doctor buy Advanced or Premium for their group, annual upfront or monthly with a 12-month commitment, through epic-payments' checkout with a voucher option, saving the card (7.11) for monthly charges and auto-renewal; a voucher covering the whole price makes a €0 order that skips the gateway and still gets a €0 invoice (handoff to 7.1); on payment the subscription record changes through entry 1's service and the return page leads to the welcome page for new doctors."
+verify = "On dev a Basic doctor buys Advanced upfront with a voucher and sees Advanced prices; another buys Advanced monthly and is invoiced the first month; a 100% voucher completes without a gateway and issues a €0 invoice."
+covers = ["S6"]
+after = [4, "7.6", "7.11"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Annual renewals"
+description = "Renews annual subscriptions: a reminder email 30 days before; the doctor can turn auto-renew off; on the end date a task creates the renewal order and charges the saved card (idempotent per subscription and period); when charging is not possible or fails, the doctor gets a payment link; a renewal still unpaid on the end date drops the doctor to Basic that day."
+verify = "A test annual subscription on dev gets the 30-day reminder, renews on its date in the sandbox, and a rerun does not charge twice; with auto-renew off nothing is charged; a declined card sends the link, and unpaid at the end date the doctor is Basic."
+covers = ["S7"]
+after = [5]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Monthly charges and failed payments"
+description = "Charges monthly subscriptions each month of the 12-month commitment with the saved card (idempotent per month), renews for another 12 months unless cancelled; a failed monthly charge sets past due with 7 days of grace and retries on days 1, 3 and 7, then the doctor drops to Basic."
+verify = "A test monthly subscription on dev is charged each simulated month; after the 12th it renews; a declined card is retried on days 1, 3 and 7 and then the doctor is Basic."
+covers = ["S7", "S8"]
+after = [6]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Upgrade to Premium mid-term"
+description = "Upgrades Advanced to Premium by paying the difference for the remaining months with the end date kept; monthly payers move to the Premium monthly price from the next charge."
+verify = "An annual Advanced doctor upgrading halfway pays half the difference and keeps the end date; a monthly payer's next charge is the Premium price."
+covers = ["S8"]
+after = [7]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Cancellation, downgrade and expiry"
+description = "Cancelling stops the next renewal with benefits until the end of the paid term and no refund; a monthly payer who cancels keeps being charged until the 12-month commitment ends; a downgrade takes effect at renewal; at expiry the doctor drops to Basic while cases already bought keep what was paid through the order-line snapshots (AD-6) and new VirtuaOrtho products and subscription discounts disappear from the resolver."
+verify = "On dev a cancelled annual subscription keeps Advanced until its end date and then is Basic; a cancelled monthly one is charged to month 12; after expiry a running case keeps its paid services and new VirtuaOrtho products no longer appear."
+covers = ["S8"]
+after = [8]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Subscriptions on the admin site"
+description = "Adds the subscription to the client record events (4.8, after 6.9's extension) and the Sysadmin and Commercial Manager action to assign a manual special subscription (optional end date) through a versioned remote write (4.6), audited: it applies immediately, stops the paid subscription's auto-renew, and any refund of unused months is a staff decision through epic-sales-finance's refund."
+verify = "A Commercial Manager assigns 'Ormco Premium' to a paying Advanced doctor from admindev; dev shows it at once, hides upgrade buttons and turns auto-renew off; the client record shows the subscription and dates; the change is in the audit log."
+covers = ["S9"]
+after = [9, "4.6", "3.8", "6.9"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Production checks for the EU go-live"
+description = "Writes this epic's production checks (Basic at signup, upgrade screen, voucher redemption, purchase upfront and monthly, renewals, monthly failures, upgrade, cancellation and expiry, admin assignment) into epic-eu-golive's Done when."
+verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
+covers = []
+after = [3, 10]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 12
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
+verify = "The portal's, the admin repo's and mytp-core's test suites pass; deferred review findings are closed or recorded."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+hitl = false
+risk = "low"

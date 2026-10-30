@@ -41,5 +41,6 @@ Appointments only. Not the Zoom API or the account pool (Parked).
 
 ## Notes
 
+- Handoff (2026-10-30, epic-subscriptions inception): Premium call extras are counted from the order line's snapshot at purchase, not the doctor's current tier.
 - Waits on epic 10 because: it needs case page appointments block.
 - Waits on epic 11 because: it needs specialist calendars, availability and assignment.

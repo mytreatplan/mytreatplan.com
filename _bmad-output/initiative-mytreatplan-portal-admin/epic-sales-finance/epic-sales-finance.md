@@ -41,6 +41,7 @@ The admin side of sales and money. The services underneath are epic-payments's.
 
 ## Notes
 
+- Handoff (2026-10-30, epic-subscriptions inception): voucher usage events are received and stored on the admin site by epic-subscriptions entry 4; this epic shows them.
 - Open question: cancellation and refund conditions ("provided later" in the source); settled with the user at inception.
 - Waits on epic 4 because: it needs client record and contact-message events.
 - Waits on epic 5 because: it needs vouchers.
