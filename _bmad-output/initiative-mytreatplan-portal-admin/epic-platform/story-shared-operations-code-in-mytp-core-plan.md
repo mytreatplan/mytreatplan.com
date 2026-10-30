@@ -102,3 +102,9 @@ context:
 
 **Manual checks (if no CLI):**
 - After the merge (release.sh unchanged, so no re-provision needed): on dev, `sudo systemctl start mytp-dev-job@clearsessions` reports to Sentry monitor `mytp-dev-clearsessions`; `curl https://dev.mytpdso.com/healthz` shows `ok` and `site: dev`.
+
+## Staging
+
+- Merged in PR #51 as merge commit a0a21909ad36387c2893b8d3dbedae70873bbc0c (2026-10-30). CI run 41054001369 on master: test and deploy-staging green (no re-provision needed).
+- https://dev.mytpdso.com/healthz answers `ok` / `site: dev`.
+- Pending (user): the first `mytp-dev-*` cron check-in (purgepending at 13:15 UTC), Notify on the new monitors, deletion of the six `mytp-staging-*` monitors; then this plan is marked done.

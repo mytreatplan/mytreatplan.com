@@ -1,0 +1,146 @@
+# Stories of epic-payments, in build order. Requirements Y1–Y9 are in epic-payments.md.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Order model, checkout and a paid test order"
+description = "Tracer bullet: the order model every purchase uses (one billing company, one currency, one gateway; lines snapshot price, discount, VAT rate or exemption text, company and provider cost; the buyer's fiscal entity snapshotted and marked used, per 6.5; AD-6, AD-16), the order-creation service epics 8 and 9 call (AD-15), the checkout (choose fiscal entity and payment method, redirect to the hosted page, return and failure pages), order hooks for paid, cancelled and expired that epic 8 uses to consume and release vouchers, and a fake gateway adapter; the admin side is reached in entry 8."
+verify = "On dev a staff-only test order goes through checkout, pays through the fake gateway and moves to paid; its lines keep their values after the catalogue price changes; its fiscal entity is marked used; the paid hook fires once."
+covers = ["Y1"]
+after = ["5.12", "6.6"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 2
+type = "story"
+title = "Gateway interface, registry and webhook handling"
+description = "Owns the gateway adapter registry (gateway ids matching 5.9's billing rules, including bank_transfer) and the interface (start payment on a hosted page, confirm by webhook, refund, save a card, charge a saved card), and the shared webhook handling: signature check, timestamp tolerance, re-reading the payment from the gateway, amount and currency matching the order, dedupe on the gateway's id, every webhook logged."
+verify = "With the fake adapter, a valid webhook pays the order once; a replayed, wrongly signed, stale or mismatched-amount webhook is refused and logged; a duplicate is ignored."
+covers = ["Y2"]
+after = [1]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 3
+type = "story"
+title = "Redsys adapter"
+description = "Implements the interface for Redsys (Spanish company) with the hosted payment page, the signed notification and refunds, first against Redsys's public test terminal and then the company's test credentials typed by the user into settings.env."
+verify = "A test order from a Spanish doctor on dev pays on the Redsys test environment, is confirmed by the signed notification, and is refunded through the adapter."
+covers = ["Y4"]
+after = [2]
+hitl = true
+risk = "high"
+
+[[entry]]
+id = 4
+type = "story"
+title = "Revolut adapter"
+description = "Implements the interface for Revolut Merchant (Irish company) with hosted checkout, webhooks and refunds against the Revolut sandbox; credentials typed by the user into settings.env."
+verify = "A test order from an Irish doctor on dev pays in the Revolut sandbox, is confirmed by webhook, and is refunded through the adapter."
+covers = ["Y3"]
+after = [3]
+hitl = true
+risk = "high"
+unknown = "The Revolut Merchant sandbox credentials, requested by the user."
+
+[[entry]]
+id = 5
+type = "story"
+title = "Bank transfer"
+description = "Adds the bank_transfer gateway where billing rules allow it: the order shows the company's bank details and a reference and stays pending; a 'mark as paid' service (the admin button is epic-sales-finance's); a reminder email on day 7; automatic expiry after 14 days through the expired hook (epic 8 releases any voucher)."
+verify = "A bank-transfer order on dev shows the bank details, gets the day-7 reminder, is paid through the service, and an unpaid one expires on day 14 firing the expired hook."
+covers = ["Y5"]
+after = [4]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 6
+type = "story"
+title = "Invoices"
+description = "Issues an invoice when an order is paid, in the regional instance: gapless series per company, instance and year in the format <company>-<instance>-<year>-<6 digits>, using a short company code added to 5.9's billing companies (ES, IE, AE) and 1.6's invoice instance prefix, assigned in a locked transaction; VAT per rate on the total, half up, or the exemption text; buyer from the fiscal-entity snapshot; lines with an optional patient code (subscriptions have none); dates in the company's legal time zone; issued invoices immutable (AD-7); a service to invoice a manual order for a buyer without an account (epic-sales-finance); room left for VeriFactu fields and the UAE tax invoice (TRN, 5% VAT)."
+verify = "Paying three orders issues ES-EU-2026-000001 to 000003 with no gap under concurrent payments; a DE reverse-charge invoice carries the exemption text; a manual order invoices a buyer with no account; an issued invoice cannot be edited."
+covers = ["Y6"]
+after = [5]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Credit notes, refunds and cancellation"
+description = "Adds credit notes (same series with R before the number, e.g. ES-EU-2026-R000001), the refund service that refunds through the gateway and issues the credit note, and the manual cancel service for unpaid orders (both used by epic-sales-finance's buttons; refund conditions are settled at its inception)."
+verify = "Refunding a paid order on dev refunds in the sandbox and issues ES-EU-2026-R000001; cancelling an unpaid order fires the cancelled hook; a paid order cannot be cancelled without a refund."
+covers = ["Y6"]
+after = [6]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Accounting feed"
+description = "Sends invoices, credit notes, payments and refunds as events on the outbox with patient codes only, defined as contract types in a mytp-core minor release (4.2 format, 5.1 Money shape; contract tests reject names, AD-23), stored on the admin site as the accounting copy with buyer fiscal data as issued, encrypted with the admin's keys and kept for the legal period (AD-18)."
+verify = "Each invoice and refund on dev appears once in admindev's accounting copy with codes only; a payload with a patient name fails the contract test; the accounting copy survives a GDPR erasure of the doctor."
+covers = ["Y8"]
+after = [7]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 9
+type = "story"
+title = "Restore-safe invoice numbering"
+description = "After a database restore, the instance resumes each series above the higher of its own last number and the admin's accounting copy, read through a hub lookup (4.7), and refuses to issue while the admin cannot be asked."
+verify = "A simulated restore that loses the last two invoices continues numbering above the accounting copy's highest; with admindev stopped right after a restore, issuing waits instead of reusing a number."
+covers = ["Y6"]
+after = [8, "4.7"]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 10
+type = "story"
+title = "Invoice PDF and download"
+description = "Renders invoices and credit notes as PDF in the doctor's language (EN or ES; English on .ae) with the billing company's legal details, adding the patient's current name next to each patient code through a lookup hook epic-ordering implements (tested here with a fixture), downloadable from the doctor's dashboard; an erased patient shows only the code."
+verify = "A doctor on dev downloads an invoice in Spanish showing the fixture patient's name and code; with the fixture patient erased only the code shows; another doctor cannot download it."
+covers = ["Y7"]
+after = [7]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 11
+type = "story"
+title = "Saved cards and repeat charges"
+description = "Adds saving a card at checkout and the 'charge saved card for order and period' service (idempotent per order and period, AD-8) on Redsys and Revolut, with a declined state the caller handles; epic-subscriptions owns the renewal job and the renewal order, and entry 6 invoices it on payment."
+verify = "A saved card on each sandbox is charged again by a task without the doctor; rerunning for the same period does not charge twice; a declined charge leaves the order in the declined state."
+covers = ["Y9"]
+after = [4]
+hitl = true
+risk = "high"
+unknown = "Whether Santander enables recurring charges on the Redsys merchant account and Revolut supports them on ours."
+
+[[entry]]
+id = 12
+type = "story"
+title = "Production checks for the EU go-live"
+description = "Writes this epic's production checks (live gateways per company, webhooks, bank transfer flow, invoice series per company, credit notes, restore-safe numbering, PDF download, accounting copy, repeat charges) into epic-eu-golive's Done when."
+verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
+covers = []
+after = [9, 10, 11]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 13
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
+verify = "The portal's, the admin repo's and mytp-core's test suites pass; deferred review findings are closed or recorded."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+hitl = false
+risk = "low"
