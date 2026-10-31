@@ -22,6 +22,9 @@
 #
 # Optional: CERTBOT_EMAIL=ops@example.com to register the Let's Encrypt account with
 # an address (expiry notices). Without it the account is registered without email.
+#
+# WSGI_MODULE: the site's WSGI module Gunicorn serves (default mytreatplan.wsgi, the
+# portal). The admin site: WSGI_MODULE=mytp_admin.wsgi on every run for admindev.
 set -euo pipefail
 
 SITE_RE='^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$'
@@ -40,6 +43,9 @@ HTPASSWD_USER=$3
 [[ $SITE =~ $SITE_RE ]] || { echo "Invalid site name: '$SITE' (allowed: $SITE_RE)" >&2; exit 2; }
 [[ $DOMAIN =~ ^[A-Za-z0-9.-]+$ ]] || { echo "Invalid domain: $DOMAIN" >&2; exit 2; }
 [[ $HTPASSWD_USER =~ ^[A-Za-z0-9._-]+$ ]] || { echo "Invalid htpasswd user: $HTPASSWD_USER" >&2; exit 2; }
+WSGI_MODULE=${WSGI_MODULE:-mytreatplan.wsgi}
+[[ $WSGI_MODULE =~ ^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$ ]] \
+    || { echo "Invalid WSGI_MODULE: '$WSGI_MODULE' (a dotted Python module path)" >&2; exit 2; }
 if [[ $EUID -eq 0 ]]; then
     echo "Run this as the login user (debian), not as root; it uses sudo itself." >&2
     exit 2
@@ -155,8 +161,24 @@ fi
 
 # --- Release command (host-wide) --------------------------------------------------
 # Every site's CI runs it as that site's user: mytp-release <site> <git-sha> <tarball>.
+# An older deploy/ copy never downgrades it: a release.sh whose RELEASE_TOOL_VERSION is
+# lower than the installed one is skipped with a warning (the other steps still apply).
+# release_tool_version FILE -- its RELEASE_TOOL_VERSION; 1 when it has none (before versioning).
+release_tool_version() {
+    local v
+    v=$(sudo grep -m1 -E '^RELEASE_TOOL_VERSION=[0-9]+$' "$1" 2>/dev/null | cut -d= -f2 || true)
+    echo "${v:-1}"
+}
 step "Release command"
-install_file "$DEPLOY_DIR/release.sh" "$RELEASE_COMMAND" 0755 root:root || true
+new_release_version=$(release_tool_version "$DEPLOY_DIR/release.sh")
+if sudo test -f "$RELEASE_COMMAND" \
+    && (($(release_tool_version "$RELEASE_COMMAND") > new_release_version)); then
+    echo "  WARNING: $RELEASE_COMMAND is version $(release_tool_version "$RELEASE_COMMAND"), newer than" \
+        "this deploy/release.sh (version $new_release_version); not replaced. Use an up-to-date" \
+        "copy of the portal's deploy/." >&2
+else
+    install_file "$DEPLOY_DIR/release.sh" "$RELEASE_COMMAND" 0755 root:root || true
+fi
 
 # --- App user and directories (site) ----------------------------------------------
 step "App user and directories ($SITE)"
@@ -193,6 +215,7 @@ step "systemd units ($SITE)"
 units_changed=0
 for kind in socket service; do
     render "$DEPLOY_DIR/systemd/gunicorn.$kind.template" "$WORK/gunicorn.$kind"
+    sed -i "s/__WSGI_MODULE__/$WSGI_MODULE/g" "$WORK/gunicorn.$kind"
     if install_file "$WORK/gunicorn.$kind" "/etc/systemd/system/$GUNICORN.$kind" 0644 root:root; then
         units_changed=1
     fi

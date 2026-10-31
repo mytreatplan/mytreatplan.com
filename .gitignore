@@ -9,6 +9,8 @@ settings.env
 
 # Release SHA, written on the server by deploy/release.sh
 /REVISION
+# The release marker the CI build adds to the tarball (deploy/release.sh requires it)
+/deploy/release-ready
 
 # Logs
 *.log

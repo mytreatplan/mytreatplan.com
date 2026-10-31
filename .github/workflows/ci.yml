@@ -111,10 +111,13 @@ jobs:
         run: npm ci && npm run build:css
 
       - name: Build release tarball
-        # The tracked files at this commit plus the built CSS (git-ignored).
+        # The tracked files at this commit plus the built CSS (git-ignored), and last the
+        # marker the release command requires (deploy/release-ready, git-ignored): only a
+        # finished build has it.
         run: |
           git archive --format=tar -o release.tar "$SHA"
-          tar --append -f release.tar static/css/site.css
+          printf '%s\n' "$SHA" > deploy/release-ready
+          tar --append -f release.tar static/css/site.css deploy/release-ready
           gzip -9 release.tar
 
       - name: Configure SSH

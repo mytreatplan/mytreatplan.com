@@ -2,6 +2,7 @@
 the deploy-staging CI job (the scripts themselves run only on the server)."""
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -16,6 +17,7 @@ REPO = Path(settings.BASE_DIR)
 DEPLOY = REPO / 'deploy'
 WORKFLOW = REPO / '.github' / 'workflows' / 'ci.yml'
 SCRIPTS = sorted(DEPLOY.glob('*.sh'))
+bash_only = pytest.mark.skipif(shutil.which('bash') is None, reason='bash not available')
 
 
 def test_deploy_scripts_exist():
@@ -76,6 +78,96 @@ def test_deploy_job_ships_built_css_and_runs_release(deploy_job):
     assert 'npm run build:css' in commands
     assert 'git archive' in commands
     assert 'static/css/site.css' in commands
+    # The marker the release command requires, added after the build.
+    assert ("tar --append -f release.tar static/css/site.css deploy/release-ready"
+            in commands)
+    assert commands.index('> deploy/release-ready') < commands.index('tar --append')
+
+
+# --- Generic release check (epic-platform entry 10) -------------------------------------
+
+def test_release_accepts_any_site_repos_build_not_the_portal_css():
+    """release.sh checks what every site repo's CI build ships (manage.py and the
+    deploy/release-ready marker), not a portal-only file, so the admin repo deploys too."""
+    script = (DEPLOY / 'release.sh').read_text()
+    assert 'site.css' not in script
+    assert '[[ -f $RELEASE/manage.py ]] || die "tarball has no manage.py"' in script
+    assert '[[ -f $RELEASE/deploy/release-ready ]] || die' in script
+    # Checked right after unpacking, before anything is built from the release.
+    unpack = script.index('tar -xzf "$TARBALL" -C "$RELEASE"')
+    marker = script.index('$RELEASE/deploy/release-ready')
+    assert unpack < marker < script.index('log "Building venv"')
+
+
+def test_release_marker_is_never_committed():
+    ignored = (REPO / '.gitignore').read_text().splitlines()
+    assert '/deploy/release-ready' in ignored
+
+
+def test_gunicorn_serves_the_wsgi_module_set_at_provision_time():
+    """The unit's WSGI module is per site (provision.sh WSGI_MODULE, default the portal's
+    mytreatplan.wsgi), so every release of dev, old ones included, keeps starting."""
+    template = (DEPLOY / 'systemd' / 'gunicorn.service.template').read_text()
+    assert 'gunicorn __WSGI_MODULE__:application ' in template
+    script = (DEPLOY / 'provision.sh').read_text()
+    assert 'WSGI_MODULE=${WSGI_MODULE:-mytreatplan.wsgi}' in script
+    assert 'sed -i "s/__WSGI_MODULE__/$WSGI_MODULE/g" "$WORK/gunicorn.$kind"' in script
+    assert settings.WSGI_APPLICATION == 'mytreatplan.wsgi.application'
+    assert not (REPO / 'wsgi.py').exists()
+
+
+@bash_only
+@pytest.mark.parametrize('module', ['', 'my-admin.wsgi', 'x;rm', 'a..b', '.x'])
+def test_provision_refuses_a_bad_wsgi_module_before_any_change(module, no_privileges):
+    result = subprocess.run(
+        ['bash', str(DEPLOY / 'provision.sh'), 'admindev', 'admindev.mytpdso.com', 'team'],
+        capture_output=True, text=True,
+        env={**no_privileges, 'WSGI_MODULE': module or ' '})
+    assert result.returncode == 2
+    assert 'Invalid WSGI_MODULE' in result.stderr
+    assert 'STUB' not in result.stderr
+
+
+def _release_command_step(tmp_path, installed_version):
+    """Runs provision.sh's "Release command" step alone, with sudo as a plain call and the
+    installed command in tmp_path. Returns (result, the installed file's text)."""
+    script = (DEPLOY / 'provision.sh').read_text()
+    block = script[script.index('# --- Release command'):script.index('# --- App user')]
+    installed = tmp_path / 'mytp-release'
+    if installed_version is not None:
+        installed.write_text(f'#!/bin/bash\nRELEASE_TOOL_VERSION={installed_version}\n')
+    prelude = (
+        'set -euo pipefail\n'
+        'sudo() { "$@"; }\n'
+        'step() { echo "==> $*"; }\n'
+        'install_file() { cp "$1" "$2"; echo "  changed: $2"; }\n'
+        f'DEPLOY_DIR={shlex.quote(str(DEPLOY))}\n'
+        f'RELEASE_COMMAND={shlex.quote(str(installed))}\n')
+    result = subprocess.run(['bash', '-c', prelude + block], capture_output=True, text=True)
+    return result, installed.read_text() if installed.exists() else None
+
+
+def test_release_command_has_a_version():
+    assert re.search(r'^RELEASE_TOOL_VERSION=2$', (DEPLOY / 'release.sh').read_text(), re.M)
+
+
+@bash_only
+@pytest.mark.parametrize('installed_version', [None, 1, 2])
+def test_provision_installs_the_release_command_unless_it_would_downgrade(tmp_path,
+                                                                         installed_version):
+    result, installed = _release_command_step(tmp_path, installed_version)
+    assert result.returncode == 0, result.stderr
+    assert installed == (DEPLOY / 'release.sh').read_text()
+    assert 'WARNING' not in result.stderr
+
+
+@bash_only
+def test_provision_skips_an_older_release_command_with_a_warning(tmp_path):
+    result, installed = _release_command_step(tmp_path, 3)
+    assert result.returncode == 0, result.stderr
+    assert installed == '#!/bin/bash\nRELEASE_TOOL_VERSION=3\n'
+    assert 'WARNING' in result.stderr and 'version 3' in result.stderr
+    assert 'not replaced' in result.stderr
 
 
 def test_deploy_job_deploys_the_dev_site_with_the_host_release_command(deploy_job):
@@ -286,7 +378,6 @@ def no_privileges(tmp_path):
     return {**os.environ, 'PATH': f'{bin_dir}:{os.environ["PATH"]}'}
 
 
-bash_only = pytest.mark.skipif(shutil.which('bash') is None, reason='bash not available')
 
 
 @bash_only

@@ -688,7 +688,8 @@ certificate.
 
 1. CI (`test`) passes on a push to `master`. Pull requests and other branches never deploy.
 2. `deploy-staging` builds `release.tar.gz` (`git archive` of the commit plus the built
-   `static/css/site.css`). If `master` has moved on to a newer commit by then, the job
+   `static/css/site.css` and, last, the marker `deploy/release-ready`; both are
+   git-ignored). If `master` has moved on to a newer commit by then, the job
    ends green without deploying (the newer push deploys itself). Otherwise it copies the
    tarball to `/srv/mytp-dev/incoming/` and runs, as `mytp-dev`,
    `/usr/local/bin/mytp-release dev <sha> <tarball>` (the host's copy of `release.sh`,
@@ -696,7 +697,8 @@ certificate.
    `provision.sh` is run again from the merged `deploy/`).
 3. The release command refuses a site that was never provisioned (no `/srv/mytp-<site>`),
    another user than `mytp-<site>`, or a `settings.env` whose `SITE` differs. It unpacks
-   to `releases/<sha>/`, links `settings.env`, builds the
+   to `releases/<sha>/`, refuses a tarball without `manage.py` or `deploy/release-ready`
+   (so any site repo's CI build deploys, not only the portal's), links `settings.env`, builds the
    venv, runs `compilemessages`, `collectstatic`, stops the task worker
    (`sudo systemctl stop mytp-dev-worker`), runs `migrate`, `createcachetable`.
    If any step fails, the half-built release is removed, `current` is unchanged, the
@@ -1328,7 +1330,42 @@ database (never another site's), then from a copy of that repo's `deploy/`:
 `/srv/mytp-<site>/.ssh/authorized_keys`, and a CI job that uploads to
 `/srv/mytp-<site>/incoming/` and runs the release command for `<site>` as `mytp-<site>`.
 Running `provision.sh` from another repo also installs that repo's `release.sh` as the
-host's release command, so keep the repos' copies the same.
+host's release command, so keep the repos' copies the same. `release.sh` carries
+`RELEASE_TOOL_VERSION` (raise it on every change): `provision.sh` never replaces an
+installed release command with a lower version; it prints a WARNING, leaves the
+installed one and goes on with the other steps. Re-run it from an up-to-date copy.
+
+Gunicorn serves the WSGI module given to `provision.sh` as `WSGI_MODULE` (default
+`mytreatplan.wsgi`, the portal); the admin site passes `WSGI_MODULE=mytp_admin.wsgi` on
+every run (a run without it would point admindev's unit at the portal's module).
+
+What the shared tooling expects from any site repo (the portal, the admin site
+`mytreatplan/mytp-admin`):
+
+- a Django project with `manage.py` and `requirements.txt` at the root (pip installs it
+  from the release folder; `django-tasks-db==` in it makes `provision.sh` install the
+  worker), a `locale/` folder (`compilemessages` refuses a project without one) and
+  `/robots.txt` answering 200 (the release health check);
+- a WSGI module exposing `application`, passed to `provision.sh` as `WSGI_MODULE`;
+- `deploy/run-job.sh` and `deploy/jobs.conf` (the job units run the live release's
+  `run-job.sh`, and `provision.sh` installs the timers from the `jobs.conf` beside it);
+- a CI build that adds the git-ignored marker `deploy/release-ready` to the tarball last
+  (the release command refuses a tarball without it, or without `manage.py`).
+
+The admin site's repo carries only its `jobs.conf`, `run-job.sh` and
+`staging.env.example`; provision `admindev` from a separate copy of the portal's merged
+`deploy/` with the admin's `jobs.conf` and `staging.env.example` in it (the admin repo's
+README has the commands), never from the copy used for `dev`.
+
+**One-off, after the merge of epic-platform entry 10 (generic release check).** The
+release command changed. Once the merge's deploy is green, run `provision.sh` for `dev`
+again from a copy of the merged `deploy/` (no `WSGI_MODULE`: dev keeps
+`mytreatplan.wsgi`, so its unit is unchanged): it reports `/usr/local/bin/mytp-release`
+changed. The next deploy goes through the new release check. From then on, a release
+built before the `deploy/release-ready` marker (any commit before this merge) cannot be
+redeployed by re-running its old `deploy-staging` job: the release command refuses its
+tarball. Go back to such a release with "Rollback" (it is still in `releases/`), or
+deploy a new commit.
 
 **Remove a site** (e.g. a throwaway one), as `debian`. Replace `<site>` with the name; it
 must never be `dev` unless dev is meant to go:
@@ -1523,7 +1560,10 @@ sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker
 ```
 
 This does not reverse database migrations. The next push to `master` deploys over it.
-To re-deploy a commit, re-run its `deploy-staging` job in GitHub Actions.
+To re-deploy a commit, re-run its `deploy-staging` job in GitHub Actions; this does not
+work for commits built before the `deploy/release-ready` marker (epic-platform entry 10),
+whose tarballs the release command refuses: use the `ln -sfn` above while the release is
+still in `releases/`.
 
 ## Rotate the basic auth password
 
