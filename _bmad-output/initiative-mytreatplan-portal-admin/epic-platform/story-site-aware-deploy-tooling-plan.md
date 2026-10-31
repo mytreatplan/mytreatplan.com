@@ -3,7 +3,7 @@ title: 'Site-aware deploy tooling'
 type: 'feature'
 ticket: '1'
 created: '2026-10-30'
-status: 'built'
+status: 'done'
 baseline_revision: 'a55f95b9fde89ac28be94ab2402bac178def89ea'
 route: 'full'
 route_source: 'auto'
@@ -114,4 +114,4 @@ context:
 - Checks: `current` → releases/a2abe94…; `mytp-dev-gunicorn.socket` active; 6 `mytp-dev-job@*` timers, 0 `mytp-job@*`; `mytp-dev-job@clearsessions` result success; provision re-run "No changes."; https://dev.mytpdso.com/healthz 200.
 - Throwaway site `tmpcheck` provisioned (own user, home, 6 timers, nginx site), dev's units/nginx/sudoers byte-identical before and after, dev re-run "No changes."; tmpcheck removed the same hour.
 - The user confirmed signup and login pages open on dev (2026-10-30).
-- Pending: step 10 (delete /srv/mytp, user mytp, old units) on 2026-10-31 with the user's OK.
+- Step 10 run by Claude over SSH with the user's OK (2026-10-31): old mytp-job@* timers and units, mytp-gunicorn socket and service, nginx mytp.conf and mytp.htpasswd, /etc/sudoers.d/mytp-deploy, user mytp and /srv/mytp removed; checks: no old units loaded, sites-enabled has only mytp-dev.conf, sudoers only mytp-dev-deploy, no user mytp, /srv holds only mytp-dev; dev's socket, worker and 8 timers active; /healthz 200.
