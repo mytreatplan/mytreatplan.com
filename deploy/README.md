@@ -688,7 +688,8 @@ certificate.
 
 1. CI (`test`) passes on a push to `master`. Pull requests and other branches never deploy.
 2. `deploy-staging` builds `release.tar.gz` (`git archive` of the commit plus the built
-   `static/css/site.css`). If `master` has moved on to a newer commit by then, the job
+   `static/css/site.css` and, last, the marker `deploy/release-ready`; both are
+   git-ignored). If `master` has moved on to a newer commit by then, the job
    ends green without deploying (the newer push deploys itself). Otherwise it copies the
    tarball to `/srv/mytp-dev/incoming/` and runs, as `mytp-dev`,
    `/usr/local/bin/mytp-release dev <sha> <tarball>` (the host's copy of `release.sh`,
@@ -696,7 +697,8 @@ certificate.
    `provision.sh` is run again from the merged `deploy/`).
 3. The release command refuses a site that was never provisioned (no `/srv/mytp-<site>`),
    another user than `mytp-<site>`, or a `settings.env` whose `SITE` differs. It unpacks
-   to `releases/<sha>/`, links `settings.env`, builds the
+   to `releases/<sha>/`, refuses a tarball without `manage.py` or `deploy/release-ready`
+   (so any site repo's CI build deploys, not only the portal's), links `settings.env`, builds the
    venv, runs `compilemessages`, `collectstatic`, stops the task worker
    (`sudo systemctl stop mytp-dev-worker`), runs `migrate`, `createcachetable`.
    If any step fails, the half-built release is removed, `current` is unchanged, the
@@ -1329,6 +1331,32 @@ database (never another site's), then from a copy of that repo's `deploy/`:
 `/srv/mytp-<site>/incoming/` and runs the release command for `<site>` as `mytp-<site>`.
 Running `provision.sh` from another repo also installs that repo's `release.sh` as the
 host's release command, so keep the repos' copies the same.
+
+What the shared tooling expects from any site repo (the portal, the admin site
+`mytreatplan/mytp-admin`):
+
+- a Django project with `manage.py` and `requirements.txt` at the root (pip installs it
+  from the release folder; `django-tasks-db==` in it makes `provision.sh` install the
+  worker), a `locale/` folder (`compilemessages` refuses a project without one) and
+  `/robots.txt` answering 200 (the release health check);
+- a root `wsgi.py` exposing `application` (the Gunicorn unit runs `gunicorn
+  wsgi:application`);
+- `deploy/run-job.sh` and `deploy/jobs.conf` (the job units run the live release's
+  `run-job.sh`, and `provision.sh` installs the timers from the `jobs.conf` beside it);
+- a CI build that adds the git-ignored marker `deploy/release-ready` to the tarball last
+  (the release command refuses a tarball without it, or without `manage.py`).
+
+The admin site's repo carries only its `jobs.conf` and `run-job.sh`; provision `admindev`
+from a separate copy of the portal's merged `deploy/` with the admin's `jobs.conf` in it
+(the admin repo's README has the commands), never from the copy used for `dev`.
+
+**One-off, after the merge of epic-platform entry 10 (generic release check).** The
+release command and the Gunicorn unit template changed. Once the merge's deploy is green
+(its release has the root `wsgi.py` the new unit needs), run `provision.sh` for `dev`
+again from a copy of the merged `deploy/`: it reports `/usr/local/bin/mytp-release` and
+`mytp-dev-gunicorn.service` changed and restarts Gunicorn. Then
+`curl -s https://dev.mytpdso.com/healthz` answers `ok` and the next deploy goes through the
+new release check.
 
 **Remove a site** (e.g. a throwaway one), as `debian`. Replace `<site>` with the name; it
 must never be `dev` unless dev is meant to go:

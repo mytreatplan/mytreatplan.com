@@ -76,6 +76,41 @@ def test_deploy_job_ships_built_css_and_runs_release(deploy_job):
     assert 'npm run build:css' in commands
     assert 'git archive' in commands
     assert 'static/css/site.css' in commands
+    # The marker the release command requires, added after the build.
+    assert ("tar --append -f release.tar static/css/site.css deploy/release-ready"
+            in commands)
+    assert commands.index('> deploy/release-ready') < commands.index('tar --append')
+
+
+# --- Generic release check (epic-platform entry 10) -------------------------------------
+
+def test_release_accepts_any_site_repos_build_not_the_portal_css():
+    """release.sh checks what every site repo's CI build ships (manage.py and the
+    deploy/release-ready marker), not a portal-only file, so the admin repo deploys too."""
+    script = (DEPLOY / 'release.sh').read_text()
+    assert 'site.css' not in script
+    assert '[[ -f $RELEASE/manage.py ]] || die "tarball has no manage.py"' in script
+    assert '[[ -f $RELEASE/deploy/release-ready ]] || die' in script
+    # Checked right after unpacking, before anything is built from the release.
+    unpack = script.index('tar -xzf "$TARBALL" -C "$RELEASE"')
+    marker = script.index('$RELEASE/deploy/release-ready')
+    assert unpack < marker < script.index('log "Building venv"')
+
+
+def test_release_marker_is_never_committed():
+    ignored = (REPO / '.gitignore').read_text().splitlines()
+    assert '/deploy/release-ready' in ignored
+
+
+def test_gunicorn_serves_the_root_wsgi_module_of_any_site_repo():
+    service = _unit_lines(_render(DEPLOY / 'systemd' / 'gunicorn.service.template', 'dev'))
+    exec_start = next(line for line in service if line.startswith('ExecStart='))
+    assert exec_start.startswith('ExecStart=/srv/mytp-dev/current/venv/bin/gunicorn wsgi:application ')
+    assert 'mytreatplan' not in exec_start
+    # The portal's root wsgi.py is its project's application.
+    import wsgi
+    from mytreatplan import wsgi as project_wsgi
+    assert wsgi.application is project_wsgi.application
 
 
 def test_deploy_job_deploys_the_dev_site_with_the_host_release_command(deploy_job):

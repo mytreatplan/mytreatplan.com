@@ -7,7 +7,9 @@
 #     mytp-release dev 0123abc /srv/mytp-dev/incoming/0123abc.tar.gz
 #
 # The site must be provisioned (/srv/mytp-<site> exists) and its settings.env must say
-# SITE=<site>.
+# SITE=<site>. The tarball is any site repo's CI build: a Django project (manage.py,
+# requirements.txt, a root wsgi.py for Gunicorn, deploy/run-job.sh and deploy/jobs.conf)
+# plus the git-ignored marker deploy/release-ready that the build adds last.
 #
 # Flow: unpack to releases/<sha> (with a REVISION file holding the SHA), build its
 # venv, compilemessages, collectstatic; stop the site's background task worker
@@ -155,7 +157,11 @@ trap 'on_build_error; cleanup' EXIT
 log "Unpacking $SHA"
 mkdir -p "$RELEASE"
 tar -xzf "$TARBALL" -C "$RELEASE"
-[[ -f $RELEASE/static/css/site.css ]] || die "tarball has no built static/css/site.css"
+# Any repo's release (the portal, the admin site): a Django project whose CI build added
+# deploy/release-ready after its own build steps (the portal's CSS, for example). A bare
+# `git archive` has no marker (it is git-ignored), so it is refused.
+[[ -f $RELEASE/manage.py ]] || die "tarball has no manage.py"
+[[ -f $RELEASE/deploy/release-ready ]] || die "tarball has no deploy/release-ready (the CI build adds it)"
 ln -s "$SHARED/settings.env" "$RELEASE/settings.env"
 # The git SHA, read by settings as Sentry's `release` (RELEASE_SHA in the env wins).
 echo "$SHA" >"$RELEASE/REVISION"
