@@ -8,8 +8,9 @@
 #
 # The site must be provisioned (/srv/mytp-<site> exists) and its settings.env must say
 # SITE=<site>. The tarball is any site repo's CI build: a Django project (manage.py,
-# requirements.txt, a root wsgi.py for Gunicorn, deploy/run-job.sh and deploy/jobs.conf)
-# plus the git-ignored marker deploy/release-ready that the build adds last.
+# requirements.txt, deploy/run-job.sh and deploy/jobs.conf; Gunicorn's WSGI module is set
+# per site by provision.sh) plus the git-ignored marker deploy/release-ready that the
+# build adds last.
 #
 # Flow: unpack to releases/<sha> (with a REVISION file holding the SHA), build its
 # venv, compilemessages, collectstatic; stop the site's background task worker
@@ -19,6 +20,10 @@
 # back, restart both, exit non-zero; if a step fails before the switch, the worker is
 # started again on the unchanged release. Keeps the last 5 releases.
 set -euo pipefail
+
+# Raised on every change to this script. provision.sh never replaces the host's installed
+# release command with a lower version (an older deploy/ copy); 1 = before versioning.
+RELEASE_TOOL_VERSION=2
 
 SITE_RE='^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$'
 KEEP_RELEASES=5

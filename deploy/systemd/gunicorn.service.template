@@ -15,9 +15,9 @@ User=mytp-__SITE__
 Group=mytp-__SITE__
 # `current` is resolved when the service starts, so a restart picks up a new release.
 WorkingDirectory=/srv/mytp-__SITE__/current
-# Every site repo has a root wsgi.py exposing its project's `application` (the portal's
-# mytreatplan.wsgi, the admin site's mytp_admin.wsgi), so one unit serves any site.
-ExecStart=/srv/mytp-__SITE__/current/venv/bin/gunicorn wsgi:application \
+# __WSGI_MODULE__ is the site's WSGI module, set at provision time (WSGI_MODULE, default
+# mytreatplan.wsgi for the portal; mytp_admin.wsgi for the admin site).
+ExecStart=/srv/mytp-__SITE__/current/venv/bin/gunicorn __WSGI_MODULE__:application \
     --workers 3 \
     --timeout 30 \
     --access-logfile - \
