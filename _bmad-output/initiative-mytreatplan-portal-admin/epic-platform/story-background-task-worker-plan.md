@@ -110,3 +110,10 @@ context:
 
 **Manual checks (if no CLI):**
 - After the merge: copy `deploy/` to the server and re-run `provision.sh dev dev.mytpdso.com mytp-team` (installs the worker unit, sudoers rule and the new release command), re-run or wait for the deploy, then enqueue a sample task on dev and watch `journalctl -u mytp-dev-worker`.
+
+## Staging
+
+- Merged in PR #54 as merge commit d7fc69c9a08be93ef26b58a698704839cc68ef69 (2026-10-30). CI run 41115480956 on master: test and deploy-staging green. mytp-core v0.3.0 CI green.
+- Server step by Claude over SSH with the user's OK (2026-10-31), after the deploy: copied deploy/ and re-ran provision for dev (13 changes: mytp-release, sudoers, mytp-dev-worker installed, enabled and started, workerheartbeat and prunetasks timers).
+- Checks: mytp-dev-worker active; enqueue_sample_task ran once (state SUCCESSFUL in the journal) and a second enqueue for the same record was skipped ('already done'); after `systemctl kill` systemd restarted it (NRestarts 1) and it is active; mytp-dev-job@workerheartbeat result success.
+- Pending (user): Notify on the Sentry monitors mytp-dev-worker, mytp-dev-workerheartbeat and mytp-dev-prunetasks; then this plan is marked done.
