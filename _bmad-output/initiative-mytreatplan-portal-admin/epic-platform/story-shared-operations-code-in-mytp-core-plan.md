@@ -3,7 +3,7 @@ title: 'Shared operations code in mytp-core'
 type: 'refactor'
 ticket: '5'
 created: '2026-10-30'
-status: 'built'
+status: 'done'
 baseline_revision: '26e4df88b9d0c6bff28b26eccfa19da0de6ad3e0'
 route: 'full'
 route_source: 'auto'
@@ -108,3 +108,4 @@ context:
 - Merged in PR #51 as merge commit a0a21909ad36387c2893b8d3dbedae70873bbc0c (2026-10-30). CI run 41054001369 on master: test and deploy-staging green (no re-provision needed).
 - https://dev.mytpdso.com/healthz answers `ok` / `site: dev`.
 - Pending (user): the first `mytp-dev-*` cron check-in (purgepending at 13:15 UTC), Notify on the new monitors, deletion of the six `mytp-staging-*` monitors; then this plan is marked done.
+- 2026-11-01: closed with the monitors as an accepted gap. The old `mytp-staging-*` monitors are deleted. The new `mytp-{site}-*` monitors exist but are disabled: the Sentry Developer plan includes one cron monitor and offers no pay-as-you-go top-up, only an upgrade, which the user defers. Until then failed jobs do not alert; enable the monitors and set Notify after the upgrade (tracked in epic-platform's Notes).

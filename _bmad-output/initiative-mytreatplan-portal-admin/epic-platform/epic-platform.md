@@ -53,6 +53,7 @@ The platform both sites stand on. Not the country map or routing (epic-regions),
 
 ## Notes
 
+- Decision (2026-11-01): Sentry stays on the Developer plan for now (one cron monitor, no pay-as-you-go top-up). The `mytp-{site}-*` cron monitors exist but are disabled, so failed jobs and a stopped worker do not alert. On the upgrade, enable every `mytp-dev-*`, `mytp-admindev-*` and later `mytp-dev-ae-*` monitor and set Notify to devops@. Must be done before production go-live (epic 15).
 - Decision (2026-10-30): entry 12's memory question is settled: the staging instance has 6.7 GB RAM (6.1 GB available with dev running), enough for clamd beside three sites.
 - Tracer bullet: entry 1. dev redeploys under the per-site layout, proving the tooling every other site uses.
 - Least certain: entry 2 (the OVH browser upload), run at once in parallel with entries 1 and 3.

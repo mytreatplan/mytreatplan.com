@@ -3,7 +3,7 @@ title: 'Background task worker'
 type: 'feature'
 ticket: '9'
 created: '2026-10-30'
-status: 'built'
+status: 'done'
 baseline_revision: '322fd92c197d36c587c550f831286b3713fb75f5'
 route: 'full'
 route_source: 'auto'
@@ -117,3 +117,4 @@ context:
 - Server step by Claude over SSH with the user's OK (2026-10-31), after the deploy: copied deploy/ and re-ran provision for dev (13 changes: mytp-release, sudoers, mytp-dev-worker installed, enabled and started, workerheartbeat and prunetasks timers).
 - Checks: mytp-dev-worker active; enqueue_sample_task ran once (state SUCCESSFUL in the journal) and a second enqueue for the same record was skipped ('already done'); after `systemctl kill` systemd restarted it (NRestarts 1) and it is active; mytp-dev-job@workerheartbeat result success.
 - Pending (user): Notify on the Sentry monitors mytp-dev-worker, mytp-dev-workerheartbeat and mytp-dev-prunetasks; then this plan is marked done.
+- 2026-11-01: closed with the monitors as an accepted gap. The old `mytp-staging-*` monitors are deleted. The new `mytp-{site}-*` monitors exist but are disabled: the Sentry Developer plan includes one cron monitor and offers no pay-as-you-go top-up, only an upgrade, which the user defers. Until then failed jobs do not alert; enable the monitors and set Notify after the upgrade (tracked in epic-platform's Notes).
