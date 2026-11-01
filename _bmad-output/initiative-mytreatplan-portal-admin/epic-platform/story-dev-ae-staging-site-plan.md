@@ -63,7 +63,7 @@ context: []
 - [x] `.github/workflows/ci.yml` -- matrix deploy to dev and dev-ae (see Decisions), same sha, per-site SSH key secret, per-site concurrency group and environment url, tip check per leg.
 - [x] `mytp_publicsite/tests/test_deploy.py` -- update the pinned job shape: both sites deployed, a dev-ae failure cannot stop dev, pinned host keys still from secrets, release only when tip.
 - [x] `deploy/staging.env.example`, `deploy/README.md` -- dev-ae differences and an "Add dev-ae" runbook: DNS (done), database with the 3 setup steps, provision, settings.env, KMS cert copy and own data keys, deploy key and secret, Turnstile hostname, first deploy, checks.
-- [ ] server (hitl) -- user creates `mytp_dev_ae` on dev's service (3 setup steps); provision `dev-ae dev-ae.mytpdso.com mytp-team`; settings.env; KMS files and keys; deploy key; first deploy; checks.
+- [x] server (hitl) -- user creates `mytp_dev_ae` on dev's service (3 setup steps); provision `dev-ae dev-ae.mytpdso.com mytp-team`; settings.env; KMS files and keys; deploy key; first deploy; checks.
 
 **Acceptance Criteria:**
 - Given both sites provisioned, when master is pushed, then dev and dev-ae both run the pushed sha and `/healthz` shows `site: dev-ae` and `region: ae` on dev-ae, `site: dev` and `region: eu` on dev.
@@ -100,3 +100,19 @@ context: []
 **Manual checks (if no CLI):**
 - After the server step: `curl https://dev-ae.mytpdso.com/healthz` → `ok` / `site: dev-ae` / `region: ae`; dev's healthz unchanged; `/` behind the team password; one signup on dev-ae counted in its database only; `mytp-dev-ae-job@*` timers listed; kmscheck ok.
 
+## Staging
+
+- Merged in PR #56 as merge commit 2eb12a4 (2026-11-01). The PR's push run failed once on the flaky browser test `signup/tests/browser/test_failure_policies.py::test_row5_email_in_a_pending_registration` (unrelated, passed on re-run). Master CI run 41324248395: test green, both deploy legs green (dev 43s, dev-ae 41s) on the same commit.
+- Server step by the user from the "Add dev-ae" runbook:
+  - database `mytp_dev_ae` on dev's PostgreSQL service, with the 3 setup steps; the psql check showed the right user, database and owners
+  - provision (46 changes)
+  - CA and KMS files copied from dev
+  - settings.env built without printing values; the only `/srv/mytp-dev/` left over was dev's header comment, now fixed
+  - both lifecycle rules (`staging/`, `staging-dev-ae/`), set as `mytp-backup-admin`; another user's keys get AccessDenied
+  - field key `ae20261101T1543` and the blind-index key from the KMS; `check` clean; `kmscheck` ok
+  - deploy key and the `STAGING_SSH_KEY_DEV_AE` environment secret (the first `gh secret set` attempt did not take; redone)
+  - re-provision after the green deploy (3 changes: the worker)
+- Checks:
+  - Claude, with curl: dev `/healthz` ok, site dev, region eu; dev-ae `/healthz` ok, site dev-ae, region ae; dev-ae `/` returns 401 without the password.
+  - The user: `mytp-dev-ae-worker` active; 8 `mytp-dev-ae-job@*` timers, with workerheartbeat already run; `kmscheck` ok on the live release.
+- Open, before `done`: the Turnstile hostname `dev-ae.mytpdso.com` on dev's widget (the Cloudflare login failed on 2026-11-01, apparently on their side), then a signup on dev-ae counted in dev-ae's database only (acceptance criterion 2). The `mytp-dev-ae-*` Sentry monitors stay disabled until the Sentry upgrade (epic Notes).
