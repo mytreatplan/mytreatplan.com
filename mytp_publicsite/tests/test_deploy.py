@@ -58,15 +58,19 @@ def test_deploy_job_environment_and_concurrency(deploy_job):
     environment = deploy_job['environment']
     name = environment['name'] if isinstance(environment, dict) else environment
     assert name == 'staging'
-    assert deploy_job['concurrency']['group'] == 'deploy-staging'
+    assert environment['url'] == 'https://${{ matrix.domain }}'
+    # One queue per site: a dev-ae deploy never waits on (or holds up) dev's.
+    assert deploy_job['concurrency']['group'] == 'deploy-staging-${{ matrix.site }}'
     # Queue deploys; never cancel one halfway through a release.
     assert deploy_job['concurrency'].get('cancel-in-progress', False) is False
 
 
 def test_deploy_job_uses_pinned_host_key(deploy_job):
     text = WORKFLOW.read_text()
-    for secret in ('STAGING_HOST', 'STAGING_SSH_KEY', 'STAGING_KNOWN_HOSTS'):
+    for secret in ('STAGING_HOST', 'STAGING_KNOWN_HOSTS'):
         assert f'secrets.{secret}' in text
+    # Each site's deploy key comes from its own secret, picked by the matrix leg.
+    assert 'STAGING_SSH_KEY: ${{ secrets[matrix.ssh_key_secret] }}' in text
     assert 'StrictHostKeyChecking yes' in text
     assert 'ssh-keyscan' not in text
     assert 'StrictHostKeyChecking no' not in text
@@ -170,8 +174,39 @@ def test_provision_skips_an_older_release_command_with_a_warning(tmp_path):
     assert 'not replaced' in result.stderr
 
 
-def test_deploy_job_deploys_the_dev_site_with_the_host_release_command(deploy_job):
-    assert deploy_job['env']['SITE'] == 'dev'
+# --- dev-ae beside dev (epic-platform entry 7) ---------------------------------------------
+
+def test_deploy_job_deploys_dev_and_dev_ae_with_their_own_keys(deploy_job):
+    strategy = deploy_job['strategy']
+    assert strategy['matrix'] == {'include': [
+        {'site': 'dev', 'domain': 'dev.mytpdso.com', 'ssh_key_secret': 'STAGING_SSH_KEY'},
+        {'site': 'dev-ae', 'domain': 'dev-ae.mytpdso.com',
+         'ssh_key_secret': 'STAGING_SSH_KEY_DEV_AE'},
+    ]}
+    assert deploy_job['env']['SITE'] == '${{ matrix.site }}'
+    # Both legs deploy the commit that was pushed.
+    assert deploy_job['env']['SHA'] == '${{ github.sha }}'
+
+
+def test_a_failing_dev_ae_deploy_cannot_stop_dev(deploy_job, workflow):
+    # fail-fast would cancel the other leg when one fails.
+    assert deploy_job['strategy']['fail-fast'] is False
+    assert 'continue-on-error' not in deploy_job
+    # Nothing waits on the deploy job, and no step stops on another site's result.
+    for name, job in workflow['jobs'].items():
+        needs = job.get('needs', [])
+        assert 'deploy-staging' not in ([needs] if isinstance(needs, str) else needs), name
+    text = '\n'.join(f"{step.get('if', '')}\n{step.get('run', '')}" for step in deploy_job['steps'])
+    assert 'dev-ae' not in text and 'matrix.site ==' not in text
+
+
+def test_deploy_job_refuses_a_missing_site_key(deploy_job):
+    configure = next(step for step in deploy_job['steps'] if step.get('name') == 'Configure SSH')
+    run = configure['run']
+    assert run.index('if [ -z "$STAGING_SSH_KEY" ]; then') < run.index('> ~/.ssh/deploy_key')
+
+
+def test_deploy_job_deploys_each_site_with_the_host_release_command(deploy_job):
     commands = '\n'.join(step.get('run', '') for step in deploy_job['steps'])
     assert 'User mytp-$SITE' in commands
     assert 'scp release.tar.gz "staging:/srv/mytp-$SITE/incoming/$SHA.tar.gz"' in commands
