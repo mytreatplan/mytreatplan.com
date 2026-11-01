@@ -3,7 +3,7 @@ title: 'Country map with its starting lists'
 type: 'feature'
 ticket: '1'
 created: '2026-11-01'
-status: 'built'
+status: 'done'
 baseline_revision: '549697ebcbdfca70244977cae975a463c3ea896c'
 route: 'full'
 route_source: 'auto'
@@ -102,3 +102,10 @@ context: []
 - Portal full suite (non-secret test keys; venv `../.venv`; sandbox off) -- expected: all pass, except the 3 known PostgreSQL-only tests.
 - `manage.py makemigrations --check --dry-run` -- expected: no changes.
 
+## Staging
+
+- Merged in PR #57 (2026-11-01). The PR's CI was green on PostgreSQL, which was the first PostgreSQL run of the new migrations. Master CI run 41332124511 was green, with both deploy legs (dev, dev-ae).
+- Server step (user): `REGION_SITE_URL_AE=https://dev-ae.mytpdso.com` added to dev's settings.env and `REGION_SITE_URL_EU=https://dev.mytpdso.com` to dev-ae's (1 line each), then both gunicorns and both workers restarted.
+- Checks (user, read-only shell on each site):
+  - On dev: AE gives ae with dev-ae's site and signup URL (`/en/signup/`); NG gives banned with no URLs; ES gives eu with no URLs.
+  - On dev-ae: ES gives eu with dev's site and signup URL; AE gives ae with no URLs; NG gives banned.
