@@ -1466,7 +1466,7 @@ command yourself, in your own terminal. Nothing below prints a secret; never `ca
 
    ```sh
    sudo install -m 600 -o mytp-dev-ae -g mytp-dev-ae /dev/null /srv/mytp-dev-ae/shared/settings.env
-   sudo sh -c "grep -v -E '^(SITE|REGION|SECRET_KEY|DATABASE_URL|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|SITE_URL|DB_SSLROOTCERT|BACKUP_PREFIX|KMS_CLIENT_CERT|KMS_CLIENT_KEY|FIELD_ENCRYPTION_KEYS|BLIND_INDEX_KEY|FIELD_KEY_PROVIDER|FIELD_KMS_KEYS|BLIND_INDEX_KMS_KEY|UPLOAD_SPIKE_[A-Z_]+)=' \
+   sudo sh -c "grep -v -E '^(SITE|REGION|SECRET_KEY|DATABASE_URL|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|SITE_URL|DB_SSLROOTCERT|BACKUP_PREFIX|KMS_CLIENT_CERT|KMS_CLIENT_KEY|FIELD_ENCRYPTION_KEYS|BLIND_INDEX_KEY|FIELD_KEY_PROVIDER|FIELD_KMS_KEYS|BLIND_INDEX_KMS_KEY|UPLOAD_SPIKE_[A-Z_]+|REGION_SITE_URL_[A-Z]+)=' \
        /srv/mytp-dev/shared/settings.env > /srv/mytp-dev-ae/shared/settings.env"
    sudo -u mytp-dev-ae sh -ec 'k=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
    printf "%s\n" SITE=dev-ae REGION=ae "SECRET_KEY=$k" \
@@ -1476,6 +1476,7 @@ command yourself, in your own terminal. Nothing below prints a secret; never `ca
        KMS_CLIENT_CERT=/srv/mytp-dev-ae/shared/kms-client.crt \
        KMS_CLIENT_KEY=/srv/mytp-dev-ae/shared/kms-client.key \
        FIELD_ENCRYPTION_KEYS= BLIND_INDEX_KEY= UPLOAD_SPIKE_ENABLED=False \
+       REGION_SITE_URL_EU=https://dev.mytpdso.com \
        >> /srv/mytp-dev-ae/shared/settings.env'
    ```
 
@@ -1508,12 +1509,13 @@ command yourself, in your own terminal. Nothing below prints a secret; never `ca
    sudo grep -c -E '^(SITE=dev-ae|REGION=ae|SECRET_KEY=.|DATABASE_URL=.)' /srv/mytp-dev-ae/shared/settings.env   # 4
    ```
 
-   No dev value may be left over from dev's file (counts only):
+   No dev value may be left over from dev's file (counts only; `REGION_SITE_URL_EU`
+   points at dev on purpose, so it is left out of the counts):
 
    ```sh
-   sudo grep -c '/srv/mytp-dev/' /srv/mytp-dev-ae/shared/settings.env                 # 0
-   sudo grep -c -E '^SITE=dev$|dev\.mytpdso\.com' /srv/mytp-dev-ae/shared/settings.env  # 0
-   sudo grep -n -o -E '^[A-Z_]+=.*(/srv/mytp-dev/|dev\.mytpdso\.com)' /srv/mytp-dev-ae/shared/settings.env | cut -d= -f1   # names only
+   sudo grep -v '^REGION_SITE_URL_EU=' /srv/mytp-dev-ae/shared/settings.env | grep -c '/srv/mytp-dev/'                 # 0
+   sudo grep -v '^REGION_SITE_URL_EU=' /srv/mytp-dev-ae/shared/settings.env | grep -c -E '^SITE=dev$|dev\.mytpdso\.com'  # 0
+   sudo grep -v '^REGION_SITE_URL_EU=' /srv/mytp-dev-ae/shared/settings.env | grep -n -o -E '^[A-Z_]+=.*(/srv/mytp-dev/|dev\.mytpdso\.com)' | cut -d= -f1   # names only
    ```
 
    If a count is not 0, the last command lists the setting names (never the values);
@@ -1616,6 +1618,19 @@ command yourself, in your own terminal. Nothing below prints a secret; never `ca
     Only dev-ae's count goes up by one. Sentry monitors for dev-ae's jobs
     (`mytp-dev-ae-*`) wait for the plan upgrade, like dev's and admindev's; dev-ae has no
     Sentry environment of its own yet, and no restore test of its own (entry 13).
+
+**Region site URLs (epic-regions entry 1).** The country map sends a person whose
+country the other region serves to that region's site: dev sends them to dev-ae and
+dev-ae to dev, not to the production domains. On sites set up before this change, add
+the one line to each `settings.env` (no secret; prints nothing) and restart both sites'
+gunicorn and worker (the worker reads the same `settings.env`):
+
+```sh
+sudo -u mytp-dev sh -c 'echo REGION_SITE_URL_AE=https://dev-ae.mytpdso.com >> /srv/mytp-dev/shared/settings.env'
+sudo -u mytp-dev-ae sh -c 'echo REGION_SITE_URL_EU=https://dev.mytpdso.com >> /srv/mytp-dev-ae/shared/settings.env'
+sudo grep -c '^REGION_SITE_URL_' /srv/mytp-dev/shared/settings.env /srv/mytp-dev-ae/shared/settings.env   # 1 each
+sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker mytp-dev-ae-gunicorn mytp-dev-ae-worker
+```
 
 To rotate dev-ae's deploy key, repeat step 8 and replace the old line in
 `/srv/mytp-dev-ae/.ssh/authorized_keys`. To remove dev-ae, see "Remove a site" above,
