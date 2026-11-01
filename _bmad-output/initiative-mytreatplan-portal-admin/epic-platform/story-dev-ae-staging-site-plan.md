@@ -3,7 +3,7 @@ title: 'dev-ae staging site'
 type: 'feature'
 ticket: '7'
 created: '2026-11-01'
-status: 'built'
+status: 'done'
 baseline_revision: '9e31bb25a1e56cdbc3f78b0bd6d5a4c1580001d2'
 route: 'full'
 route_source: 'auto'
@@ -115,4 +115,6 @@ context: []
 - Checks:
   - Claude, with curl: dev `/healthz` ok, site dev, region eu; dev-ae `/healthz` ok, site dev-ae, region ae; dev-ae `/` returns 401 without the password.
   - The user: `mytp-dev-ae-worker` active; 8 `mytp-dev-ae-job@*` timers, with workerheartbeat already run; `kmscheck` ok on the live release.
-- Open, before `done`: the Turnstile hostname `dev-ae.mytpdso.com` on dev's widget (the Cloudflare login failed on 2026-11-01, apparently on their side), then a signup on dev-ae counted in dev-ae's database only (acceptance criterion 2). The `mytp-dev-ae-*` Sentry monitors stay disabled until the Sentry upgrade (epic Notes).
+- Signup check (2026-11-01): the user added `dev-ae.mytpdso.com` to dev's Turnstile widget and signed up a test doctor on dev-ae. User counts before were dev 2, dev-ae 0; after, dev 2, dev-ae 1. Acceptance criterion 2 is met.
+- Staging-only quirk seen during that signup: after the final step's redirect to `/en/welcome/`, the browser did not resend the team password (nginx 401) and asked for it again. Re-submitting the old verification page then gave CSRF 403s. Production has no team password.
+- The `mytp-dev-ae-*` Sentry monitors stay disabled until the Sentry upgrade (epic Notes).
