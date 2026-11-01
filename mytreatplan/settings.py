@@ -17,7 +17,7 @@ import dj_database_url
 from decouple import Config, Csv, RepositoryEmpty, RepositoryEnv
 from django.core.exceptions import ImproperlyConfigured
 
-from regions.profiles import DEFAULT_REGION, UnknownRegion, get_profile
+from regions.profiles import DEFAULT_REGION, PROFILES, UnknownRegion, get_profile
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -63,6 +63,17 @@ CSRF_TRUSTED_ORIGINS = config('CSRF_TRUSTED_ORIGINS', default=','.join(REGION_PR
 # sitemap and robots.txt URLs are built from it (never from the request host), so a
 # staging deploy sets its own host here.
 SITE_URL = config('SITE_URL', default=REGION_PROFILE.site_url).rstrip('/')
+
+# Every region's public site URL, by region code, for sending a person to the region that
+# serves their country (regions.countries.lookup_country, epic-regions entry 1).
+# REGION_SITE_URL_<CODE> (e.g. REGION_SITE_URL_AE) overrides a region's production site
+# URL (blank reads as unset); staging points dev and dev-ae at each other
+# (deploy/staging.env.example).
+REGION_SITE_URLS = {
+    code: (config(f'REGION_SITE_URL_{code.upper()}', default='').strip().rstrip('/')
+           or profile.site_url)
+    for code, profile in PROFILES.items()
+}
 
 # The region's object-storage endpoint (AD-9): the profile's default, settings.env overrides.
 STORAGE_ENDPOINT = config('STORAGE_ENDPOINT', default=REGION_PROFILE.storage_endpoint)
@@ -311,7 +322,9 @@ INSTALLED_APPS = [
     # /healthz, backups; its field key checks (mytp_core.E001, E002) and the commands
     # generate_field_keys, generate_kms_field_key, kmscheck, runjob and backupdb.
     'mytp_core.apps.MytpCoreConfig',
-    # The REGION profile (AD-13): no models; regions/profiles.py is plain data.
+    # The REGION profile (AD-13; regions/profiles.py, plain data) and the country map
+    # (regions.models.Country: each country's region or banned, read-only, seeded by
+    # migration; regions.countries.lookup_country).
     'regions.apps.RegionsConfig',
     'accounts.apps.AccountsConfig',
     'eventlog.apps.EventlogConfig',

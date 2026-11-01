@@ -97,3 +97,31 @@ def test_running_settings_have_the_profile():
     assert django_settings.REGION_PROFILE.code == django_settings.REGION
     assert django_settings.TIME_ZONE == django_settings.REGION_PROFILE.time_zone
     assert django_settings.LANGUAGES == django_settings.REGION_PROFILE.language_choices
+
+
+def test_region_site_urls_default_to_the_production_sites(load_settings):
+    """Epic-regions entry 1: where the country map sends a person of the other region."""
+    s = load_settings()
+
+    assert s['REGION_SITE_URLS'] == {'eu': 'https://mytreatplan.com',
+                                     'ae': 'https://mytreatplan.ae'}
+
+
+def test_region_site_urls_take_the_env_overrides(load_settings):
+    """Staging: dev points at dev-ae and dev-ae at dev (deploy/staging.env.example)."""
+    s = load_settings(REGION='eu', REGION_SITE_URL_AE='https://dev-ae.mytpdso.com/')
+    assert s['REGION_SITE_URLS'] == {'eu': 'https://mytreatplan.com',
+                                     'ae': 'https://dev-ae.mytpdso.com'}
+
+    s = load_settings(REGION='ae', REGION_SITE_URL_EU='https://dev.mytpdso.com')
+    assert s['REGION_SITE_URLS'] == {'eu': 'https://dev.mytpdso.com',
+                                     'ae': 'https://mytreatplan.ae'}
+
+
+@pytest.mark.parametrize('blank', ['', '   ', '/'])
+def test_a_blank_region_site_url_reads_as_unset(load_settings, blank):
+    """A present but blank REGION_SITE_URL_<CODE>= must not give a relative signup URL."""
+    s = load_settings(REGION_SITE_URL_AE=blank, REGION_SITE_URL_EU=' https://dev.mytpdso.com/ ')
+
+    assert s['REGION_SITE_URLS'] == {'eu': 'https://dev.mytpdso.com',
+                                     'ae': 'https://mytreatplan.ae'}
