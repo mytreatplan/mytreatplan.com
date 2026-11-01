@@ -3,7 +3,7 @@ title: 'Admin site skeleton on admindev'
 type: 'feature'
 ticket: '10'
 created: '2026-10-31'
-status: 'in-review'
+status: 'done'
 baseline_revision: '4057e30070b50fc34416a6dbef3cfff8f173898d'
 route: 'full'
 route_source: 'auto'
@@ -63,7 +63,7 @@ context:
 **Execution:**
 - [x] portal `deploy/release.sh`, tests, README -- generic release check (separate small portal PR, merged and provisioned first).
 - [x] `../mytp-admin` -- project scaffold, layout, robots/noindex, mytp-core, jobs, worker settings, tests, CI; first commit on `master` (pushed by the orchestrator after review).
-- [ ] server -- provision admindev, settings.env, deploy key and repo secrets, first deploy.
+- [x] server -- provision admindev, settings.env, deploy key and repo secrets, first deploy.
 
 **Acceptance Criteria:**
 - Given the DNS record and the database, when the admin repo's master is pushed, then admindev deploys and serves the empty AdminLTE layout behind the team password, with noindex and a disallow-all robots.txt.
@@ -97,3 +97,15 @@ context:
 
 **Manual checks (if no CLI):**
 - After the server step: `curl -u` the team password `https://admindev.mytpdso.com/` shows the layout; `curl https://admindev.mytpdso.com/healthz` shows `site: admindev`; `robots.txt` disallows all; the admin worker runs a sample task once.
+
+## Staging
+
+- Portal side merged in PR #55 (merge commit 8e43cb1, 2026-10-31); dev re-provisioned. The admin repo's master (1382d79, ef6b3ec) was pushed by the user on 2026-11-01; mytp-admin CI run 41295861276: tests green, deploy-staging green on its fourth attempt.
+- The first three deploys failed before the switch (admindev unchanged), all on database setup, not code:
+  - `password authentication failed`: settings.env's DATABASE_URL pointed at the wrong managed PostgreSQL service (dev's). The admin database has its own service; the URL now has that service's host from the OVH panel, `/mytp_admin` and `?sslmode=require`, and the password URL-encoded (a plain sed breaks on `@ : / # % &`).
+  - connection hang: the new service's authorized IPs did not include the staging host; the user added the staging host's IP.
+  - `permission denied for schema public` (PostgreSQL 15+): the panel-created database belonged to avnadmin. As avnadmin: `ALTER DATABASE mytp_admin OWNER TO mytp_admin; ALTER SCHEMA public OWNER TO mytp_admin;`.
+  - The same three steps apply to every new site database (dev-ae in 1.7, production in epic 15).
+- The user re-ran `WSGI_MODULE=mytp_admin.wsgi provision.sh admindev …` after the green deploy (3 changes; the worker installed). Claude's SSH attempt was blocked by the auto-mode classifier.
+- Checks: without the password, `/` and `/robots.txt` return 401 (Basic realm "MyTreatplan staging"); `/healthz` returns `ok` / `site: admindev` with `X-Robots-Tag: noindex, nofollow` (Claude, curl). Sample task on the worker: `layout.tasks.sample_task` SUCCESSFUL; 4 admindev job timers listed (user). The layout and robots.txt behind the password: not reported.
+- Open: Sentry monitors `mytp-admindev-*` need Notify once the account's pay-as-you-go budget covers the extra cron monitors (same item as 1.5/1.9). backupdb fails until admindev's `BACKUP_*` settings are filled (see Plan Change Log).
