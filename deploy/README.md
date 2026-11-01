@@ -1,13 +1,15 @@
 # Staging: server setup and deploys
 
 Every push to `master` that passes CI is deployed to **https://dev.mytpdso.com**, the
-staging host's `dev` site, by the `deploy-staging` job in `.github/workflows/ci.yml`. The
-site sits behind a team password (basic auth) and sends `X-Robots-Tag: noindex, nofollow`.
+staging host's `dev` site, and to **https://dev-ae.mytpdso.com**, the `dev-ae` site (the
+same build with `REGION=ae`), by the `deploy-staging` job in `.github/workflows/ci.yml`
+(one matrix leg per site). The dev-ae leg fails until the [Add dev-ae](#add-dev-ae)
+runbook is done; dev deploys either way. The sites sit behind a team password (basic auth) and send `X-Robots-Tag: noindex, nofollow`.
 
-The staging host runs several **sites** side by side (`dev` today; `dev-ae` and `admindev`
-later, architecture AD-12), each with its own user, home, units, timers, Nginx site and
-database. This file uses `dev`; for another site replace `dev` in every name (see
-[Sites on the staging host](#sites-on-the-staging-host)).
+The staging host runs several **sites** side by side (`dev`, `dev-ae` and `admindev`,
+the admin repo's site; architecture AD-12), each with its own user, home, units, timers,
+Nginx site and database. This file uses `dev`; for another site replace `dev` in every
+name (see [Sites on the staging host](#sites-on-the-staging-host)).
 
 | What | Where |
 |------|-------|
@@ -134,6 +136,10 @@ deployments to the `master` branch). Add three environment secrets:
 | `STAGING_KNOWN_HOSTS` | contents of `staging_known_hosts` |
 
 Then delete the local private key copy (`mytp_deploy_staging`); a new one can be made at any time.
+
+`STAGING_SSH_KEY` is dev's key. Each other portal site has its own key and secret, picked
+by its matrix leg in `deploy-staging` (`STAGING_SSH_KEY_DEV_AE` for dev-ae, see
+[Add dev-ae](#add-dev-ae)).
 
 ### 7. First deploy and checks
 
@@ -712,11 +718,15 @@ certificate.
    site whose worker unit is not enabled (not yet provisioned with it) skips the worker.
 5. It keeps the newest 5 releases (plus the live and previous one).
 
-Deploys run one at a time (concurrency group `deploy-staging`; the release command also
-holds a lock per site). If several pushes queue
-up, GitHub keeps only the newest pending one, and a job whose commit is no longer the tip
-of `master` skips the deploy, so the latest commit is what goes live even when an older
-push's tests finish last.
+Deploys of a site run one at a time (concurrency group `deploy-staging-<site>`, one per
+matrix leg; the release command also holds a lock per site). dev and dev-ae deploy in
+parallel, each from its own leg: one failing never cancels or rolls back the other. The
+dev-ae leg fails until the [Add dev-ae](#add-dev-ae) runbook is done. If several pushes
+queue up, GitHub keeps only the newest pending one, and a job whose commit is no longer
+the tip of `master` skips the deploy, so the latest commit is what goes live even when an
+older push's tests finish last. Each leg checks the tip on its own: if `master` moves
+between the two checks, one site may skip a commit the other released; the next push
+brings both to the same commit.
 
 Note: migrations run before the switch, so the previous release briefly runs against the
 new schema, and a failed health check does not undo migrations. Keep migrations
@@ -1393,6 +1403,224 @@ sudo rm -rf "/srv/mytp-$site"
 Its database (if any) and certificate (`sudo certbot delete --cert-name <domain>`) are
 removed separately.
 
+### Add dev-ae
+
+`dev-ae` (https://dev-ae.mytpdso.com) is the portal again with `REGION=ae`, beside `dev`
+on the same host (epic-platform entry 7). The `deploy-staging` job deploys every master
+build to both sites, one matrix leg per site (`fail-fast: false`, concurrency group
+`deploy-staging-<site>`), so a failed dev-ae deploy never stops or rolls back dev, and the
+reverse. Staging only: dev-ae's field keys are wrapped by dev's EU KMS service key, and it
+uses dev's PostgreSQL service and backup bucket. No UAE KMS, storage or production
+settings here (epic-uae-launch).
+
+Until steps 1–8 are done, the dev-ae leg of `deploy-staging` is red ("No deploy key" or
+the release command refusing an unprovisioned site); dev deploys as before. Run every
+command yourself, in your own terminal. Nothing below prints a secret; never `cat` a
+`settings.env`.
+
+1. **DNS.** An A record `dev-ae.mytpdso.com` → the host's IPv4 (done; check with
+   `dig +short dev-ae.mytpdso.com`).
+2. **Database** (on dev's OVHcloud Managed PostgreSQL service; never dev's database). The
+   three setup steps every new site database needs:
+   1. *The right service.* In the panel of the service that serves dev, add a database
+      `mytp_dev_ae` and a user `mytp_dev_ae`; keep the user's password in the team
+      password manager. The host and port are that service's, from the panel.
+   2. *Authorized IPs.* The staging host's IPv4 is in that service's authorized IPs
+      (already true for dev's service; check it in the panel).
+   3. *Owners.* The panel creates the database owned by the service admin (`avnadmin`),
+      and PostgreSQL 15+ then refuses `mytp_dev_ae` in schema `public`. From the server,
+      as the service admin (psql asks for its password):
+
+      ```sh
+      psql "host=<db-host> port=<db-port> dbname=mytp_dev_ae user=avnadmin sslmode=require" \
+          -c 'ALTER DATABASE mytp_dev_ae OWNER TO mytp_dev_ae' \
+          -c 'ALTER SCHEMA public OWNER TO mytp_dev_ae'
+      ```
+3. **Provision**, as `debian`, from a copy of the portal's merged `deploy/` (the same copy
+   as for dev; no `WSGI_MODULE`):
+
+   ```sh
+   bash ~/deploy/provision.sh dev-ae dev-ae.mytpdso.com mytp-team
+   ```
+
+   The first run asks for the basic auth password of `mytp-team` (not echoed; use the
+   team password); later runs can take `< /dev/null`. It creates `mytp-dev-ae`, `/srv/mytp-dev-ae`, the
+   units, timers, sudoers, Nginx site and certificate. The job timers fail ("no live
+   release") until the first deploy; that is expected.
+4. **Files from dev.** The database CA and the KMS access certificate and key, copied on
+   the server only (the KMS key never leaves the host):
+
+   ```sh
+   sudo install -m 640 -o mytp-dev-ae -g mytp-dev-ae /srv/mytp-dev/shared/db-ca.pem /srv/mytp-dev-ae/shared/db-ca.pem
+   for f in kms-client.crt kms-client.key; do
+       sudo install -m 600 -o mytp-dev-ae -g mytp-dev-ae /srv/mytp-dev/shared/$f /srv/mytp-dev-ae/shared/$f
+   done
+   sudo ls -l /srv/mytp-dev-ae/shared/      # db-ca.pem 640, kms-client.* 600, all mytp-dev-ae
+   ```
+
+   When dev's KMS certificate is renewed ("Renew the access certificate"), copy the new
+   pair here again.
+5. **settings.env**, built on the server from dev's without showing any value
+   (`deploy/staging.env.example` lists the dev-ae differences). Dev's lines that differ
+   for dev-ae are left out, then dev-ae's are added with a new `SECRET_KEY`:
+
+   ```sh
+   sudo install -m 600 -o mytp-dev-ae -g mytp-dev-ae /dev/null /srv/mytp-dev-ae/shared/settings.env
+   sudo sh -c "grep -v -E '^(SITE|REGION|SECRET_KEY|DATABASE_URL|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|SITE_URL|DB_SSLROOTCERT|BACKUP_PREFIX|KMS_CLIENT_CERT|KMS_CLIENT_KEY|FIELD_ENCRYPTION_KEYS|BLIND_INDEX_KEY|FIELD_KEY_PROVIDER|FIELD_KMS_KEYS|BLIND_INDEX_KMS_KEY|UPLOAD_SPIKE_[A-Z_]+)=' \
+       /srv/mytp-dev/shared/settings.env > /srv/mytp-dev-ae/shared/settings.env"
+   sudo -u mytp-dev-ae sh -ec 'k=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
+   printf "%s\n" SITE=dev-ae REGION=ae "SECRET_KEY=$k" \
+       ALLOWED_HOSTS=dev-ae.mytpdso.com CSRF_TRUSTED_ORIGINS=https://dev-ae.mytpdso.com \
+       SITE_URL=https://dev-ae.mytpdso.com DB_SSLROOTCERT=/srv/mytp-dev-ae/shared/db-ca.pem \
+       BACKUP_PREFIX=staging-dev-ae/ \
+       KMS_CLIENT_CERT=/srv/mytp-dev-ae/shared/kms-client.crt \
+       KMS_CLIENT_KEY=/srv/mytp-dev-ae/shared/kms-client.key \
+       FIELD_ENCRYPTION_KEYS= BLIND_INDEX_KEY= UPLOAD_SPIKE_ENABLED=False \
+       >> /srv/mytp-dev-ae/shared/settings.env'
+   ```
+
+   Then the database URL. This asks for the host and port (from the panel) and the
+   `mytp_dev_ae` password (not echoed), URL-encodes the password (a password with
+   `@ : / # % &` breaks a URL typed by hand) and appends the line:
+
+   ```sh
+   sudo -u mytp-dev-ae python3 -c '
+   import getpass, urllib.parse
+   host = input("Database host: ").strip()
+   port = input("Database port: ").strip()
+   password = urllib.parse.quote(getpass.getpass("mytp_dev_ae password: "), safe="")
+   with open("/srv/mytp-dev-ae/shared/settings.env", "a") as f:
+       f.write(f"DATABASE_URL=postgres://mytp_dev_ae:{password}@{host}:{port}/mytp_dev_ae?sslmode=require\n")
+   '
+   ```
+
+   `DB_SSLMODE=verify-full` (kept from dev's file) still applies on top of the URL's
+   `sslmode=require`, with dev-ae's copy of the CA. Check the three database steps with
+   psql before the first deploy (prints names only):
+
+   ```sh
+   sudo -u mytp-dev-ae sh -ec 'url=$(sed -n "s/^DATABASE_URL=//p" /srv/mytp-dev-ae/shared/settings.env)
+   psql "$url" -qAt -c "SELECT current_user, current_database(),
+       (SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()),
+       (SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = '\''public'\'')" \
+       -c "CREATE TABLE mytp_setup_check (x int)" -c "DROP TABLE mytp_setup_check"'
+   # mytp_dev_ae|mytp_dev_ae|mytp_dev_ae|mytp_dev_ae
+   sudo grep -c -E '^(SITE=dev-ae|REGION=ae|SECRET_KEY=.|DATABASE_URL=.)' /srv/mytp-dev-ae/shared/settings.env   # 4
+   ```
+
+   No dev value may be left over from dev's file (counts only):
+
+   ```sh
+   sudo grep -c '/srv/mytp-dev/' /srv/mytp-dev-ae/shared/settings.env                 # 0
+   sudo grep -c -E '^SITE=dev$|dev\.mytpdso\.com' /srv/mytp-dev-ae/shared/settings.env  # 0
+   sudo grep -n -o -E '^[A-Z_]+=.*(/srv/mytp-dev/|dev\.mytpdso\.com)' /srv/mytp-dev-ae/shared/settings.env | cut -d= -f1   # names only
+   ```
+
+   If a count is not 0, the last command lists the setting names (never the values);
+   fix those lines with `sudo -u mytp-dev-ae nano /srv/mytp-dev-ae/shared/settings.env`
+   (dev-ae's paths are under `/srv/mytp-dev-ae/`, its host is `dev-ae.mytpdso.com`).
+
+   `password authentication failed` means the wrong service (the host) or password; a
+   hang means the staging IP is not in the service's authorized IPs; `permission denied
+   for schema public` means step 2.3 was skipped.
+6. **Backup retention.** dev-ae's dumps go to dev's bucket under `staging-dev-ae/`, but
+   the bucket's only lifecycle rule (step 10.3) expires `staging/` only, and the
+   server's S3 user cannot delete. As the bucket owner, as in step 10.3 (your own
+   terminal, the admin user's keys in `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`),
+   put both rules: `put-bucket-lifecycle-configuration` replaces the whole set, so the
+   `staging/` rule is repeated unchanged.
+
+   ```sh
+   export AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+   aws --endpoint-url https://s3.sbg.io.cloud.ovh.net --region sbg s3api put-bucket-lifecycle-configuration \
+       --bucket mytp-backups-staging --lifecycle-configuration '{"Rules": [{
+         "ID": "expire-dumps-30d", "Status": "Enabled", "Filter": {"Prefix": "staging/"},
+         "Expiration": {"Days": 30},
+         "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 2}}, {
+         "ID": "expire-dev-ae-dumps-30d", "Status": "Enabled", "Filter": {"Prefix": "staging-dev-ae/"},
+         "Expiration": {"Days": 30},
+         "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 2}}]}'
+   aws --endpoint-url https://s3.sbg.io.cloud.ovh.net --region sbg s3api get-bucket-lifecycle-configuration \
+       --bucket mytp-backups-staging      # both rules: staging/ and staging-dev-ae/, 30 days
+   ```
+
+7. **dev-ae's own field keys.** A new environment starts on the KMS provider: no plain
+   keys. `generate_kms_field_key` needs the portal's code, and dev-ae has no release yet
+   (the first deploy's `migrate` refuses to run without keys), so use a throwaway copy of
+   dev's live release with dev-ae's `settings.env`:
+
+   ```sh
+   sudo -u mytp-dev-ae install -d -m 700 /srv/mytp-dev-ae/keygen
+   sudo tar -C /srv/mytp-dev/current --exclude=./venv --exclude=./settings.env --exclude=./static_root -cf - . \
+       | sudo -u mytp-dev-ae tar -C /srv/mytp-dev-ae/keygen -xf -
+   sudo -u mytp-dev-ae sh -ec 'cd /srv/mytp-dev-ae/keygen
+   ln -s /srv/mytp-dev-ae/shared/settings.env settings.env
+   python3 -m venv venv
+   ./venv/bin/pip install --quiet --disable-pip-version-check --no-cache-dir -r requirements.txt
+   umask 077
+   f=$(./venv/bin/python manage.py generate_kms_field_key "ae$(date -u +%Y%m%dT%H%M)")
+   b=$(./venv/bin/python manage.py generate_kms_field_key --blind-index)
+   printf "FIELD_KEY_PROVIDER=accounts.crypto.KMSKeyProvider\nFIELD_KMS_KEYS=%s\nBLIND_INDEX_KMS_KEY=%s\n" "$f" "$b" \
+       >> /srv/mytp-dev-ae/shared/settings.env
+   ./venv/bin/python manage.py check
+   ./venv/bin/python manage.py kmscheck'
+   sudo rm -rf /srv/mytp-dev-ae/keygen
+   ```
+
+   `kmscheck` ends with the round trip and each key's unwrap `ok`. Copy dev-ae's key ids
+   and wrapped values (never a plain key) to the password manager under a "dev-ae"
+   heading of the entry "MyTreatplan staging KMS" (as in step 12): they are wrapped by
+   the same staging service key as dev's.
+8. **Deploy key and secret.** On your machine:
+
+   ```sh
+   ssh-keygen -t ed25519 -N '' -C 'github-actions deploy-staging dev-ae' -f ./mytp_deploy_staging_dev_ae
+   cat mytp_deploy_staging_dev_ae.pub | ssh debian@<instance-ip> 'sudo tee -a /srv/mytp-dev-ae/.ssh/authorized_keys >/dev/null'
+   ssh -i ./mytp_deploy_staging_dev_ae -o IdentitiesOnly=yes mytp-dev-ae@<instance-ip> true
+   ```
+
+   The key belongs to `mytp-dev-ae` only (never add it to dev's `authorized_keys`, nor
+   dev's key here). In GitHub, add the secret `STAGING_SSH_KEY_DEV_AE` with the contents
+   of `mytp_deploy_staging_dev_ae` (repository → Settings → Secrets and variables →
+   Actions; an environment secret of `staging`, beside the other three, works the same).
+   `STAGING_HOST` and `STAGING_KNOWN_HOSTS` are shared with dev. Then delete the local
+   private key.
+9. **Turnstile.** Cloudflare dashboard → Turnstile → dev's widget → *Hostname
+   management*: add `dev-ae.mytpdso.com`. dev-ae reuses the widget's keys (they came with
+   dev's `settings.env` in step 5).
+10. **First deploy.** Merge to `master`, or re-run the failed dev-ae leg of the last
+   `deploy-staging` run (it skips if `master` has moved on; the next push deploys). When
+   it is green, re-run step 3 (with `< /dev/null`) so `provision.sh` sees the live
+   release and installs `mytp-dev-ae-worker`.
+11. **Checks.**
+
+    ```sh
+    curl -s https://dev-ae.mytpdso.com/healthz       # ok, site: dev-ae, region: ae
+    curl -s https://dev.mytpdso.com/healthz          # ok, site: dev, region: eu (unchanged)
+    curl -sI https://dev-ae.mytpdso.com/             # 401 without the team password
+    systemctl list-timers 'mytp-dev-ae-job@*'        # the jobs.conf timers
+    systemctl is-active mytp-dev-ae-worker           # active
+    cd /srv/mytp-dev-ae/current && sudo -u mytp-dev-ae ./venv/bin/python manage.py kmscheck   # ok
+    ```
+
+    Both sites run the same sha (`readlink /srv/mytp-dev/current /srv/mytp-dev-ae/current`).
+    Sign up once on dev-ae, then compare user counts (counts only):
+
+    ```sh
+    for s in dev dev-ae; do
+        (cd /srv/mytp-$s/current && sudo -u mytp-$s ./venv/bin/python manage.py shell -c \
+            "from django.contrib.auth import get_user_model; print('$s', get_user_model().objects.count())")
+    done
+    ```
+
+    Only dev-ae's count goes up by one. Sentry monitors for dev-ae's jobs
+    (`mytp-dev-ae-*`) wait for the plan upgrade, like dev's and admindev's; dev-ae has no
+    Sentry environment of its own yet, and no restore test of its own (entry 13).
+
+To rotate dev-ae's deploy key, repeat step 8 and replace the old line in
+`/srv/mytp-dev-ae/.ssh/authorized_keys`. To remove dev-ae, see "Remove a site" above,
+then drop the `dev-ae` leg from the `deploy-staging` matrix.
+
 ## Move dev to the per-site layout
 
 One-off, for the change that made the tooling site-aware (epic-platform entry 1). Before
@@ -1577,7 +1805,8 @@ command with a new user name; to remove one, `sudo htpasswd -D /etc/nginx/mytp-d
 ## Rotate the deploy key
 
 Make a new key (step 5), replace the line in `/srv/mytp-dev/.ssh/authorized_keys`, and
-update `STAGING_SSH_KEY`. If the server is rebuilt, also refresh `STAGING_KNOWN_HOSTS`.
+update `STAGING_SSH_KEY` (dev-ae: `/srv/mytp-dev-ae/.ssh/authorized_keys` and
+`STAGING_SSH_KEY_DEV_AE`). If the server is rebuilt, also refresh `STAGING_KNOWN_HOSTS`.
 
 ## Logs
 
