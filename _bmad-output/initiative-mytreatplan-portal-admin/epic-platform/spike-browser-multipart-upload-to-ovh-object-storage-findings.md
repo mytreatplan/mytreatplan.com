@@ -63,7 +63,7 @@ an object back (`/en/upload-spike/object/`), and the command
 ### 2. Settings on dev (server, done by a person)
 
 ```sh
-sudo -u mytp nano /srv/mytp/shared/settings.env
+sudo -u mytp-dev nano /srv/mytp-dev/shared/settings.env
 ```
 
 Add these lines (the keys are typed by hand):
@@ -81,16 +81,16 @@ UPLOAD_SPIKE_CORS_ORIGINS=https://dev.mytpdso.com
 Then:
 
 ```sh
-cd /srv/mytp/current
-sudo -u mytp ./venv/bin/python manage.py check --deploy
-sudo systemctl restart mytp-gunicorn
+cd /srv/mytp-dev/current
+sudo -u mytp-dev ./venv/bin/python manage.py check --deploy
+sudo systemctl restart mytp-dev-gunicorn
 ```
 
 ### 3. Bucket settings
 
 ```sh
-cd /srv/mytp/current
-sudo -u mytp ./venv/bin/python manage.py upload_spike_bucket --apply
+cd /srv/mytp-dev/current
+sudo -u mytp-dev ./venv/bin/python manage.py upload_spike_bucket --apply
 ```
 
 This sets three things, one at a time:
@@ -153,7 +153,7 @@ Random data (`dd if=/dev/urandom`) is better than zeros for the checksum test.
   the server:
 
   ```sh
-  sudo -u mytp ./venv/bin/python manage.py upload_spike_bucket --inspect
+  sudo -u mytp-dev ./venv/bin/python manage.py upload_spike_bucket --inspect
   ```
 
   It should list the incomplete upload with its start time. Run the same command
@@ -178,20 +178,27 @@ plus the date, browser version and notes.
 
 | # | Test | Result | Date / browser | Notes (paste the log or command output below) |
 | --- | --- | --- | --- | --- |
-| T0 | `--apply`: CORS | | | |
-| T0 | `--apply`: lifecycle (abort incomplete after 1 day) | | | |
-| T0 | `--apply`: default encryption (SSE-S3) | | | |
+| T0 | `--apply`: CORS | works | 2026-11-01 | origin dev, GET/PUT/POST/DELETE, `Content-Type`, `ETag` exposed, max-age 3000 |
+| T0 | `--apply`: lifecycle (abort incomplete after 1 day) | works | 2026-11-01 | read back: 1 rule, prefix '', 1 day |
+| T0 | `--apply`: default encryption (SSE-S3) | works | 2026-11-01 | read back `AES256` |
 | T1 | Chrome, 1 GB multipart (presigned create, parts, complete) | | | time, MiB/s |
-| T2 | Safari, 1 GB multipart | | | time, MiB/s |
+| T2 | Safari, 1 GB multipart | works | 2026-11-01 / Safari (macOS) | 191.6 s, 5.3 MiB/s, 205 parts of 5 MiB; ETag `…-205` |
 | T3 | Network drop of about 30 s mid-upload, then Uppy retry | | | resumed (ListParts, no new Create)? restarted? failed? |
-| T4 | Checksum of the downloaded object matches the local file | | | |
+| T4 | Checksum of the downloaded object matches the local file | works | 2026-11-01 | T2's object: SHA-256 identical to the local file |
 | T5 | Abandoned upload listed, then gone after the lifecycle period | | | when it disappeared |
-| T6 | Encryption at rest (default SSE reported on objects) | | | |
+| T6 | Encryption at rest (default SSE reported on objects) | works | 2026-11-01 | T2's object reports `AES256` |
 | T7 | 404 for anonymous, non-staff and setting off | | | |
 
 ### Logs and command output
 
 <!-- Paste here: T0 output, each test's event log, the T5 --inspect outputs with dates. -->
+
+2026-11-01 (session notes; T1, T3, T5 and T7 still to run):
+
+- **Bucket and user.** `mytp-dev-files` in GRA is owned by `mytp-backup-admin`, the same admin user as the backup bucket. The spike's own S3 user `mytp-dev-files` carries the bucket-only policy from section 1; its keys are in dev's settings.env. The admin keys never go on the server: a server key with admin rights could delete the backups. T0 ran once with the admin keys passed in the environment for that one command. Only the bucket owner can set lifecycle rules, and an AccessDenied here comes from using another user's keys.
+- **OVH applies a new user policy gradually.** For several minutes after a policy import, requests got `403 AccessDenied`: first every write, then, in one Safari attempt, a single part after 176 had succeeded (16:43 UTC). A run about ten minutes later succeeded end to end. Diagnostics from the server, with the same keys, passed for create, part (direct and presigned), list, complete (direct and presigned), put, abort and delete.
+- **Check for entry 11:** allow for propagation after any policy change, and consider retrying a part refused with 403 once before failing the whole upload.
+- **`check --deploy` on staging** reports `mytp_publicsite.E001` (draft legal texts) and the HSTS warnings W005/W021. Both are known and unrelated to the spike.
 
 ## For entry 11
 
