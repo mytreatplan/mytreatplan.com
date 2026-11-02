@@ -451,6 +451,19 @@ DISPOSABLE_EMAIL_API_URL = config('DISPOSABLE_EMAIL_API_URL',
 EXTERNAL_CHECK_TIMEOUT = config('EXTERNAL_CHECK_TIMEOUT', default=3, cast=float)
 EXTERNAL_CHECK_USER_AGENT = 'MyTreatPlan-signup (+https://mytreatplan.com)'
 
+# Geo-IP (epic-regions entry 4, AD-14): the visitor's country, looked up locally in the
+# DB-IP Lite country database (CC BY 4.0), so no IP leaves the instance. The monthly
+# `geoipupdate` job (manage.py update_geoip) downloads it, validates it and swaps it in;
+# deploy/provision.sh creates the folder. Until the first run regions.geoip finds no
+# database and answers None.
+GEOIP_DB_PATH = config('GEOIP_DB_PATH',
+                       default=str(SITE_HOME / 'shared' / 'geoip' / 'dbip-country-lite.mmdb'))
+# Staging only: a request header `X-MyTP-Geo-Country: <ISO-2>` fakes the visitor's country
+# for the checks. `check` fails (regions.E001) when it is on while ROBOTS_NOINDEX is off,
+# i.e. on a public site.
+GEOIP_OVERRIDE_HEADER_ENABLED = config('GEOIP_OVERRIDE_HEADER_ENABLED', default=False,
+                                       cast=bool)
+
 # Argon2id first (encryption policy); the others stay so older hashes still verify, and
 # Django rehashes them with Argon2id at the next successful login.
 PASSWORD_HASHERS = [
@@ -582,5 +595,8 @@ LOGGING = {
         # handler of its own once an ancestor has one.
         'django.tasks': {'handlers': ['console'], 'level': 'INFO', 'propagate': False},
         'mytp_publicsite.tasks': {'handlers': ['console'], 'level': 'INFO'},
+        # The geo-IP job's failures (also reach Sentry) and an unreadable database; the
+        # month and the size only, never an IP or a country.
+        'regions.geoip': {'handlers': ['console'], 'level': 'INFO'},
     },
 }

@@ -2,6 +2,9 @@
 pytest==8.4.2
 pytest-django==4.11.1
 PyYAML==6.0.3
+# Builds the tiny geo-IP test database at test time (regions/tests/test_geoip.py).
+mmdb-writer==0.2.7
+netaddr==1.3.0
 # Browser tests (marker `browser`, signup/tests/browser/); CI installs Chromium for them.
 pytest-playwright==0.7.1
 playwright==1.55.0

@@ -15,6 +15,8 @@ Django==6.1.2
 gunicorn==26.2.0
 jmespath==1.1.0
 Markdown==3.11
+# The geo-IP country database reader (regions.geoip, epic-regions entry 4).
+maxminddb==3.2.0
 nh3==0.3.7
 phonenumbers==9.0.41
 psycopg==3.3.6
