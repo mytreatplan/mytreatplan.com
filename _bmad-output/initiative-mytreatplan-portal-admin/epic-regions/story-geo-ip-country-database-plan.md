@@ -3,7 +3,7 @@ title: 'Geo-IP country database'
 type: 'feature'
 ticket: '4'
 created: '2026-11-02'
-status: 'built'
+status: 'done'
 baseline_revision: '76d29c7454ab423790809811f0b49a410a21dff6'
 route: 'full'
 route_source: 'auto'
@@ -124,3 +124,10 @@ Portal (`mytreatplan.com/`):
 | 3 | `accounts/http.py` docstring claimed one timeout for every helper; over-long line | low | patch | Patched and rewrapped. |
 
 Before review the user decided (frozen block updated): `2001:4860:4860::8888` must map to some country, because the real DB-IP files map it to CA. A live run installed the real 2026-11 file (8.1 MB). After the patches: full portal suite all pass except the 3 known PostgreSQL-only failures; `makemigrations --check` clean.
+
+## Staging
+
+- Merged in PR #63 (2026-11-02). PR CI green on PostgreSQL; master CI run 41495645508 green with both deploy legs (dev, dev-ae).
+- Server steps (user): merged master's `deploy/` copied to `~/deploy`; on dev and dev-ae `GEOIP_OVERRIDE_HEADER_ENABLED=True` added to settings.env, `provision.sh` re-run (6 changes on dev-ae: `shared/geoip` and the `geoipupdate` timer among them), gunicorn restarted, the job started once: "update_geoip: installed DB-IP country lite 2026-11 (8.1 MB)".
+- Check (user, shell on each site): override `SA` → SA, `88.0.0.1` → ES, `10.0.0.1` → None, on both dev and dev-ae.
+- Left to the user: disable the Sentry monitors `mytp-dev-geoipupdate` and `mytp-dev-ae-geoipupdate` created by the first run (Developer-plan gap).
