@@ -181,7 +181,7 @@ plus the date, browser version and notes.
 | T0 | `--apply`: CORS | works | 2026-11-01 | origin dev, GET/PUT/POST/DELETE, `Content-Type`, `ETag` exposed, max-age 3000 |
 | T0 | `--apply`: lifecycle (abort incomplete after 1 day) | works | 2026-11-01 | read back: 1 rule, prefix '', 1 day |
 | T0 | `--apply`: default encryption (SSE-S3) | works | 2026-11-01 | read back `AES256` |
-| T1 | Chrome, 1 GB multipart (presigned create, parts, complete) | | | time, MiB/s |
+| T1 | Chrome, 1 GB multipart (presigned create, parts, complete) | works | 2026-11-02 / Chrome (macOS) | 219.7 s, 4.7 MiB/s, 205 parts of 5 MiB; 1073741824 bytes, ETag `…-205`, `AES256` |
 | T2 | Safari, 1 GB multipart | works | 2026-11-01 / Safari (macOS) | 191.6 s, 5.3 MiB/s, 205 parts of 5 MiB; ETag `…-205` |
 | T3 | Network drop of about 30 s mid-upload, then Uppy retry | | | resumed (ListParts, no new Create)? restarted? failed? |
 | T4 | Checksum of the downloaded object matches the local file | works | 2026-11-01 | T2's object: SHA-256 identical to the local file |
