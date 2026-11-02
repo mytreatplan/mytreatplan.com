@@ -3,7 +3,7 @@ title: 'Admin users and roles'
 type: 'feature'
 ticket: '1'
 created: '2026-11-02'
-status: 'built'
+status: 'done'
 baseline_revision: 'ef6b3ec953e1121e950df91ba25e44e939167d5e'
 route: 'full'
 route_source: 'auto'
@@ -133,3 +133,9 @@ The region registry (`staff.Region`): `code` (2 chars, primary key), `name`, `in
 | 2 | README server setup: on a fresh host the first deploy (step 6) fails without keys, step 11.4 assumes a live release, and the kmscheck timer from step 3 fails until KMS is set | low | patch | Real for a fresh host (admindev already exists). Patched: notes at steps 4 and 6 (do 11.1–11.4 first, from an unpacked release; kmscheck fails until then). |
 
 Verified after the patches: mytp-admin suite 86 passed (SQLite, CI env), `check` clean, `makemigrations --check` no changes.
+
+## Staging
+
+- Merged in mytp-admin PR #1 (2026-11-02), deploy 30c9392 green. Before the merge (user, README step 11.1–11.4): a new KMS service key `mytp-admindev` in the staging OKMS domain, dev's access certificate copied, the KMS and `REGION_INSTANCE_URL_*` lines in settings.env, field keys generated; `kmscheck` ok, 5 settings present.
+- Step 11.6 (user): `~/deploy-admindev` rebuilt from the portal's merged `deploy/` with the admin's `jobs.conf` and `staging.env.example`; `provision.sh` with `WSGI_MODULE=mytp_admin.wsgi`: 6 changes, the `kmscheck` timer installed; `job kmscheck: ok`; `/healthz` answers `ok / site: admindev`. Its Sentry monitor stays disabled (basic plan, epic-platform Notes), like the others.
+- Step 11.7 (user, after entry 4's 2FA was live): `create_sysadmin` over SSH; signed in (by SMS code); the dashboard is headed "Sysadmin"; Log out returns to the login page.
