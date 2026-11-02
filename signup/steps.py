@@ -20,13 +20,16 @@ A form may also list external checks it could not make in `unavailable_checks`, 
 """
 import logging
 import math
-from collections import namedtuple
 
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone, translation
 from django.utils.translation import gettext_lazy as _
+
+from mytp_core.verification import (BLOCKED, COOLDOWN, FAILED, HOURLY, SENT,  # noqa: F401
+                                    SendHooks, SendOutcome)
+from mytp_core.verification import send_code as core_send_code
 
 from eventlog import service as eventlog
 from eventlog.models import Attempt
@@ -42,8 +45,7 @@ from .forms import (BLOCKED_MESSAGE, BLOCKED_RATE_LIMIT, OTP_NOT_DELIVERED, OTP_
                     national_number)
 from .models import PendingRegistration
 from .verification import (CODE_TTL_SECONDS, EMAIL, MAX_CHECK_ATTEMPTS, PURPOSE_LOGIN,
-                           PURPOSE_SIGNUP, SMS, WHATSAPP, ChannelUnavailable,
-                           VerificationError, contact_kind, get_provider)
+                           PURPOSE_SIGNUP, SMS, WHATSAPP, contact_kind)
 
 logger = logging.getLogger(__name__)
 
@@ -236,10 +238,9 @@ CODE_STATE_SESSION_KEY = 'signup_code_state'
 SUPPORT_AFTER_WRONG_CODES = MAX_CHECK_ATTEMPTS - 1
 SUPPORT_AFTER_CHECK_FAILURES = 2
 
-SendOutcome = namedtuple('SendOutcome', 'status channel fallback wait_seconds')
-SENT, COOLDOWN, HOURLY, FAILED = 'sent', 'cooldown', 'hourly', 'failed'
-# Not sent: the per-IP limit on code sends (signup.limits.CODE_SENDS).
-BLOCKED = 'blocked'
+# What `send_code` did: mytp-core's SendOutcome, imported above with its statuses SENT,
+# COOLDOWN, HOURLY, FAILED and BLOCKED (not sent: the per-IP limit on code sends,
+# signup.limits.CODE_SENDS).
 
 
 def code_state(request, page):
@@ -277,8 +278,10 @@ def send_code(request, attempt, page, contact, purpose, channel, resend=False,
               login_record=None):
     """Send a code to `contact` within our limits (signup.limits) and log it.
 
-    A mobile goes by `channel` (WhatsApp, or SMS when asked); if WhatsApp cannot deliver
-    to the number the code goes by SMS at once (`fallback`). Returns a SendOutcome:
+    The flow is mytp-core's (`mytp_core.verification.send_code`); `_SendHooks` plugs in
+    our limits and the event log. A mobile goes by `channel` (WhatsApp, or SMS when
+    asked); if WhatsApp cannot deliver to the number the code goes by SMS at once
+    (`fallback`). Returns a SendOutcome:
     SENT (logged `code_sent`; a resend's with the reason `OTP not delivered`); COOLDOWN or
     HOURLY (not sent; the hourly limit is logged `rejected`); BLOCKED
     (not sent: the per-IP limit on code sends, logged `rejected` with field `ip`; a login
@@ -290,43 +293,80 @@ def send_code(request, attempt, page, contact, purpose, channel, resend=False,
     """
     kind = contact_kind(channel)
     field = 'email' if kind == EMAIL else 'phone'
-    log_data = {field: contact, 'channel': channel, 'purpose': purpose}
-    if not limits.acquire_send_lock(contact, purpose):
-        # Another request is sending to this contact right now (e.g. a double click).
-        outcome = SendOutcome(COOLDOWN, channel, False, limits.COOLDOWN_SECONDS)
-        _store_outcome(request, page, outcome)
-        return outcome
-    try:
-        return _send_code_locked(request, attempt, page, contact, purpose, channel, resend,
-                                 field, log_data, login_record)
-    finally:
+    hooks = _SendHooks(request, attempt, page, purpose, resend, field,
+                       {field: contact, 'channel': channel, 'purpose': purpose}, login_record)
+    outcome = core_send_code(contact, purpose, channel, translation.get_language(),
+                             hooks=hooks)
+    _store_outcome(request, page, outcome)
+    return outcome
+
+
+class _SendHooks(SendHooks):
+    """Our limits (signup.limits) and the event log around mytp-core's `send_code`."""
+
+    # The failure is an error on this module's logger (reported to Sentry). No contact
+    # in it: Sentry alerts on spikes of this message. Signup-named, but also the login
+    # codes' send failure (`purpose` tells them apart; the message stays, the Sentry
+    # alert keys on it).
+    send_failed_logger = __name__
+    send_failed_message = 'Signup code send failed: channel=%s purpose=%s error=%s'
+
+    def __init__(self, request, attempt, page, purpose, resend, field, log_data,
+                 login_record):
+        self.request = request
+        self.attempt = attempt
+        self.page = page
+        self.purpose = purpose
+        self.resend = resend
+        self.field = field
+        self.log_data = log_data
+        self.login_record = login_record
+
+    @property
+    def lock_wait_seconds(self):
+        return limits.COOLDOWN_SECONDS
+
+    def acquire_lock(self, contact, purpose):
+        return limits.acquire_send_lock(contact, purpose)
+
+    def release_lock(self, contact, purpose):
         limits.release_send_lock(contact, purpose)
 
+    def check_send(self, contact, purpose):
+        return limits.check_send(contact, purpose)
 
-def _send_code_locked(request, attempt, page, contact, purpose, channel, resend, field,
-                      log_data, login_record):
-    check = limits.check_send(contact, purpose)
-    if not check.allowed:
-        status = HOURLY if check.hourly_blocked else COOLDOWN
-        if status == HOURLY:
-            eventlog.record(attempt, 'rejected', request=request, step=page, field=field,
-                            reason=OTP_RATE_LIMITED, data=log_data)
-        outcome = SendOutcome(status, channel, False, check.wait_seconds)
-        _store_outcome(request, page, outcome)
-        return outcome
-    # The per-IP limit: the send is counted first, and given back if it fails.
-    reservation = limits.ip_reserve(request, limits.CODE_SENDS)
-    if reservation is None:
-        return _ip_blocked(request, attempt, page, channel, log_data, purpose, login_record)
-    sent = False
-    try:
-        outcome = _send(request, attempt, page, contact, purpose, channel, resend, field,
-                        log_data)
-        sent = outcome.status == SENT
-        return outcome
-    finally:
-        if not sent:
-            limits.ip_refund(request, limits.CODE_SENDS, reservation)
+    def reserve(self):
+        # The per-IP limit: the send is counted first, and given back if it fails.
+        return limits.ip_reserve(self.request, limits.CODE_SENDS)
+
+    def refund(self, reservation):
+        limits.ip_refund(self.request, limits.CODE_SENDS, reservation)
+
+    def record_send(self, contact, purpose):
+        limits.record_send(contact, purpose)
+
+    def event(self, kind, **data):
+        if kind == 'rejected':
+            if data['status'] == HOURLY:
+                eventlog.record(self.attempt, 'rejected', request=self.request,
+                                step=self.page, field=self.field, reason=OTP_RATE_LIMITED,
+                                data=self.log_data)
+        elif kind == 'ip_blocked':
+            _log_code_send_blocked(self.request, self.attempt, self.page, self.log_data,
+                                   self.purpose, self.login_record)
+        elif kind == 'send_failed':
+            eventlog.record(self.attempt, 'code_send_failed', request=self.request,
+                            step=self.page, field=self.field, reason=OTP_SEND_FAILED,
+                            data={**self.log_data, 'channel': data['channel']})
+        elif kind == 'sent':
+            sent = {**self.log_data, 'channel': data['channel'], 'fallback': data['fallback']}
+            if self.resend:
+                sent['resend'] = True
+            # A resend (or the switch to SMS) means the last code was not received:
+            # logged `OTP not delivered` ("Code not received", QA A7) on the signup and
+            # resume pages (the login's, with no attempt, log nothing here).
+            eventlog.record(self.attempt, 'code_sent', request=self.request, step=self.page,
+                            reason=OTP_NOT_DELIVERED if self.resend else '', data=sent)
 
 
 def log_ip_blocked(request, get_attempt, step, counter, data=None):
@@ -338,7 +378,7 @@ def log_ip_blocked(request, get_attempt, step, counter, data=None):
                         reason=BLOCKED_RATE_LIMIT, data={**(data or {}), 'counter': counter})
 
 
-def _ip_blocked(request, attempt, page, channel, log_data, purpose, login_record):
+def _log_code_send_blocked(request, attempt, page, log_data, purpose, login_record):
     """Not sent: the per-IP limit (or its lock not got). Logged once per IP, window and
     flow: signup's in its attempt; a login send's in the login records (signup R4)."""
     if purpose == PURPOSE_LOGIN:
@@ -356,49 +396,6 @@ def _ip_blocked(request, attempt, page, channel, log_data, purpose, login_record
                                      data={'counter': limits.CODE_SENDS})
     else:
         log_ip_blocked(request, lambda: attempt, page, limits.CODE_SENDS, log_data)
-    outcome = SendOutcome(BLOCKED, channel, False, 0)
-    _store_outcome(request, page, outcome)
-    return outcome
-
-
-def _send(request, attempt, page, contact, purpose, channel, resend, field, log_data):
-    provider = get_provider()
-    language = translation.get_language()
-    fallback = False
-    try:
-        try:
-            provider.send(channel, contact, purpose, language)
-        except ChannelUnavailable:
-            if channel != WHATSAPP:
-                raise
-            channel, fallback = SMS, True
-            provider.send(channel, contact, purpose, language)
-    except VerificationError as error:
-        # No contact here: Sentry alerts on spikes of this message. The error's message is
-        # safe to log (the providers put only Twilio's error code and HTTP status in it).
-        # Signup-named, but also the login codes' send failure (`purpose` tells them
-        # apart; the message stays, the Sentry alert keys on it).
-        logger.error('Signup code send failed: channel=%s purpose=%s error=%s',
-                     channel, purpose, error)
-        eventlog.record(attempt, 'code_send_failed', request=request, step=page,
-                        field=field, reason=OTP_SEND_FAILED,
-                        data={**log_data, 'channel': channel})
-        outcome = SendOutcome(FAILED, channel, fallback, 0)
-        _store_outcome(request, page, outcome)
-        return outcome
-
-    limits.record_send(contact, purpose)
-    data = {**log_data, 'channel': channel, 'fallback': fallback}
-    if resend:
-        data['resend'] = True
-    # A resend (or the switch to SMS) means the last code was not received: logged
-    # `OTP not delivered` ("Code not received", QA A7) on the signup and resume pages (the
-    # login's, with no attempt, log nothing here).
-    eventlog.record(attempt, 'code_sent', request=request, step=page,
-                    reason=OTP_NOT_DELIVERED if resend else '', data=data)
-    outcome = SendOutcome(SENT, channel, fallback, 0)
-    _store_outcome(request, page, outcome)
-    return outcome
 
 
 def _count_check(request, page, error_codes, malformed):
