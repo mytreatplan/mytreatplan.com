@@ -1002,6 +1002,10 @@ msgstr "borrada el"
 msgid "purge after"
 msgstr "eliminar después de"
 
+#: accounts/models.py
+msgid "home region"
+msgstr "región de origen"
+
 #: accounts/admin.py
 msgctxt "erasure status"
 msgid "status"
@@ -1029,6 +1033,10 @@ msgstr "Borrado"
 #: accounts/admin.py
 msgid "Global id"
 msgstr "Identificador global"
+
+#: accounts/admin.py
+msgid "Region"
+msgstr "Región"
 
 #: accounts/admin.py
 #: templates/admin/accounts/user/erase_confirmation.html

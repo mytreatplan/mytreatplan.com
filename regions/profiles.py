@@ -96,6 +96,11 @@ PROFILES = {
 
 DEFAULT_REGION = 'eu'
 
+# Django choices of a field holding a region code (e.g. accounts.User.home_region): the
+# profile codes, the one source of the allowed values. The same on every instance, so a
+# model using them has the same migration state whatever REGION is.
+REGION_CHOICES = tuple((code, code) for code in PROFILES)
+
 
 def get_profile(code):
     """The profile of region `code`; UnknownRegion (naming the valid ones) otherwise."""
