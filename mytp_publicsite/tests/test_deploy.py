@@ -551,3 +551,274 @@ def test_two_sites_have_their_own_workers():
     dev_ae = _render(DEPLOY / 'systemd' / 'worker.service.template', 'dev-ae')
     assert '/srv/mytp-dev/' in dev and '/srv/mytp-dev/' not in dev_ae
     assert 'SyslogIdentifier=mytp-dev-ae-worker' in dev_ae
+
+
+# --- Redirect-only names (epic-regions entry 7: mytreatplan.es / .ie) -------------------
+
+EXTRA = 'mytreatplan.es www.mytreatplan.es mytreatplan.ie www.mytreatplan.ie'
+EXTRA_NAMES = EXTRA.split()
+REDIRECT = 'return 301 https://mytreatplan.com$request_uri;'
+
+
+def _provision_slice(start, end):
+    script = (DEPLOY / 'provision.sh').read_text()
+    return script[script.index(start):script.index(end)]
+
+
+def _run_provision_steps(tmp_path, *blocks, extra='', sans=None, cert=False, ip_of=None,
+                         installed=None):
+    """Runs the EXTRA_DOMAINS validation and then the given provision.sh blocks for the
+    site prod on mytreatplan.com, with sudo as a plain call and nginx, systemctl, openssl,
+    certbot, getent and ip as stubs that log to calls.log. Every path is in tmp_path.
+    `sans`: the names the existing certificate covers; `ip_of`: name -> IPv4 (default
+    every name resolves to this host). Returns (result, site.conf text or None, calls)."""
+    work, live = tmp_path / 'work', tmp_path / 'live'
+    work.mkdir()
+    live.mkdir()
+    site = tmp_path / 'mytp-prod.conf'
+    if installed is not None:
+        site.write_text(installed)
+    cert_file, sans_file = live / 'fullchain.pem', tmp_path / 'sans'
+    if cert:
+        cert_file.write_text('cert')
+        sans_file.write_text(', '.join(f'DNS:{n}' for n in (sans or ['mytreatplan.com'])))
+    hosts = '\n'.join(f'{n} {ip}' for n, ip in (ip_of or {}).items())
+    q = shlex.quote
+    prelude = f'''set -euo pipefail
+sudo() {{ "$@"; }}
+step() {{ echo "==> $*"; }}
+changed() {{ echo "  changed: $*"; }}
+install_file() {{ cmp -s "$1" "$2" 2>/dev/null && return 1; cp "$1" "$2"; changed "$2"; }}
+CALLS={q(str(tmp_path / 'calls.log'))}
+: >"$CALLS"
+nginx() {{ echo "nginx $*" >>"$CALLS"; }}
+systemctl() {{ echo "systemctl $*" >>"$CALLS"; }}
+openssl() {{ echo "openssl $*" >>"$CALLS"
+    printf 'X509v3 Subject Alternative Name: \\n    %s\\n' "$(cat {q(str(sans_file))})"; }}
+certbot() {{ {{ printf certbot; printf ' %q' "$@"; echo; }} >>"$CALLS"; echo cert >"$CERT_FILE"
+    local out="" prev=""
+    for a in "$@"; do [[ $prev == -d ]] && out="${{out:+$out, }}DNS:$a"; prev=$a; done
+    printf '%s' "$out" >{q(str(sans_file))}; }}
+getent() {{ local ip
+    ip=$(awk -v n="$2" '$1 == n {{print $2}}' <<<{q(hosts)})
+    [[ $ip == none ]] && return 2
+    echo "${{ip:-192.0.2.10}} STREAM $2"; }}
+ip() {{ echo "2: eth0    inet 192.0.2.10/24 brd 192.0.2.255 scope global eth0"; }}
+SITE=prod
+DOMAIN=mytreatplan.com
+EXTRA_DOMAINS={q(extra)}
+DEPLOY_DIR={q(str(DEPLOY))}
+WORK={q(str(work))}
+NGINX_SITE={q(str(site))}
+CERT_FILE={q(str(cert_file))}
+CHANGES=0
+'''
+    validation = _provision_slice('# EXTRA_DOMAINS: each name', 'if [[ $EUID -eq 0 ]]')
+    script = prelude + validation + ''.join(blocks)
+    result = subprocess.run(['bash', '-c', script], capture_output=True, text=True)
+    calls = (tmp_path / 'calls.log').read_text().splitlines()
+    return result, site.read_text() if site.exists() else None, calls
+
+
+NGINX_FUNCTIONS = ('# --- Nginx site', 'step "Nginx ($SITE)"')
+
+
+def _render_site(tmp_path, full, **kwargs):
+    block = _provision_slice(*NGINX_FUNCTIONS) + f'render_nginx {full}\n'
+    result, conf, calls = _run_provision_steps(tmp_path, block, **kwargs)
+    assert result.returncode == 0, result.stderr
+    return conf, calls
+
+
+def _server_blocks(conf):
+    return re.findall(r'^server \{\n.*?^\}', conf, re.S | re.M)
+
+
+def _redirect_block(conf):
+    blocks = [b for b in _server_blocks(conf) if 'server_name mytreatplan.es' in b]
+    return blocks[0] if blocks else None
+
+
+@bash_only
+@pytest.mark.parametrize('full', [0, 1])
+def test_without_extra_domains_the_site_renders_as_before(tmp_path, full):
+    """Unset: the old render, comments aside (only the domain in server_name, no extra
+    block, no openssl call)."""
+    conf, calls = _render_site(tmp_path, full, cert=bool(full))
+    old = (DEPLOY / 'nginx' / 'site.conf.template').read_text()
+    old = re.sub(r'\n# __EXTRA_BEGIN__\n.*?# __EXTRA_END__\n', '\n', old, flags=re.S)
+    old = old.replace(' __EXTRA_DOMAINS__', '').replace('__DOMAIN__', 'mytreatplan.com')
+    old = old.replace('__SITE__', 'prod')
+    if not full:
+        old = old[:old.index('\n# __HTTPS_BEGIN__\n') + 1]
+    strip = lambda text: [line for line in text.splitlines() if not line.startswith('#')]  # noqa: E731
+    assert strip(conf) == strip(old)
+    assert '__' not in '\n'.join(strip(conf))
+    assert 'mytreatplan.es' not in conf and '# __EXTRA_BEGIN__' not in conf
+    assert re.findall(r'server_name ([^;]*);', conf) == ['mytreatplan.com'] * (1 + full)
+    assert len(_server_blocks(conf)) == 1 + full
+    assert not [c for c in calls if c.startswith('openssl')]
+
+
+@bash_only
+def test_the_http_only_render_keeps_the_port_80_server(tmp_path):
+    """The HTTP-only cut starts at the marker line itself, not at the header comment
+    that mentions it, so certbot's challenge is answered before the first certificate."""
+    conf, _ = _render_site(tmp_path, 0, extra=EXTRA)
+    port_80 = _server_blocks(conf)
+    assert len(port_80) == 1 and 'listen 80;' in port_80[0]
+    assert f'server_name mytreatplan.com {EXTRA};' in port_80[0]
+    assert 'location /.well-known/acme-challenge/ {' in port_80[0]
+    assert REDIRECT in port_80[0]
+    assert 'listen 443' not in conf and 'upstream mytp-prod-gunicorn' in conf
+
+
+@bash_only
+def test_extra_domains_redirect_in_one_hop_without_a_password(tmp_path):
+    conf, _ = _render_site(tmp_path, 1, extra=EXTRA, cert=True, sans=['mytreatplan.com', *EXTRA_NAMES])
+    blocks = _server_blocks(conf)
+    assert len(blocks) == 3
+    assert f'server_name mytreatplan.com {EXTRA};' in blocks[0] and REDIRECT in blocks[0]
+    assert 'server_name mytreatplan.com;' in blocks[1] and 'auth_basic "' in blocks[1]
+    redirect = _redirect_block(conf)
+    assert redirect == blocks[2]
+    assert f'server_name {EXTRA};' in redirect
+    assert 'listen 443 ssl;' in redirect and 'listen [::]:443 ssl;' in redirect
+    assert 'ssl_certificate /etc/letsencrypt/live/mytreatplan.com/fullchain.pem;' in redirect
+    assert 'ssl_certificate_key /etc/letsencrypt/live/mytreatplan.com/privkey.pem;' in redirect
+    assert REDIRECT in redirect
+    assert 'auth_basic' not in redirect and 'proxy_pass' not in redirect
+    assert '__' not in '\n'.join(line for line in conf.splitlines() if not line.startswith('#'))
+
+
+@bash_only
+def test_the_redirect_block_waits_for_a_certificate_covering_the_extra_names(tmp_path):
+    conf, _ = _render_site(tmp_path, 1, extra=EXTRA, cert=True, sans=['mytreatplan.com', 'mytreatplan.es'])
+    assert _redirect_block(conf) is None
+    assert f'server_name mytreatplan.com {EXTRA};' in conf
+    assert len(_server_blocks(conf)) == 2
+
+
+@bash_only
+def test_extra_domains_are_normalised(tmp_path):
+    conf, _ = _render_site(tmp_path, 0, extra='  MyTreatplan.es\twww.mytreatplan.es  ')
+    assert 'server_name mytreatplan.com mytreatplan.es www.mytreatplan.es;' in conf
+
+
+@bash_only
+@pytest.mark.parametrize('extra', [
+    'mytreatplan.es;rm', 'mytreatplan.es $(id)', 'mytreatplan.es/x', 'mytreatplan.com',
+    'mytreatplan.es MyTreatplan.com', 'mytreatplan.es www.mytreatplan.es mytreatplan.es',
+    'mytreatplan.es MYTREATPLAN.ES', 'mytreatplan.*',
+])
+def test_provision_refuses_bad_extra_domains_before_any_change(extra, no_privileges):
+    result = subprocess.run(
+        ['bash', str(DEPLOY / 'provision.sh'), 'prod', 'mytreatplan.com', 'team'],
+        capture_output=True, text=True, env={**no_privileges, 'EXTRA_DOMAINS': extra})
+    assert result.returncode == 2
+    assert 'Invalid EXTRA_DOMAINS' in result.stderr
+    assert 'STUB' not in result.stderr
+
+
+@bash_only
+def test_provision_warns_when_a_run_without_extra_domains_drops_the_redirect(tmp_path):
+    with_redirect = tmp_path / 'with'
+    with_redirect.mkdir()
+    conf, _ = _render_site(with_redirect, 1, extra=EXTRA, cert=True, sans=['mytreatplan.com', *EXTRA_NAMES])
+    nginx_step = _provision_slice('step "Nginx ($SITE)"', 'if [[ -L /etc/nginx/sites-enabled/default ]]')
+    for extra, warned in (('', True), (EXTRA, False)):
+        run = tmp_path / ('unset' if not extra else 'set')
+        run.mkdir()
+        result, _, _ = _run_provision_steps(run, nginx_step, extra=extra, installed=conf)
+        assert result.returncode == 0, result.stderr
+        assert ('WARNING' in result.stderr) is warned
+        if warned:
+            assert 'EXTRA_DOMAINS is not set' in result.stderr
+            assert 'removes that redirect' in result.stderr
+    # Extras only on port 80 (the certificate does not cover them yet): still a redirect.
+    port_80_only = tmp_path / 'port-80-only'
+    port_80_only.mkdir()
+    conf, _ = _render_site(port_80_only, 1, extra=EXTRA, cert=True, sans=['mytreatplan.com'])
+    assert '# __EXTRA_BEGIN__' not in conf and f'server_name mytreatplan.com {EXTRA};' in conf
+    run = tmp_path / 'port-80-only-unset'
+    run.mkdir()
+    result, _, _ = _run_provision_steps(run, nginx_step, installed=conf)
+    assert result.returncode == 0, result.stderr
+    assert 'EXTRA_DOMAINS is not set' in result.stderr
+    # A site that never had extras: no warning.
+    plain_render = tmp_path / 'plain-render'
+    plain_render.mkdir()
+    plain_conf, _ = _render_site(plain_render, 1, cert=True)
+    plain = tmp_path / 'plain'
+    plain.mkdir()
+    result, _, _ = _run_provision_steps(plain, nginx_step, installed=plain_conf)
+    assert result.returncode == 0, result.stderr
+    assert 'WARNING' not in result.stderr
+
+
+TLS_STEP = ('# --- TLS certificate', '\necho\nif ((CHANGES)); then')
+
+
+def _tls(tmp_path, **kwargs):
+    blocks = (_provision_slice(*NGINX_FUNCTIONS), _provision_slice(*TLS_STEP))
+    result, conf, calls = _run_provision_steps(tmp_path, *blocks, **kwargs)
+    assert result.returncode == 0, result.stderr
+    certbot = [shlex.split(c)[1:] for c in calls if c.startswith('certbot ')]
+    return result, conf, certbot
+
+
+def _domains(args):
+    return [args[i + 1] for i, a in enumerate(args) if a == '-d']
+
+
+@bash_only
+def test_the_first_certificate_covers_the_domain_and_the_extra_names(tmp_path):
+    result, conf, certbot = _tls(tmp_path, extra=EXTRA)
+    assert len(certbot) == 1
+    args = certbot[0]
+    assert args[0] == 'certonly' and '--expand' not in args
+    assert _domains(args) == ['mytreatplan.com', *EXTRA_NAMES]
+    assert args[-2:] == ['--deploy-hook', 'systemctl reload nginx']
+    # Re-rendered with the new certificate: the redirect block is in.
+    assert _redirect_block(conf) and REDIRECT in _redirect_block(conf)
+
+
+@bash_only
+def test_without_extra_domains_the_certificate_step_is_unchanged(tmp_path):
+    _, _, certbot = _tls(tmp_path)
+    assert len(certbot) == 1 and _domains(certbot[0]) == ['mytreatplan.com']
+    assert '--expand' not in certbot[0]
+    again = tmp_path / 'again'
+    again.mkdir()
+    _, _, certbot = _tls(again, cert=True)
+    assert certbot == []
+
+
+@bash_only
+def test_a_certificate_lacking_an_extra_name_is_expanded(tmp_path):
+    result, conf, certbot = _tls(tmp_path, extra=EXTRA, cert=True,
+                                 sans=['mytreatplan.com', 'mytreatplan.es', 'www.mytreatplan.es'])
+    assert len(certbot) == 1
+    assert certbot[0][:2] == ['certonly', '--expand']
+    assert _domains(certbot[0]) == ['mytreatplan.com', *EXTRA_NAMES]
+    assert _redirect_block(conf) is not None
+
+
+@bash_only
+def test_a_certificate_covering_every_name_is_left_alone(tmp_path):
+    result, conf, certbot = _tls(tmp_path, extra=EXTRA, cert=True,
+                                 sans=['mytreatplan.com', *EXTRA_NAMES])
+    assert certbot == [] and 'WARNING' not in result.stderr
+
+
+@bash_only
+@pytest.mark.parametrize('cert', [False, True])
+def test_an_extra_name_not_pointing_here_skips_the_certificate(tmp_path, cert):
+    result, conf, certbot = _tls(tmp_path, extra=EXTRA, cert=cert,
+                                 ip_of={'www.mytreatplan.ie': '203.0.113.7',
+                                        'mytreatplan.ie': 'none'})
+    assert certbot == []
+    assert 'WARNING: www.mytreatplan.ie does not resolve to this host' in result.stderr
+    assert 'WARNING: mytreatplan.ie does not resolve to this host' in result.stderr
+    assert 'mytreatplan.es does not resolve' not in result.stderr
+    assert 'skipping the certificate' in result.stderr

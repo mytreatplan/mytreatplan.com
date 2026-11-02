@@ -1349,6 +1349,20 @@ Gunicorn serves the WSGI module given to `provision.sh` as `WSGI_MODULE` (defaul
 `mytreatplan.wsgi`, the portal); the admin site passes `WSGI_MODULE=mytp_admin.wsgi` on
 every run (a run without it would point admindev's unit at the portal's module).
 
+**Extra redirect domains (production EU only).** `EXTRA_DOMAINS` (space-separated names)
+makes Nginx answer those names with a single 301 to `https://<domain>`, path and query
+kept, on ports 80 and 443, without the password and without reaching the app. Only the
+production EU site sets it, on every run:
+`EXTRA_DOMAINS="mytreatplan.es www.mytreatplan.es mytreatplan.ie www.mytreatplan.ie"`.
+No staging site sets it. Each name must look like a domain, differ from `<domain>` and
+appear once, or the run stops (exit 2) before any change. The site's certificate (named
+after `<domain>`) covers all the names: it is requested with `-d` for each, and a
+certificate that lacks one is re-issued with `--expand`. Every name must resolve to the
+host first; otherwise the run prints a WARNING and requests nothing. Port 80 answers the
+ACME challenge for every name; the HTTPS redirect block is installed only once the
+certificate covers them all. The value is not stored on the server: a run without it
+removes the redirect and says so with a WARNING.
+
 What the shared tooling expects from any site repo (the portal, the admin site
 `mytreatplan/mytp-admin`):
 

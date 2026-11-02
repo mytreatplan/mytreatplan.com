@@ -25,6 +25,12 @@
 #
 # WSGI_MODULE: the site's WSGI module Gunicorn serves (default mytreatplan.wsgi, the
 # portal). The admin site: WSGI_MODULE=mytp_admin.wsgi on every run for admindev.
+#
+# EXTRA_DOMAINS: space-separated redirect-only names (production EU site only, e.g.
+# "mytreatplan.es www.mytreatplan.es mytreatplan.ie www.mytreatplan.ie"). Nginx answers
+# them with a 301 to https://<domain>, path and query kept, and the site's certificate
+# covers them. Not stored on the server: give it on every run; a run without it removes
+# the redirect (with a warning).
 set -euo pipefail
 
 SITE_RE='^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$'
@@ -46,6 +52,22 @@ HTPASSWD_USER=$3
 WSGI_MODULE=${WSGI_MODULE:-mytreatplan.wsgi}
 [[ $WSGI_MODULE =~ ^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$ ]] \
     || { echo "Invalid WSGI_MODULE: '$WSGI_MODULE' (a dotted Python module path)" >&2; exit 2; }
+# EXTRA_DOMAINS: each name like the domain, not the domain itself, no duplicates.
+# Normalised to lowercase names separated by one space ("" when unset).
+extra_raw=$(printf '%s' "${EXTRA_DOMAINS:-}" | tr '[:upper:]' '[:lower:]')
+domain_lc=$(printf '%s' "$DOMAIN" | tr '[:upper:]' '[:lower:]')
+EXTRA_DOMAINS=""
+set -f
+for name in $extra_raw; do
+    if [[ ! $name =~ ^[A-Za-z0-9.-]+$ || $name == "$domain_lc" || " $EXTRA_DOMAINS " == *" $name "* ]]; then
+        set +f
+        echo "Invalid EXTRA_DOMAINS: '${name}' (domain names, not $DOMAIN, no duplicates)" >&2
+        exit 2
+    fi
+    EXTRA_DOMAINS=${EXTRA_DOMAINS:+$EXTRA_DOMAINS }$name
+done
+set +f
+unset extra_raw domain_lc name
 if [[ $EUID -eq 0 ]]; then
     echo "Run this as the login user (debian), not as root; it uses sudo itself." >&2
     exit 2
@@ -366,13 +388,32 @@ if [[ $(sudo stat -c '%a %U:%G' "$HTPASSWD_FILE") != "640 root:www-data" ]]; the
 fi
 
 # --- Nginx site --------------------------------------------------------------
-# render_nginx FULL(0|1): HTTP-only until the certificate exists.
+# cert_missing_names -- the EXTRA_DOMAINS the installed certificate does not cover, one
+# per line (nothing when EXTRA_DOMAINS is unset or the certificate covers them all).
+cert_missing_names() {
+    [[ -n $EXTRA_DOMAINS ]] || return 0
+    local sans name
+    sans=$(sudo openssl x509 -noout -ext subjectAltName -in "$CERT_FILE" 2>/dev/null \
+        | grep -o 'DNS:[^,[:space:]]*' | cut -d: -f2- | tr '[:upper:]' '[:lower:]' || true)
+    for name in $EXTRA_DOMAINS; do
+        grep -qxF "$name" <<<"$sans" || echo "$name"
+    done
+}
+
+# render_nginx FULL(0|1): HTTP-only until the certificate exists. The EXTRA_DOMAINS
+# answer ACME and redirect on port 80 always; their HTTPS redirect block is installed
+# only once the certificate covers them all.
 render_nginx() {
-    sed -e "s/__DOMAIN__/$DOMAIN/g" -e "s/__SITE__/$SITE/g" "$DEPLOY_DIR/nginx/site.conf.template" \
-        >"$WORK/site.conf"
+    local extra_sed=(-e 's/ __EXTRA_DOMAINS__//g')
+    [[ -n $EXTRA_DOMAINS ]] && extra_sed=(-e "s/__EXTRA_DOMAINS__/$EXTRA_DOMAINS/g")
+    sed "${extra_sed[@]}" -e "s/__DOMAIN__/$DOMAIN/g" -e "s/__SITE__/$SITE/g" \
+        "$DEPLOY_DIR/nginx/site.conf.template" >"$WORK/site.conf"
     if [[ $1 == 0 ]]; then
-        sed -i '/^# __HTTPS_BEGIN__/,$d' "$WORK/site.conf"
+        sed -i.bak '/^# __HTTPS_BEGIN__$/,$d' "$WORK/site.conf"
+    elif [[ -z $EXTRA_DOMAINS || -n $(cert_missing_names) ]]; then
+        sed -i.bak '/^# __EXTRA_BEGIN__$/,/^# __EXTRA_END__$/d' "$WORK/site.conf"
     fi
+    rm -f "$WORK/site.conf.bak"
     if install_file "$WORK/site.conf" "$NGINX_SITE" 0644 root:root; then
         sudo nginx -t -q
         sudo systemctl reload nginx
@@ -380,6 +421,14 @@ render_nginx() {
 }
 
 step "Nginx ($SITE)"
+if [[ -z $EXTRA_DOMAINS ]] && sudo test -f "$NGINX_SITE" \
+    && sudo grep -qE '^# __EXTRA_BEGIN__$|^[[:space:]]*server_name[[:space:]]+[^;[:space:]]+[[:space:]]+[^;[:space:]]' \
+        "$NGINX_SITE"; then
+    {
+        echo "  WARNING: EXTRA_DOMAINS is not set, but $NGINX_SITE redirects extra names;"
+        echo "  this run removes that redirect. Give EXTRA_DOMAINS on every run for this site."
+    } >&2
+fi
 # Host-wide: the Debian default site would answer for unknown names.
 if [[ -L /etc/nginx/sites-enabled/default ]]; then
     sudo rm /etc/nginx/sites-enabled/default
@@ -404,22 +453,42 @@ if ! systemctl is-active --quiet nginx; then
 fi
 
 # --- TLS certificate (Let's Encrypt) -----------------------------------------
+# One certificate (named after the domain) for the domain and the EXTRA_DOMAINS. Issued
+# when missing; re-issued with --expand when it lacks an extra name. Every name must
+# resolve to this host first, otherwise nothing is requested.
 step "TLS certificate ($DOMAIN)"
+cert_args=()
 if ! sudo test -f "$CERT_FILE"; then
-    resolved=$(getent ahostsv4 "$DOMAIN" | awk '{print $1}' | sort -u || true)
+    cert_args=(certonly)
+elif [[ -n $(cert_missing_names) ]]; then
+    cert_args=(certonly --expand)
+fi
+if ((${#cert_args[@]})); then
     local_ips=$(ip -4 -o addr show scope global | awk '{split($4, a, "/"); print a[1]}')
-    if [[ -n $resolved ]] && grep -qxF -f <(printf '%s\n' "$resolved") <<<"$local_ips"; then
+    domain_args=()
+    not_here=()
+    for name in $DOMAIN $EXTRA_DOMAINS; do
+        domain_args+=(-d "$name")
+        resolved=$(getent ahostsv4 "$name" | awk '{print $1}' | sort -u || true)
+        if [[ -z $resolved ]] || ! grep -qxF -f <(printf '%s\n' "$resolved") <<<"$local_ips"; then
+            resolved=$(printf '%s' "$resolved" | tr '\n' ' ')
+            not_here+=("$name does not resolve to this host (${resolved:-no A record})")
+        fi
+    done
+    if ((${#not_here[@]} == 0)); then
         email_args=(--register-unsafely-without-email)
         [[ -n ${CERTBOT_EMAIL:-} ]] && email_args=(--email "$CERTBOT_EMAIL")
         # certonly: certbot leaves the Nginx config alone (this script owns it), and
         # the deploy hook reloads Nginx after each automatic renewal (certbot.timer).
-        sudo certbot certonly --nginx --non-interactive --agree-tos "${email_args[@]}" \
-            -d "$DOMAIN" --deploy-hook "systemctl reload nginx"
-        changed "certificate for $DOMAIN"
+        sudo certbot "${cert_args[@]}" --nginx --non-interactive --agree-tos "${email_args[@]}" \
+            "${domain_args[@]}" --deploy-hook "systemctl reload nginx"
+        changed "certificate for $DOMAIN${EXTRA_DOMAINS:+ $EXTRA_DOMAINS}"
         render_nginx 1
     else
         {
-            echo "  WARNING: $DOMAIN does not resolve to this host (${resolved:-no A record});"
+            for name in "${not_here[@]}"; do
+                echo "  WARNING: $name;"
+            done
             echo "  skipping the certificate. Fix DNS and run this script again."
         } >&2
     fi
