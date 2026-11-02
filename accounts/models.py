@@ -1,10 +1,13 @@
 import uuid
 
+from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.db.models.functions import UUID4
 from django.utils.translation import gettext_lazy as _
 from django_countries.fields import CountryField
+
+from regions.profiles import REGION_CHOICES
 
 from .crypto import (BLIND_INDEX_LENGTH, EncryptedCharField, EncryptedEmailField, email_index,
                      phone_index)
@@ -48,6 +51,11 @@ def phone_index_or_blank(phone):
 ERASED_EMAIL_INDEX_PREFIX = 'erased:'
 
 
+def instance_region():
+    """The region of this instance (settings.REGION_PROFILE): a new user's `home_region`."""
+    return settings.REGION_PROFILE.code
+
+
 def erased_email_tombstone(pk):
     """The `email_index` of an erased account: unique, and never a real blind index (those
     are hex), so signup and the duplicate checks no longer find the account."""
@@ -78,6 +86,15 @@ class User(AbstractUser):
     # gives rows inserted without it (the previous release during a deploy) their own.
     uid = models.UUIDField(default=uuid.uuid4, db_default=UUID4(), unique=True,
                            editable=False)
+    # R2 / AD-14: the region whose instance created the account, set once at creation
+    # (whatever the country) and never recomputed nor shown in a form. Its database default
+    # is region-neutral ('', so the migrations are the same on every instance): rows the
+    # previous release inserts while a deploy migrates get '', which accounts 0013 fills with
+    # the instance region. A row the previous release inserts after that fill (the seconds
+    # before release.sh switches) keeps '': read '' as "created by the previous release",
+    # and re-run the fill if `User.objects.filter(home_region='')` finds one after a deploy.
+    home_region = models.CharField(_('home region'), max_length=2, choices=REGION_CHOICES,
+                                   default=instance_region, db_default='', editable=False)
     email = EncryptedEmailField(_('email address'), max_length=254)
     email_index = models.CharField(max_length=BLIND_INDEX_LENGTH, unique=True, editable=False)
     title = models.CharField(_('title'), max_length=10, choices=Title.choices, blank=True)

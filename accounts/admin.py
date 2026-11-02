@@ -105,6 +105,7 @@ class UserAdmin(BaseUserAdmin):
         (_('Important dates'), {'fields': ('last_login', 'date_joined')}),
         (_('Erasure'), {'fields': ('erased_at', 'purge_after')}),
         (_('Global id'), {'fields': ('uid',)}),
+        (_('Region'), {'fields': ('home_region',)}),
     )
     add_fieldsets = (
         (None, {
@@ -113,8 +114,9 @@ class UserAdmin(BaseUserAdmin):
         }),
     )
     # The mobile is validated and stored in E.164 form by signup step 1 (signup.forms), so
-    # it is shown here but not edited. The global id (AD-5) is never edited.
-    readonly_fields = ('phone', 'erased_at', 'purge_after', 'uid')
+    # it is shown here but not edited. The global id (AD-5) and the home region (R2, set at
+    # creation) are never edited.
+    readonly_fields = ('phone', 'erased_at', 'purge_after', 'uid', 'home_region')
     list_display = ('email', 'first_name', 'last_name', 'country', 'is_staff')
     list_filter = (ErasureStatusFilter, *BaseUserAdmin.list_filter)
     actions = ['erase_accounts']
