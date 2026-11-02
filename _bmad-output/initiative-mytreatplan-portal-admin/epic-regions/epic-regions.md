@@ -57,6 +57,7 @@ Routing and region identity on the portal. The billing-country block lives with 
 - Decision (user, 2026-10-30): legal documents become region-specific now; .com keeps its current texts and dev-ae serves placeholders, both flagged provisional until the lawyer's .com texts and epic-uae-launch's UAE texts arrive.
 - Open question: whether changing the profile country to a banned one is refused too; epic-doctor-profile settles it.
 - Decision (2026-10-30): the .es redirect is checked on staging by a template test and nginx -t; its curl check goes into epic-eu-golive (entry 8).
+- Decision (user, 2026-11-02): mytreatplan.ie and www.mytreatplan.ie redirect to mytreatplan.com like .es (entry 7); the production EU site sets EXTRA_DOMAINS to all four names.
 - Handoff: epic-catalogue edits the country map through the configuration channel; this epic owns the model and its seed data.
 - Geo-IP uses a local database so no IP leaves the instance (architecture document).
 - Waits on epic 1 because: it needs REGION profile and global UUIDs.

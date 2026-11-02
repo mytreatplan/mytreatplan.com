@@ -3,7 +3,7 @@ title: 'mytreatplan.es redirect'
 type: 'feature'
 ticket: '7'
 created: '2026-11-02'
-status: 'built'
+status: 'done'
 baseline_revision: '150f06ed713ca7373f25d4c48f096fd228539cfd'
 route: 'full'
 route_source: 'auto'
@@ -113,3 +113,10 @@ server {
 | 2 | `test_without_extra_domains_the_site_renders_as_before` derives "before" from the modified template, not the baseline | low | rejected | Real, but an unrelated non-comment change in the template is still caught by `test_nginx_template_auth_redirect_and_proxy_headers` and the other pinned-string tests; comparing to a git revision would break on CI's shallow checkout. |
 | 3 | The "run without EXTRA_DOMAINS" warning misses an installed config with extras only on port 80 (certificate not yet covering them, or HTTP-only) | low | patch | Real: the check only looked for `# __EXTRA_BEGIN__`. Patched: also matches a multi-name `server_name` line; tests added (94 passed in test_deploy). |
 
+
+## Staging
+
+- Merged in PR #59 (2026-11-02). PR CI green on PostgreSQL; master CI run 41429661112 green with both deploy legs (dev, dev-ae).
+- Server step (user): merged master's `deploy/` copied to `~/deploy`, then `provision.sh dev …` run without `EXTRA_DOMAINS`: one change (`mytp-dev.conf`, comment lines only), Nginx reloaded, "Done: 1 change(s)", no WARNING.
+- Checks: `sudo nginx -t` syntax ok and test successful; `/healthz` on dev answered HTTP/2 200.
+- The live 301 for mytreatplan.es / .ie (and www) is checked at the EU go-live (epic-eu-golive entry 8), with `EXTRA_DOMAINS="mytreatplan.es www.mytreatplan.es mytreatplan.ie www.mytreatplan.ie"` on the production EU site; their DNS must point at it first.
