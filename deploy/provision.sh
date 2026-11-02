@@ -219,6 +219,8 @@ ensure_dir "$APP_HOME/shared" 0750 "$APP_USER:$APP_USER"
 ensure_dir "$APP_HOME/incoming" 0700 "$APP_USER:$APP_USER"
 # manage.py backupdb writes the encrypted dump here before uploading it (story 1.14).
 ensure_dir "$APP_HOME/shared/backup-tmp" 0700 "$APP_USER:$APP_USER"
+# manage.py update_geoip (the geoipupdate job) keeps the geo-IP country database here.
+ensure_dir "$APP_HOME/shared/geoip" 0750 "$APP_USER:$APP_USER"
 ensure_dir "$APP_HOME/.ssh" 0700 "$APP_USER:$APP_USER"
 if ! sudo test -f "$APP_HOME/.ssh/authorized_keys"; then
     sudo install -m 0600 -o "$APP_USER" -g "$APP_USER" /dev/null "$APP_HOME/.ssh/authorized_keys"

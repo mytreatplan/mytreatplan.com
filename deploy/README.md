@@ -33,6 +33,7 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Field keys | KMS-wrapped: `FIELD_KMS_KEYS`, `BLIND_INDEX_KMS_KEY` in `shared/settings.env` (`FIELD_KEY_PROVIDER=accounts.crypto.KMSKeyProvider`); password manager: key ids and wrapped values, never plain keys (step 12, "Keys (KMS)") |
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp-dev/shared/kms-client.*`; daily `kmscheck` job |
 | Signup and login codes | Twilio Verify (email via SendGrid, WhatsApp, SMS); credentials in `shared/settings.env` ("Twilio Verify") |
+| Geo-IP | DB-IP Lite country database `/srv/mytp-dev/shared/geoip/dbip-country-lite.mmdb` (CC BY 4.0), monthly `geoipupdate` job ("Geo-IP database") |
 | Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -794,6 +795,62 @@ systemctl status mytp-dev-job@clearsessions        # last result
 sudo journalctl -u mytp-dev-job@clearsessions -n 100
 systemctl list-units --failed 'mytp-dev-job@*'
 ```
+
+## Geo-IP database
+
+The region suggestion (epic-regions entry 5) needs the visitor's country. `regions.geoip`
+looks the client IP up on the instance, in the DB-IP Lite country database (MMDB, CC BY
+4.0) at `GEOIP_DB_PATH` (default `/srv/mytp-<site>/shared/geoip/dbip-country-lite.mmdb`);
+no IP leaves the server. Until the file exists every lookup answers "unknown" (None).
+
+The `geoipupdate` job (`manage.py update_geoip`, 04:45 UTC on the 3rd of each month)
+downloads `https://download.db-ip.com/free/dbip-country-lite-YYYY-MM.mmdb.gz` for the
+current month (the previous one while it is not out yet), checks it is a DB-IP country
+database that answers 8.8.8.8 as US and 2001:4860:4860::8888 as some country (DB-IP
+says CA), and only then swaps it in
+with an atomic rename; the app picks up the new file without a restart. Any failure keeps
+the installed file, logs an error to Sentry and fails the job. The job prints only the
+month, the size and the result. Its Sentry monitor `mytp-<site>-geoipupdate` stays
+disabled for now (the Developer-plan gap, epic-platform Notes): the first run creates it
+enabled, so install step 3 disables it.
+
+Staging only: with `GEOIP_OVERRIDE_HEADER_ENABLED=True` (`deploy/staging.env.example`) a
+request header `X-MyTP-Geo-Country: SA` fakes the visitor's country. `check` fails
+(`regions.E001`) when it is on while `ROBOTS_NOINDEX` is off, so it cannot reach a public
+site.
+
+**Install (each site, once; after the merge of epic-regions entry 4):**
+
+1. From a copy of the merged `deploy/`, re-run `provision.sh` for the site (it creates
+   `shared/geoip` and installs the `geoipupdate` timer; see [Scheduled jobs](#scheduled-jobs)).
+   On dev and dev-ae, add `GEOIP_OVERRIDE_HEADER_ENABLED=True` to `shared/settings.env`
+   and restart the app (`sudo systemctl restart mytp-dev-gunicorn`).
+2. Run the job once (it waits until it finishes):
+
+   ```sh
+   systemctl list-timers 'mytp-dev-job@*'           # lists geoipupdate
+   sudo systemctl start mytp-dev-job@geoipupdate    # or: sudo -u mytp-dev bash /srv/mytp-dev/current/deploy/run-job.sh dev geoipupdate
+   sudo journalctl -u mytp-dev-job@geoipupdate -n 20  # "update_geoip: installed DB-IP country lite YYYY-MM (... MB)"
+   sudo ls -l /srv/mytp-dev/shared/geoip/            # dbip-country-lite.mmdb, owned by mytp-dev
+   ```
+
+3. In Sentry → Crons, disable the monitor `mytp-<site>-geoipupdate` (e.g.
+   `mytp-dev-geoipupdate`) that this first run created, for each site: the Developer plan
+   has a single cron monitor (accepted gap, epic-platform Notes).
+4. Check in the shell (in `/srv/mytp-dev/current`):
+
+   ```sh
+   sudo -u mytp-dev ./venv/bin/python manage.py shell -c "
+   from django.test import RequestFactory
+   from regions.geoip import request_country
+   rf = RequestFactory()
+   print(request_country(rf.get('/', HTTP_X_MYTP_GEO_COUNTRY='SA')))  # SA (override on)
+   print(request_country(rf.get('/', REMOTE_ADDR='88.0.0.1')))        # ES (a Spanish IP, Telefónica)
+   print(request_country(rf.get('/', REMOTE_ADDR='10.0.0.1')))        # None (private)"
+   ```
+
+A failed run (e.g. no network) leaves `dbip-country-lite.mmdb` unchanged (same size and
+time in `ls -l`) and no `.tmp` file in `shared/geoip`.
 
 ## Background tasks
 
