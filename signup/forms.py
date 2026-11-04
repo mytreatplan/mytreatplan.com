@@ -12,6 +12,7 @@ from accounts.models import HOW_FOUND_OTHER_MAX_LENGTH, HowFound, Title
 from accounts.password_validation import BREACHED_PASSWORD_CHECK, collect_unavailable_checks
 from legal.models import LegalDocument
 from legal.rendering import render_markdown
+from regions.countries import lookup_country
 
 from .disposable import DISPOSABLE_EMAIL_CHECK, email_domain, is_disposable_domain
 from .verification import (APPROVED, CODE_LENGTH, EMAIL, NO_CODE, PURPOSE_RESUME, PURPOSE_SIGNUP,
@@ -56,6 +57,9 @@ REGISTERED_CODES = ('email_registered', 'phone_registered')
 # says nothing of which check, limit or reset time. A non-field error on step 1; the
 # `blocked` notice on the code pages (signup/_code_help.html).
 BLOCKED_MESSAGE = _("We couldn't process your request. Please try again later.")
+# Step 1's refusal of a banned country (epic-regions entry 3): it says nothing of why. The
+# form error, and the live country check (signup/_country_check.html).
+COUNTRY_BANNED_MESSAGE = _("We can't offer MyTreatplan to doctors in this country.")
 
 
 def refuse(form, code, message=BLOCKED_MESSAGE):
@@ -181,6 +185,7 @@ class AccountForm(StyledForm):
         'password_mismatch': _('The two passwords do not match.'),
         'phone_invalid': _('Enter a valid mobile phone number for the selected prefix.'),
         'how_found_other_required': _('Please tell us how you found out about us.'),
+        'country_banned': COUNTRY_BANNED_MESSAGE,
     }
 
     # First, and checked as soon as it is left (htmx, signup.views.check_email): an
@@ -220,10 +225,20 @@ class AccountForm(StyledForm):
         max_length=150,
         widget=forms.TextInput(attrs={'autocomplete': 'family-name'}),
     )
+    # Checked as soon as it is chosen (htmx, signup.views.check_country): a country of
+    # the other region gets a note linking to that region's signup, a banned one the
+    # refusal. Only the country and the CSRF token are sent.
     country = forms.ChoiceField(
         label=_('Country / Region'),
         choices=country_choices,
-        widget=forms.Select(attrs={'autocomplete': 'country'}),
+        widget=forms.Select(attrs={
+            'autocomplete': 'country',
+            'hx-post': reverse_lazy('signup_check_country'),
+            'hx-trigger': 'change',
+            'hx-target': '#country-check',
+            'hx-swap': 'innerHTML',
+            'hx-params': 'country,csrfmiddlewaretoken',
+        }),
     )
     password1 = forms.CharField(
         label=_('Password'),
@@ -281,6 +296,15 @@ class AccountForm(StyledForm):
             raise forms.ValidationError(self.error_messages['email_disposable'],
                                         code='email_disposable')
         return email
+
+    def clean_country(self):
+        """A banned country is refused (the country map, regions.countries); one of the
+        other region is let through (the live check only warns)."""
+        country = self.cleaned_data['country']
+        if lookup_country(country).banned:
+            raise forms.ValidationError(self.error_messages['country_banned'],
+                                        code='country_banned')
+        return country
 
     def clean_phone(self):
         """The mobile in E.164 form, valid for the chosen prefix and not registered."""

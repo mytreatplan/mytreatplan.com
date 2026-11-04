@@ -982,6 +982,24 @@ msgstr "Se ha perdido la conexión. Volveremos a enviar sus datos cuando vuelva 
 msgid "We couldn't process your request. Please try again later."
 msgstr "No hemos podido procesar su solicitud. Inténtelo de nuevo más tarde."
 
+#: signup/forms.py
+msgid "We can't offer MyTreatplan to doctors in this country."
+msgstr "No podemos ofrecer MyTreatplan a doctores de este país."
+
+#: signup/templates/signup/_country_check.html
+#, python-format
+msgid ""
+"%(country)s is served by our %(site)s site. Sign up there to have your "
+"account in your region."
+msgstr ""
+"%(country)s se atiende desde nuestro sitio %(site)s. Regístrese allí para "
+"tener su cuenta en su región."
+
+#: signup/templates/signup/_country_check.html
+#, python-format
+msgid "Go to %(site)s's signup"
+msgstr "Ir al registro de %(site)s"
+
 #: signup/templates/signup/step_account.html
 msgid ""
 "Our security check could not load. Please allow challenges.cloudflare.com or "
