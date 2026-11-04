@@ -3,7 +3,7 @@ title: 'Signup country check'
 type: 'feature'
 ticket: '3'
 created: '2026-11-03'
-status: 'built'
+status: 'done'
 baseline_revision: 'bb089c013cf285fb2f1ac694c9393ea9c00e4266'
 route: 'full'
 route_source: 'auto'
@@ -112,3 +112,9 @@ Verification after the patch: full suite on SQLite, 1702 passed, 3 failed (the k
 
 **Manual checks (if no CLI):**
 - On dev: SA shows the dev-ae link and continues; IR is refused; ES shows nothing. Mirror on dev-ae.
+
+## Staging
+
+- Merged in PR #64 (2026-11-04, merge 7073f89) at 3a6e3ce. The "MyTreatPlan" spelling commit (user decision, 2026-11-04) came after that merge and went in through PR #66 (merge c67a04c).
+- CI: PR run 41816408674 green on PostgreSQL. Master runs 41818490414 (#64), 41818581609 (#65, with both stories) and 41820568914 (#66) were green, with both deploy legs (dev, dev-ae). Local suite: 1702 passed, plus the 3 known PostgreSQL-only failures.
+- Checks (user, 2026-11-04): signup step 1 on dev and dev-ae: SA (on dev) / ES (on dev-ae) shows the other region's signup link and lets the doctor continue; IR is refused; the own region shows no note. All OK.
