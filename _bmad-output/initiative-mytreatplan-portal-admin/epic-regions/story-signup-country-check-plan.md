@@ -29,13 +29,15 @@ context: []
 - The map is read only through `lookup_country(code)` and its `.banned` / `.other_region` / `.signup_url`. No `'eu'`/`'ae'` literals outside `regions/` (guard test).
 - The live note follows the email check pattern: htmx `hx-post` on the country select (`hx-trigger: change`, `hx-params: country,csrfmiddlewaretoken`) to a new `signup_check_country` view that renders a partial into `#country-check` (`aria-live="polite"`). Same no-op answers as `check_email` for a logged-in user and after the idle timeout.
 - The same partial is rendered server-side whenever step 1 is shown with a country already chosen (a re-render after a form error, or Back to step 1), so it does not depend on JS there.
-- The banned refusal is `AccountForm.clean_country`. Its message does not say why (no "sanctions"): EN "We can't offer MyTreatplan to doctors in this country.", ES "No podemos ofrecer MyTreatplan a doctores de este país." The live check shows the same text for a banned country.
+- The banned refusal is `AccountForm.clean_country`. Its message does not say why (no "sanctions"): EN "We can't offer MyTreatPlan to doctors in this country.", ES "No podemos ofrecer MyTreatPlan a doctores de este país." The live check shows the same text for a banned country.
 - The other-region note: EN "{country} is served by our {site} site. Sign up there to have your account in your region." + link "Go to {site}'s signup" (`signup_url`, same tab), where `{site}` is the host of `site_url`; ES equivalent. The link is plain text in the note, not a redirect.
 - The rejected step 1 is logged like other form rejections (`_log_rejected`, reason from the field error) — no new event type.
 
 - Decision (user, 2026-11-04): without JavaScript, Continue goes straight on and the other-region note is not shown; the banned refusal is server-side either way.
 - Decision (user, 2026-11-04): step 1 is the only country check; no re-check at account creation (the map changes only by migration until epic-catalogue).
 - Decision (user, 2026-11-04): the banned text above, with no contact line.
+
+- Decision (user, 2026-11-04): the brand is spelled "MyTreatPlan", as on the rest of the site.
 
 **Never:**
 - No change to `lookup_country`, the map, or its seed.
