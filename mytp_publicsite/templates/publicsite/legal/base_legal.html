@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% load i18n static %}
+{% load i18n static regions_bar %}
 {% comment %}
 Layout for the Privacy and Terms pages, after the mytreatplan.ae privacy/ and terms/ pages:
 a light header with the logo, a 760px column with numbered h2s, and the shared footer.
@@ -8,6 +8,8 @@ legal/_<page>_body_<lang>.html; the view picks one (see LegalPageView).
 {% endcomment %}
 
 {% block og_type %}article{% endblock %}
+
+{% block region_bar %}{% region_suggestion_bar %}{% endblock %}
 
 {% block header %}
 <header class="border-b border-line px-gutter py-[clamp(28px,5vw,52px)]">

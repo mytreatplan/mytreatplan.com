@@ -1,0 +1,16 @@
+{% load i18n %}{% if suggestion %}{% comment %}
+The region suggestion bar (regions/suggestion.py): the other region's site, and "Stay here",
+a plain link that sets the remembered cookie and comes back. The close (x) link is the same
+link. No JavaScript.
+{% endcomment %}
+<div class="border-b border-line bg-panel px-gutter py-2.5 text-[14px] leading-[1.45] text-ink" role="region" aria-label="{% translate 'Your region' %}" data-region-bar>
+  <div class="mx-auto flex max-w-canvas items-center gap-3">
+    <div class="flex flex-1 flex-wrap items-center justify-center gap-x-4 gap-y-2 text-center">
+      <p>{% blocktranslate with country=suggestion.country host=suggestion.host %}It looks like you're in {{ country }}. MyTreatPlan for your region is at {{ host }}.{% endblocktranslate %}</p>
+      <a href="{{ suggestion.site_url }}/" class="rounded-pill bg-ink px-4 py-1.5 font-semibold text-white transition hover:bg-green hover:text-ink focus-visible:shadow-focus-pill focus-visible:outline-none" data-region-go>{% blocktranslate with host=suggestion.host %}Go to {{ host }}{% endblocktranslate %}</a>
+      <a href="{{ stay_url }}?next={{ next_path|urlencode }}" class="font-semibold underline underline-offset-4 hover:text-green-deep focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-green" data-region-stay>{% translate "Stay here" %}</a>
+    </div>
+    <a href="{{ stay_url }}?next={{ next_path|urlencode }}" class="flex size-8 shrink-0 items-center justify-center rounded-full text-[20px] leading-none text-ink-muted hover:bg-line hover:text-ink focus-visible:outline-3 focus-visible:outline-offset-3 focus-visible:outline-green" aria-label="{% translate 'Close' %}" data-region-close><span aria-hidden="true">&times;</span></a>
+  </div>
+</div>
+{% endif %}
