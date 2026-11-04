@@ -22,9 +22,9 @@ EU_SITE = 'https://eu.example.test'
 AE_SITE = 'https://ae.example.test'
 CHECK_URL = '/{lang}/signup/check-country/'
 
-BANNED_ES = 'No podemos ofrecer MyTreatplan a doctores de este país.'
+BANNED_ES = 'No podemos ofrecer MyTreatPlan a doctores de este país.'
 # As the pages show it (escaped).
-BANNED_EN_HTML = 'We can&#x27;t offer MyTreatplan to doctors in this country.'
+BANNED_EN_HTML = 'We can&#x27;t offer MyTreatPlan to doctors in this country.'
 SA_NOTE = ('Saudi Arabia is served by our ae.example.test site. Sign up there to have your '
            'account in your region.')
 SA_NOTE_ES = ('Arabia Saudita se atiende desde nuestro sitio ae.example.test. Regístrese allí '

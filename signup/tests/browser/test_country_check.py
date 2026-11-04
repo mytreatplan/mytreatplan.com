@@ -25,7 +25,7 @@ pytestmark = [
 
 AE_SITE = 'https://ae.example.test'
 CHECK_COUNTRY = re.compile(r'/signup/check-country/$')
-BANNED = "We can't offer MyTreatplan to doctors in this country."
+BANNED = "We can't offer MyTreatPlan to doctors in this country."
 
 
 @pytest.fixture(autouse=True)
