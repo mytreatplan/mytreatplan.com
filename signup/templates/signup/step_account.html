@@ -24,7 +24,10 @@
 {% include "includes/_form_field.html" with field=form.first_name %}
 {% include "includes/_form_field.html" with field=form.middle_name %}
 {% include "includes/_form_field.html" with field=form.last_name %}
+{# Choosing a country runs the live check (signup.views.check_country), whose result goes #}
+{# in #country-check; rendered with the page too when a country is already chosen. #}
 {% include "includes/_form_field.html" with field=form.country %}
+<div id="country-check" aria-live="polite">{% include "signup/_country_check.html" %}</div>
 {% include "includes/_form_field.html" with field=form.password1 %}
 {# Filled in by signup-account.js; a hint only: the server-side rules decide. #}
 <div id="password-strength" class="-mt-2 flex flex-col gap-1" aria-live="polite" hidden

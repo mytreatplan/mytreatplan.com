@@ -17,9 +17,15 @@ Plus the anti-abuse protections (signup entry 9): Cloudflare Turnstile on every 
 POST (signup.captcha), and the per-IP limits (signup.limits) on signup starts, live email
 checks and code sends (signup.steps.send_code). A blocked request gets the generic
 BLOCKED_MESSAGE, which reveals nothing, and is logged `rejected` with the reason.
+
+Plus the country check (epic-regions entry 3): step 1's country is looked up in the
+country map as soon as it is chosen (`check_country`), and again whenever step 1 is shown
+with a country: a country of the other region gets a note linking to that region's
+signup (a warning only), a banned one the refusal (AccountForm.clean_country refuses it).
 """
 import functools
 import time
+from urllib.parse import urlsplit
 
 from django import forms
 from django.contrib import messages
@@ -31,12 +37,14 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods, require_POST
+from django_countries import countries
 
 from eventlog import service as eventlog
 from eventlog.models import Attempt
 from legal.models import LegalChoice, LegalDocument
+from regions.countries import lookup_country
 
-from .forms import (BLOCKED_CAPTCHA, EMAIL_EXISTS, EMAIL_PENDING,
+from .forms import (BLOCKED_CAPTCHA, COUNTRY_BANNED_MESSAGE, EMAIL_EXISTS, EMAIL_PENDING,
                     EMAIL_REGISTERED_MESSAGE, PHONE_EXISTS,
                     PHONE_REGISTERED_MESSAGE, REGISTERED_CODES, ResumeCodeForm,
                     email_is_registered, failure_reason, normalize_email, phone_is_registered,
@@ -480,6 +488,32 @@ def _back_index(index, pending):
     return back
 
 
+def country_check_context(code):
+    """The context of signup/_country_check.html for country `code`: `country_check`
+    (the map's CountryAnswer, or None for a blank or unknown code), the country's name in
+    the active language, the host of the other region's site and the banned refusal
+    (AccountForm's error text, so it exists once)."""
+    code = (code or '').strip().upper()
+    name = countries.name(code) if code else ''
+    if not name:
+        return {'country_check': None}
+    answer = lookup_country(code)
+    return {'country_check': answer, 'country_name': name,
+            'country_site': urlsplit(answer.site_url).netloc,
+            'country_banned_message': COUNTRY_BANNED_MESSAGE}
+
+
+def _step1_country_check(form):
+    """The country note under step 1's country, rendered with the page (so also without
+    JavaScript after a Continue or a Back). A banned country with its field error shows
+    only the error, not the same text twice."""
+    context = country_check_context(form['country'].value())
+    answer = context['country_check']
+    if answer is not None and answer.banned and form.has_error('country'):
+        return {'country_check': None}
+    return context
+
+
 def _render(request, index, step, form, pending, email_check=None):
     context = {
         'step': step,
@@ -495,6 +529,8 @@ def _render(request, index, step, form, pending, email_check=None):
         'is_last': _is_last(index, pending),
         **step.get_context(),
     }
+    if index == 0:
+        context.update(_step1_country_check(form))
     if isinstance(step, CodeStep):
         context['code'] = code_help_context(request, step.slug, form, step.contact(pending),
                                             step.purpose, change_url=step_url(0),
@@ -537,6 +573,18 @@ def check_email(request):
         else:
             clear_resume(request)
     return render(request, 'signup/_email_check.html', {'email_check': email_check})
+
+
+@require_POST
+def check_country(request):
+    """The live check of step 1's country (htmx, when one is chosen): the note linking to
+    the other region's signup, or the banned refusal, else nothing. It reveals only the
+    public country map, so no limit. Returns the partial signup/_country_check.html
+    (empty after the idle timeout, and for a logged-in user)."""
+    if request.user.is_authenticated or _idle_timed_out(request):
+        return render(request, 'signup/_country_check.html', {'country_check': None})
+    return render(request, 'signup/_country_check.html',
+                  country_check_context(request.POST.get('country', '')))
 
 
 def _count_email_check(request):

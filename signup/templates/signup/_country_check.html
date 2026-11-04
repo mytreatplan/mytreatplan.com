@@ -1,0 +1,17 @@
+{% load i18n %}{% comment %}
+Under step 1's country (signup/step_account.html, #country-check): filled in by the live
+check (signup.views.check_country, htmx) when a country is chosen, and rendered with step 1
+whenever it is shown with a country (signup.views._render), so without JavaScript after a
+Continue or a Back. `country_check` is the country map's answer
+(regions.countries.lookup_country) or None. A country of the other region gets a note
+linking to that region's signup (a warning only: the person may continue here); a banned
+one the refusal, `country_banned_message` (signup.forms.COUNTRY_BANNED_MESSAGE, the
+same text as AccountForm.clean_country's error).
+{% endcomment %}{% if country_check.banned %}
+<p class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" data-country-banned>{{ country_banned_message }}</p>
+{% elif country_check.other_region %}
+<p class="rounded-12 border border-line bg-panel px-5 py-4 text-[15px] leading-[1.5]" data-country-other-region>
+  {% blocktranslate with country=country_name site=country_site %}{{ country }} is served by our {{ site }} site. Sign up there to have your account in your region.{% endblocktranslate %}
+  <a href="{{ country_check.signup_url }}" class="font-semibold text-ink underline underline-offset-4 hover:text-green-deep" data-country-signup-link>{% blocktranslate with site=country_site %}Go to {{ site }}'s signup{% endblocktranslate %}</a>
+</p>
+{% endif %}
