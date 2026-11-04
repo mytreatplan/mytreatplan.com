@@ -23,6 +23,7 @@ from django.urls import include, path
 from mytp_core.views import healthz
 from mytp_publicsite.sitemaps import PublicPagesSitemap
 from mytp_publicsite.views import robots_txt
+from regions.suggestion import stay as region_stay
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -33,6 +34,9 @@ urlpatterns = [
     # Uptime probe (mytp-core: `ok`, `site: <SITE>` and `region: <REGION>`, or
     # `unavailable`); Nginx serves it without basic auth. Not in the sitemap.
     path('healthz', healthz, name='healthz'),
+    # The region suggestion bar's "Stay here" (regions/suggestion.py): sets the remembered
+    # cookie and returns to the page. Outside the language prefixes.
+    path('region/stay/', region_stay, name='region_stay'),
 ]
 
 # Portal routes (signup, login, ...). They are served, under the language prefixes, only

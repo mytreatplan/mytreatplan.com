@@ -1439,3 +1439,33 @@ msgstr "Le responderemos pronto."
 #: signup/templates/signup/step_account.html
 msgid "Signing up needs JavaScript. Turn it on in your browser, then reload this page."
 msgstr "Para registrarse se necesita JavaScript. Actívelo en su navegador y vuelva a cargar esta página."
+
+#: regions/templates/regions/_suggestion_bar.html
+msgid "Your region"
+msgstr "Su región"
+
+#: regions/templates/regions/_suggestion_bar.html
+#, python-format
+msgid ""
+"It looks like you're in %(country)s. MyTreatPlan for your region is at "
+"%(host)s."
+msgstr ""
+"Parece que está en %(country)s. MyTreatPlan para su región está en "
+"%(host)s."
+
+#: regions/templates/regions/_suggestion_bar.html
+#, python-format
+msgid "Go to %(host)s"
+msgstr "Ir a %(host)s"
+
+#: regions/templates/regions/_suggestion_bar.html
+msgid "Stay here"
+msgstr "Quedarme aquí"
+
+#: regions/templates/regions/_suggestion_bar.html
+msgid "Close"
+msgstr "Cerrar"
+
+#: templates/base.html
+msgid "IP geolocation by DB-IP"
+msgstr "Geolocalización por IP de DB-IP"
