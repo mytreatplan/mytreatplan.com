@@ -59,7 +59,7 @@ REGISTERED_CODES = ('email_registered', 'phone_registered')
 BLOCKED_MESSAGE = _("We couldn't process your request. Please try again later.")
 # Step 1's refusal of a banned country (epic-regions entry 3): it says nothing of why. The
 # form error, and the live country check (signup/_country_check.html).
-COUNTRY_BANNED_MESSAGE = _("We can't offer MyTreatplan to doctors in this country.")
+COUNTRY_BANNED_MESSAGE = _("We can't offer MyTreatPlan to doctors in this country.")
 
 
 def refuse(form, code, message=BLOCKED_MESSAGE):

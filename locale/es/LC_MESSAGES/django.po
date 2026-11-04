@@ -983,8 +983,8 @@ msgid "We couldn't process your request. Please try again later."
 msgstr "No hemos podido procesar su solicitud. Inténtelo de nuevo más tarde."
 
 #: signup/forms.py
-msgid "We can't offer MyTreatplan to doctors in this country."
-msgstr "No podemos ofrecer MyTreatplan a doctores de este país."
+msgid "We can't offer MyTreatPlan to doctors in this country."
+msgstr "No podemos ofrecer MyTreatPlan a doctores de este país."
 
 #: signup/templates/signup/_country_check.html
 #, python-format
