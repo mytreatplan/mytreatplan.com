@@ -64,3 +64,4 @@ The channels, the contract and the client record. Each later epic adds its own e
 - Dropped from part 1: 1.6 (CRM forwarding), replaced by the contact-message event (user, 2026-10-25).
 - Waits on epic 1 because: it needs admin repo, job runner, REGION profile.
 - Waits on epic 3 because: it needs admin users and roles for remote access.
+- Decision (user, 2026-11-05, entry 2): every event type sent to the admin site defines its payload as a closed model on the writer side (unknown fields refused, `extra=forbid`) and passes `mytp_core.contracts.check_central_payload`; the checks (patient keys, files and file links, floats) are a safety net, the closed models the guarantee. Applies to entries 3, 8, 9 and every later event type.
