@@ -34,7 +34,7 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp-dev/shared/kms-client.*`; daily `kmscheck` job |
 | Signup and login codes | Twilio Verify (email via SendGrid, WhatsApp, SMS); credentials in `shared/settings.env` ("Twilio Verify") |
 | Geo-IP | DB-IP Lite country database `/srv/mytp-dev/shared/geoip/dbip-country-lite.mmdb` (CC BY 4.0), monthly `geoipupdate` job ("Geo-IP database") |
-| Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days ("Interface with the admin site") |
+| Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute ("Interface with the admin site", "Outbox") |
 | Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -1961,6 +1961,60 @@ and, on admindev, `add_peer_key ae <kid> <public key> --site dev-ae`.
 
 To rotate admindev's key, add its new public key to `INTERFACE_PEER_KEYS` (comma-separated,
 both kids), restart, let admindev switch, then remove the old entry and restart again.
+
+### Outbox
+
+Events (client records, contact messages, the accounting feed; entries 8 and 9 add the
+real types) go from the portal to the admin site through an outbox (epic-admin-interface
+entry 3, AD-3, AD-18, AD-19; `integration.outbox`). Code that changes something the admin
+site must know calls `outbox.record(type, aggregate_id, aggregate_version, payload)` in
+its own transaction: the payload is checked against the type's closed model (mytp-core
+`contracts.payloads`) and the central payload checks, and the row
+(`integration_outboxevent`) commits or rolls back with the caller's change.
+
+| What | Where |
+|------|-------|
+| Sending | `dispatchoutbox` job every minute (`manage.py dispatch_outbox`), plus one short (10 s) task on the worker after each transaction that recorded events; one signed `POST <admin>/api/v1/events` per event, to the only `INTERFACE_PEERS` entry (or `INTERFACE_ADMIN_SITE`) |
+| Order | per aggregate, the lowest pending `sequence` only (numbered by the aggregate's counter row, `integration_outboxaggregate`): a failing event holds back its aggregate's later events, never other aggregates' |
+| Answers | `accepted`, `duplicate`, `stale` → `delivered`; `rejected` → `rejected` (final, listed on the admin site under "Interface events"); refused here before sending (over 256 KB, no longer valid) → `rejected` (final, `last_error` says why, not listed on the admin site, so a warning line and one Sentry warning "Outbox event rejected before sending" with the event id, type and reason, never the payload); anything else → retried. A run stops after 3 failures in a row that say the admin site is down (no answer, 5xx, 401); failures of single events don't stop it |
+| Retries | for ever, after min(2^(attempts-1), 60) minutes; `attempts`, `next_attempt_at` and `last_error` (a code and a short text, never the payload) on the row; one Sentry warning per event failing 24 hours (event id, type, error code) |
+| Retention | delivered rows deleted after 30 days by the daily `purgeoutbox` job (04:25 UTC), payload included; rejected and pending rows are kept |
+| Logs | `journalctl -u mytp-dev-worker` and the job's journal: one line per event recorded, delivered, rejected or not delivered (event id, type, error code) |
+
+A dispatcher killed mid-send leaves the row pending; the next run sends it again and the
+admin site answers `duplicate` (it keeps every event id). With pending events but no
+admin site or signing key configured, `dispatch_outbox` fails with one line, so the
+job's Sentry monitor `mytp-<site>-dispatchoutbox` shows it; with nothing pending it needs
+no configuration. The two jobs reach a site only when `provision.sh` runs again after the
+merge's deploy (see [Sites on the staging host](#sites-on-the-staging-host)); keep the
+Sentry monitor of `dispatchoutbox` enabled (a minute schedule: it alerts when the job
+fails or stops), and disable `purgeoutbox`'s after its first run as for the other daily
+jobs.
+
+Look at the outbox (counts by state, the oldest pending; no payload):
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from django.db.models import Count; from integration.models import OutboxEvent as E; print(list(E.objects.values_list('state').annotate(Count('id')))); print(E.objects.filter(state='pending').values_list('event_id', 'type', 'attempts', 'next_attempt_at', 'last_error').first())"
+```
+
+#### The staging sample event
+
+`sample.recorded` (payload `{"label": ...}`) proves the path until entry 8 adds the first
+real event type (then it goes). Only with `INTERFACE_SAMPLE_EVENTS=True` in
+`shared/settings.env` (refused by `check` on a site without `ROBOTS_NOINDEX`), on dev and
+admindev:
+
+```sh
+cd /srv/mytp-dev/current
+A=$(python3 -c "import uuid; print(uuid.uuid4())")
+sudo -u mytp-dev ./venv/bin/python manage.py emit_sample_event $A 2            # delivered: admindev stores version 2
+sudo -u mytp-dev ./venv/bin/python manage.py emit_sample_event $A 1            # stale: admindev keeps version 2
+sudo -u mytp-dev ./venv/bin/python manage.py emit_sample_event $A 3 --region ae   # rejected (region_mismatch), listed under Interface events
+```
+
+With admindev's Gunicorn stopped, an emitted event stays pending with `attempts` and
+`last_error` growing (1, 2, 4 ... minutes apart); once it is started again, the next run
+delivers it. Remove `INTERFACE_SAMPLE_EVENTS` when done.
 
 ## Rollback
 

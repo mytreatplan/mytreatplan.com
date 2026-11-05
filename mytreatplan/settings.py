@@ -324,6 +324,12 @@ INTERFACE_SIGNING_KMS_KEY = config('INTERFACE_SIGNING_KMS_KEY', default='')
 INTERFACE_SIGNING_KEY = config('INTERFACE_SIGNING_KEY', default='')
 INTERFACE_PEERS = config('INTERFACE_PEERS', default='')
 INTERFACE_PEER_KEYS = config('INTERFACE_PEER_KEYS', default='')
+# The outbox (epic-admin-interface entry 3, integration.outbox): events go to the
+# INTERFACE_PEERS entry named INTERFACE_ADMIN_SITE (empty: the only INTERFACE_PEERS
+# entry). INTERFACE_SAMPLE_EVENTS (staging only; the check integration.E004 refuses it
+# without ROBOTS_NOINDEX) allows `manage.py emit_sample_event`.
+INTERFACE_ADMIN_SITE = config('INTERFACE_ADMIN_SITE', default='')
+INTERFACE_SAMPLE_EVENTS = config('INTERFACE_SAMPLE_EVENTS', default=False, cast=bool)
 
 # Application definition
 
@@ -355,8 +361,9 @@ INSTALLED_APPS = [
     # UPLOAD_SPIKE_ENABLED. Entry 11 deletes the app.
     'upload_spike.apps.UploadSpikeConfig',
     # The interface with the admin site (epic-admin-interface, AD-4): the signed
-    # /api/v1/ endpoints, the log of every call received (InterfaceCall) and the commands
-    # ping_peer and purge_interface_calls.
+    # /api/v1/ endpoints, the log of every call received (InterfaceCall), the outbox of
+    # events to the admin site (OutboxEvent, entry 3) and the commands ping_peer,
+    # purge_interface_calls, dispatch_outbox, purge_outbox and emit_sample_event.
     'integration.apps.IntegrationConfig',
     # The django.tasks database backend (AD-8, epic-platform entry 9): its table of
     # queued and finished tasks, and the commands db_worker (systemd
@@ -627,5 +634,9 @@ LOGGING = {
         # a warning: reason, claimed issuer and key id, path, status; never the token)
         # and ping_peer's outcome.
         'integration.calls': {'handlers': ['console'], 'level': 'INFO'},
+        # The outbox (integration.outbox, entry 3): each event recorded, delivered,
+        # rejected or not delivered (event id, type, aggregate, error code; never the
+        # payload).
+        'integration.outbox': {'handlers': ['console'], 'level': 'INFO'},
     },
 }

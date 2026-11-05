@@ -76,6 +76,7 @@ def test_ping_from_admindev_is_answered_and_logged(client):
     assert response['Content-Type'] == 'application/json'
     data = response.json()
     assert data['site'] == 'dev' and data['region'] == 'eu'
+    assert data['time'].endswith('Z') and '+' not in data['time']
     assert before <= timezone.datetime.fromisoformat(data['time']) <= timezone.now()
     assert 'no-cache' in response['Cache-Control']
     row = only_call()
