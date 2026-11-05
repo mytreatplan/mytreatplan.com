@@ -3,7 +3,7 @@ title: 'Outbox and event ingest'
 type: 'feature'
 ticket: '3'
 created: '2026-11-05'
-status: 'built'
+status: 'done'
 baseline_revision: '24bc90149b5e72c4086390f74fd692766bb89679'
 route: 'full'
 route_source: 'auto'
@@ -127,3 +127,14 @@ Pass 1 (quick lens, opus, one reviewer per repo, 2026-11-05): 24 findings. high 
 
 **Manual checks (if no CLI):**
 - On staging (user): set `INTERFACE_SAMPLE_EVENTS=True` on dev and admindev; `emit_sample_event` on dev → admindev stores the version; stop admindev's gunicorn, emit, see the row pending with attempts; start it, delivered; emit an older version → stale; a wrong-region test event → listed under Interface events.
+
+## Staging
+
+2026-11-05, run by Claude on the staging host with the user's permission (admin #14 run 42076868310 and portal #68 run 42077587477 deployed green):
+1. dev re-provisioned (timers `dispatchoutbox`, `purgeoutbox` installed); admindev re-provisioned (no changes; no new admin job).
+2. `INTERFACE_SAMPLE_EVENTS=True` added to dev's and admindev's settings.env; both restarted, `check --deploy` without errors.
+3. `emit_sample_event d48f571b-… 1` on dev → delivered by the nudge within seconds (0 attempts); admindev `AggregateVersion` sample = 1.
+4. admindev gunicorn stopped, v2 emitted → pending, 1 attempt, `http_502`, next attempt 1 minute later; admindev started → delivered by the `dispatchoutbox` timer; admindev version 2.
+5. v1 emitted again → delivered as stale; admindev keeps 2.
+6. v3 with `--region ae` → dev row `rejected: region_mismatch`; admindev `FailedEvent` (sample.recorded, region_mismatch).
+Left to the user: disable the Sentry monitors `dispatchoutbox` and `purgeoutbox` after their first run; a look at Admin → Interface events in the browser (the row is there). dev-ae has the timers only after its next re-provision and is not paired with admindev yet (entry 4).
