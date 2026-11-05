@@ -3,7 +3,7 @@ title: 'Money type in mytp-core'
 type: 'feature'
 ticket: '1'
 created: '2026-11-05'
-status: 'built'
+status: 'done'
 baseline_revision: '540127c98e83542f363f1ccd3932abf624be4c71'
 route: 'full'
 route_source: 'auto'
@@ -108,3 +108,7 @@ Pass 1 (quick lens, opus, money-correctness probes, 2026-11-05): 6 findings (plu
 
 **Commands:**
 - mytp-core suite -- all pass; both sites' suites after vendoring -- all pass.
+
+## Staging
+
+None (library only). mytp-core v0.9.0 vendored in both sites: portal PR #69 (master run 42081485574) and mytp-admin PR #15 (run 42082930486) deployed green on 2026-11-05; the import test checks the version and Money in each site.
