@@ -21,3 +21,15 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-regions/story-region-suggestion-bar-plan.md`
   summary: Fix `accounts/tests/test_remembered_device.py::test_ticked_right_code_logs_in_and_sets_the_mark`: it asserts `str(doctor.pk) not in cookie.key`, but the cookie name is a hex digest, so a pk of 1 (SQLite) fails whenever the digest holds a "1" (it does with the CI SECRET_KEY); check that the name is not built from the pk some other way (e.g. compare with the expected digest, or use a pk with non-hex digits).
   evidence: fails identically on the untouched baseline in the 2.5 worktree with the CI environment on SQLite (`mtp_device_a55e6b7f73af1f96ea289524`); passes on CI's PostgreSQL, where the pk is not 1.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-admin-access/story-refactor-sweep-plan.md`
+  summary: Status (3.13, 2026-11-05) of "recognise the verification provider by its class": done on the admin site (mytp-admin `staff/checks.py:34-46`); the portal side remains (`signup/checks.py:14`, `mytp_publicsite/checks.py:137`).
+  evidence: read in both repos during the epic-admin-access refactor sweep; the portal change needs its own story (checks plus tests).
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-admin-access/story-refactor-sweep-plan.md`
+  summary: Status (3.13, 2026-11-05) of the browser tests for the htmx list behaviour (3.7): still open; mytp-admin has no browser-test setup.
+  evidence: needs Playwright infrastructure in mytp-admin (new behaviour, out of a refactor sweep).
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-admin-access/story-refactor-sweep-plan.md`
+  summary: Status (3.13, 2026-11-05) of the mytp-core `fresh_code` wording (3.5): still open; fix it in epic-admin-interface entry 3 (the admin's next mytp-core vendoring), then remove the workaround comment at mytp-admin `staff/signin.py:121-125`.
+  evidence: user decision 2026-11-05 in the 3.13 plan.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-admin-access/story-refactor-sweep-plan.md`
+  summary: Status (3.13, 2026-11-05) of the separate Twilio Verify service for the fresh-code checks (3.5): still open, before epic-clinical-ops' patient-record download relies on it.
+  evidence: needs the user to create the Verify service, then a second SID setting and the provider wiring.
