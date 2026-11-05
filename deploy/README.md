@@ -34,6 +34,7 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp-dev/shared/kms-client.*`; daily `kmscheck` job |
 | Signup and login codes | Twilio Verify (email via SendGrid, WhatsApp, SMS); credentials in `shared/settings.env` ("Twilio Verify") |
 | Geo-IP | DB-IP Lite country database `/srv/mytp-dev/shared/geoip/dbip-country-lite.mmdb` (CC BY 4.0), monthly `geoipupdate` job ("Geo-IP database") |
+| Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days ("Interface with the admin site") |
 | Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -1861,6 +1862,105 @@ secret is printed: settings files are copied and edited in place, and only count
 
     and `https://dev.mytpdso.com/healthz` still answers `200`. Record the move in the pull
     request ("dev moved to the per-site layout <date>, /srv/mytp deleted <date>, <who>").
+
+## Interface with the admin site
+
+The admin site (`admindev` on staging) and each portal site call each other on `/api/v1/`
+(epic-admin-interface, AD-4; the `integration` app). Every request is signed with the
+caller's own Ed25519 key (mytp-core's `mytp_core.interface`: a JWT with the issuer, the
+audience, a 60-second life, a one-time id and the hash of the request) and checked
+against the caller's public key, so Nginx's `/api/` block has no team password (bodies up
+to 1 MB; production adds an IP allowlist, epic-eu-golive). A refused call is a 401 with
+only a code (`missing`, `signature`, `unknown_key`, `audience`, `expired`,
+`request_hash`, `replayed`); a site without a signing key answers 503 (`unavailable`).
+
+| What | Where |
+|------|-------|
+| Signing key | `INTERFACE_SIGNING_KMS_KEY=<kid>:<wrapped>` in `shared/settings.env`: a KMS data key (staging service key) used as the Ed25519 seed, unwrapped once per process, never logged; checked by the daily `kmscheck` |
+| Admin site's public keys | `INTERFACE_PEER_KEYS=admindev:<kid>:<public key>[,...]` |
+| Admin site's address | `INTERFACE_PEERS=admindev=https://admindev.mytpdso.com` |
+| Call log | table `integration_interfacecall` (time, issuer, key id, method, path, accepted, reason, status, IP), every request to `/api/`; refused ones also as a warning line in `journalctl -u mytp-dev-gunicorn`; deleted after 90 days by the daily `purgeinterfacecalls` job |
+
+The `purgeinterfacecalls` job (04:20 UTC daily) and the `/api/` Nginx block reach a site
+only when `provision.sh` runs again after the merge's deploy (see [Sites on the staging
+host](#sites-on-the-staging-host)); admindev's copy of `deploy/` needs the same. After
+its first run, disable its Sentry monitor `mytp-<site>-purgeinterfacecalls` as for the
+other jobs.
+
+### Set up the keys (dev and admindev)
+
+Public keys are not secret; the wrapped key stays in `settings.env` only (it is useless
+without the KMS service key). Run each command yourself, in your own terminal on the
+server, once the release with the `integration` app is live on dev and the one with the
+`interface` app on admindev:
+
+1. **dev: generate its signing key** straight into the settings file, and print only its
+   public key:
+
+   ```sh
+   cd /srv/mytp-dev/current
+   sudo -u mytp-dev sh -ec 'umask 077
+   out=$(./venv/bin/python manage.py generate_interface_signing_key "sig$(date -u +%Y%m%d)")
+   printf "%s\n" "$out" | grep "^INTERFACE_SIGNING_KMS_KEY=" >> /srv/mytp-dev/shared/settings.env
+   printf "%s\n" "$out" | grep "^INTERFACE_PUBLIC_KEY="'
+   sudo grep -c '^INTERFACE_SIGNING_KMS_KEY=.' /srv/mytp-dev/shared/settings.env   # 1
+   ```
+
+   The last line printed is `INTERFACE_PUBLIC_KEY=dev:<kid>:<public key>`. (Delete an
+   empty `INTERFACE_SIGNING_KMS_KEY=` line from the file first, if it has one.)
+2. **admindev: the same** (its README, "Interface with the portals"), which prints
+   `INTERFACE_PUBLIC_KEY=admindev:<kid>:<public key>`; then on admindev
+   `manage.py add_peer_key eu <dev's kid> <dev's public key> --site dev`.
+3. **dev: add admindev's public key and address** to `shared/settings.env`, as `debian`
+   with `sudoedit /srv/mytp-dev/shared/settings.env`:
+
+   ```sh
+   INTERFACE_PEERS=admindev=https://admindev.mytpdso.com
+   INTERFACE_PEER_KEYS=admindev:<admindev's kid>:<admindev's public key>
+   ```
+
+   then `sudo systemctl restart mytp-dev-gunicorn` and
+   `sudo -u mytp-dev ./venv/bin/python manage.py check` (no issues).
+4. **Ping each way** and look at both logs:
+
+   ```sh
+   # on dev
+   sudo -u mytp-dev ./venv/bin/python manage.py ping_peer admindev    # {"region": null, "site": "admindev", "time": ...}
+   # on admindev
+   sudo -u mytp-admindev ./venv/bin/python manage.py ping_peer dev    # {"region": "eu", "site": "dev", "time": ...}
+   sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from integration.models import InterfaceCall as C; print([(c.iss, c.kid, c.accepted, c.reason, c.status) for c in C.objects.all()[:3]])"
+   ```
+
+   A failure prints one line (`ping_peer admindev: HTTP 401 (unknown_key)`, `... no
+   answer: timed out`, `... No signing key ...`) and exits 1.
+5. **Replay check**: a request sent twice is refused. On admindev, sign one GET of dev's
+   ping and send it twice with curl within its minute (the token lives 60 seconds and
+   stays in your terminal only):
+
+   ```sh
+   # on admindev
+   cd /srv/mytp-admindev/current
+   t=$(sudo -u mytp-admindev ./venv/bin/python manage.py shell --no-imports -c "from mytp_core import interface; print(interface.sign_request('GET', '/api/v1/ping', b'', audience='dev'))")
+   curl -s -H "Authorization: MyTP-Signature $t" https://dev.mytpdso.com/api/v1/ping   # 200
+   curl -s -H "Authorization: MyTP-Signature $t" https://dev.mytpdso.com/api/v1/ping   # 401 replayed
+   ```
+
+   dev's log then shows the second call refused (`reason` `replayed`) and the journal a
+   `interface call refused: replayed` line.
+
+dev-ae: the same steps with `mytp-dev-ae`, its own key (`INTERFACE_PUBLIC_KEY=dev-ae:...`)
+and, on admindev, `add_peer_key ae <kid> <public key> --site dev-ae`.
+
+### Rotate the signing key
+
+1. Generate the new key as in step 1 but print it only (no `>>`); give its public key to
+   the admin site (`add_peer_key`), which then knows both kids.
+2. Replace the `INTERFACE_SIGNING_KMS_KEY` line with the new one and restart Gunicorn;
+   `ping_peer admindev` passes with the new kid.
+3. On admindev, `retire_peer_key eu <old kid>`.
+
+To rotate admindev's key, add its new public key to `INTERFACE_PEER_KEYS` (comma-separated,
+both kids), restart, let admindev switch, then remove the old entry and restart again.
 
 ## Rollback
 

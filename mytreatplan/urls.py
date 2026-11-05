@@ -37,6 +37,9 @@ urlpatterns = [
     # The region suggestion bar's "Stay here" (regions/suggestion.py): sets the remembered
     # cookie and returns to the page. Outside the language prefixes.
     path('region/stay/', region_stay, name='region_stay'),
+    # The interface with the admin site (integration, AD-4): signed calls only, outside the
+    # language prefixes, CSRF and basic auth (Nginx's /api/ block).
+    path('api/v1/', include('integration.urls')),
 ]
 
 # Portal routes (signup, login, ...). They are served, under the language prefixes, only

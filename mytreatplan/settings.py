@@ -306,6 +306,25 @@ BLIND_INDEX_KEY = config('BLIND_INDEX_KEY', default='')
 FIELD_KMS_KEYS = config('FIELD_KMS_KEYS', default='')
 BLIND_INDEX_KMS_KEY = config('BLIND_INDEX_KMS_KEY', default='')
 
+# The interface with the admin site (epic-admin-interface entry 1, AD-4; the `integration`
+# app, mytp-core's mytp_core.interface): requests between the sites are signed with the
+# caller's Ed25519 key and checked against its public key.
+# - INTERFACE_SIGNING_KMS_KEY: this site's signing key, `<kid>:<wrapped key>`, a KMS data
+#   key used as the Ed25519 seed (`manage.py generate_interface_signing_key <kid>` prints
+#   it with the public key to give the admin site); unwrapped once per process, checked
+#   daily by `kmscheck`. Local development may set INTERFACE_SIGNING_KEY,
+#   `<kid>:<base64 32-byte seed>`, instead (never both). Without either, /api/ answers 503
+#   and `ping_peer` fails.
+# - INTERFACE_PEERS: the sites this one calls, `<site>=<base URL>`, comma-separated (staging
+#   dev: `admindev=https://admindev.mytpdso.com`).
+# - INTERFACE_PEER_KEYS: the public keys accepted, `<site>:<kid>:<base64 public key>`,
+#   comma-separated (several kids per site during a rotation).
+# deploy/README.md, "Interface with the admin site".
+INTERFACE_SIGNING_KMS_KEY = config('INTERFACE_SIGNING_KMS_KEY', default='')
+INTERFACE_SIGNING_KEY = config('INTERFACE_SIGNING_KEY', default='')
+INTERFACE_PEERS = config('INTERFACE_PEERS', default='')
+INTERFACE_PEER_KEYS = config('INTERFACE_PEER_KEYS', default='')
+
 # Application definition
 
 INSTALLED_APPS = [
@@ -335,6 +354,10 @@ INSTALLED_APPS = [
     # Upload spike (epic-platform entry 2): no models; its routes are served only with
     # UPLOAD_SPIKE_ENABLED. Entry 11 deletes the app.
     'upload_spike.apps.UploadSpikeConfig',
+    # The interface with the admin site (epic-admin-interface, AD-4): the signed
+    # /api/v1/ endpoints, the log of every call received (InterfaceCall) and the commands
+    # ping_peer and purge_interface_calls.
+    'integration.apps.IntegrationConfig',
     # The django.tasks database backend (AD-8, epic-platform entry 9): its table of
     # queued and finished tasks, and the commands db_worker (systemd
     # mytp-<site>-worker) and prune_db_task_results (the `prunetasks` job).
@@ -358,6 +381,8 @@ MIDDLEWARE = [
     # response (after the language and slash redirects) and the user as the session limit
     # (accounts.sessions) left it.
     'accounts.page_records.PageRecordMiddleware',
+    # Logs every request to /api/ (integration.calls), whatever its outcome.
+    'integration.calls.InterfaceCallMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.locale.LocaleMiddleware',
@@ -598,5 +623,9 @@ LOGGING = {
         # The geo-IP job's failures (also reach Sentry) and an unreadable database; the
         # month and the size only, never an IP or a country.
         'regions.geoip': {'handlers': ['console'], 'level': 'INFO'},
+        # The interface (integration.calls): one line per call received (a refused one as
+        # a warning: reason, claimed issuer and key id, path, status; never the token)
+        # and ping_peer's outcome.
+        'integration.calls': {'handlers': ['console'], 'level': 'INFO'},
     },
 }

@@ -588,8 +588,8 @@ def test_nginx_healthz_without_basic_auth():
     assert 'proxy_pass http://mytp-__SITE__-gunicorn;' in body
     assert 'proxy_set_header Host $host;' in body
     assert 'proxy_set_header X-Forwarded-Proto $scheme;' in body
-    # Everything else keeps the password.
-    assert https.count('auth_basic off;') == 2  # ACME challenge and /healthz
+    # Everything else keeps the password (/api/ is signed instead: integration's tests).
+    assert https.count('auth_basic off;') == 3  # ACME challenge, /healthz and /api/
 
 
 def test_job_service_unit():
