@@ -3,7 +3,7 @@ title: 'Signed ping between admindev and dev'
 type: 'feature'
 ticket: '1'
 created: '2026-11-05'
-status: 'built'
+status: 'done'
 baseline_revision: '29de64e657563b2ebdbab812e0b7d696eabdafb1'
 route: 'full'
 route_source: 'auto'
@@ -185,3 +185,12 @@ Pass 1 (quick lens, opus, one reviewer per repo, security focus, 2026-11-05): 18
 
 **Manual checks (if no CLI):**
 - On staging (user, SSH): generate keys on dev and admindev, exchange the public keys, then `ping_peer admindev` on dev and `ping_peer dev` on admindev; replay a captured token with curl → 401 logged.
+
+## Staging
+
+- mytp-core v0.6.0 tagged 2026-11-05 (2209447; CI green on master and on the tag). Merged in portal PR #67 (merge 0f70289) and mytp-admin PR #12 (merge 9ebf353). PR CI green on PostgreSQL (portal run 42018153588, admin run 42018163508); master runs 42023673418 (portal, deploy legs dev and dev-ae) and 42019585113 (admin, admindev) green. Local suites: mytp-core 525, portal 1802 (+3 known PostgreSQL-only), admin 749.
+- Server steps (user, 2026-11-05): dev, dev-ae and admindev re-provisioned (the `/api/` Nginx block and the `purgeinterfacecalls` job); signing keys generated on dev and admindev into settings.env (wrapped by each site's KMS, never printed); dev got `INTERFACE_PEERS` / `INTERFACE_PEER_KEYS` for admindev; admindev got dev's key with `add_peer_key eu … --site dev`.
+- Checks (user, 2026-11-05):
+  1. `ping_peer admindev` on dev: HTTP 200, `{"region": null, "site": "admindev", …}`; `ping_peer dev` on admindev: HTTP 200, `{"region": "eu", "site": "dev", …}`; both call logs show the accepted calls. OK.
+  2. Replay: a token signed on admindev sent twice to dev's ping: 200, then 401 `replayed`. OK.
+- Left: disable the `purgeinterfacecalls` Sentry monitors of dev, dev-ae and admindev after their first run; dev-ae is not yet paired with admindev (its keys are set up when a later entry needs the ae region). Noted for entry 3: the ping's `time` is `+00:00`, the contracts' form is a trailing `Z`.

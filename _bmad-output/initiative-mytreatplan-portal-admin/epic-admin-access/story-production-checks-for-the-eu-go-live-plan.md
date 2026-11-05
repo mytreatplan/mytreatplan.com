@@ -3,7 +3,7 @@ title: 'Production checks for the EU go-live'
 type: 'chore'
 ticket: '12'
 created: '2026-11-05'
-status: 'built'
+status: 'done'
 baseline_revision: '60b6c9be491be65e102ac0c2774075a4da51411d'
 route: 'oneshot'
 route_source: 'auto'
@@ -54,3 +54,7 @@ Pass 1 (quick lens, opus, 2026-11-05): 8 findings, all real (medium 2, low 6); a
 **Manual checks (if no CLI):**
 - epic-eu-golive's Done when has one epic-admin-access block whose checks map 1:1 to epic-admin-access Done when 1–4, each runnable without reading code.
 - `uv run --no-cache _bmad/method/scripts/tickets.py --project-root "$PWD" find 3.12` still resolves (the tree is not broken).
+
+## Staging
+
+- Documentation only, no server step: committed to master as 29de64e (2026-11-05). The checks run at the EU go-live (epic-eu-golive Done when 3).

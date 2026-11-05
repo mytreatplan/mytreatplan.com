@@ -3,7 +3,7 @@ title: 'Contract definitions and contract tests in mytp-core'
 type: 'feature'
 ticket: '2'
 created: '2026-11-05'
-status: 'built'
+status: 'done'
 baseline_revision: '2209447887e78e023d8d53c4c00ec9408cfac573'
 route: 'full'
 route_source: 'auto'
@@ -134,3 +134,7 @@ Verification: mytp-core 731 passed; CI green on master and on tag v0.7.0 (runs 4
 
 **Commands:**
 - in `../mytp-core`: `../.venv/bin/python -m pytest -q -p no:cacheprovider` -- all pass; `python -m build --wheel` then list the wheel -- schemas present.
+
+## Staging
+
+- Library only, no server step: mytp-core v0.7.0 tagged 2026-11-05 (540127c), CI green on master and on the tag (runs 42028673981, 42028673793), 731 tests. The sites vendor 0.7.0 in entry 3, whose payload models follow the closed-payload rule (epic Notes, 2026-11-05).
