@@ -70,6 +70,20 @@ server {
         proxy_read_timeout 15s;
     }
 
+    # The interface between the admin site and the portals (AD-4): every request is signed
+    # (Ed25519, checked by Django), so no team password; bodies up to 1 MB. Production adds
+    # an IP allowlist here (epic-eu-golive).
+    location /api/ {
+        auth_basic off;
+        client_max_body_size 1m;
+        proxy_pass http://mytp-__SITE__-gunicorn;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_redirect off;
+        proxy_read_timeout 30s;
+    }
+
     location / {
         proxy_pass http://mytp-__SITE__-gunicorn;
         proxy_set_header Host $host;

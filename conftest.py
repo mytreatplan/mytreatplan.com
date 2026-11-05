@@ -56,6 +56,12 @@ def pytest_configure(config):
     settings.TWILIO_API_KEY_SECRET = ''
     settings.TWILIO_VERIFY_SERVICE_SID = ''
     settings.TWILIO_WHATSAPP_ENABLED = False
+    # No interface signing key or peers (a developer's settings.env must not make tests
+    # call the KMS or a peer); the integration tests set fixed test keys.
+    settings.INTERFACE_SIGNING_KMS_KEY = ''
+    settings.INTERFACE_SIGNING_KEY = ''
+    settings.INTERFACE_PEERS = ''
+    settings.INTERFACE_PEER_KEYS = ''
 
     # django-tasks-db's table has JSON fields, so Django's system checks ask the database
     # whether it supports them. PostgreSQL (CI, servers) answers without a connection;
