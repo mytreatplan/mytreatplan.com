@@ -3,7 +3,7 @@ title: 'Configuration snapshot channel'
 type: 'feature'
 ticket: '4'
 created: '2026-11-05'
-status: 'built'
+status: 'done'
 baseline_revision: 'c6c6541aba08b0833236fbcb72baf2c3085b2fb5'
 route: 'full'
 route_source: 'auto'
@@ -124,3 +124,13 @@ Pass 1 (quick lens, opus, one reviewer per repo, 2026-11-05): 17 findings. high 
 - Re-provision dev, dev-ae, admindev (new job `pullconfig`); pair dev-ae with admindev as 4.1 (keys, peers, `ping_peer`).
 - `show_config` on dev and dev-ae shows the admindev directory; edit an admin user's display name → shown on both within seconds; stop admindev's gunicorn, `pull_config` on dev: error recorded, directory kept; start it: next pull OK.
 - A tampered or lower snapshot: covered by tests (no staging step).
+
+## Staging
+
+2026-11-06, run by Claude on the staging host with the user's permission (admin #16 run 42201632743 and portal #70 run 42203929735 deployed green):
+1. Re-provisioned dev (timer `pullconfig`), dev-ae (timers `pullconfig`, `dispatchoutbox`, `purgeoutbox`) and admindev (no changes).
+2. dev-ae paired with admindev: its own signing key (kid `sig20261106`, written straight into settings.env, only the public key printed), `add_peer_key ae sig20261106 … --site dev-ae` on admindev, `INTERFACE_PEERS`/`INTERFACE_PEER_KEYS` copied from dev; `check` clean; `ping_peer` both ways OK.
+3. `pull_config` on dev and dev-ae: v1 applied, 3 directory entries, as admindev.
+4. Display name of a test admin user changed on admindev through `staff.service.update_user` → admindev v2; nudges `POST /api/v1/config/nudge` 202 on both at 10:45:27–28 UTC; dev and dev-ae showed v2 and the new name within 20 s.
+5. admindev's gunicorn stopped: `pull_config` on dev → `refused (http_502)`, exit 0, v2 kept, dev up; admindev started → `v2 unchanged`, error cleared.
+Left to the user: disable the Sentry monitor `pullconfig` on dev and dev-ae (and dev-ae's `dispatchoutbox`, `purgeoutbox`) after their first run.
