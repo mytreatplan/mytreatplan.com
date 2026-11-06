@@ -145,7 +145,7 @@ def record(event_type, aggregate_id, aggregate_version, payload, *, version=1,
     UnknownEventType, InvalidPayload or ContractViolation (all ValueError, never quoting
     a value) for a type without a registered model or a payload it refuses: nothing is
     written, and the caller's transaction rolls back with the exception. `region`
-    (default settings.REGION) is for the staging sample only."""
+    (default settings.REGION) is for tests only."""
     connection = transaction.get_connection()
     if not connection.in_atomic_block:
         raise OutboxError('outbox.record must run inside transaction.atomic()')
@@ -208,7 +208,8 @@ def _eligible(now):
 
 def _take(now):
     """The next eligible row, locked for this transaction (None when there is none)."""
-    return _eligible(now).select_for_update(skip_locked=True).first()
+    # The payload (encrypted) is read only when the envelope is built (`_send`).
+    return _eligible(now).defer('payload').select_for_update(skip_locked=True).first()
 
 
 def _error_code(exc):

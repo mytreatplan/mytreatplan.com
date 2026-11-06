@@ -121,6 +121,11 @@ class User(AbstractUser):
     # set at every login, cleared by `end_all_sessions`. Never shown.
     current_session_key = models.CharField(max_length=40, null=True, blank=True,
                                            editable=False)
+    # The client record sync (accounts.client_sync, epic-admin-interface entry 8): the
+    # version of the last client event sent to the admin site (its aggregate version),
+    # bumped in the transaction of every client write. 0: never sent. The database default
+    # lets the previous release insert rows while a deploy migrates.
+    sync_version = models.BigIntegerField(default=0, db_default=0, editable=False)
 
     USERNAME_FIELD = 'email'
     EMAIL_FIELD = 'email'
@@ -157,6 +162,16 @@ class User(AbstractUser):
     def save(self, *args, **kwargs):
         self.set_blind_indexes()
         update_fields = kwargs.get('update_fields')
+        if (update_fields is None and not self._state.adding and self.pk is not None
+                and not kwargs.get('force_insert')):
+            # `sync_version` is written only by accounts.client_sync, under the row's lock:
+            # an ordinary save of a loaded account never writes back the value it read
+            # (a concurrent sync would otherwise lose its version).
+            deferred = self.get_deferred_fields()
+            update_fields = [field.name for field in self._meta.concrete_fields
+                             if not field.primary_key and field.name != 'sync_version'
+                             and field.attname not in deferred]
+            kwargs['update_fields'] = update_fields
         if update_fields is not None:
             kwargs['update_fields'] = {
                 *update_fields,

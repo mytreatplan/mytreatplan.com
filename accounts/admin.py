@@ -3,12 +3,13 @@ from django.contrib.admin import helpers
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
 from django.core.exceptions import ImproperlyConfigured
+from django.db import transaction
 from django.db.models import Q
 from django.template.response import TemplateResponse
 from django.utils import timezone
 from django.utils.translation import gettext, gettext_lazy as _, pgettext_lazy
 
-from . import erasure
+from . import client_sync, erasure
 from .crypto import email_index
 from .models import User
 
@@ -206,6 +207,14 @@ class UserAdmin(BaseUserAdmin):
         request.current_app = self.admin_site.name
         return TemplateResponse(request, 'admin/accounts/user/erase_confirmation.html',
                                 context)
+
+    def save_model(self, request, obj, form, change):
+        """Save (add or change), then tell the admin site in the same transaction
+        (client.updated; client.erased for a client made staff; nothing for a staff
+        account never sent: accounts.client_sync)."""
+        with transaction.atomic():
+            super().save_model(request, obj, form, change)
+            client_sync.emit(obj)
 
     def log_addition(self, request, obj, message):
         return super().log_addition(request, _LoggedUser(obj), message)
