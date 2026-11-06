@@ -20,6 +20,8 @@ import uuid
 from django.db import models
 from django.utils import timezone
 
+from accounts.crypto import EncryptedJSONField
+
 # Decision (user, 2026-11-05): call logs are kept 90 days.
 RETENTION_DAYS = 90
 # Delivered outbox rows are kept 30 days (entry 3).
@@ -86,7 +88,9 @@ class OutboxEvent(models.Model):
     # The region the event belongs to (settings.REGION when recorded).
     region = models.CharField(max_length=2)
     # Built by mytp_core.contracts.build_payload: the type's closed model, central checks.
-    payload = models.JSONField()
+    # Encrypted with the portal's field keys (decision 2026-11-06, entry 8: a client
+    # payload holds email, names and mobile); decrypted only to build the envelope sent.
+    payload = EncryptedJSONField()
     state = models.CharField(max_length=10, choices=STATES, default=PENDING)
     attempts = models.PositiveIntegerField(default=0)
     next_attempt_at = models.DateTimeField(default=timezone.now)

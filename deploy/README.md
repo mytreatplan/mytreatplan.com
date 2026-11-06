@@ -1964,8 +1964,8 @@ both kids), restart, let admindev switch, then remove the old entry and restart 
 
 ### Outbox
 
-Events (client records, contact messages, the accounting feed; entries 8 and 9 add the
-real types) go from the portal to the admin site through an outbox (epic-admin-interface
+Events (client records, entry 8; contact messages and the accounting feed later) go from
+the portal to the admin site through an outbox (epic-admin-interface
 entry 3, AD-3, AD-18, AD-19; `integration.outbox`). Code that changes something the admin
 site must know calls `outbox.record(type, aggregate_id, aggregate_version, payload)` in
 its own transaction: the payload is checked against the type's closed model (mytp-core
@@ -1997,24 +1997,54 @@ Look at the outbox (counts by state, the oldest pending; no payload):
 sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from django.db.models import Count; from integration.models import OutboxEvent as E; print(list(E.objects.values_list('state').annotate(Count('id')))); print(E.objects.filter(state='pending').values_list('event_id', 'type', 'attempts', 'next_attempt_at', 'last_error').first())"
 ```
 
-#### The staging sample event
+A stopped admin site: with admindev's Gunicorn stopped, a recorded event stays pending with
+`attempts` and `last_error` growing (1, 2, 4 ... minutes apart); once it is started again,
+the next run delivers it. (The staging-only sample event of entry 3, `emit_sample_event`
+and `INTERFACE_SAMPLE_EVENTS`, are gone: remove the setting from `shared/settings.env`.)
 
-`sample.recorded` (payload `{"label": ...}`) proves the path until entry 8 adds the first
-real event type (then it goes). Only with `INTERFACE_SAMPLE_EVENTS=True` in
-`shared/settings.env` (refused by `check` on a site without `ROBOTS_NOINDEX`), on dev and
-admindev:
+#### Client records
+
+The admin site keeps a copy of every doctor (client) registered here (epic-admin-interface
+entry 8, AD-2, AD-15, AD-18; `accounts.client_sync`). Each client write records one event
+in the outbox, in the write's own transaction, with the account's `uid` as the aggregate
+and its `sync_version` (bumped under the row's lock) as the version:
+
+| Write | Event |
+|-------|-------|
+| Signup completed | `client.updated` (title, names, email, mobile, country, home region, active, joined, how found; never the "Others" text) |
+| A change in the Django admin (add or change) | `client.updated`; for a staff account nothing, or `client.erased` once it was a client (staff are not clients) |
+| Erase account (Django admin action) | `client.erased` (its `client.updated` rows still pending are deleted first): admindev deletes its copy; nothing for an account never sent |
+| Password, sign-in, sessions, re-encryption | nothing |
+| The purge of erased accounts | nothing sent; every outbox row of the purged accounts is deleted |
+
+The outbox stores every payload encrypted with this site's field keys
+(`integration_outboxevent.payload`, decrypted only to build the envelope it sends;
+`reencrypt_fields` covers it). The payload goes in clear over the signed channel
+(admindev encrypts it with its own keys) and is never logged; the outbox's lines carry
+the event id, type and aggregate only.
+
+**Re-sync.** admindev's `resync_client <uid>` sends a signed `POST /api/v1/clients/resync`
+(`{"aggregate_id": "<uid>"}`, admindev only); the portal answers 202 and a worker task
+emits the account's current state as its next version (`client.updated`, or
+`client.erased` again for an erased account). An unknown uid (or a staff or erased
+account never sent) is 404 `unknown_client`; any other body than
+`{"aggregate_id": "<uuid>"}` is 400 `invalid_body`. Log lines: `integration.clients` (uid, outcome).
+
+**Backfill** (once per site after the deploy that adds the sync, and whenever admindev's
+copy must be rebuilt): every account, each in its own transaction, then the outbox
+delivers them.
 
 ```sh
 cd /srv/mytp-dev/current
-A=$(python3 -c "import uuid; print(uuid.uuid4())")
-sudo -u mytp-dev ./venv/bin/python manage.py emit_sample_event $A 2            # delivered: admindev stores version 2
-sudo -u mytp-dev ./venv/bin/python manage.py emit_sample_event $A 1            # stale: admindev keeps version 2
-sudo -u mytp-dev ./venv/bin/python manage.py emit_sample_event $A 3 --region ae   # rejected (region_mismatch), listed under Interface events
+sudo -u mytp-dev ./venv/bin/python manage.py sync_clients --all       # "N client.updated, M client.erased, K skipped (not sent: staff or erased)"
+sudo -u mytp-dev ./venv/bin/python manage.py sync_clients <uid> ...   # some accounts only
 ```
 
-With admindev's Gunicorn stopped, an emitted event stays pending with `attempts` and
-`last_error` growing (1, 2, 4 ... minutes apart); once it is started again, the next run
-delivers it. Remove `INTERFACE_SAMPLE_EVENTS` when done.
+An account whose stored state the contract refuses is named (`<uid> failed: ...`, no
+values) and skipped; the others are sent and the command exits non-zero at the end.
+
+On admindev the copies are counted per region (its README, "Client records"); a row read
+straight from its database shows ciphertext in the names, email and mobile.
 
 ### Configuration snapshot
 

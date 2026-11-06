@@ -109,6 +109,10 @@ def test_no_table_holds_the_plaintext_password_email_names_mobile_or_code(client
     assert User.objects.exists()
 
     # The code is 6 digits, so only look for it as a whole value in text columns.
+    # The outbox row of the client.updated event (epic-admin-interface entry 8) is
+    # checked too: its payload is encrypted.
+    from integration.models import OutboxEvent
+    assert OutboxEvent.objects.get().type == 'client.updated'
     _assert_no_plaintext_anywhere(PASSWORD, NORMALIZED, f"'{code}'", f"'{mobile_code}'",
                                   *personal)
 

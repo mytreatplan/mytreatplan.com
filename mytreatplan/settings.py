@@ -326,10 +326,8 @@ INTERFACE_PEERS = config('INTERFACE_PEERS', default='')
 INTERFACE_PEER_KEYS = config('INTERFACE_PEER_KEYS', default='')
 # The outbox (epic-admin-interface entry 3, integration.outbox): events go to the
 # INTERFACE_PEERS entry named INTERFACE_ADMIN_SITE (empty: the only INTERFACE_PEERS
-# entry). INTERFACE_SAMPLE_EVENTS (staging only; the check integration.E004 refuses it
-# without ROBOTS_NOINDEX) allows `manage.py emit_sample_event`.
+# entry).
 INTERFACE_ADMIN_SITE = config('INTERFACE_ADMIN_SITE', default='')
-INTERFACE_SAMPLE_EVENTS = config('INTERFACE_SAMPLE_EVENTS', default=False, cast=bool)
 
 # Application definition
 
@@ -364,8 +362,8 @@ INSTALLED_APPS = [
     # /api/v1/ endpoints, the log of every call received (InterfaceCall), the outbox of
     # events to the admin site (OutboxEvent, entry 3), the configuration snapshot pulled
     # from it (ConfigState, AdminDirectoryEntry, entry 4) and the commands ping_peer,
-    # purge_interface_calls, dispatch_outbox, purge_outbox, emit_sample_event,
-    # pull_config and show_config.
+    # purge_interface_calls, dispatch_outbox, purge_outbox, pull_config and show_config;
+    # the client re-sync endpoint (entry 8).
     'integration.apps.IntegrationConfig',
     # The django.tasks database backend (AD-8, epic-platform entry 9): its table of
     # queued and finished tasks, and the commands db_worker (systemd
@@ -643,5 +641,8 @@ LOGGING = {
         # The configuration snapshot (integration.config, entry 4): each pull's outcome
         # and version, a refusal's code, the nudges received; never the contents.
         'integration.config': {'handlers': ['console'], 'level': 'INFO'},
+        # The client re-sync asked by the admin site (integration.views, entry 8): the
+        # uid and the outcome; never a name or an email.
+        'integration.clients': {'handlers': ['console'], 'level': 'INFO'},
     },
 }

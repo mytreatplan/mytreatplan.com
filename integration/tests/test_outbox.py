@@ -1,5 +1,6 @@
 """The outbox (epic-admin-interface entry 3): `outbox.record`, the dispatcher (job, command
-and nudge task), the purge, the staging sample and its system check. The admin site is a
+and nudge task), the purge and the system checks; the events are `client.updated` ones
+(entry 8, which removed the staging sample). The admin site is a
 fake at mytp_core.interface._open that checks the signature (portal key, fixed non-secret
 test seed) and answers as the real ingest does (dedupe on event_id, versions per
 aggregate, the region check). No test reaches the network or a KMS."""
@@ -29,7 +30,7 @@ from mytp_core.contracts import (ContractViolation, EventEnvelope, InvalidPayloa
 DEPLOY = Path(django_settings.BASE_DIR) / 'deploy'
 PORTAL_SEED = b'test-only-interface-seed-portal!'
 PORTAL = interface.SigningKey('p1', PORTAL_SEED)
-SAMPLE = 'sample.recorded'
+SAMPLE = 'client.updated'
 EVENTS_URL = 'https://admindev.example.test/api/v1/events'
 SECRET_LABEL = 'label-that-must-not-leak'
 
@@ -106,9 +107,17 @@ def admin(monkeypatch):
     return fake
 
 
+def payload(label='x'):
+    """A client.updated payload (its JSON form) whose first name is `label`."""
+    return {'title': 'dr', 'first_name': label, 'middle_name': '', 'last_name': 'Ruiz',
+            'email': 'ana@example.com', 'phone': '+34600000000', 'country': 'ES',
+            'home_region': 'eu', 'active': True, 'joined_at': '2026-11-05T10:00:00Z',
+            'how_found': ''}
+
+
 def emit(aggregate=None, version=1, label='hello', **kwargs):
     with transaction.atomic():
-        return outbox.record(SAMPLE, aggregate or uuid.uuid4(), version, {'label': label},
+        return outbox.record(SAMPLE, aggregate or uuid.uuid4(), version, payload(label),
                              **kwargs)
 
 
@@ -133,14 +142,15 @@ def test_record_writes_a_pending_row_with_sequences_per_aggregate():
     row = OutboxEvent.objects.get(pk=first.pk)
     assert (row.type, row.version, row.aggregate_id, row.aggregate_version, row.region,
             row.payload, row.state, row.attempts, row.last_error) == \
-        (SAMPLE, 1, a, 1, 'eu', {'label': 'hello'}, 'pending', 0, '')
+        (SAMPLE, 1, a, 1, 'eu', payload('hello'), 'pending', 0, '')
     assert row.event_id.version == 4 and row.delivered_at is None
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize('payload, error', [
-    ({'label': 'x', 'extra': 1}, InvalidPayload),
-    ({'label': 'x', 'patient_name': 'Ana Ruiz'}, InvalidPayload),
+    (dict(payload(), extra=1), InvalidPayload),
+    (dict(payload(), patient_name='Ana Ruiz'), InvalidPayload),
+    ({'label': 'x'}, InvalidPayload),
     ({}, InvalidPayload),
 ])
 def test_invalid_payload_raises_and_rolls_back_the_callers_transaction(payload, error):
@@ -168,7 +178,7 @@ def test_an_unregistered_type_cannot_be_recorded():
 ])
 def test_malformed_envelope_fields_are_refused_before_writing(kwargs):
     args = {'event_type': SAMPLE, 'aggregate_id': uuid.uuid4(), 'aggregate_version': 1,
-            'payload': {'label': 'x'}}
+            'payload': payload()}
     region = kwargs.pop('region', None)
     args.update(kwargs)
     with pytest.raises((outbox.OutboxError, ValueError)):
@@ -188,7 +198,7 @@ def test_an_oversized_event_is_refused(monkeypatch):
 @pytest.mark.django_db(transaction=True)
 def test_record_outside_a_transaction_is_refused():
     with pytest.raises(outbox.OutboxError, match='transaction.atomic'):
-        outbox.record(SAMPLE, uuid.uuid4(), 1, {'label': 'x'})
+        outbox.record(SAMPLE, uuid.uuid4(), 1, payload())
     assert not OutboxEvent.objects.exists()
 
 
@@ -197,7 +207,7 @@ def test_the_nudge_is_enqueued_on_commit_only_and_delivers(admin):
     from django_tasks_db.models import DBTaskResult
     with pytest.raises(RuntimeError):
         with transaction.atomic():
-            outbox.record(SAMPLE, uuid.uuid4(), 1, {'label': 'x'})
+            outbox.record(SAMPLE, uuid.uuid4(), 1, payload())
             raise RuntimeError('the caller failed')
     assert not DBTaskResult.objects.exists() and not OutboxEvent.objects.exists()
 
@@ -217,11 +227,11 @@ def test_one_nudge_per_transaction_and_the_log_line_after_commit(caplog):
     aggregate = uuid.uuid4()
     with transaction.atomic():
         for version in (1, 2, 3):
-            outbox.record(SAMPLE, aggregate, version, {'label': 'x'})
+            outbox.record(SAMPLE, aggregate, version, payload())
         # A savepoint rolled back keeps the transaction's one nudge.
         try:
             with transaction.atomic():
-                outbox.record(SAMPLE, aggregate, 4, {'label': 'x'})
+                outbox.record(SAMPLE, aggregate, 4, payload())
                 raise RuntimeError
         except RuntimeError:
             pass
@@ -232,11 +242,11 @@ def test_one_nudge_per_transaction_and_the_log_line_after_commit(caplog):
     with transaction.atomic():
         try:
             with transaction.atomic():
-                outbox.record(SAMPLE, aggregate, 5, {'label': 'x'})
+                outbox.record(SAMPLE, aggregate, 5, payload())
                 raise RuntimeError
         except RuntimeError:
             pass
-        outbox.record(SAMPLE, aggregate, 6, {'label': 'x'})
+        outbox.record(SAMPLE, aggregate, 6, payload())
     assert DBTaskResult.objects.count() == 2
 
 
@@ -433,7 +443,7 @@ def test_a_body_over_the_limit_is_rejected_here_for_good(admin, monkeypatch):
 @pytest.mark.django_db
 def test_a_stored_event_that_no_longer_passes_is_rejected_here(admin):
     event = emit()
-    OutboxEvent.objects.filter(pk=event.pk).update(payload={'label': 'x', 'price': 1.5})
+    OutboxEvent.objects.filter(pk=event.pk).update(payload=dict(payload(), price=1.5))
     assert outbox.dispatch()['rejected'] == 1
     event.refresh_from_db()
     assert event.last_error.startswith('invalid_envelope: ')
@@ -450,7 +460,7 @@ def test_a_local_rejection_is_reported_once_without_the_payload(
         monkeypatch.setattr(outbox, 'MAX_EVENT_BYTES', 120)
     else:
         OutboxEvent.objects.filter(pk=event.pk).update(
-            payload={'label': SECRET_LABEL, 'price': 1.5})
+            payload=dict(payload(SECRET_LABEL), price=1.5))
     with django_capture_on_commit_callbacks(execute=True):
         assert outbox.dispatch()['rejected'] == 1
     with django_capture_on_commit_callbacks(execute=True):
@@ -608,41 +618,72 @@ def test_purge_deletes_old_delivered_rows_and_keeps_rejected_ones():
     assert emit(aggregate, 4).sequence == 4
 
 
-# --- Sample -----------------------------------------------------------------------------
+# --- The payload at rest (entry 8: encrypted) ---------------------------------------------
 
-@pytest.mark.django_db
-def test_emit_sample_event_is_refused_unless_enabled(settings):
-    settings.INTERFACE_SAMPLE_EVENTS = False
-    with pytest.raises(CommandError, match='INTERFACE_SAMPLE_EVENTS is off'):
-        call_command('emit_sample_event', str(uuid.uuid4()), '1', stdout=io.StringIO())
-    assert not OutboxEvent.objects.exists()
+def _raw_payload(pk):
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT payload FROM integration_outboxevent WHERE id = %s', [pk])
+        return cursor.fetchone()[0]
 
 
 @pytest.mark.django_db
-def test_emit_sample_event_records_and_is_delivered(settings, admin):
-    settings.INTERFACE_SAMPLE_EVENTS = True
-    aggregate = str(uuid.uuid4())
-    out = io.StringIO()
-    call_command('emit_sample_event', aggregate, '3', '--label', 'staging check', stdout=out)
-    event = OutboxEvent.objects.get()
-    assert out.getvalue() == (f'emit_sample_event: {event.event_id} recorded (aggregate '
-                              f'{aggregate} v3 #1)\n')
-    assert event.payload == {'label': 'staging check'}
-    call_command('emit_sample_event', aggregate, '1', '--region', 'ae', stdout=out)
-    with pytest.raises(CommandError, match='aggregate_id is not a UUID'):
-        call_command('emit_sample_event', 'nope', '1', stdout=out)
+def test_the_payload_is_ciphertext_at_rest_and_sent_in_clear(admin):
+    event = emit(label=SECRET_LABEL)
+    stored = _raw_payload(event.pk)
+    assert stored.startswith('enc:v1:') and SECRET_LABEL not in stored
+    assert 'ana@example.com' not in stored
     outbox.dispatch()
-    assert list(OutboxEvent.objects.values_list('state', flat=True)) == ['delivered',
-                                                                         'rejected']
+    assert state(event) == 'delivered'
+    assert admin.applied == [str(event.event_id)]
 
 
-def test_sample_events_are_refused_on_a_public_site(settings):
+@pytest.mark.django_db(transaction=True)
+def test_the_migration_encrypts_existing_payloads_and_reverses():
+    from django.db.migrations.executor import MigrationExecutor
+    before = [('integration', '0004_config_snapshot')]
+    after = [('integration', '0005_outbox_payload_encrypted')]
+    executor = MigrationExecutor(connection)
+    executor.migrate(before)
+    try:
+        aggregate = uuid.uuid4()
+        with connection.cursor() as cursor:
+            cursor.execute(
+                'INSERT INTO integration_outboxevent (event_id, type, version, aggregate_id, '
+                'aggregate_version, sequence, occurred_at, region, payload, state, attempts, '
+                'next_attempt_at, last_error, created_at) VALUES (%s, %s, 1, %s, 1, 1, %s, '
+                "'eu', %s, 'pending', 0, %s, '', %s)",
+                [uuid.uuid4().hex, SAMPLE, aggregate.hex, timezone.now(),
+                 json.dumps(payload(SECRET_LABEL)), timezone.now(), timezone.now()])
+        executor = MigrationExecutor(connection)
+        executor.migrate(after)
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT payload FROM integration_outboxevent')
+            (stored,) = cursor.fetchone()
+        assert stored.startswith('enc:v1:') and SECRET_LABEL not in stored
+        assert OutboxEvent.objects.get().payload == payload(SECRET_LABEL)
+        executor = MigrationExecutor(connection)
+        executor.migrate(before)
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT payload FROM integration_outboxevent')
+            (stored,) = cursor.fetchone()
+        stored = stored if isinstance(stored, dict) else json.loads(stored)
+        assert stored == payload(SECRET_LABEL)
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute('DELETE FROM integration_outboxevent')
+        executor = MigrationExecutor(connection)
+        executor.loader.build_graph()
+        executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+# --- Checks -----------------------------------------------------------------------------
+
+def test_the_sample_setting_and_its_check_are_gone():
     from integration.checks import check_interface_settings
-    settings.INTERFACE_SAMPLE_EVENTS = True
-    settings.ROBOTS_NOINDEX = True
-    assert check_interface_settings() == []
-    settings.ROBOTS_NOINDEX = False
-    assert [e.id for e in check_interface_settings()] == ['integration.E004']
+    assert not hasattr(django_settings, 'INTERFACE_SAMPLE_EVENTS')
+    assert 'integration.E004' not in {e.id for e in check_interface_settings()}
+    with pytest.raises(CommandError):
+        call_command('emit_sample_event', str(uuid.uuid4()), '1', stdout=io.StringIO())
 
 
 def test_admin_site_must_be_a_peer(settings):
@@ -745,7 +786,7 @@ def test_concurrent_records_on_one_new_aggregate_all_succeed_in_sequence():
     def write(index):
         import time
         with transaction.atomic():
-            outbox.record(SAMPLE, aggregate, index + 1, {'label': 'x'})
+            outbox.record(SAMPLE, aggregate, index + 1, payload())
             time.sleep(0.02)  # hold the counter's lock a little
 
     assert _in_threads(8, write) == []

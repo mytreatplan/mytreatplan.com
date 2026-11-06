@@ -11,6 +11,10 @@ activity record (kind `account`, event `account_purged`, QA A6), tied to its pk 
 only its email, encrypted in the event log (`Event.data`), kept 5 years with the other
 activity records (eventlog.retention), so they can still be tied to the person.
 
+`erase_user` also tells the admin site (`client.erased`, accounts.client_sync, in the
+same transaction), which deletes its copy; the purge sends nothing and deletes every
+outbox row of the purged accounts.
+
 Nothing here logs or returns an email or a name.
 """
 import logging
@@ -25,7 +29,10 @@ from django.utils import timezone
 
 from eventlog.models import Attempt
 from eventlog.service import record_activity
+from integration.models import OutboxEvent
 from legal.models import LegalChoice, LegalDocument
+
+from . import client_sync
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +99,8 @@ def erase_user(user, *, by, now=None):
         user.groups.clear()
         user.user_permissions.clear()
         _withdraw_commercial_consent(user, now)
+        # The admin site deletes its copy (client.erased, epic-admin-interface entry 8).
+        client_sync.emit(user)
         LogEntry.objects.log_actions(user_id=by.pk, queryset=[_LoggedUser(user)],
                                      action_flag=CHANGE, change_message=ERASED_MESSAGE)
     return True
@@ -136,5 +145,9 @@ def purge_erased(now=None, batch_size=500):
             for pk in pks:
                 (ids if _record_purge(pk) else unrecorded).append(pk)
             LegalChoice.objects.filter(user_id__in=ids).delete()
+            # Every outbox row of these accounts, whatever its state (decision 2026-11-06
+            # after review): nothing of them stays in the outbox. Nothing is sent.
+            uids = User.objects.filter(pk__in=ids).values_list('uid', flat=True)
+            OutboxEvent.objects.filter(aggregate_id__in=list(uids)).delete()
             User.objects.filter(pk__in=ids).delete()
         total += len(ids)

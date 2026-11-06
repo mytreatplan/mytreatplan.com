@@ -8,6 +8,8 @@
   and holds no state.
 - `pull_config_task` (entry 4): the configuration snapshot pull, enqueued by the admin
   site's nudge (`integration.config.request_pull`).
+- `resync_client_task` (entry 8): emits one account's client event again
+  (accounts.client_sync.resync), enqueued by the admin site's re-sync.
 """
 import logging
 
@@ -49,3 +51,21 @@ def pull_config_task():
     except config.PullFailed as exc:
         return {'error': exc.code}
     return {'outcome': outcome, 'version': version}
+
+
+@task
+def resync_client_task(uid):
+    """Emit the account `uid`'s current state again (entry 8): enqueued by the admin
+    site's re-sync (`POST /api/v1/clients/resync`). Returns the event type recorded
+    (`client.updated` / `client.erased`), None for a staff account never sent, or
+    'unknown' for a uid that is no longer here (purged meanwhile)."""
+    from django.contrib.auth import get_user_model
+
+    from accounts import client_sync
+    try:
+        event_type = client_sync.resync(uid)
+    except get_user_model().DoesNotExist:
+        logger.warning('client resync: %s is not here', uid)
+        return 'unknown'
+    logger.info('client resync: %s -> %s', uid, event_type or 'nothing (staff)')
+    return event_type

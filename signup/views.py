@@ -39,6 +39,7 @@ from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods, require_POST
 from django_countries import countries
 
+from accounts import client_sync
 from eventlog import service as eventlog
 from eventlog.models import Attempt
 from legal.models import LegalChoice, LegalDocument
@@ -419,6 +420,8 @@ def _create_account(request, index, step, form, pending, attempt):
             user = user_model(email=pending.email, password=pending.password, **{
                 name: getattr(pending, name) for name in PendingRegistration.USER_FIELDS})
             user.save()
+            # The admin site's copy (client.updated, epic-admin-interface entry 8).
+            client_sync.emit(user)
             # The legal choices become the user's (same versions and times), before
             # the pending registration (and its CASCADE) goes.
             LegalChoice.objects.filter(pending_registration=pending).update(
