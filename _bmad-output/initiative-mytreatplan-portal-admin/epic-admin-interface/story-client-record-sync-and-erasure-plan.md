@@ -3,7 +3,7 @@ title: 'Client record sync and erasure'
 type: 'feature'
 ticket: '8'
 created: '2026-11-06'
-status: 'built'
+status: 'done'
 baseline_revision: 'e8ba2d25506c8ed2a60f26b15f27f4ab616ea389'
 route: 'full'
 route_source: 'auto'
@@ -141,3 +141,15 @@ Pass 1 (quick lens, opus, one reviewer per repo, 2026-11-06): 14 findings. mediu
 **Manual checks (staging, after both deploys):**
 - Remove `INTERFACE_SAMPLE_EVENTS` from dev's and admindev's settings.env; `sync_clients --all` on dev and dev-ae → admindev holds their clients with regions eu / ae.
 - A signup on dev and on dev-ae → a client on admindev each; a Django-admin name change → updated; `resync_client <uid>` → rebuilt; erase on dev → removed from admindev; a raw database read shows ciphertext.
+
+## Staging
+
+2026-11-06, run by Claude on the staging host with the user's permission (admin #17 run 42220938758, portal #72 run 42236203609 deployed green):
+1. `INTERFACE_SAMPLE_EVENTS` removed from dev's and admindev's settings.env (without printing them); both restarted and active.
+2. `sync_clients --all`: dev 1 skipped (its only account is staff), dev-ae 1 `client.updated` → admindev holds 1 client in region `ae`; delivered.
+3. A test doctor (ES) created on dev through `UserAdmin.save_model` (the Django-admin add path; a browser signup was not run) → `client.updated` v1 → admindev record (region eu, home eu, names, ES, active, v1).
+4. Its first name changed through `UserAdmin.save_model` (change) → v2 → record updated.
+5. `resync_client <uid>` on admindev → HTTP 202 → v3, record rebuilt.
+6. Raw database reads: admindev's `clients_clientrecord` names and email hold no plain text (ciphertext); dev's outbox payloads of that account hold no plain text.
+7. `erase_user` on dev → `client.erased` v4 → admindev record deleted, its version row kept (client, 4).
+Note: `check --deploy` on dev shows the existing `mytp_publicsite.E001` (draft legal texts, LEGAL_TEXTS_FINAL False), unrelated to this story.
