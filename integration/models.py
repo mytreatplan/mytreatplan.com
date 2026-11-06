@@ -10,6 +10,10 @@
   admin site, written in the caller's transaction by `integration.outbox.record` and sent
   by the dispatcher (`integration.outbox.dispatch`). Delivered rows are deleted after
   OUTBOX_RETENTION_DAYS by the daily `purgeoutbox` job; rejected rows are kept.
+- ConfigState and AdminDirectoryEntry (entry 4, AD-3 item 1, AD-22): the configuration
+  snapshot pulled from the admin site (`integration.config.pull`): the applied version
+  and the pull's state (one row), and the admin directory it carried (who an admin actor
+  UUID is). Replaced together, in one transaction, only by a higher version.
 """
 import uuid
 
@@ -110,3 +114,57 @@ class OutboxEvent(models.Model):
     def __str__(self):
         return (f'{self.type} {self.aggregate_id} v{self.aggregate_version} '
                 f'#{self.sequence} ({self.state})')
+
+
+# --- Configuration snapshot (entry 4) ---------------------------------------------------
+
+class ConfigState(models.Model):
+    """The applied configuration snapshot and the state of its pull (one row, pk 1).
+
+    `version` is the applied snapshot's version (None before the first one);
+    `last_error` the code of the last refused or failed pull (empty after a good one),
+    never the snapshot. `warned_at`: when the one Sentry warning of the current outage (no
+    good pull for an hour) was sent; saved before sending, cleared by the next good pull.
+    `newer_format_version`: the last version kept out because its format is newer than
+    this site reads (warned once per version)."""
+
+    SINGLETON = 1
+
+    id = models.PositiveSmallIntegerField(primary_key=True, default=SINGLETON,
+                                          editable=False)
+    version = models.PositiveBigIntegerField(null=True, blank=True)
+    applied_at = models.DateTimeField(null=True, blank=True)
+    last_pull_at = models.DateTimeField(null=True, blank=True)
+    last_success_at = models.DateTimeField(null=True, blank=True)
+    last_error = models.CharField(max_length=64, blank=True)
+    warned_at = models.DateTimeField(null=True, blank=True)
+    newer_format_version = models.PositiveBigIntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=models.Q(id=1),
+                                   name='integration_configstate_singleton'),
+        ]
+
+    def __str__(self):
+        return f'Configuration snapshot v{self.version or "-"}'
+
+
+class AdminDirectoryEntry(models.Model):
+    """An admin user, from the applied configuration snapshot: the name an admin actor
+    UUID shows in this region's logs (AD-22). Never created here otherwise: admin users
+    exist only on the admin site."""
+
+    id = models.UUIDField(primary_key=True)
+    display_name = models.CharField(max_length=150)
+    title = models.CharField(max_length=150, blank=True)
+    active = models.BooleanField()
+    time_zone = models.CharField(max_length=64)
+
+    class Meta:
+        ordering = ['display_name', 'id']
+        verbose_name_plural = 'admin directory entries'
+
+    def __str__(self):
+        return self.display_name

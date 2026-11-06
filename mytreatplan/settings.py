@@ -362,8 +362,10 @@ INSTALLED_APPS = [
     'upload_spike.apps.UploadSpikeConfig',
     # The interface with the admin site (epic-admin-interface, AD-4): the signed
     # /api/v1/ endpoints, the log of every call received (InterfaceCall), the outbox of
-    # events to the admin site (OutboxEvent, entry 3) and the commands ping_peer,
-    # purge_interface_calls, dispatch_outbox, purge_outbox and emit_sample_event.
+    # events to the admin site (OutboxEvent, entry 3), the configuration snapshot pulled
+    # from it (ConfigState, AdminDirectoryEntry, entry 4) and the commands ping_peer,
+    # purge_interface_calls, dispatch_outbox, purge_outbox, emit_sample_event,
+    # pull_config and show_config.
     'integration.apps.IntegrationConfig',
     # The django.tasks database backend (AD-8, epic-platform entry 9): its table of
     # queued and finished tasks, and the commands db_worker (systemd
@@ -638,5 +640,8 @@ LOGGING = {
         # rejected or not delivered (event id, type, aggregate, error code; never the
         # payload).
         'integration.outbox': {'handlers': ['console'], 'level': 'INFO'},
+        # The configuration snapshot (integration.config, entry 4): each pull's outcome
+        # and version, a refusal's code, the nudges received; never the contents.
+        'integration.config': {'handlers': ['console'], 'level': 'INFO'},
     },
 }
