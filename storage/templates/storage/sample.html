@@ -1,0 +1,72 @@
+{% extends "portal_base.html" %}
+{% comment %}
+Sample uploads (storage.sample): staff only, staging only (STORAGE_SAMPLE_UPLOADS),
+English only (not in the translation catalogue). Replaces the upload spike's page until
+the first real purpose arrives. Its styles are inline so it goes in one piece (Tailwind
+does not scan it).
+{% endcomment %}
+
+{% block title %}Sample uploads &mdash; MyTreatPlan{% endblock %}
+
+{% block head %}{{ block.super }}
+<style>
+  .storage-sample h1{font-size:28px;font-weight:900;line-height:1.2}
+  .storage-sample h2{margin-top:32px;font-size:20px;font-weight:900}
+  .storage-sample p{margin-top:8px;font-size:15px;line-height:1.5}
+  .storage-sample .note{font-size:14px;opacity:.75}
+  .storage-sample .alert{margin-top:16px;padding:12px 20px;border:1px solid currentColor;border-radius:12px}
+  .storage-sample .storage-upload{margin-top:24px}
+  .storage-sample table{margin-top:12px;width:100%;font-size:14px;border-collapse:collapse}
+  .storage-sample th,.storage-sample td{padding:6px 8px;border-bottom:1px solid #ccc;text-align:left;vertical-align:top;word-break:break-all}
+  .storage-sample form{display:inline}
+  .storage-sample button{text-decoration:underline}
+  .storage-sample #storage-log{margin-top:12px;max-height:320px;overflow:auto;padding:12px;border:1px solid #ccc;border-radius:12px;font-size:12px;line-height:1.4;white-space:pre-wrap}
+</style>
+{% endblock %}
+
+{% block portal_content %}
+<div class="storage-sample">
+<h1>Sample uploads</h1>
+<p>
+  Staff-only staging page. Files go straight from this browser to the bucket
+  <strong>{{ bucket|default:"(not set)" }}</strong> at {{ endpoint|default:"(no endpoint)" }},
+  under <code>quarantine/</code>. Do not upload patient data.
+</p>
+
+{% if messages %}{% for message in messages %}<p class="alert" role="status">{{ message }}</p>{% endfor %}{% endif %}
+{% if missing_setting %}
+<p class="alert" role="alert">{{ missing_setting }} is not set in settings.env, so nothing can be signed.</p>
+{% endif %}
+
+{% include "storage/_upload_widget.html" with purpose=purpose max_size=max_size log_id="storage-log" %}
+
+<h2>Stored sample objects</h2>
+<p class="note">Newest first (at most 100). A download link is valid for 5 minutes and
+each download is recorded. <a href="">Reload</a> after an upload.</p>
+<table id="storage-objects">
+  <thead><tr><th>Object</th><th>Name</th><th>Size</th><th>State</th><th>Uploaded</th><th></th></tr></thead>
+  <tbody>
+  {% for obj in objects %}
+  <tr>
+    <td>{{ obj.pk }}</td>
+    <td>{{ obj.original_name }}</td>
+    <td>{{ obj.size }} bytes</td>
+    <td>{{ obj.state }}</td>
+    <td>{{ obj.created_at|date:"c" }}</td>
+    <td>
+      <form method="post" action="{% url 'storage_sample:download' obj.pk %}">{% csrf_token %}<button type="submit">Download</button></form>
+      &middot;
+      <form method="post" action="{% url 'storage_sample:delete' obj.pk %}">{% csrf_token %}<button type="submit">Delete</button></form>
+    </td>
+  </tr>
+  {% empty %}
+  <tr><td colspan="6">No sample objects.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>Event log</h2>
+<p class="note">Copy it into the staging check results after each test.</p>
+<pre id="storage-log"></pre>
+</div>
+{% endblock %}

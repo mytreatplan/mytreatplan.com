@@ -40,6 +40,9 @@ urlpatterns = [
     # The interface with the admin site (integration, AD-4): signed calls only, outside the
     # language prefixes, CSRF and basic auth (Nginx's /api/ block).
     path('api/v1/', include('integration.urls')),
+    # The upload widget's endpoints (storage.views): logged-in users, CSRF; outside the
+    # language prefixes.
+    path('storage/', include('storage.urls')),
 ]
 
 # Portal routes (signup, login, ...). They are served, under the language prefixes, only
@@ -56,17 +59,15 @@ def portal_urlpatterns():
     return list(portal_patterns) if settings.PORTAL_ENABLED else []
 
 
-# Upload spike (epic-platform entry 2; entry 11 deletes it): a staff-only page and its
-# signing endpoint, served under the language prefixes only when UPLOAD_SPIKE_ENABLED is
-# True (dev only). The views also answer 404 while the setting is off.
-upload_spike_patterns = [
-    path('upload-spike/', include('upload_spike.urls')),
-]
-
-
-def upload_spike_urlpatterns():
-    """The upload spike's routes when UPLOAD_SPIKE_ENABLED is on, otherwise none."""
-    return list(upload_spike_patterns) if settings.UPLOAD_SPIKE_ENABLED else []
+# The staging sample uploads page (storage.sample; removed with the sample purpose):
+# served under the language prefixes only when STORAGE_SAMPLE_UPLOADS is True. The views
+# also answer 404 while the setting is off.
+def storage_sample_urlpatterns():
+    """The sample uploads page's routes when STORAGE_SAMPLE_UPLOADS is on, otherwise none."""
+    from storage.urls import sample_urlpatterns
+    if not settings.STORAGE_SAMPLE_UPLOADS:
+        return []
+    return [path('storage/sample/', include(sample_urlpatterns))]
 
 
 # Public pages live under /en/ and /es/. A bare / is redirected by LocaleMiddleware
@@ -74,6 +75,6 @@ def upload_spike_urlpatterns():
 urlpatterns += i18n_patterns(
     path('', include('mytp_publicsite.urls')),
     *portal_urlpatterns(),
-    *upload_spike_urlpatterns(),
+    *storage_sample_urlpatterns(),
     prefix_default_language=True,
 )

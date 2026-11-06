@@ -1,35 +1,39 @@
-"""Set up and inspect the upload spike's bucket (epic-platform entry 2).
+"""Set up and inspect the region's file bucket (AD-9; deploy/README.md "Object storage").
 
-    python manage.py upload_spike_bucket --apply     # set CORS, lifecycle, encryption
-    python manage.py upload_spike_bucket --inspect   # print them and the open uploads
-    python manage.py upload_spike_bucket             # same as --inspect
+    python manage.py storage_bucket --apply     # set CORS, lifecycle, encryption
+    python manage.py storage_bucket --inspect   # print them and the open uploads
+    python manage.py storage_bucket             # same as --inspect
+
+Run --apply with the bucket **owner's** keys in STORAGE_ACCESS_KEY / STORAGE_SECRET_KEY
+in the environment for that one command (they override settings.env; only the owner may
+set a lifecycle rule). The site's own S3 user never gets those rights.
 
 --apply sets, one by one, so a refusal by OVHcloud names exactly the setting it refused:
 
-1. CORS: the origins in UPLOAD_SPIKE_CORS_ORIGINS (default SITE_URL); methods GET, PUT,
-   POST, DELETE; the Content-Type request header; ETag exposed (Uppy needs it).
-2. Lifecycle: abort incomplete multipart uploads 1 day after they start.
+1. CORS: the origins in STORAGE_CORS_ORIGINS (default SITE_URL); methods GET, PUT, POST,
+   DELETE; the Content-Type request header; ETag exposed (Uppy needs it).
+2. Lifecycle: abort incomplete multipart uploads STORAGE_ABORT_INCOMPLETE_DAYS (default 7)
+   days after they start.
 3. Default encryption: SSE-S3 (AES256).
 
 Then it reads each back. It exits with an error naming every refused setting. Messages
-never contain the bucket keys. Uses the UPLOAD_SPIKE_S3_* settings, never the backup ones.
+never contain the bucket keys. Uses the STORAGE_* settings, never the backup ones.
 """
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
-from upload_spike import s3
+from storage import s3
 
 CORS_METHODS = ['GET', 'PUT', 'POST', 'DELETE']
 CORS_HEADERS = ['Content-Type']
 CORS_EXPOSE = ['ETag']
 CORS_MAX_AGE = 3000
 LIFECYCLE_RULE_ID = 'abort-incomplete-multipart-uploads'
-ABORT_AFTER_DAYS = 1
 SSE_ALGORITHM = 'AES256'
 
 
 def cors_origins():
-    return [o.strip().rstrip('/') for o in settings.UPLOAD_SPIKE_CORS_ORIGINS if o.strip()] \
+    return [o.strip().rstrip('/') for o in settings.STORAGE_CORS_ORIGINS if o.strip()] \
         or [settings.SITE_URL]
 
 
@@ -48,7 +52,8 @@ def lifecycle_configuration():
         'ID': LIFECYCLE_RULE_ID,
         'Filter': {'Prefix': ''},
         'Status': 'Enabled',
-        'AbortIncompleteMultipartUpload': {'DaysAfterInitiation': ABORT_AFTER_DAYS},
+        'AbortIncompleteMultipartUpload': {
+            'DaysAfterInitiation': settings.STORAGE_ABORT_INCOMPLETE_DAYS},
     }]}
 
 
@@ -58,48 +63,34 @@ def encryption_configuration():
     }]}
 
 
-def _scrub(text):
-    text = str(text)
-    for secret in (settings.UPLOAD_SPIKE_S3_SECRET_KEY, settings.UPLOAD_SPIKE_S3_ACCESS_KEY):
-        if secret:
-            text = text.replace(secret, '[redacted]')
-    return text
-
-
 def describe_error(exc):
-    """A short, credential-free description of an S3 failure."""
-    response = getattr(exc, 'response', None)
-    if isinstance(response, dict):
-        error = response.get('Error', {})
-        status = response.get('ResponseMetadata', {}).get('HTTPStatusCode')
-        code = error.get('Code', 'error')
-        message = error.get('Message', '')
-        return _scrub(f'{code} (HTTP {status})' + (f': {message}' if message else ''))
-    return _scrub(f'{type(exc).__name__}: {exc}')
+    return s3.describe_error(exc, with_message=True)
 
 
 class Command(BaseCommand):
-    help = "Set (--apply) and print (--inspect) the upload spike bucket's CORS, lifecycle and encryption."
+    help = "Set (--apply) and print (--inspect) the file bucket's CORS, lifecycle and encryption."
 
     def add_arguments(self, parser):
         parser.add_argument('--apply', action='store_true',
-                            help='Set CORS, the abort-incomplete lifecycle rule and default encryption.')
+                            help='Set CORS, the abort-incomplete lifecycle rule and default '
+                                 'encryption (with the bucket owner\'s keys).')
         parser.add_argument('--inspect', action='store_true',
                             help='Print the settings and the incomplete multipart uploads (the default).')
 
     def handle(self, *args, **options):
         missing = s3.missing_setting()
         if missing:
-            raise CommandError(f'{missing} is not set (see deploy/staging.env.example).')
+            raise CommandError(f'{missing} is not set (deploy/README.md, "Object storage").')
         client = s3.make_client()
-        bucket = settings.UPLOAD_SPIKE_S3_BUCKET
-        self.stdout.write(f'Bucket {bucket} at {settings.UPLOAD_SPIKE_S3_ENDPOINT}')
+        bucket = settings.STORAGE_BUCKET
+        self.stdout.write(f'Bucket {bucket} at {settings.STORAGE_ENDPOINT}')
 
         refused = []
-        if options['apply']:
-            refused = self.apply(client, bucket)
-        # Always: on its own (--inspect or no flag), or to read back what --apply set.
-        self.inspect(client, bucket)
+        with s3.out_of_sentry():
+            if options['apply']:
+                refused = self.apply(client, bucket)
+            # Always: on its own (--inspect or no flag), or to read back what --apply set.
+            self.inspect(client, bucket)
         if refused:
             raise CommandError('OVHcloud refused: ' + ', '.join(refused))
 
@@ -175,4 +166,5 @@ class Command(BaseCommand):
         for upload in uploads:
             initiated = upload.get('Initiated')
             when = initiated.isoformat() if hasattr(initiated, 'isoformat') else initiated
-            self.stdout.write(f"  {upload.get('Key')} started {when} uploadId {upload.get('UploadId')}")
+            # The key is a server-made UUID key (no file name); the upload id is omitted.
+            self.stdout.write(f"  {upload.get('Key')} started {when}")

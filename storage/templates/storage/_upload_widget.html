@@ -1,0 +1,21 @@
+{% load static %}{% comment %}
+The upload widget (storage/upload.js, Uppy 6 with @uppy/aws-s3 `signRequest`). Include it
+with the purpose and its size limit:
+
+    {% include "storage/_upload_widget.html" with purpose="sample" max_size=max_size log_id="storage-log" %}
+
+`log_id` (optional) names a <pre> the widget writes its event log to. After each stored
+upload the element fires `storage:uploaded` with `detail` {id, size, purpose}.
+Every S3 request is signed by /storage/sign/; the browser never holds bucket keys, and the
+file name goes only to /storage/complete/ (stored encrypted).
+{% endcomment %}
+<link rel="stylesheet" href="{% static 'css/uppy.min.css' %}">
+<script src="{% static 'js/uppy.min.js' %}" defer></script>
+<script src="{% static 'storage/upload.js' %}" defer></script>
+<div class="storage-upload"
+     data-sign-url="{% url 'storage:sign' %}"
+     data-complete-url="{% url 'storage:complete' %}"
+     data-csrf-token="{{ csrf_token }}"
+     data-purpose="{{ purpose }}"
+     data-max-size="{{ max_size }}"{% if log_id %}
+     data-log-id="{{ log_id }}"{% endif %}></div>

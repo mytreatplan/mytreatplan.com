@@ -75,8 +75,29 @@ REGION_SITE_URLS = {
     for code, profile in PROFILES.items()
 }
 
-# The region's object-storage endpoint (AD-9): the profile's default, settings.env overrides.
+# The region's file bucket (AD-9, epic-platform entry 11; the `storage` app and
+# deploy/README.md "Object storage"). Doctors' uploads go from the browser straight to it
+# with presigned S3 multipart; the site signs each request and keeps a StoredObject per
+# file. STORAGE_ENDPOINT defaults to the region profile's; STORAGE_REGION to the region in
+# an OVHcloud endpoint (https://s3.<region>.io.cloud.ovh.net). The bucket and its S3
+# user's keys are settings.env only (regions/profiles.py); that user can reach only this
+# bucket, and the browser never sees its keys. STORAGE_CORS_ORIGINS lists the origins the
+# bucket's CORS allows (comma-separated; default SITE_URL), and
+# STORAGE_ABORT_INCOMPLETE_DAYS the days after which the bucket aborts an unfinished
+# upload; `manage.py storage_bucket --apply` sets both. STORAGE_SAMPLE_UPLOADS (staging
+# only; the check storage.E002 refuses it on a site without ROBOTS_NOINDEX) turns on the
+# staff-only sample purpose and its page at /<lang>/storage/sample/.
 STORAGE_ENDPOINT = config('STORAGE_ENDPOINT', default=REGION_PROFILE.storage_endpoint)
+_ovh_storage_region = re.fullmatch(r'https://s3\.([a-z0-9-]+)\.io\.cloud\.ovh\.net/?',
+                                   STORAGE_ENDPOINT)
+STORAGE_REGION = config('STORAGE_REGION',
+                        default=_ovh_storage_region.group(1) if _ovh_storage_region else '')
+STORAGE_BUCKET = config('STORAGE_BUCKET', default='')
+STORAGE_ACCESS_KEY = config('STORAGE_ACCESS_KEY', default='')
+STORAGE_SECRET_KEY = config('STORAGE_SECRET_KEY', default='')
+STORAGE_CORS_ORIGINS = config('STORAGE_CORS_ORIGINS', default='', cast=Csv())
+STORAGE_ABORT_INCOMPLETE_DAYS = config('STORAGE_ABORT_INCOMPLETE_DAYS', default=7, cast=int)
+STORAGE_SAMPLE_UPLOADS = config('STORAGE_SAMPLE_UPLOADS', default=False, cast=bool)
 
 # The deployment's site name on its host (epic-platform entry 1): each site has its own
 # Linux user mytp-<SITE>, home SITE_HOME and units (deploy/provision.sh). Staging runs
@@ -245,21 +266,6 @@ BACKUP_TMP_DIR = config('BACKUP_TMP_DIR', default=str(SITE_HOME / 'shared' / 'ba
 # deploy/restore-db.sh and the existing dumps use.
 MYTP_BACKUP_BASENAME = 'mytreatplan'
 
-# Upload spike (epic-platform entry 2; removed by entry 11): a staff-only page on dev
-# that uploads files from the browser straight to an OVHcloud Object Storage bucket with
-# presigned S3 multipart (Uppy), and `manage.py upload_spike_bucket` to set and inspect
-# the bucket's CORS, lifecycle and encryption. Off by default; on only in dev's
-# settings.env. The bucket is a staging-only one (not the backup bucket) and its S3 user
-# can reach only that bucket. The keys are typed into settings.env on the server only;
-# the browser never sees them. UPLOAD_SPIKE_CORS_ORIGINS lists the origins the bucket's
-# CORS allows (comma-separated; default SITE_URL).
-UPLOAD_SPIKE_ENABLED = config('UPLOAD_SPIKE_ENABLED', default=False, cast=bool)
-UPLOAD_SPIKE_S3_ENDPOINT = config('UPLOAD_SPIKE_S3_ENDPOINT', default='')
-UPLOAD_SPIKE_S3_REGION = config('UPLOAD_SPIKE_S3_REGION', default='')
-UPLOAD_SPIKE_S3_BUCKET = config('UPLOAD_SPIKE_S3_BUCKET', default='')
-UPLOAD_SPIKE_S3_ACCESS_KEY = config('UPLOAD_SPIKE_S3_ACCESS_KEY', default='')
-UPLOAD_SPIKE_S3_SECRET_KEY = config('UPLOAD_SPIKE_S3_SECRET_KEY', default='')
-UPLOAD_SPIKE_CORS_ORIGINS = config('UPLOAD_SPIKE_CORS_ORIGINS', default='', cast=Csv())
 
 # OVHcloud KMS (story 1.15): data keys for field encryption are wrapped by a service key
 # in an OKMS domain in France (encryption policy; the key provider, story 2.12, is
@@ -357,9 +363,11 @@ INSTALLED_APPS = [
     # Legal documents (versioned, English and Spanish) and the choices made on them.
     'legal.apps.LegalConfig',
     'mytp_publicsite.apps.MytpPublicsiteConfig',
-    # Upload spike (epic-platform entry 2): no models; its routes are served only with
-    # UPLOAD_SPIKE_ENABLED. Entry 11 deletes the app.
-    'upload_spike.apps.UploadSpikeConfig',
+    # Stored files (AD-9, epic-platform entry 11): StoredObject, PendingUpload and
+    # DeletionTrace, the upload endpoints /storage/sign/ and /storage/complete/, the
+    # download and delete service, the delete task, the staging sample page and the
+    # command storage_bucket.
+    'storage.apps.StorageConfig',
     # The interface with the admin site (epic-admin-interface, AD-4): the signed
     # /api/v1/ endpoints, the log of every call received (InterfaceCall), the outbox of
     # events to the admin site (OutboxEvent, entry 3), the configuration snapshot pulled
