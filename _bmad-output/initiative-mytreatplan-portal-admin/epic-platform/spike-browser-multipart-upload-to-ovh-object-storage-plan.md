@@ -3,7 +3,7 @@ title: 'Spike: browser multipart upload to OVH Object Storage'
 type: 'feature'
 ticket: '2'
 created: '2026-10-29'
-status: 'built'
+status: 'done'
 baseline_revision: '47a300292c1417f7ba1cba1ea85d732a55cac46a'
 route: 'full'
 route_source: 'auto'
@@ -116,3 +116,4 @@ context:
 - CI run 41020471632 on master: 1539 passed on PostgreSQL 17; deploy-staging succeeded.
 - Check 1 (deploy ok, `/en/upload-spike/` 404 with the setting off): confirmed by the user.
 - Checks 2–7 (bucket, settings on dev, `--apply`, browser tests T0–T7, results table): pending, run by the user; the plan stays `built` until the findings are recorded.
+- 2026-11-06, closed by the user's decision: the spike is done with T0, T1, T2, T4 and T6 working (findings file, Results). T3 (resume after a network drop), T5 (lifecycle cleans an abandoned upload) and T7 (404 for anonymous / non-staff / setting off) are non-critical and not run; they move to entry 11 (regional object storage), whose plan must cover them as checks: T3 decides the resume behaviour noted under "For entry 11", T5 the lifecycle rule, T7 the access gates.
