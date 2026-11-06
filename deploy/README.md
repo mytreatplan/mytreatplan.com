@@ -34,7 +34,7 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp-dev/shared/kms-client.*`; daily `kmscheck` job |
 | Signup and login codes | Twilio Verify (email via SendGrid, WhatsApp, SMS); credentials in `shared/settings.env` ("Twilio Verify") |
 | Geo-IP | DB-IP Lite country database `/srv/mytp-dev/shared/geoip/dbip-country-lite.mmdb` (CC BY 4.0), monthly `geoipupdate` job ("Geo-IP database") |
-| Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute ("Interface with the admin site", "Outbox") |
+| Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute; configuration snapshot pulled from it, `pullconfig` job every 5 minutes, `show_config` ("Interface with the admin site", "Outbox", "Configuration snapshot") |
 | Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -2015,6 +2015,42 @@ sudo -u mytp-dev ./venv/bin/python manage.py emit_sample_event $A 3 --region ae 
 With admindev's Gunicorn stopped, an emitted event stays pending with `attempts` and
 `last_error` growing (1, 2, 4 ... minutes apart); once it is started again, the next run
 delivers it. Remove `INTERFACE_SAMPLE_EVENTS` when done.
+
+### Configuration snapshot
+
+The admin site owns the configuration every region applies (epic-admin-interface entry 4,
+AD-3 item 1, AD-22, interface I5; `integration.config`): for now the admin directory, who
+an admin actor UUID is (deleted admin users stay listed, inactive). This portal pulls it
+and keeps applying the last good one while the admin site is down. Admin users are never
+created here.
+
+| What | Where |
+|------|-------|
+| Pull | `pullconfig` job every 5 minutes (`manage.py pull_config`), plus a task on the worker after each signed `POST /api/v1/config/nudge` from the admin site (answered 202; nudges coalesce into one queued pull). A signed `GET <admin>/api/v1/config` to the only `INTERFACE_PEERS` entry (or `INTERFACE_ADMIN_SITE`) |
+| Check | the snapshot's signature (admindev's key from `INTERFACE_PEER_KEYS`, `typ: config`, this site as the audience, the SHA-256 of the snapshot and its version) and its shape (mytp-core's `verify_snapshot`) before anything is applied |
+| Apply | one transaction, the state row locked: a higher version replaces the directory (`integration_admindirectoryentry`) and becomes the applied one (`integration_configstate`); the same version changes nothing; an older one is refused (`stale`) |
+| Refusals | the applied snapshot stays; `last_error` holds the code only: `network`, `http_<status>[_<code>]`, `bad_answer`, `bad_signature`, `audience`, `expired`, `invalid_body`, `newer_format` (the admin site needs a newer mytp-core: a warning line once per version), `stale`, `not_configured`, `signing_key` (the KMS could not unwrap the signing key), `apply_failed`; `pull_config` prints one line with the code and exits 0 (the outage warning below reports it once), except `not_configured` (no admin site, peer keys or signing key), which fails the job so its Sentry monitor shows it |
+| Outage | no good pull for an hour: one Sentry warning "Configuration snapshot not pulled for an hour (<code>)" per outage, never the contents; the next good pull resets it |
+
+Look at it (names of admin users are not patient data):
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py show_config    # version, applied at, last pull, last good pull, last error, the directory
+sudo -u mytp-dev ./venv/bin/python manage.py pull_config    # pull_config: v<n> applied | unchanged, or pull_config: refused (<code>); ...
+```
+
+The `pullconfig` timer reaches a site only when `provision.sh` runs again after the
+merge's deploy (see [Sites on the staging host](#sites-on-the-staging-host)); keep its
+Sentry monitor `mytp-<site>-pullconfig` enabled for a while, as `dispatchoutbox`'s, or
+disable it after its first run as for the other jobs. dev-ae pulls from admindev once its
+keys are set up as dev's (see [Set up the keys](#set-up-the-keys-dev-and-admindev): its
+own signing key, admindev's `add_peer_key ae ... --site dev-ae`, `INTERFACE_PEERS` and
+`INTERFACE_PEER_KEYS` in dev-ae's settings.env).
+
+Staging check: edit an admin user's display name on admindev; within seconds
+`show_config` on dev and dev-ae shows the new name and the next version. Stop admindev's
+Gunicorn and run `pull_config` on dev: it prints `refused (network)` or `refused (http_502)`, and
+`show_config` still lists the directory; start it again, and the next pull is good.
 
 ## Rollback
 

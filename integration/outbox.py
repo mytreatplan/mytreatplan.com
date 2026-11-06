@@ -172,7 +172,13 @@ def record(event_type, aggregate_id, aggregate_version, payload, *, version=1,
 # --- Sending ----------------------------------------------------------------------------
 
 def admin_site():
-    """The admin site's name and events URL (INTERFACE_ADMIN_SITE, or the only
+    """The admin site's name and events URL (`admin_site_url`)."""
+    site, base_url = admin_site_url()
+    return site, base_url + EVENTS_PATH
+
+
+def admin_site_url():
+    """The admin site's name and base URL (INTERFACE_ADMIN_SITE, or the only
     INTERFACE_PEERS entry); InterfaceConfigurationError when it cannot be told."""
     site = (getattr(settings, 'INTERFACE_ADMIN_SITE', '') or '').strip()
     peers = parse_peers(getattr(settings, 'INTERFACE_PEERS', '') or '')
@@ -184,7 +190,7 @@ def admin_site():
     if site not in peers:
         raise interface.InterfaceConfigurationError(
             f'INTERFACE_ADMIN_SITE {site!r} is not in INTERFACE_PEERS.')
-    return site, peers[site] + EVENTS_PATH
+    return site, peers[site]
 
 
 def backoff(attempts):
