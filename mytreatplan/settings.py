@@ -373,6 +373,10 @@ INSTALLED_APPS = [
     # purge_interface_calls, dispatch_outbox, purge_outbox, pull_config and show_config;
     # the client re-sync endpoint (entry 8).
     'integration.apps.IntegrationConfig',
+    # The catalogue from the admin site's configuration snapshot (epic-catalogue entry 2):
+    # read-only tables filled by the snapshot apply, the resolver that prices
+    # (catalogue.resolver) and the command price_catalogue.
+    'catalogue.apps.CatalogueConfig',
     # The django.tasks database backend (AD-8, epic-platform entry 9): its table of
     # queued and finished tasks, and the commands db_worker (systemd
     # mytp-<site>-worker) and prune_db_task_results (the `prunetasks` job).
