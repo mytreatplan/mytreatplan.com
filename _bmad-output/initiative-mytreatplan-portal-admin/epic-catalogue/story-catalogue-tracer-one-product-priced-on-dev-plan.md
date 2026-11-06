@@ -3,7 +3,7 @@ title: 'Catalogue tracer: one product priced on dev'
 type: 'feature'
 ticket: '2'
 created: '2026-11-06'
-status: 'built'
+status: 'done'
 baseline_revision: '5618ec238cd0099c8a1443899fd7c036c6ace3d0'
 route: 'full'
 route_source: 'auto'
@@ -134,3 +134,11 @@ Pass 1 (quick lens, opus, one reviewer per repo, 2026-11-06): 18 findings. mediu
 
 **Manual checks (staging, after both deploys):**
 - As a Commercial Manager on admindev: create the TPS product (100.00 EUR) and a basic Iberia subscription (10 %); both in the audit log. On dev: `pull_config`, then `price_catalogue --country ES --tier basic` → 90.00 EUR; `--country US` → nothing.
+
+## Staging
+
+2026-11-06, run by Claude on the staging host with the user's permission (the user delegated merging and staging; admin #18 merged, run 42243576368 green; portal #73 merged, run 42244358306 green on dev and dev-ae):
+1. On admindev, through `catalogue.service` (as the catalogue pages do; actor a Sysadmin, since admindev has no Commercial Manager user): product "Staging TPS 5.2", TPS (plain), 100.00 EUR; subscription basic · Iberia, 10.00 % → the stored snapshot went from v2 to v4 with the catalogue section (4 country groups, 1 product, 1 subscription).
+2. Audit log: `create catalogue.product "Staging TPS 5.2"` and `create catalogue.subscription "Basic · Iberia"`, actor Antonio de Andres, 15:44:22 UTC.
+3. dev and dev-ae had already applied v4 through the nudge (`pull_config`: v4 unchanged); `price_catalogue --country ES --tier basic` → "Staging TPS 5.2 tps 90.00 EUR" on both; `--country US` → no offers.
+Not checked in a browser: the catalogue pages on admindev (covered by the view tests).
