@@ -3,7 +3,7 @@ attempt can be reconstructed step by step. Login activity (epic-login entry 4) i
 Attempt of kind `login` per record (eventlog.service.record_activity), tied to the
 account by `account_id`; so is each page shown to a logged-in user (kind `page`, epic-login
 entry 7, accounts.page_records), and an erased account's purge (kind `account`, QA A6,
-accounts.erasure).
+accounts.erasure), and each download of a stored file (kind `file`, storage.service).
 
 Only `Event.data` holds personal values (email, IP address, browser string, ...), encrypted
 with the 2.2 field encryption (accounts.crypto). The other columns are non-personal, so
@@ -23,7 +23,7 @@ class Attempt(models.Model):
     outcome. Never a foreign key to a user or a pending registration, so it outlives both.
 
     `account_id` is the account's pk (a plain number, not a ForeignKey, kept after the
-    account is purged), set for login, page and account records; never the email blind index, which
+    account is purged), set for login, page, account and file records; never the email blind index, which
     erasure replaces."""
 
     SIGNUP = 'signup'
@@ -31,6 +31,9 @@ class Attempt(models.Model):
     PAGE = 'page'
     # An erased account's purge (accounts.erasure, QA A6): its pk and encrypted email.
     ACCOUNT = 'account'
+    # A stored file's download or refused download (storage.service.download_url, AD-9):
+    # the object's UUID and the reason, never its name.
+    FILE = 'file'
 
     # AD-5: crosses sites; its UUID primary key is its global id.
     CROSSES_SITES = True

@@ -33,3 +33,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-admin-access/story-refactor-sweep-plan.md`
   summary: Status (3.13, 2026-11-05) of the separate Twilio Verify service for the fresh-code checks (3.5): still open, before epic-clinical-ops' patient-record download relies on it.
   evidence: needs the user to create the Verify service, then a second SID setting and the provider wiring.
+- source_plan: `epic-platform/story-regional-object-storage-service-plan.md`
+  summary: `StoredObject.owner` uses PROTECT, so once a real purpose sets an owner, `accounts.erasure.purge_erased` must delete (or detach) that user's objects first, or one owner blocks its whole purge batch.
+  evidence: 1.11 review (2026-11-06): `purge_erased` deletes users in batches of 500 and clears only `LegalChoice`; a ProtectedError rolls the batch back on every run.

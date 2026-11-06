@@ -1,4 +1,4 @@
-"""The upload spike's browser test (marker `browser`): skipped where Playwright's Chromium
+"""The storage widget's browser test (marker `browser`): skipped where Playwright's Chromium
 was not downloaded, with plain HTTP settings for live_server (as the other apps)."""
 import os
 

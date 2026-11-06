@@ -29,6 +29,7 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Scheduled jobs | `mytp-dev-job@<name>.timer` → `mytp-dev-job@<name>.service`, one per line of `jobs.conf` |
 | Background tasks | `mytp-dev-worker.service` (`manage.py db_worker`, django-tasks-db); heartbeat on Sentry monitor `mytp-dev-worker` ("Background tasks") |
 | Health URL | `https://dev.mytpdso.com/healthz` (no password), watched by UptimeRobot |
+| Object storage | doctors' files in the region's bucket (`mytp-dev-files`, GRA), `STORAGE_*` in `shared/settings.env`; `storage_bucket --apply/--inspect`; staff sample page `/en/storage/sample/` ("Object storage") |
 | Off-region backups | nightly `backupdb` job → Object Storage SBG (`age`-encrypted); restore test: `restore-db.sh` |
 | Field keys | KMS-wrapped: `FIELD_KMS_KEYS`, `BLIND_INDEX_KMS_KEY` in `shared/settings.env` (`FIELD_KEY_PROVIDER=accounts.crypto.KMSKeyProvider`); password manager: key ids and wrapped values, never plain keys (step 12, "Keys (KMS)") |
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp-dev/shared/kms-client.*`; daily `kmscheck` job |
@@ -1203,6 +1204,158 @@ into the new database service with `age --decrypt -i <key> <dump> | pg_restore -
 --no-privileges -d <new database>`; `restore-db.sh` only restores into `*_restore_test`
 on purpose.
 
+## Object storage
+
+Doctors' files (records, STL files, photos; up to 1 GiB each) go from the browser
+straight to the region's bucket with presigned S3 multipart (AD-9, the `storage` app).
+The site signs every S3 request with its own S3 user's keys (the browser never sees
+them), keeps one `StoredObject` per completed upload (the file name field-encrypted) and
+deletes through a background task that leaves a `DeletionTrace` (kept for good).
+
+| What | dev |
+|------|-----|
+| Bucket | `mytp-dev-files`, OVHcloud Object Storage **GRA** (the database's region; never the backup bucket), owner `mytp-backup-admin` |
+| Keys | `STORAGE_*` in `shared/settings.env` (`deploy/staging.env.example`): the site's S3 user `mytp-dev-files`, limited to this bucket |
+| Object keys | `quarantine/<uuid>` on upload; `clean/<uuid>` once scanned (entry 12). Server-made; never a file name |
+| Signed URLs | 15 minutes per upload request; downloads 5 minutes, each recorded first (eventlog kind `file`: object UUID and reason, never the name) |
+| Uploads | multipart only, 16 MiB parts; 1 GiB limit per file by default (per purpose) |
+| Abandoned uploads | aborted by the bucket's lifecycle rule after `STORAGE_ABORT_INCOMPLETE_DAYS` (7) days |
+| Sweep | hourly `sweepstorage` job (`manage.py sweep_storage`, :20 UTC): deletes `quarantine/` objects with no `StoredObject` row older than a day (an upload whose recording never came) or over their purpose's limit, forgets expired pending uploads, and enqueues again deletions not done yet (`delete_requested_at`); prints counts only. Its timer reaches a site when `provision.sh` runs again; on a site without the bucket settings it skips the bucket step |
+| Encryption at rest | SSE-S3 (AES256) by default on the bucket |
+| Sample page | `/en/storage/sample/`, staff only, with `STORAGE_SAMPLE_UPLOADS=True` (staging only: `check` refuses it without `ROBOTS_NOINDEX`) |
+| dev-ae | none yet: its own EU bucket and S3 user come later (`STORAGE_*` stay unset there) |
+
+No key, URL, file name or credential goes into a task argument, a log line or Sentry
+(AD-23); the admin site shows no files.
+
+### Bucket and S3 users
+
+The bucket exists (made for the upload spike, entry 2), owned by the admin user
+`mytp-backup-admin`, whose keys stay in the team password manager and never go on the
+server: only the bucket **owner** can set its lifecycle rule (another user gets
+`AccessDenied` even with `s3:*`). For a new region's bucket, do the same: Object Storage →
+*Create object container*, S3 API, the region's location, private, linking the admin user
+as owner.
+
+The site's S3 user (`mytp-dev-files`; Public Cloud → Users & Roles, role *ObjectStore
+operator*, then Object Storage → *S3 users* → generate its credentials) gets only this
+policy (import it; replace the bucket name). No bucket-configuration actions: the owner
+sets those.
+
+```json
+{
+  "Statement": [{
+    "Sid": "PortalFiles",
+    "Effect": "Allow",
+    "Action": [
+      "s3:PutObject", "s3:GetObject", "s3:DeleteObject", "s3:ListBucket",
+      "s3:GetBucketLocation", "s3:ListBucketMultipartUploads",
+      "s3:ListMultipartUploadParts", "s3:AbortMultipartUpload"
+    ],
+    "Resource": ["arn:aws:s3:::mytp-dev-files", "arn:aws:s3:::mytp-dev-files/*"]
+  }]
+}
+```
+
+OVHcloud applies a new policy gradually: for several minutes after an import, requests may
+get `403 AccessDenied` (the widget retries a refused part once, then the upload fails).
+Wait about ten minutes before testing.
+
+### Settings (rename of dev's spike keys)
+
+dev's `settings.env` still has the spike's `UPLOAD_SPIKE_*` lines, which the code no longer
+reads. Rename them in place without printing any value, then check the names only:
+
+```sh
+sudo -u mytp-dev sed -i \
+  -e 's/^UPLOAD_SPIKE_S3_ENDPOINT=/STORAGE_ENDPOINT=/' \
+  -e 's/^UPLOAD_SPIKE_S3_REGION=/STORAGE_REGION=/' \
+  -e 's/^UPLOAD_SPIKE_S3_BUCKET=/STORAGE_BUCKET=/' \
+  -e 's/^UPLOAD_SPIKE_S3_ACCESS_KEY=/STORAGE_ACCESS_KEY=/' \
+  -e 's/^UPLOAD_SPIKE_S3_SECRET_KEY=/STORAGE_SECRET_KEY=/' \
+  -e 's/^UPLOAD_SPIKE_CORS_ORIGINS=/STORAGE_CORS_ORIGINS=/' \
+  -e 's/^UPLOAD_SPIKE_ENABLED=True$/STORAGE_SAMPLE_UPLOADS=True/' \
+  /srv/mytp-dev/shared/settings.env
+sudo ls -l /srv/mytp-dev/shared/settings.env        # still mytp-dev, -rw-------
+sudo grep -oE '^(STORAGE|UPLOAD_SPIKE)_[A-Z_]*=' /srv/mytp-dev/shared/settings.env
+#   STORAGE_ENDPOINT= STORAGE_REGION= STORAGE_BUCKET= STORAGE_ACCESS_KEY=
+#   STORAGE_SECRET_KEY= STORAGE_CORS_ORIGINS= STORAGE_SAMPLE_UPLOADS=; no UPLOAD_SPIKE_
+sudo -u mytp-dev-ae sed -i '/^UPLOAD_SPIKE_/d' /srv/mytp-dev-ae/shared/settings.env   # dev-ae's leftover
+cd /srv/mytp-dev/current && sudo -u mytp-dev ./venv/bin/python manage.py check   # no storage.E00x
+sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker
+```
+
+`STORAGE_ABORT_INCOMPLETE_DAYS` defaults to 7; set it only to change the lifecycle period
+(then run `--apply` again).
+
+### CORS, lifecycle and encryption
+
+`manage.py storage_bucket --apply` sets, one at a time, the CORS rule (the origins in
+`STORAGE_CORS_ORIGINS`, default `SITE_URL`; methods GET, PUT, POST, DELETE; header
+`Content-Type`; `ETag` exposed), the lifecycle rule `abort-incomplete-multipart-uploads`
+(abort uploads not finished `STORAGE_ABORT_INCOMPLETE_DAYS` days after they started;
+this replaces the spike's 1-day rule) and default encryption SSE-S3, then reads each back.
+A refusal prints `set <name>: REFUSED <code> (HTTP <status>): <message>` and the command
+exits naming it. Its output never contains the keys.
+
+It needs the bucket owner's keys, passed in the environment for that one command (the
+environment overrides `settings.env`). Typed at a prompt (not echoed, not in the shell
+history), on the staging host:
+
+```sh
+cd /srv/mytp-dev/current
+read -rs OWNER_ACCESS_KEY; read -rs OWNER_SECRET_KEY     # paste each, then Enter
+sudo -u mytp-dev env STORAGE_ACCESS_KEY="$OWNER_ACCESS_KEY" STORAGE_SECRET_KEY="$OWNER_SECRET_KEY" \
+    ./venv/bin/python manage.py storage_bucket --apply
+unset OWNER_ACCESS_KEY OWNER_SECRET_KEY
+```
+
+(While it runs, the keys are visible in the host's process list to its administrators.)
+Read it back at any time with the site's own keys:
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py storage_bucket --inspect
+#   CORS: 1 rule(s) ... expose ['ETag'] ...; lifecycle: ... abort-incomplete-after 7 day(s);
+#   encryption: AES256; incomplete uploads: <n> (each quarantine/<uuid> with its start time)
+```
+
+If the site's user may not read the bucket configuration, those three lines show
+`AccessDenied`; run `--inspect` the same way as `--apply` instead.
+
+### Staging checks (dev, with the sample page)
+
+Log in at `https://dev.mytpdso.com/admin/` with a staff account, open
+`https://dev.mytpdso.com/en/storage/sample/` and copy the page's event log into the
+story's results after each test. Test files only, never patient data
+(`dd if=/dev/urandom of=~/Desktop/storage-1g.bin bs=1m count=1024; shasum -a 256 ~/Desktop/storage-1g.bin`).
+
+- **T1** Chrome, 1 GB: the log ends with `stored <uuid>: 1073741824 bytes (matches)`.
+  Record the measured time and MiB/s (the `uploaded ... in <s> s, <n> MiB/s` line) in the
+  story's results, against the spike's 4.7 MiB/s. Uppy 6.0.5 sends one file's 16 MiB parts
+  one after another (`limit: 3` is across files; user decision after review).
+- **T3** Network drop: turn Wi-Fi off for about 30 s at about 30 %, back on, then press
+  Uppy's retry. Record whether it **resumed** (`signed ListParts`, no new
+  `signed CreateMultipartUpload`) or restarted, and that it completes.
+- **T4** Checksum: Download the T1 (or T3) object from the list within 5 minutes;
+  `shasum -a 256` matches the original.
+- **T5** Abandoned upload: start a 1 GB upload, close the tab at about 20 %;
+  `storage_bucket --inspect` lists it. More than 7 days later (OVHcloud may apply the
+  rule a day late): `incomplete uploads: 0`.
+- **T7** Gates: `/en/storage/sample/` answers 404 in a private window, for a non-staff
+  account, and on dev-ae (setting off).
+- **Download expiry:** copy a Download link's target (the redirect) and open it again
+  5 minutes and 1 second later: OVHcloud refuses it (`AccessDenied`, request has
+  expired). The access record is there:
+  `sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from eventlog.models import Event; print(Event.objects.filter(attempt__kind='file').values_list('event', 'reason', 'created_at')[:5])"`.
+- **Sweep:** `sudo -u mytp-dev ./venv/bin/python manage.py sweep_storage` prints
+  `sweep_storage: <n> pending uploads forgotten, orphan objects <n> deleted, <n> deletions
+  enqueued again`; after the merge, run `provision.sh dev` again for its timer.
+- **Delete:** Delete an object; with the worker running, it disappears from the list and
+  from `--inspect`'s bucket, and its trace is there:
+  `... shell -c "from storage.models import DeletionTrace; print(DeletionTrace.objects.values_list('object_id', 'actor_type', 'deleted_at')[:5])"`.
+
+The spike's leftover objects under `spike/` can be deleted in the OVHcloud panel.
+
 ## Keys (KMS)
 
 | What | Value |
@@ -1538,7 +1691,7 @@ command yourself, in your own terminal. Nothing below prints a secret; never `ca
 
    ```sh
    sudo install -m 600 -o mytp-dev-ae -g mytp-dev-ae /dev/null /srv/mytp-dev-ae/shared/settings.env
-   sudo sh -c "grep -v -E '^(SITE|REGION|SECRET_KEY|DATABASE_URL|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|SITE_URL|DB_SSLROOTCERT|BACKUP_PREFIX|KMS_CLIENT_CERT|KMS_CLIENT_KEY|FIELD_ENCRYPTION_KEYS|BLIND_INDEX_KEY|FIELD_KEY_PROVIDER|FIELD_KMS_KEYS|BLIND_INDEX_KMS_KEY|UPLOAD_SPIKE_[A-Z_]+|REGION_SITE_URL_[A-Z]+)=' \
+   sudo sh -c "grep -v -E '^(SITE|REGION|SECRET_KEY|DATABASE_URL|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|SITE_URL|DB_SSLROOTCERT|BACKUP_PREFIX|KMS_CLIENT_CERT|KMS_CLIENT_KEY|FIELD_ENCRYPTION_KEYS|BLIND_INDEX_KEY|FIELD_KEY_PROVIDER|FIELD_KMS_KEYS|BLIND_INDEX_KMS_KEY|STORAGE_[A-Z_]+|REGION_SITE_URL_[A-Z]+)=' \
        /srv/mytp-dev/shared/settings.env > /srv/mytp-dev-ae/shared/settings.env"
    sudo -u mytp-dev-ae sh -ec 'k=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
    printf "%s\n" SITE=dev-ae REGION=ae "SECRET_KEY=$k" \
@@ -1547,7 +1700,7 @@ command yourself, in your own terminal. Nothing below prints a secret; never `ca
        BACKUP_PREFIX=staging-dev-ae/ \
        KMS_CLIENT_CERT=/srv/mytp-dev-ae/shared/kms-client.crt \
        KMS_CLIENT_KEY=/srv/mytp-dev-ae/shared/kms-client.key \
-       FIELD_ENCRYPTION_KEYS= BLIND_INDEX_KEY= UPLOAD_SPIKE_ENABLED=False \
+       FIELD_ENCRYPTION_KEYS= BLIND_INDEX_KEY= STORAGE_SAMPLE_UPLOADS=False \
        REGION_SITE_URL_EU=https://dev.mytpdso.com \
        >> /srv/mytp-dev-ae/shared/settings.env'
    ```
