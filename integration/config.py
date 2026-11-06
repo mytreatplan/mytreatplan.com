@@ -1,10 +1,10 @@
 """The configuration snapshot from the admin site (epic-admin-interface entry 4, AD-3 item 1,
 AD-4, AD-12, AD-22, interface I5).
 
-The admin site owns the configuration (for now the admin directory: who an admin actor
-UUID is) and serves it signed at ``GET /api/v1/config``; this portal pulls it and keeps
-applying the last good one while the admin site is down. Admin users are never created
-here (AD-22).
+The admin site owns the configuration (the admin directory: who an admin actor UUID is;
+the catalogue, epic-catalogue entry 2) and serves it signed at ``GET /api/v1/config``;
+this portal pulls it and keeps applying the last good one while the admin site is down.
+Admin users are never created here (AD-22).
 
 `pull()` (the `pullconfig` job every 5 minutes, and the task `pull_config_task`, enqueued
 by the admin site's signed nudge, ``POST /api/v1/config/nudge``):
@@ -16,7 +16,9 @@ by the admin site's signed nudge, ``POST /api/v1/config/nudge``):
    public key from INTERFACE_PEER_KEYS, the issuer, this site as the audience, ``typ``,
    ``sha`` and ``ver``, the contract's shape, the reader format);
 4. in one transaction with the state row locked: a version higher than the applied one
-   replaces the admin directory and becomes the applied version; the same version changes
+   replaces the admin directory and every registered section (`register_section_applier`:
+   the catalogue app's `catalogue`; a section the snapshot lacks is applied as None, so
+   its tables are emptied) and becomes the applied version; the same version changes
    nothing (a good pull); a lower one is refused (`stale`).
 
 Every refusal or failure leaves the applied snapshot untouched and records its code only
@@ -40,6 +42,7 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from mytp_core import interface, snapshots
+from mytp_core.contracts import ConfigSnapshot
 
 from .models import AdminDirectoryEntry, ConfigState
 from .outbox import _error_code, admin_site_url
@@ -59,6 +62,32 @@ STALE = 'stale'
 NOT_CONFIGURED = 'not_configured'
 APPLY_FAILED = 'apply_failed'
 SIGNING_KEY = 'signing_key'
+
+
+# Section name -> apply(value): called in _apply's transaction with the snapshot's field
+# of that name (a mytp-core model, or None when the snapshot has no such section). It
+# returns a short summary for the applied log line (counts only, never contents), or None.
+_SECTION_APPLIERS = {}
+# The snapshot's own fields, applied by _apply itself.
+HEADER_FIELDS = frozenset({'version', 'min_reader', 'generated_at', 'admin_directory'})
+
+
+def register_section_applier(name, apply):
+    """Apply the snapshot's section `name` (a field of mytp-core's ConfigSnapshot) with
+    `apply(value)` whenever a new version is applied, inside its transaction: an error
+    rolls the whole snapshot back (`apply_failed`). `value` is None when the snapshot
+    has no such section (an older admin site): the applier then empties its tables.
+    Registering the same function again is a no-op; another one under a taken name, or a
+    name that is not a field of ConfigSnapshot, is a ValueError."""
+    if name not in ConfigSnapshot.model_fields or name in HEADER_FIELDS:
+        raise ValueError(f'{name!r} is not a section of the configuration snapshot.')
+    if _SECTION_APPLIERS.get(name, apply) is not apply:
+        raise ValueError(f'A config section applier for {name!r} is already registered.')
+    _SECTION_APPLIERS[name] = apply
+
+
+def section_applier_names():
+    return tuple(_SECTION_APPLIERS)
 
 
 class PullFailed(Exception):
@@ -122,8 +151,9 @@ def _warn_newer_format(version):
                    snapshots.SNAPSHOT_READER)
 
 
-def _apply(snapshot, now):
-    """APPLIED, UNCHANGED or STALE, in one transaction with the state row locked."""
+def _apply(snapshot, now, summaries=None):
+    """APPLIED, UNCHANGED or STALE, in one transaction with the state row locked. The
+    appliers' summaries are appended to `summaries` (a list) when given."""
     with transaction.atomic():
         row = _locked_state()
         if row.version is not None and snapshot.version <= row.version:
@@ -134,6 +164,10 @@ def _apply(snapshot, now):
                                 title=entry.title, active=entry.active,
                                 time_zone=entry.time_zone)
             for entry in snapshot.admin_directory)
+        for name, apply in _SECTION_APPLIERS.items():
+            summary = apply(getattr(snapshot, name, None))
+            if summary and summaries is not None:
+                summaries.append(summary)
         row.version = snapshot.version
         row.applied_at = now
         row.save(update_fields=['version', 'applied_at'])
@@ -175,8 +209,9 @@ def pull(now=None):
     ConfigState.objects.filter(pk=ConfigState.SINGLETON).update(last_pull_at=now)
     try:
         snapshot = _fetch()
+        summaries = []
         try:
-            outcome = _apply(snapshot, now)
+            outcome = _apply(snapshot, now, summaries)
         except Exception as error:  # noqa: BLE001 - rolled back; recorded, never quoted
             # The error's text may quote a value of the snapshot: its type only.
             logger.error('config snapshot v%s not applied (%s)', snapshot.version,
@@ -191,8 +226,9 @@ def pull(now=None):
         raise
     _record_success(now)
     if outcome == APPLIED:
-        logger.info('config snapshot v%s applied (%s admin directory entries)',
-                    snapshot.version, len(snapshot.admin_directory))
+        logger.info('config snapshot v%s applied (%s admin directory entries)%s',
+                    snapshot.version, len(snapshot.admin_directory),
+                    ''.join(f'; {summary}' for summary in summaries))
     return outcome, snapshot.version
 
 

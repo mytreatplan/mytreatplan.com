@@ -35,7 +35,7 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp-dev/shared/kms-client.*`; daily `kmscheck` job |
 | Signup and login codes | Twilio Verify (email via SendGrid, WhatsApp, SMS); credentials in `shared/settings.env` ("Twilio Verify") |
 | Geo-IP | DB-IP Lite country database `/srv/mytp-dev/shared/geoip/dbip-country-lite.mmdb` (CC BY 4.0), monthly `geoipupdate` job ("Geo-IP database") |
-| Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute; configuration snapshot pulled from it, `pullconfig` job every 5 minutes, `show_config` ("Interface with the admin site", "Outbox", "Configuration snapshot") |
+| Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute; configuration snapshot pulled from it, `pullconfig` job every 5 minutes, `show_config`; the catalogue it carries, `price_catalogue` ("Interface with the admin site", "Outbox", "Configuration snapshot", "Catalogue") |
 | Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -2202,8 +2202,9 @@ straight from its database shows ciphertext in the names, email and mobile.
 ### Configuration snapshot
 
 The admin site owns the configuration every region applies (epic-admin-interface entry 4,
-AD-3 item 1, AD-22, interface I5; `integration.config`): for now the admin directory, who
-an admin actor UUID is (deleted admin users stay listed, inactive). This portal pulls it
+AD-3 item 1, AD-22, interface I5; `integration.config`): the admin directory, who an
+admin actor UUID is (deleted admin users stay listed, inactive), and the catalogue
+(epic-catalogue entry 2; see "Catalogue" below). This portal pulls it
 and keeps applying the last good one while the admin site is down. Admin users are never
 created here.
 
@@ -2211,7 +2212,7 @@ created here.
 |------|-------|
 | Pull | `pullconfig` job every 5 minutes (`manage.py pull_config`), plus a task on the worker after each signed `POST /api/v1/config/nudge` from the admin site (answered 202; nudges coalesce into one queued pull). A signed `GET <admin>/api/v1/config` to the only `INTERFACE_PEERS` entry (or `INTERFACE_ADMIN_SITE`) |
 | Check | the snapshot's signature (admindev's key from `INTERFACE_PEER_KEYS`, `typ: config`, this site as the audience, the SHA-256 of the snapshot and its version) and its shape (mytp-core's `verify_snapshot`) before anything is applied |
-| Apply | one transaction, the state row locked: a higher version replaces the directory (`integration_admindirectoryentry`) and becomes the applied one (`integration_configstate`); the same version changes nothing; an older one is refused (`stale`) |
+| Apply | one transaction, the state row locked: a higher version replaces the directory (`integration_admindirectoryentry`) and every registered section (`register_section_applier`: the catalogue's `catalogue_*` tables; a snapshot without the section empties them) and becomes the applied one (`integration_configstate`); the same version changes nothing; an older one is refused (`stale`) |
 | Refusals | the applied snapshot stays; `last_error` holds the code only: `network`, `http_<status>[_<code>]`, `bad_answer`, `bad_signature`, `audience`, `expired`, `invalid_body`, `newer_format` (the admin site needs a newer mytp-core: a warning line once per version), `stale`, `not_configured`, `signing_key` (the KMS could not unwrap the signing key), `apply_failed`; `pull_config` prints one line with the code and exits 0 (the outage warning below reports it once), except `not_configured` (no admin site, peer keys or signing key), which fails the job so its Sentry monitor shows it |
 | Outage | no good pull for an hour: one Sentry warning "Configuration snapshot not pulled for an hour (<code>)" per outage, never the contents; the next good pull resets it |
 
@@ -2234,6 +2235,39 @@ Staging check: edit an admin user's display name on admindev; within seconds
 `show_config` on dev and dev-ae shows the new name and the next version. Stop admindev's
 Gunicorn and run `pull_config` on dev: it prints `refused (network)` or `refused (http_502)`, and
 `show_config` still lists the directory; start it again, and the next pull is good.
+
+### Catalogue
+
+What a doctor is offered and at what net price (epic-catalogue entry 2, AD-3, AD-6, AD-16;
+the `catalogue` app). The Commercial Manager defines products, country groups and
+subscriptions on the admin site; they arrive in the configuration snapshot's `catalogue`
+section (mytp-core 0.12.0) and are applied with it, in its transaction, into
+`catalogue_countrygroup`, `catalogue_product` and `catalogue_subscription` (inactive rows
+too). Nothing else writes these tables: there is no form or Django admin page for them, and
+a row's `save()` or `delete()` raises. A snapshot without the section (an admin site
+before 0.12.0) empties them, so nothing is offered.
+
+`catalogue.resolver.offers(country, tier)` is the only code that prices: the active group
+that lists the country (else the active catch-all, "Rest of world"), its active
+subscription of that tier (none: no offers), then every active product at its net price,
+less the subscription's discount for plain TPS (`tps`), rounded half up to cents. VAT,
+vouchers, the billing company and checkout come with later entries; there is no portal
+page yet.
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --tier basic
+#   ES basic (Iberia): 1 offer(s)
+#     TPS  tps  90.00 EUR
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country US --tier basic
+#   no offers for US basic
+```
+
+Staging check (after both deploys): as a Commercial Manager on admindev, create a TPS
+product at 100.00 EUR and a basic Iberia subscription at 10 % (both in the audit log); on
+dev, `pull_config` (or wait for the nudge), then the two commands above print 90.00 EUR
+and nothing. Until the first catalogue (or staff user) change on admindev after its
+deploy, the applied snapshot has no catalogue section and `price_catalogue` prints no
+offers.
 
 ## Rollback
 
