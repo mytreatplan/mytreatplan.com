@@ -6,15 +6,21 @@ deletes them 2 years after.
 
 Activity records (epic-login entry 8): login records (kind `login`, epic-login entry 4),
 page records (kind `page`, epic-login entry 7) and an erased account's purge record (kind
-`account`, its encrypted email, QA A6) and file downloads (kind `file`, AD-9,
-storage.service) are a legal record. They are never
+`account`, its encrypted email, QA A6) and file downloads (kind `file`, AD-9; written
+until epic-admin-interface entry 5, which moved them to the access log) are a legal
+record. They are never
 anonymized, keep their IP and User-Agent (encrypted in `Event.data`) intact, and
 `delete_old_activity` deletes them 5 calendar years after the attempt ends. They hold the
 account's pk with no foreign key, so they outlive an erased account's purge.
 
+The region's access log (integration.RemoteAccess, epic-admin-interface entry 5: remote
+reads and file downloads) is kept as long (decision 2026-11-07): `delete_old_access`
+deletes its rows ACCESS_RETENTION (5 calendar years) after their time.
+
 The daily `eventlog_retention` job (deploy/jobs.conf) calls `anonymize`, `delete_old`,
-then `delete_old_activity`. Ages count from the attempt's `ended_at`: an attempt still
-open is never anonymized or deleted by age. Each function takes `now` (default: the
+`delete_old_activity`, then `delete_old_access`. Ages count from the attempt's
+`ended_at` (an access log row's `at`): an attempt still open is never anonymized or
+deleted by age. Each function takes `now` (default: the
 current time), works in batches and returns its counts; a second run changes nothing.
 """
 from datetime import timedelta
@@ -78,3 +84,20 @@ def delete_old_activity(now=None, batch_size=BATCH_SIZE):
     cutoff = (now or timezone.now()) - ACTIVITY_RETENTION
     old = Attempt.objects.filter(ended_at__lte=cutoff, kind__in=ACTIVITY_KINDS)
     return _delete(old, batch_size)
+
+
+def delete_old_access(now=None, batch_size=BATCH_SIZE):
+    """Delete the access log rows (integration.RemoteAccess) written ACCESS_RETENTION
+    (5 calendar years) ago or more, in batches (a bulk delete: the rows refuse one by
+    one). Returns the number deleted."""
+    from integration.models import ACCESS_RETENTION, RemoteAccess
+
+    cutoff = (now or timezone.now()) - ACCESS_RETENTION
+    old = RemoteAccess.objects.filter(at__lte=cutoff)
+    deleted = 0
+    while True:
+        pks = list(old.order_by('pk').values_list('pk', flat=True)[:batch_size])
+        if not pks:
+            return deleted
+        count, _ = RemoteAccess.objects.filter(pk__in=pks).delete()
+        deleted += count

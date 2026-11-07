@@ -1217,7 +1217,7 @@ deletes through a background task that leaves a `DeletionTrace` (kept for good).
 | Bucket | `mytp-dev-files`, OVHcloud Object Storage **GRA** (the database's region; never the backup bucket), owner `mytp-backup-admin` |
 | Keys | `STORAGE_*` in `shared/settings.env` (`deploy/staging.env.example`): the site's S3 user `mytp-dev-files`, limited to this bucket |
 | Object keys | `quarantine/<uuid>` on upload; `clean/<uuid>` once scanned (entry 12). Server-made; never a file name |
-| Signed URLs | 15 minutes per upload request; downloads 5 minutes, each recorded first (eventlog kind `file`: object UUID and reason, never the name) |
+| Signed URLs | 15 minutes per upload request; downloads 5 minutes, each recorded first in the access log (`integration_remoteaccess`, resource `stored_object`: object UUID and purpose, reason, the user's UUID, IP and browser, never the name; see [Remote reads and the access log](#remote-reads-and-the-access-log)); eventlog kind `file` before entry 5 |
 | Uploads | multipart only, 16 MiB parts; 1 GiB limit per file by default (per purpose) |
 | Abandoned uploads | aborted by the bucket's lifecycle rule after `STORAGE_ABORT_INCOMPLETE_DAYS` (7) days |
 | Sweep | hourly `sweepstorage` job (`manage.py sweep_storage`, :20 UTC): deletes `quarantine/` objects with no `StoredObject` row older than a day (an upload whose recording never came) or over their purpose's limit, forgets expired pending uploads, and enqueues again deletions not done yet (`delete_requested_at`); prints counts only. Its timer reaches a site when `provision.sh` runs again; on a site without the bucket settings it skips the bucket step |
@@ -1346,7 +1346,7 @@ story's results after each test. Test files only, never patient data
 - **Download expiry:** copy a Download link's target (the redirect) and open it again
   5 minutes and 1 second later: OVHcloud refuses it (`AccessDenied`, request has
   expired). The access record is there:
-  `sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from eventlog.models import Event; print(Event.objects.filter(attempt__kind='file').values_list('event', 'reason', 'created_at')[:5])"`.
+  `sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from integration.models import RemoteAccess; print(RemoteAccess.objects.filter(resource='stored_object').values_list('outcome', 'purpose', 'access_reason', 'at')[:5])"`.
 - **Sweep:** `sudo -u mytp-dev ./venv/bin/python manage.py sweep_storage` prints
   `sweep_storage: <n> pending uploads forgotten, orphan objects <n> deleted, <n> deletions
   enqueued again`; after the merge, run `provision.sh dev` again for its timer.
@@ -2268,6 +2268,64 @@ dev, `pull_config` (or wait for the nudge), then the two commands above print 90
 and nothing. Until the first catalogue (or staff user) change on admindev after its
 deploy, the applied snapshot has no catalogue section and `price_catalogue` prints no
 offers.
+
+### Remote reads and the access log
+
+An admin user reads one regional record live through the admin site, which keeps nothing
+of it (epic-admin-interface entry 5, AD-4, AD-17, AD-23; mytp-core 0.13.0). The admin site
+signs `GET /api/v1/remote/sample-record` with the user's access as extra token claims (UUID,
+role, permitted regions); this region checks them against the shared rules
+(`mytp_core.access`: which roles, which scope, which fields each sees), writes and commits
+an access log row, and only then builds the answer, with only the role's fields and
+`Cache-Control: no-store`.
+
+| Answer | When |
+|--------|------|
+| 200 `{"resource", "region", "object_id", "fields", "data"}` | granted; `fields` are the names the log row lists |
+| 401 (`unknown_key`, ...) | not signed by the admin site (another portal included); in the call log only |
+| 403 `forbidden` | the token's user is malformed, this region is not among the user's, the role has no rule, or the record is not assigned to a Clinical User; logged (best effort) |
+| 404 `not_found` | no such record (logged), or the sample setting off |
+| 503 `access_log_unavailable` | the access log row could not be written: no data leaves |
+
+The access log is the table `integration_remoteaccess` (append-only: time, actor type and
+UUID, role, signing site, IP and User-Agent (encrypted), resource, object id, the names of
+the fields returned, outcome and reason). File downloads go there too (resource
+`stored_object`, with the object's `purpose` and the download's `access_reason`).
+Rows are deleted 5 calendar years after their time by the daily `eventlog_retention` job
+(it prints `<n> access log rows deleted`). Never a field's value.
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from integration.models import RemoteAccess; print(list(RemoteAccess.objects.values_list('at', 'actor_type', 'role', 'resource', 'fields', 'outcome', 'reason')[:10]))"
+```
+
+#### The staging sample record
+
+Until epic-ordering's patients exist, the one remote resource is a staging-only sample
+record (`sample_record`, the admin's `patients` area: the Sysadmin sees every field, the
+Clinical Manager all but the amount, a Clinical User the same but only when the record is
+assigned to them; other roles are refused). On dev and dev-ae only (`check` refuses it
+without `ROBOTS_NOINDEX`, integration.E006):
+
+```sh
+sudo -u mytp-dev sh -c 'echo "INTERFACE_SAMPLE_RECORDS=True" >> /srv/mytp-dev/shared/settings.env'
+sudo systemctl restart mytp-dev-gunicorn
+sudo -u mytp-dev ./venv/bin/python manage.py seed_sample_record [--assignee <admin user UUID>]
+#   sample record <uuid> [assigned to <uuid>]
+```
+
+The same on dev-ae with `mytp-dev-ae`. `seed_sample_record` replaces the region's
+sample record (made-up name, 120.00 EUR by default) and never prints the name. When
+epic-ordering's patients arrive, remove the setting, the command and the table.
+
+Staging checks (after both deploys, the admin site first): on admindev, a Sysadmin and
+a Clinical Manager read the sample on dev and dev-ae from the Patients area's "Remote
+sample record" page (the Sysadmin sees every field, the Clinical Manager no amount); a
+Commercial Manager is refused with 403 (reason `role`: sales roles do not read patient
+records; the admin site has no Patients area for that role, so check it with the signed
+read, as the portal's tests do); each read (and each refusal) is a row in that region's
+`integration_remoteaccess`; admindev's database holds nothing of the record; with the log's insert failing on dev (INSERT on
+`integration_remoteaccess` revoked from a test database role, granted back afterwards),
+the read answers 503.
 
 ## Rollback
 

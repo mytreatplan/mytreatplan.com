@@ -16,7 +16,7 @@ from django_tasks_db.models import DBTaskResult
 
 import mytreatplan.urls
 from accounts.models import User
-from eventlog.models import Attempt, Event
+from integration.models import RemoteAccess
 from storage import checks
 from storage.models import StoredObject
 
@@ -108,24 +108,24 @@ def test_page_names_a_missing_setting(staff_client, settings):
 @pytest.mark.django_db
 def test_download_button_records_then_redirects_to_a_5_minute_url(staff_client, staff,
                                                                    sample_object):
-    response = staff_client.post(download_url(sample_object.pk))
+    response = staff_client.post(download_url(sample_object.pk),
+                                 HTTP_USER_AGENT='Mozilla/5.0 (staging test browser)')
     assert response.status_code == 302
     assert response['Location'].startswith(
         f'https://mytp-dev-files.s3.gra.io.cloud.ovh.net/quarantine/{sample_object.pk}?')
     assert 'X-Amz-Expires=300' in response['Location']
-    event = Event.objects.get(attempt__kind=Attempt.FILE)
-    assert (event.event, event.reason, event.attempt.account_id) == (
-        'download', 'sample_page', staff.pk)
-    assert event.data['object'] == str(sample_object.pk)
-    assert 'staging-test' not in str(event.data)
-    # With the request: the client IP and browser, as every activity record.
-    assert 'ip' in event.data and 'user_agent' in event.data
+    row = RemoteAccess.objects.get(resource='stored_object')
+    assert (row.outcome, row.purpose, row.access_reason, row.actor_uuid, row.object_id) == (
+        'granted', 'sample', 'sample_page', staff.uid, str(sample_object.pk))
+    # With the request: the client IP and browser, as the 1.11 download record had.
+    assert row.source_ip == '127.0.0.1'
+    assert row.user_agent == 'Mozilla/5.0 (staging test browser)'
 
 
 @pytest.mark.django_db
 def test_download_button_without_a_record_gives_no_url(staff_client, sample_object,
                                                        monkeypatch):
-    monkeypatch.setattr('eventlog.service.Event.objects.create',
+    monkeypatch.setattr(RemoteAccess.objects, 'create',
                         lambda **kwargs: (_ for _ in ()).throw(RuntimeError('down')))
     response = staff_client.post(download_url(sample_object.pk))
     assert response.status_code == 503

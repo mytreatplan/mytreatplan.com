@@ -1,6 +1,6 @@
 """The vendored mytp-core wheel is the release this site expects (epic-catalogue entry 1;
 the configuration snapshot, epic-admin-interface entry 4; the client record events,
-entry 8; the snapshot's catalogue section, epic-catalogue entry 2)."""
+entry 8; the snapshot's catalogue section, epic-catalogue entry 2; remote reads, entry 5)."""
 
 from decimal import Decimal
 
@@ -11,7 +11,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.12.0'
+    assert mytp_core.__version__ == '0.13.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -34,3 +34,12 @@ def test_vendored_mytp_core_has_the_catalogue_section():
     assert ConfigSnapshot.model_fields['catalogue'].is_required() is False
     assert CatalogueSection.model_fields.keys() == {'country_groups', 'products',
                                                     'subscriptions'}
+
+
+def test_vendored_mytp_core_has_remote_reads():
+    from mytp_core import access, interface
+    from mytp_core.contracts import errors, remote_record
+    assert access.rule_for('sample_record', 'clinical_manager').fields == {
+        'uuid', 'patient_name', 'assignee_uuid', 'note'}
+    assert callable(interface.remote_actor) and callable(remote_record)
+    assert errors.remote_read_error('access_log_unavailable')[1] == 503

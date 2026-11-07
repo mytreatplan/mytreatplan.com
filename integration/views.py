@@ -1,6 +1,6 @@
 """The interface endpoints the admin site calls (epic-admin-interface, AD-4): the ping
-(entry 1), the configuration snapshot's nudge (entry 4) and the client re-sync
-(entry 8)."""
+(entry 1), the configuration snapshot's nudge (entry 4), the client re-sync (entry 8)
+and the remote reads (entry 5, integration.remote)."""
 import json
 import logging
 
@@ -15,7 +15,7 @@ from mytp_core.contracts import errors as contract_errors
 from mytp_core.contracts import error_body, utc_text
 from mytp_core.contracts.events import UUID_RE
 
-from . import calls, config
+from . import calls, config, remote, sample
 from .calls import signed_endpoint
 from .outbox import admin_site_url
 
@@ -105,3 +105,20 @@ def clients_resync(request):
     resync_client_task.enqueue(uid)
     clients_logger.info('client resync from %s: %s queued', issuer, uid)
     return JsonResponse({'status': 'queued'}, status=202)
+
+
+@require_GET
+@signed_endpoint
+def remote_sample_record(request):
+    """GET /api/v1/remote/sample-record, signed by the admin site with the admin user's
+    access (staging only, INTERFACE_SAMPLE_RECORDS): the newest sample record, with the
+    fields the user's role sees (integration.remote). Another signed peer is refused (401
+    `unknown_key`) first, whatever the setting; then 404 `not_found` when the setting
+    is off."""
+    refused = _not_the_admin_site(request)
+    if refused is not None:
+        return refused
+    if not sample.enabled():
+        return remote.error(contract_errors.NOT_FOUND)
+    return remote.remote_read(request, sample.RESOURCE, None, sample.load, sample.build,
+                              assignee=sample.assignee)

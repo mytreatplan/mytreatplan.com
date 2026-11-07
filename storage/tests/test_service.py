@@ -1,5 +1,6 @@
 """Downloads (storage.service.download_url): the purpose's hook, the access record written
-first (no record, no URL), the 5-minute presigned GET, the refusal recorded; and the
+first in the access log (integration.RemoteAccess, epic-admin-interface entry 5; no record,
+no URL), the 5-minute presigned GET, the refusal recorded; and the
 purpose registry."""
 import logging
 import uuid
@@ -8,6 +9,7 @@ from urllib.parse import parse_qs, urlsplit
 import pytest
 
 from eventlog.models import Attempt, Event
+from integration.models import RemoteAccess
 from storage import purposes, s3, service
 from storage.models import StoredObject
 
@@ -25,7 +27,7 @@ def stored(purpose=TEST_PURPOSE, uploaded_by=None, state=StoredObject.QUARANTINE
 
 
 def file_records():
-    return list(Event.objects.filter(attempt__kind=Attempt.FILE).select_related('attempt'))
+    return list(RemoteAccess.objects.filter(resource=service.RESOURCE).order_by('id'))
 
 
 # --- Download -------------------------------------------------------------------------
@@ -43,11 +45,14 @@ def test_download_records_the_access_then_gives_a_5_minute_url(doctor, caplog):
     assert query['response-content-type'] == ['model/stl']
     assert 'García' not in url.geturl() and 'molar' not in url.geturl()
 
-    (event,) = file_records()
-    assert (event.event, event.reason, event.attempt.account_id, event.attempt.outcome) == (
-        'download', 'doctor_view', doctor.pk, 'download')
-    assert event.data == {'object': str(obj.pk), 'purpose': TEST_PURPOSE}
+    (row,) = file_records()
+    assert (row.actor_type, row.actor_uuid, row.outcome, row.reason, row.purpose,
+            row.access_reason, row.object_id, row.fields, row.source_site) == (
+        'doctor', doctor.uid, 'granted', '', TEST_PURPOSE, 'doctor_view', str(obj.pk),
+        ['download_url'], 'dev')
     assert 'García' not in caplog.text and 'molar' not in caplog.text
+    # No new eventlog file record (decision 2026-11-07).
+    assert not Event.objects.filter(attempt__kind=Attempt.FILE).exists()
 
 
 def test_access_record_is_written_before_the_url_is_made(doctor, monkeypatch):
@@ -67,7 +72,7 @@ def test_no_access_record_means_no_url(doctor, monkeypatch):
 
     def fail(*args, **kwargs):
         raise RuntimeError('database down')
-    monkeypatch.setattr('eventlog.service.Event.objects.create', fail)
+    monkeypatch.setattr(RemoteAccess.objects, 'create', fail)
     monkeypatch.setattr(s3, 'presign_download',
                         lambda *a, **k: pytest.fail('no URL may be made'))
     with pytest.raises(service.AccessRecordFailed):
@@ -81,9 +86,21 @@ def test_another_user_is_refused_and_the_refusal_recorded(doctor, other, monkeyp
                         lambda *a, **k: pytest.fail('no URL may be made'))
     with pytest.raises(service.DownloadRefused):
         service.download_url(obj, other, 'doctor_view')
-    (event,) = file_records()
-    assert (event.event, event.attempt.account_id) == ('download_refused', other.pk)
-    assert event.data == {'object': str(obj.pk), 'purpose': TEST_PURPOSE}
+    (row,) = file_records()
+    assert (row.outcome, row.reason, row.actor_uuid, row.object_id, row.fields,
+            row.purpose, row.access_reason) == (
+        'refused', 'download_refused', other.uid, str(obj.pk), [], TEST_PURPOSE,
+        'doctor_view')
+
+
+def test_a_refusal_is_refused_even_when_its_record_fails(doctor, other, monkeypatch):
+    obj = stored(uploaded_by=doctor, state=StoredObject.CLEAN)
+
+    def fail(*args, **kwargs):
+        raise RuntimeError('database down')
+    monkeypatch.setattr(RemoteAccess.objects, 'create', fail)
+    with pytest.raises(service.DownloadRefused):
+        service.download_url(obj, other, 'doctor_view')
 
 
 def test_real_purposes_download_only_clean_objects(doctor):
@@ -133,7 +150,7 @@ def test_download_filename_keeps_only_a_plain_extension():
         assert service.download_filename(obj) == expected
 
 
-def test_file_records_are_kept_as_activity_records():
+def test_old_file_records_are_still_kept_as_activity_records():
     from eventlog import retention
     assert Attempt.FILE in retention.ACTIVITY_KINDS
 
