@@ -334,6 +334,11 @@ INTERFACE_PEER_KEYS = config('INTERFACE_PEER_KEYS', default='')
 # INTERFACE_PEERS entry named INTERFACE_ADMIN_SITE (empty: the only INTERFACE_PEERS
 # entry).
 INTERFACE_ADMIN_SITE = config('INTERFACE_ADMIN_SITE', default='')
+# Remote reads (epic-admin-interface entry 5, AD-4, AD-17, AD-23): INTERFACE_SAMPLE_RECORDS
+# (staging only; the check integration.E006 refuses it on a site without ROBOTS_NOINDEX)
+# serves the sample record at /api/v1/remote/sample-record and allows
+# `manage.py seed_sample_record`. Removed when epic-ordering's patients exist.
+INTERFACE_SAMPLE_RECORDS = config('INTERFACE_SAMPLE_RECORDS', default=False, cast=bool)
 
 # Application definition
 

@@ -1,9 +1,13 @@
 """Downloading and deleting stored files (AD-9, AD-23).
 
 - `download_url(obj, user, reason)`: the purpose's hook decides; the access is recorded
-  first (eventlog activity kind `file`: the object's UUID, purpose and reason, never its
-  name); only once that record is written is a presigned GET (5 minutes at most) made.
-  A refusal is recorded too. If the record cannot be written there is no URL.
+  first in the region's access log (integration.RemoteAccess, epic-admin-interface
+  entry 5, decision 2026-11-07: resource `stored_object`, the object's UUID and
+  purpose, the reason as `access_reason`, the portal user's UUID, IP and User-Agent;
+  never the file's name), committed before
+  a presigned GET (5 minutes at most) is made. A refusal is recorded too, best effort. If
+  the record cannot be written there is no URL. (Before entry 5 these were eventlog
+  activity records of kind `file`; the old ones stay there until their retention ends.)
 - `delete(obj, actor)`: marks the row (`delete_requested_at`: no download URL from then
   on) and enqueues `delete_object_task` when the transaction commits; the task removes
   the S3 object, the row, and leaves a DeletionTrace. The `sweepstorage` job enqueues it
@@ -14,8 +18,11 @@ import re
 from django.core.exceptions import PermissionDenied
 from django.utils import timezone
 
-from eventlog.models import Attempt
-from eventlog.service import record_activity
+from django.conf import settings
+
+from eventlog.service import client_ip
+from integration import access_log
+from integration.models import RemoteAccess
 from mytp_core.tasks import enqueue_on_commit
 
 from . import purposes, s3
@@ -26,6 +33,8 @@ _EXTENSION_RE = re.compile(r'\.([A-Za-z0-9]{1,10})$')
 
 DOWNLOAD = 'download'
 DOWNLOAD_REFUSED = 'download_refused'
+# The access log's resource for a download.
+RESOURCE = 'stored_object'
 
 
 class DownloadRefused(PermissionDenied):
@@ -41,9 +50,24 @@ class NotConfigured(RuntimeError):
 
 
 def _record(event, obj, user, reason, request):
-    return record_activity(
-        Attempt.FILE, event, request=request, account_id=user.pk if user else None,
-        reason=reason, data={'object': str(obj.pk), 'purpose': obj.purpose})
+    """Write the download (or its refusal) to the access log: the RemoteAccess row, or
+    None if it could not be written."""
+    values = {
+        'actor_type': RemoteAccess.DOCTOR if user else RemoteAccess.SYSTEM,
+        'actor_uuid': getattr(user, 'uid', None) if user else None,
+        'source_site': settings.SITE,
+        'source_ip': client_ip(request)[:64] if request is not None else '',
+        'user_agent': (request.META.get('HTTP_USER_AGENT', '')[:512]
+                       if request is not None else ''),
+        'resource': RESOURCE, 'object_id': str(obj.pk), 'purpose': obj.purpose,
+        'access_reason': reason,
+    }
+    if event == DOWNLOAD_REFUSED:
+        return access_log.record_refused(reason=DOWNLOAD_REFUSED, **values)
+    try:
+        return access_log.record_granted(fields=['download_url'], **values)
+    except access_log.AccessLogUnavailable:
+        return None
 
 
 def download_filename(obj):

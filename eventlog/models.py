@@ -3,7 +3,9 @@ attempt can be reconstructed step by step. Login activity (epic-login entry 4) i
 Attempt of kind `login` per record (eventlog.service.record_activity), tied to the
 account by `account_id`; so is each page shown to a logged-in user (kind `page`, epic-login
 entry 7, accounts.page_records), and an erased account's purge (kind `account`, QA A6,
-accounts.erasure), and each download of a stored file (kind `file`, storage.service).
+accounts.erasure), and each download of a stored file (kind `file`, storage.service; no
+longer written since epic-admin-interface entry 5: downloads go to the access log,
+integration.RemoteAccess).
 
 Only `Event.data` holds personal values (email, IP address, browser string, ...), encrypted
 with the 2.2 field encryption (accounts.crypto). The other columns are non-personal, so
@@ -31,8 +33,10 @@ class Attempt(models.Model):
     PAGE = 'page'
     # An erased account's purge (accounts.erasure, QA A6): its pk and encrypted email.
     ACCOUNT = 'account'
-    # A stored file's download or refused download (storage.service.download_url, AD-9):
-    # the object's UUID and the reason, never its name.
+    # A stored file's download or refused download (AD-9), written by
+    # storage.service.download_url until epic-admin-interface entry 5; downloads now go to
+    # the access log (integration.RemoteAccess). Kept for the rows already written, which
+    # age out with the activity records.
     FILE = 'file'
 
     # AD-5: crosses sites; its UUID primary key is its global id.
