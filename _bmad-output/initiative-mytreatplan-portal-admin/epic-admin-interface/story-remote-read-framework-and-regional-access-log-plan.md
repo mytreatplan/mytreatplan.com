@@ -3,7 +3,7 @@ title: 'Remote read framework and regional access log'
 type: 'feature'
 ticket: '5'
 created: '2026-11-07'
-status: 'built'
+status: 'done'
 baseline_revision: 'abdb57f974ebb32bc958e8658cc338ab6a090485'
 route: 'full'
 route_source: 'auto'
@@ -118,3 +118,12 @@ Opus reviews, one per repo (2026-11-07):
 
 **Manual checks (staging):**
 - `INTERFACE_SAMPLE_RECORDS=True` on dev and dev-ae; `seed_sample_record` on each; on admindev a Sysadmin, a Clinical Manager and a Commercial Manager read the sample on dev and dev-ae (fields per role); each read is in that region's `RemoteAccess`; a Clinical User not assigned gets 403; admindev's database holds no record data; with the log table's insert revoked on dev (test database role or a monkeypatched check), the read answers 503.
+
+## Staging
+
+2026-11-07, run by Claude with the user's delegation. mytp-core v0.13.0 (tag CI green); admin PR #19 merged (efb3c9f), deployed to admindev; portal PR #74 merged (c22f2d5), CI and deploy green on dev and dev-ae. Local suites: core 1093, admin 907 passed / 5 skipped, portal 2061 passed / 5 skipped + the 3 known PostgreSQL-only failures.
+- `INTERFACE_SAMPLE_RECORDS=True` on dev and dev-ae, `check` clean, `seed_sample_record` on each (made-up name, assignee set).
+- From admindev on both regions: Sysadmin 200 with every field; Clinical Manager 200 with the amount omitted; Clinical User assigned 200; Commercial Manager 403 (`role`); Financial Manager 403 (`role`); Clinical User not assigned 403 (`assigned`). Non-Sysadmin roles were in-memory users (admindev has only a Sysadmin).
+- Each region's `RemoteAccess` holds exactly those six reads with the matching outcome and reason.
+- admindev's database: no row holds the sample's name.
+- Not run live: the 503 when the log cannot be written (no safe way to revoke the insert on staging); covered by the portal tests.
