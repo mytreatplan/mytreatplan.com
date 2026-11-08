@@ -178,3 +178,14 @@ Opus review (2026-11-07):
 **Manual checks (staging, dev):**
 - Re-provision dev; `clamdscan --version` shows the installed version, freshclam has signatures; `check` clean.
 - EICAR uploaded through the sample page → rejected; a 1 GB random file → `clean/`, downloadable; a file above the limit → rejected; `sweep_storage` reports re-enqueued scans when clamd was stopped.
+
+## Staging
+
+2026-11-08, run by Claude with the user's delegation; status stays `built` until the user's browser check. Portal PR #77 merged, CI and deploy green on dev and dev-ae. `STORAGE_CLAMD_SOCKET` added to dev's settings before the deploy; dev and dev-ae re-provisioned (ClamAV 1.4.3 from Debian, signatures current, AppArmor include loaded, scan workers and `prunescans` timers running). clamd resident memory about 1 GB.
+- `clamd_check` as the dev site user: version and signatures current; `check` clean.
+- Server-side 6 MiB random upload through sign, OVH and complete: download refused while in quarantine; scanned `clean`; downloaded with a matching checksum.
+- EICAR: `rejected (infected, Eicar-Test-Signature)`, one system trace, download refused.
+- No AppArmor denials in the kernel log after the scans.
+- clamd stopped: the upload stayed in quarantine with "undecided (clamd_unavailable)" retries at 1 and 2 minutes; after clamd started, the next retry made it `clean`. `sweep_storage` reported nothing to re-enqueue (object under an hour old, scan already queued).
+- Test objects deleted afterwards.
+- Owed by the user: the 1 GB browser upload through the sample page (clean, downloadable, scan time) and disabling the new Sentry monitor `prunescans`. Not run: a file above the limit (the purpose refuses anything over 1 GiB at signing, so only a browser upload near 1 GiB exercises clamd's limit).
