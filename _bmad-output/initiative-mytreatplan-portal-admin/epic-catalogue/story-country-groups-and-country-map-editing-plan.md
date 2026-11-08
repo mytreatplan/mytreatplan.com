@@ -3,7 +3,7 @@ title: 'Country groups and country-map editing'
 type: 'feature'
 ticket: '3'
 created: '2026-11-07'
-status: 'built'
+status: 'done'
 baseline_revision: 'portal 8243282, core 96c6919, admin 9c261f1'
 route: 'full'
 route_source: 'auto'
@@ -179,3 +179,11 @@ Opus reviews, one per repo (2026-11-08); no blocking or medium code defects:
 
 **Manual checks (staging):**
 - On admindev: add a country to Iberia → dev and dev-ae price it as Iberia (`price_catalogue`); an overlapping edit is refused; set a test country to banned → after one sync dev's signup country check refuses it (test client), then set it back; a country in no named group falls in Rest of world.
+
+## Staging
+
+2026-11-08. mytp-core v0.15.0 (tag CI green); admin PR #21 merged by the user and deployed to admindev; portal PR #78 merged by Claude after its checks passed, CI and deploy green on dev and dev-ae. Local suites: core 1131; admin 963 passed / 8 skipped (SQLite) and 971 on PostgreSQL 17; portal 2191 passed / 5 skipped + the 3 known PostgreSQL-only failures (SQLite) and 2199 on PostgreSQL 17. Checks run by Claude through the admin services as a Sysadmin, then `pull_config` on each portal:
+- AD (in no named group) had no basic offers on dev and dev-ae (Rest of world has none); AD added to Iberia (snapshot v5) → both price it as Iberia (Staging TPS 5.2, 90.00 EUR); removed (v6) → back to no offers.
+- FR added to Iberia refused: "Already in the active country group "Rest of EU": FR."; nothing saved, no new version.
+- AQ banned (v7) → `lookup_country` banned and the signup country check refuses it (`country_banned`) on dev and dev-ae; AQ to ae (v8) → state ae on both; back to eu (v9) → eu on both. dev's applied lines: `country map: 251 listed, 1 changed, 0 added, 0 skipped`.
+- Staging data is back as before (Iberia ES, PT; AQ eu).
