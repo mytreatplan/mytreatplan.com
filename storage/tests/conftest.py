@@ -34,6 +34,8 @@ def storage_settings(settings):
     settings.STORAGE_SECRET_KEY = FAKE_SECRET_KEY
     settings.STORAGE_CORS_ORIGINS = ['https://dev.mytpdso.com']
     settings.STORAGE_ABORT_INCOMPLETE_DAYS = 7
+    # Nothing listens there: the scan tests start a fake clamd and point at it.
+    settings.STORAGE_CLAMD_SOCKET = '/nonexistent/clamd.ctl'
     settings.ROOT_URLCONF = 'storage.tests.urls_storage'
     return settings
 
@@ -69,7 +71,7 @@ def stubber(monkeypatch):
     """The S3 client every storage call gets, with a botocore Stubber on it."""
     client = s3.make_client()
     stub = Stubber(client)
-    monkeypatch.setattr(s3, 'make_client', lambda: client)
+    monkeypatch.setattr(s3, 'make_client', lambda **kwargs: client)
     with stub:
         yield stub
     stub.assert_no_pending_responses()

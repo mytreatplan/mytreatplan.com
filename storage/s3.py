@@ -1,8 +1,10 @@
 """The region's file bucket (AD-9): its S3 client, the object keys, and the presigning
 of the browser's S3 requests and of downloads.
 
-Keys are made here only: `quarantine/<uuid4>` for an upload, `clean/<uuid4>` once entry
-12's scan has passed it (this module only defines it). The UUID is the StoredObject's
+Keys are made here only: `quarantine/<uuid4>` for an upload, `clean/<uuid4>` once the
+virus scan (epic-platform entry 12, storage.tasks.scan_object_task) has passed it: a
+server-side copy (`copy_object`) of the quarantine object, which it read with
+`open_stream`. The UUID is the StoredObject's
 primary key. The browser's key and the file name never reach a key (AD-2, AD-5).
 
 The browser (Uppy `@uppy/aws-s3`, `signRequest`) asks for one S3 request at a time;
@@ -67,7 +69,13 @@ def missing_setting():
     return None
 
 
-def make_client():
+# A server-side copy of a large object (1 GiB) may take longer than a normal request.
+COPY_READ_TIMEOUT = 15 * 60
+# Bytes per read of a streamed object (storage.clamd sends them on in 1 MiB chunks).
+STREAM_CHUNK_SIZE = 1024 * 1024
+
+
+def make_client(*, read_timeout=30):
     """The S3-compatible client for the region's file bucket (OVHcloud Object Storage)."""
     import boto3
     from botocore.config import Config
@@ -88,7 +96,7 @@ def make_client():
             response_checksum_validation='when_required',
             retries={'max_attempts': 3, 'mode': 'standard'},
             connect_timeout=10,
-            read_timeout=30,
+            read_timeout=read_timeout,
         ),
     )
 
@@ -229,6 +237,48 @@ def delete_keys(keys, client=None):
     with out_of_sentry():
         for key in keys:
             client.delete_object(Bucket=settings.STORAGE_BUCKET, Key=key)
+
+
+def open_stream(key, client=None):
+    """The object's bytes as an iterator of chunks (GetObject); botocore's ClientError
+    when it is missing. The request and every read happen inside `out_of_sentry()`."""
+    client = client or make_client()
+    with out_of_sentry():
+        body = client.get_object(Bucket=settings.STORAGE_BUCKET, Key=key)['Body']
+
+    def chunks():
+        try:
+            while True:
+                with out_of_sentry():
+                    chunk = body.read(STREAM_CHUNK_SIZE)
+                if not chunk:
+                    return
+                yield chunk
+        finally:
+            body.close()
+
+    return chunks()
+
+
+def exists(key, client=None):
+    """Whether the bucket has `key` (HeadObject)."""
+    from botocore.exceptions import ClientError
+
+    try:
+        head_size(key, client=client)
+    except ClientError as exc:
+        if is_not_found(exc):
+            return False
+        raise
+    return True
+
+
+def copy_object(src, dst, client=None):
+    """Server-side copy of `src` to `dst` in the bucket (CopyObject, up to 5 GB)."""
+    client = client or make_client(read_timeout=COPY_READ_TIMEOUT)
+    with out_of_sentry():
+        client.copy_object(Bucket=settings.STORAGE_BUCKET, Key=dst,
+                           CopySource={'Bucket': settings.STORAGE_BUCKET, 'Key': src})
 
 
 def presign_download(key, *, content_type='', filename='', client=None):

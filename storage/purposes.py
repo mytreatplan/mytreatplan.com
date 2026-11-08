@@ -7,11 +7,13 @@ Each feature that stores files registers its purpose once (in its AppConfig.read
 - `can_upload(user)`: may this (logged-in, active) user start an upload of this purpose?
   It is asked again for every signed request of the upload.
 - `can_download(user, obj)`: may this user download this StoredObject?
-- `max_size`: the largest file in bytes (default 1 GiB), checked before the upload starts
-  and again when it completes.
-- `download_quarantine`: whether objects not yet scanned (state quarantine) may be
-  downloaded. Only the staging sample purpose sets it (decision 2026-11-06); every real
-  purpose downloads `clean/` objects only.
+- `max_size`: the largest file in bytes (default and at most 1 GiB: clamd's scan limits,
+  deploy/clamav/clamd.conf, are set for it), checked before the upload starts and again
+  when it completes.
+
+Only scanned objects (state `clean`, epic-platform entry 12) are ever downloadable, for
+every purpose: never one in quarantine or rejected (the sample purpose's quarantine
+downloads ended with the scan, decision 2026-11-07).
 
 A purpose's name is stored on each StoredObject: never rename one that has objects.
 """
@@ -21,6 +23,10 @@ from typing import Callable
 
 GiB = 1024 ** 3
 DEFAULT_MAX_SIZE = GiB
+# The largest file clamd fully scans (StreamMaxLength, MaxFileSize, MaxScanSize in
+# deploy/clamav/clamd.conf are set just above it): a larger limit would only store files
+# the scan rejects.
+MAX_SCANNED_SIZE = GiB
 NAME_RE = re.compile(r'^[a-z][a-z0-9_]{0,39}$')
 
 
@@ -30,14 +36,12 @@ class Purpose:
     can_upload: Callable
     can_download: Callable
     max_size: int = DEFAULT_MAX_SIZE
-    download_quarantine: bool = False
 
 
 _registry = {}
 
 
-def register(name, can_upload, can_download, *, max_size=DEFAULT_MAX_SIZE,
-             download_quarantine=False):
+def register(name, can_upload, can_download, *, max_size=DEFAULT_MAX_SIZE):
     """Register a purpose; a second registration of the same name is an error."""
     if not isinstance(name, str) or not NAME_RE.match(name):
         raise ValueError('a purpose name is 1-40 lowercase letters, digits or "_"')
@@ -45,9 +49,10 @@ def register(name, can_upload, can_download, *, max_size=DEFAULT_MAX_SIZE,
         raise ValueError(f'purpose {name!r} is already registered')
     if not callable(can_upload) or not callable(can_download):
         raise TypeError('can_upload and can_download must be callables')
-    if isinstance(max_size, bool) or not isinstance(max_size, int) or max_size < 1:
-        raise ValueError('max_size must be a positive number of bytes')
-    purpose = Purpose(name, can_upload, can_download, max_size, download_quarantine)
+    if (isinstance(max_size, bool) or not isinstance(max_size, int)
+            or not 1 <= max_size <= MAX_SCANNED_SIZE):
+        raise ValueError(f'max_size must be a number of bytes from 1 to {MAX_SCANNED_SIZE}')
+    purpose = Purpose(name, can_upload, can_download, max_size)
     _registry[name] = purpose
     return purpose
 
@@ -78,10 +83,10 @@ def may_upload(purpose, user):
 
 
 def may_download(purpose, user, obj):
-    """Whether `user` may download `obj`: the purpose's hook, and only clean objects
-    unless the purpose allows quarantine downloads."""
+    """Whether `user` may download `obj`: only a clean (scanned) object, and only when
+    the purpose's hook allows it."""
     if purpose is None or not _active(user):
         return False
-    if obj.state != obj.CLEAN and not purpose.download_quarantine:
+    if obj.state != obj.CLEAN:
         return False
     return bool(purpose.can_download(user, obj))

@@ -30,7 +30,9 @@ does not scan it).
 <p>
   Staff-only staging page. Files go straight from this browser to the bucket
   <strong>{{ bucket|default:"(not set)" }}</strong> at {{ endpoint|default:"(no endpoint)" }},
-  under <code>quarantine/</code>. Do not upload patient data.
+  under <code>quarantine/</code>. Do not upload patient data. The scan worker then
+  moves each clean file to <code>clean/</code> or deletes a rejected one (a virus, or a
+  file it could not fully scan); only clean objects can be downloaded.
 </p>
 
 {% if messages %}{% for message in messages %}<p class="alert" role="status">{{ message }}</p>{% endfor %}{% endif %}
@@ -54,8 +56,8 @@ each download is recorded. <a href="">Reload</a> after an upload.</p>
     <td>{{ obj.state }}</td>
     <td>{{ obj.created_at|date:"c" }}</td>
     <td>
-      <form method="post" action="{% url 'storage_sample:download' obj.pk %}">{% csrf_token %}<button type="submit">Download</button></form>
-      &middot;
+      {% if obj.state == "clean" %}<form method="post" action="{% url 'storage_sample:download' obj.pk %}">{% csrf_token %}<button type="submit">Download</button></form>
+      &middot;{% endif %}
       <form method="post" action="{% url 'storage_sample:delete' obj.pk %}">{% csrf_token %}<button type="submit">Delete</button></form>
     </td>
   </tr>

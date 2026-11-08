@@ -12,6 +12,7 @@ import pytest
 from django.db import connection
 from django.test import Client
 from django.utils import timezone
+from django_tasks_db.models import DBTaskResult
 
 from storage import s3
 from storage.models import PendingUpload, StoredObject
@@ -365,16 +366,42 @@ def test_upload_1_gib_ends_as_a_stored_object_with_an_encrypted_name(staff_clien
     assert 'Pérez' not in caplog.text and 'scan' not in caplog.text
 
 
-def test_complete_twice_answers_the_same(staff_client, stubber):
+def test_complete_twice_answers_the_same(staff_client, stubber,
+                                         django_capture_on_commit_callbacks):
     key = started(staff_client)
     head(stubber, key, GiB)
-    first = post_json(staff_client, COMPLETE, {'key': key, 'name': NAME})
-    second = post_json(staff_client, COMPLETE, {'key': key, 'name': NAME})
+    with django_capture_on_commit_callbacks(execute=True):
+        first = post_json(staff_client, COMPLETE, {'key': key, 'name': NAME})
+        second = post_json(staff_client, COMPLETE, {'key': key, 'name': NAME})
     assert first.json() == second.json()
     assert StoredObject.objects.count() == 1
+    # The scan (epic-platform entry 12) is enqueued once, on the scan worker's backend,
+    # with the object's UUID only.
+    (queued,) = DBTaskResult.objects.all()
+    assert queued.task_path == 'storage.tasks.scan_object_task'
+    assert (queued.backend_name, queued.queue_name) == ('scans', 'scans')
+    assert queued.args_kwargs == {'args': [str(s3.object_id_from_key(key))], 'kwargs': {}}
 
 
-def test_concurrent_complete_answers_as_the_first(staff_client, staff, stubber):
+def test_the_scan_is_enqueued_only_when_the_completion_commits(
+        staff_client, stubber, django_capture_on_commit_callbacks):
+    key = started(staff_client)
+    head(stubber, key, GiB)
+    with django_capture_on_commit_callbacks(execute=False) as callbacks:
+        response = post_json(staff_client, COMPLETE, {'key': key, 'name': NAME})
+    assert response.status_code == 200
+    # Waiting for the commit: nothing enqueued yet (a rollback would drop it).
+    assert len(callbacks) == 1
+    assert not DBTaskResult.objects.exists()
+    # The commit enqueues the scan of this object.
+    callbacks[0]()
+    (queued,) = DBTaskResult.objects.all()
+    assert queued.task_path == 'storage.tasks.scan_object_task'
+    assert queued.args_kwargs['args'] == [str(s3.object_id_from_key(key))]
+
+
+def test_concurrent_complete_answers_as_the_first(staff_client, staff, stubber,
+                                                  django_capture_on_commit_callbacks):
     """The other call recorded the object between this one's pending lookup and its
     insert: the duplicate primary key is answered with the stored object, not a 500."""
     key = started(staff_client)
@@ -382,10 +409,13 @@ def test_concurrent_complete_answers_as_the_first(staff_client, staff, stubber):
     head(stubber, key, GiB)
     StoredObject.objects.create(id=object_id, purpose='sample', uploaded_by=staff, size=GiB,
                                 original_name=NAME)  # the first call's row; pending still there
-    response = post_json(staff_client, COMPLETE, {'key': key, 'name': NAME})
+    with django_capture_on_commit_callbacks(execute=True):
+        response = post_json(staff_client, COMPLETE, {'key': key, 'name': NAME})
     assert response.status_code == 200
     assert response.json() == {'id': str(object_id), 'size': GiB, 'purpose': 'sample'}
     assert StoredObject.objects.count() == 1
+    # The first call enqueued the scan; this one does not again.
+    assert not DBTaskResult.objects.exists()
 
 
 def test_complete_of_another_users_upload_is_400(staff_client, doctor_client, monkeypatch):

@@ -1,0 +1,7 @@
+# Installed by deploy/provision.sh to /etc/apparmor.d/local/usr.sbin.clamd (host-wide),
+# which Debian's enforced clamd profile (/etc/apparmor.d/usr.sbin.clamd) includes. Grants
+# what deploy/clamav/clamd.conf adds to Debian's defaults: its own configuration file and
+# the spool for streamed files. provision.sh reloads the profile when this file changes.
+/etc/clamav/clamd-mytp.conf r,
+/var/lib/clamav/tmp/ rw,
+/var/lib/clamav/tmp/** rwk,

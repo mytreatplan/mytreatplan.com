@@ -27,9 +27,9 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Certificate | Let's Encrypt via certbot; renewed by `certbot.timer` |
 | Firewall | ufw: 22, 80, 443 only |
 | Scheduled jobs | `mytp-dev-job@<name>.timer` → `mytp-dev-job@<name>.service`, one per line of `jobs.conf` |
-| Background tasks | `mytp-dev-worker.service` (`manage.py db_worker`, django-tasks-db); heartbeat on Sentry monitor `mytp-dev-worker` ("Background tasks") |
+| Background tasks | `mytp-dev-worker.service` (`manage.py db_worker`, django-tasks-db); heartbeat on Sentry monitor `mytp-dev-worker` ("Background tasks"); `mytp-dev-scan-worker.service` for the virus scans only, stopped and started with it ("Scanning") |
 | Health URL | `https://dev.mytpdso.com/healthz` (no password), watched by UptimeRobot |
-| Object storage | doctors' files in the region's bucket (`mytp-dev-files`, GRA), `STORAGE_*` in `shared/settings.env`; `storage_bucket --apply/--inspect`; staff sample page `/en/storage/sample/` ("Object storage") |
+| Object storage | doctors' files in the region's bucket (`mytp-dev-files`, GRA), `STORAGE_*` in `shared/settings.env`; `storage_bucket --apply/--inspect`; staff sample page `/en/storage/sample/` ("Object storage"); every upload virus-scanned by ClamAV (host-wide `clamav-daemon`, `clamav-freshclam`; `STORAGE_CLAMD_SOCKET`) before it can be downloaded ("Scanning") |
 | Off-region backups | nightly `backupdb` job → Object Storage SBG (`age`-encrypted); restore test: `restore-db.sh` |
 | Field keys | KMS-wrapped: `FIELD_KMS_KEYS`, `BLIND_INDEX_KMS_KEY` in `shared/settings.env` (`FIELD_KEY_PROVIDER=accounts.crypto.KMSKeyProvider`); password manager: key ids and wrapped values, never plain keys (step 12, "Keys (KMS)") |
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp-dev/shared/kms-client.*`; daily `kmscheck` job |
@@ -869,7 +869,10 @@ runs `manage.py db_worker` in `/srv/mytp-dev/current` as `mytp-dev` with the sit
   exits within 3 seconds is rolled back. systemd restarts a worker that dies
   (`Restart=always`, 5 s apart) but gives up after 10 starts in 5 minutes (the unit is
   then `failed` and the heartbeat alerts; fix the cause, then
-  `sudo systemctl restart mytp-dev-worker`). It runs the tasks of every queue.
+  `sudo systemctl restart mytp-dev-worker`). It runs the tasks of every queue of the
+  `default` backend; the virus scans are a second backend (`scans`) run by the second
+  worker `mytp-dev-scan-worker`, which follows this one (see "Object storage" ->
+  "Scanning").
   The worker reads `settings.env` at start: after editing it, restart both,
   `sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker`.
 - **Interrupted tasks.** Before each start, `manage.py requeue_interrupted_tasks`
@@ -1217,11 +1220,12 @@ deletes through a background task that leaves a `DeletionTrace` (kept for good).
 |------|-----|
 | Bucket | `mytp-dev-files`, OVHcloud Object Storage **GRA** (the database's region; never the backup bucket), owner `mytp-backup-admin` |
 | Keys | `STORAGE_*` in `shared/settings.env` (`deploy/staging.env.example`): the site's S3 user `mytp-dev-files`, limited to this bucket |
-| Object keys | `quarantine/<uuid>` on upload; `clean/<uuid>` once scanned (entry 12). Server-made; never a file name |
+| Object keys | `quarantine/<uuid>` on upload; `clean/<uuid>` once scanned clean (entry 12, "Scanning"); a rejected file is deleted. Server-made; never a file name |
+| Downloads | `clean` objects only, for every purpose (the sample page too, decision 2026-11-07); never one in quarantine or rejected |
 | Signed URLs | 15 minutes per upload request; downloads 5 minutes, each recorded first in the access log (`integration_remoteaccess`, resource `stored_object`: object UUID and purpose, reason, the user's UUID, IP and browser, never the name; see [Remote reads and the access log](#remote-reads-and-the-access-log)); eventlog kind `file` before entry 5 |
 | Uploads | multipart only, 16 MiB parts; 1 GiB limit per file by default (per purpose) |
 | Abandoned uploads | aborted by the bucket's lifecycle rule after `STORAGE_ABORT_INCOMPLETE_DAYS` (7) days |
-| Sweep | hourly `sweepstorage` job (`manage.py sweep_storage`, :20 UTC): deletes `quarantine/` objects with no `StoredObject` row older than a day (an upload whose recording never came) or over their purpose's limit, forgets expired pending uploads, and enqueues again deletions not done yet (`delete_requested_at`); prints counts only. Its timer reaches a site when `provision.sh` runs again; on a site without the bucket settings it skips the bucket step |
+| Sweep | hourly `sweepstorage` job (`manage.py sweep_storage`, :20 UTC): deletes `quarantine/` objects with no `StoredObject` row older than a day (an upload whose recording never came) or over their purpose's limit, forgets expired pending uploads, enqueues again deletions not done yet (`delete_requested_at`) and scans of objects still in quarantine after an hour; prints counts only. Its timer reaches a site when `provision.sh` runs again; on a site without the bucket settings it skips the bucket step |
 | Encryption at rest | SSE-S3 (AES256) by default on the bucket |
 | Sample page | `/en/storage/sample/`, staff only, with `STORAGE_SAMPLE_UPLOADS=True` (staging only: `check` refuses it without `ROBOTS_NOINDEX`) |
 | dev-ae | none yet: its own EU bucket and S3 user come later (`STORAGE_*` stay unset there) |
@@ -1337,8 +1341,8 @@ story's results after each test. Test files only, never patient data
 - **T3** Network drop: turn Wi-Fi off for about 30 s at about 30 %, back on, then press
   Uppy's retry. Record whether it **resumed** (`signed ListParts`, no new
   `signed CreateMultipartUpload`) or restarted, and that it completes.
-- **T4** Checksum: Download the T1 (or T3) object from the list within 5 minutes;
-  `shasum -a 256` matches the original.
+- **T4** Checksum: once the scan has passed the T1 (or T3) object (state `clean`;
+  Reload), Download it within 5 minutes; `shasum -a 256` matches the original.
 - **T5** Abandoned upload: start a 1 GB upload, close the tab at about 20 %;
   `storage_bucket --inspect` lists it. More than 7 days later (OVHcloud may apply the
   rule a day late): `incomplete uploads: 0`.
@@ -1350,12 +1354,120 @@ story's results after each test. Test files only, never patient data
   `sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from integration.models import RemoteAccess; print(RemoteAccess.objects.filter(resource='stored_object').values_list('outcome', 'purpose', 'access_reason', 'at')[:5])"`.
 - **Sweep:** `sudo -u mytp-dev ./venv/bin/python manage.py sweep_storage` prints
   `sweep_storage: <n> pending uploads forgotten, orphan objects <n> deleted, <n> deletions
-  enqueued again`; after the merge, run `provision.sh dev` again for its timer.
+  enqueued again, <n> scans enqueued again, <n> waiting for a scan over 6 hours`; after the merge, run `provision.sh dev` again
+  for its timer.
 - **Delete:** Delete an object; with the worker running, it disappears from the list and
   from `--inspect`'s bucket, and its trace is there:
   `... shell -c "from storage.models import DeletionTrace; print(DeletionTrace.objects.values_list('object_id', 'actor_type', 'deleted_at')[:5])"`.
 
 The spike's leftover objects under `spike/` can be deleted in the OVHcloud panel.
+
+### Scanning
+
+> **Before this story's first deploy to a site with storage (dev):** add
+> `STORAGE_CLAMD_SOCKET=/run/clamav/clamd.ctl` to its `shared/settings.env`. Without it the
+> check `storage.E004` fails `migrate`, and the release is rolled back. See
+> [Setup (dev)](#setup-dev), step 1.
+
+Every upload is virus-scanned before anyone can download it (AD-9, E6; epic-platform
+entry 12). Recording an upload (`/storage/complete/`) enqueues
+`storage.tasks.scan_object_task(<uuid>)`; the site's **scan worker** streams
+`quarantine/<uuid>` from the bucket to clamd (INSTREAM over its unix socket) and then:
+
+| clamd answers | Result |
+|---------------|--------|
+| `OK` | server-side copy to `clean/<uuid>` (before any row lock), then quarantine object deleted, state `clean`: downloadable by its purpose. If the object's deletion was asked meanwhile, the deletion wins and the clean copy is deleted too |
+| `<signature> FOUND` (a virus; or `Heuristics.Limits.Exceeded.*`, `Heuristics.Encrypted.*`, `Heuristics.Broken.Executable`: not fully scanned) | **rejected**: the object is deleted from the bucket, the row kept with state `rejected` (never downloadable), a `DeletionTrace` by the system |
+| `INSTREAM size limit exceeded. ERROR` (the file is over `StreamMaxLength`) | rejected, the same way (`limit_exceeded`) |
+| any other `... ERROR`, an unknown or garbled answer, or any answer before the end of the stream that is not a FOUND or an ERROR (decision 2026-11-08) | **undecided** (`scan_error`): stays `quarantine`, never downloadable, retried like "clamd unavailable" below, one Sentry message after the last attempt |
+| (no scan) the object is under neither `quarantine/` nor `clean/` (a rerun after an interrupted rejection) | rejected, outcome `missing` |
+| nothing (socket refused, timeout, closed) or an S3 error | nothing changes (stays `quarantine`); retried after 1, 2, 4, 8, 16 minutes, then one Sentry message (`Stored object scan failed after 6 attempts: <uuid> (clamd_unavailable)`, or `(scan_error)` / `(s3_error)`); the hourly sweep enqueues it again while it is still in quarantine after an hour (unless a scan of it is already waiting or running) |
+
+A scan that runs twice (a deploy restart) has one outcome; a rerun after the copy to
+`clean/` finishes the promotion without a second copy. Log lines and Sentry carry the
+object's UUID and the outcome code (`clean`, `infected`, `limit_exceeded`,
+`unscannable`, `scan_error`, `missing`, `clamd_unavailable`, `s3_error`) only, and the
+signature name for a FOUND; never the file name, a key or a URL. When any object has
+waited more than 6 hours for its scan, each hourly sweep sends one Sentry message with
+their count only (`<n> stored object(s) waiting for their virus scan for more than 6
+hours`): the scan worker or clamd is down. No user is notified yet (the real
+purposes come later); the sample page shows each object's state.
+
+| What | Value |
+|------|-------|
+| Version | ClamAV from Debian 13's packages (1.4 LTS line, 1.4.3 at the time of writing; decision 2026-11-07, amending the architecture's "1.4.6 or later"), kept current by apt and Debian security updates. When 1.4.6 or later reaches Debian, upgrade: `apt-cache policy clamav` shows the candidate; `sudo apt-get install --only-upgrade clamav clamav-daemon clamav-freshclam` |
+| Packages and units | host-wide, installed by `provision.sh` (any site's run): `clamav-daemon` (clamd) and `clamav-freshclam` (signature updates, hourly), both enabled |
+| Configuration | `/etc/clamav/clamd-mytp.conf` from `deploy/clamav/clamd.conf`, read through the drop-in `/etc/systemd/system/clamav-daemon.service.d/mytp.conf`; Debian's own `/etc/clamav/clamd.conf` is left as the package wrote it (`clamdscan` and freshclam read it; same socket) |
+| Limits | `StreamMaxLength`, `MaxFileSize`, `MaxScanSize` 1025M (just above the largest purpose limit, 1 GiB; `storage.purposes` refuses a larger one); `MaxScanTime` 10 minutes; archive and recursion limits at clamd's defaults. `AlertExceedsMax`, `AlertEncrypted*`, `AlertBrokenExecutables` on: a file clamd cannot fully scan is FOUND, never OK. `AlertBrokenMedia` **off** (decision 2026-11-08): malformed images and media are scanned like any file, not rejected for being malformed |
+| Socket | `/run/clamav/clamd.ctl`, mode 0660, group `clamav` (also on Debian's `clamav-daemon.socket`, drop-in `clamav-daemon.socket.d/mytp.conf`); each portal site user is in the group, and the scan worker unit has `SupplementaryGroups=clamav`. `STORAGE_CLAMD_SOCKET=/run/clamav/clamd.ctl` in `shared/settings.env` (check `storage.E004` refuses storage without it) |
+| Memory | clamd holds the signatures in memory (about 1 to 1.5 GB); `ConcurrentDatabaseReload no`, so a reload does not hold a second copy (scans wait during it). freshclam also loads each new database once to test it (`TestDatabases`, on by default): about 1 GB more for a few seconds after each update. If memory gets tight, set `TestDatabases no` in `/etc/clamav/freshclam.conf` (or `sudo dpkg-reconfigure clamav-freshclam`) and restart `clamav-freshclam`. Spool for streamed files: `/var/lib/clamav/tmp` (not `/tmp`, a RAM tmpfs on Debian 13) |
+| AppArmor | Debian enforces the profile `/etc/apparmor.d/usr.sbin.clamd`. Its local include `/etc/apparmor.d/local/usr.sbin.clamd` (from `deploy/clamav/apparmor-usr.sbin.clamd`) lets clamd read `clamd-mytp.conf` and use the spool; `provision.sh` reloads the profile when that file changes and AppArmor runs |
+| Scan worker | `mytp-<site>-scan-worker.service` (`deploy/systemd/scan-worker.service.template`): `db_worker --backend scans --queue-name scans`, the `scans` task backend only, so a long scan never holds the main worker; `requeue_interrupted_tasks --backend scans` before each start. It follows `mytp-<site>-worker` (`PartOf`, `WantedBy`): release.sh's stop before `migrate` and restart after the switch apply to it, with no extra sudoers rule. Installed by `provision.sh` once the live release has `storage/clamd.py` (portal sites only; never admindev). Logs: `journalctl -u mytp-dev-scan-worker`. The `prunescans` job prunes its task results like `prunetasks` |
+
+#### Setup (dev)
+
+```bash
+# 1. FIRST, before this story's first deploy, on the server as debian: the settings
+#    line (with your editor). The check storage.E004 fails `migrate`, and so the
+#    release, on a site that uses storage without it.
+sudo -u mytp-dev "$EDITOR" /srv/mytp-dev/shared/settings.env
+#   STORAGE_CLAMD_SOCKET=/run/clamav/clamd.ctl
+
+# 2. Once the release is live (CI deploy), from an up-to-date copy of deploy/:
+bash deploy/provision.sh dev dev.mytpdso.com <htpasswd-user>
+# The first run installs ClamAV and downloads the signatures (a few minutes), adds
+# mytp-dev to the group clamav, and installs and starts mytp-dev-scan-worker. Uploads
+# recorded between the deploy and this run wait in quarantine; the sweep scans them.
+```
+
+dev-ae has no bucket yet (no `STORAGE_*`), so it needs no setting; its scan worker is
+installed by its own `provision.sh dev-ae` run once its release is live, and idles. A
+rollback to a release before this story leaves the scan worker failing (that release has
+no `scans` backend); stop it with `sudo systemctl stop mytp-dev-scan-worker` until the
+next release.
+
+#### Checks on staging
+
+```bash
+clamdscan --version                         # ClamAV 1.4.x/<signature version>/<date>
+sudo aa-status | grep clamd                 # /usr/sbin/clamd in the enforce list
+systemctl status clamav-daemon clamav-freshclam --no-pager
+sudo journalctl -u clamav-freshclam -n 20 --no-pager   # "daily.cld updated" / "is up-to-date"
+ls -l /run/clamav/clamd.ctl                 # srw-rw---- clamav clamav
+cd /srv/mytp-dev/current
+sudo -u mytp-dev ./venv/bin/python manage.py clamd_check
+#   clamd: ClamAV 1.4.3/<n>/<date>
+#   signatures: current (<date>)      (fails when they are more than 3 days old)
+sudo -u mytp-dev ./venv/bin/python manage.py check   # no storage.E004
+systemctl status mytp-dev-scan-worker --no-pager
+```
+
+With the sample page (`/en/storage/sample/`, Reload after each upload; record the event
+log and the outcome in the story's results):
+
+- **1 GB random file** (T1's), first: state `clean` after the scan (a minute or two),
+  then Download works (T4). Then check that AppArmor refused nothing:
+  `sudo journalctl -k --since -15min | grep -i denied` prints nothing (a `DENIED` line
+  naming clamd means the local AppArmor file is missing a path).
+- **EICAR:** save the [EICAR test string](https://www.eicar.org/download-anti-malware-testfile/)
+  as `eicar.txt` and upload it: state `rejected`, no Download button, no `clean/` object
+  (`storage_bucket --inspect`), a `DeletionTrace` with actor `system`;
+  `journalctl -u mytp-dev-scan-worker` shows `object <uuid> rejected (infected,
+  Win.Test.EICAR_HDB-1)`.
+- **Above the limit:** no purpose allows more than 1 GiB, so lower the limit for the
+  test: set `StreamMaxLength 10M` in `/etc/clamav/clamd-mytp.conf`,
+  `sudo systemctl restart clamav-daemon`, upload a 20 MB file: `rejected`
+  (`limit_exceeded`). Then run `provision.sh dev` again (it restores the file and
+  restarts clamd).
+- **Encrypted zip:** `zip -e -P test secret.zip eicar.txt` and upload it: `rejected`
+  (`unscannable`, `Heuristics.Encrypted.Zip`).
+- **clamd down:** `sudo systemctl stop clamav-daemon clamav-daemon.socket`, upload a
+  small file: it stays `quarantine` and the worker log shows `undecided
+  (clamd_unavailable), attempt 1 of 6`. Restart clamd
+  (`sudo systemctl start clamav-daemon.socket clamav-daemon`); after the next retry (or,
+  more than an hour later, after `manage.py sweep_storage` reports `1 scans enqueued
+  again`), the file is `clean`. Left down for more than 6 hours, the sweep's Sentry
+  message (count only) appears.
 
 ## Keys (KMS)
 

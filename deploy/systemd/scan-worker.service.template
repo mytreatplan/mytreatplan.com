@@ -1,0 +1,49 @@
+# Rendered by deploy/provision.sh to /etc/systemd/system/mytp-__SITE__-scan-worker.service,
+# one per portal site (__SITE__ is the site name, e.g. dev); made from
+# worker.service.template. The site's second task worker (epic-platform entry 12): the
+# virus scans of uploads (storage.tasks.scan_object_task), the `scans` task backend and
+# queue only, so a long scan never holds mytp-__SITE__-worker. It streams each upload to
+# clamd's socket (/run/clamav/clamd.ctl, group clamav). Logs:
+# journalctl -u mytp-__SITE__-scan-worker.
+#
+# It follows mytp-__SITE__-worker: started with it (WantedBy), stopped and restarted with
+# it (PartOf). So deploy/release.sh, which stops that worker before `migrate` and restarts
+# it after the switch, does the same to this one, with no extra sudoers rule.
+[Unit]
+Description=MyTreatplan virus scan worker (site __SITE__)
+After=network-online.target clamav-daemon.service
+Wants=network-online.target
+PartOf=mytp-__SITE__-worker.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=exec
+User=mytp-__SITE__
+Group=mytp-__SITE__
+# The clamd socket is mode 0660, group clamav (deploy/clamav/).
+SupplementaryGroups=clamav
+WorkingDirectory=/srv/mytp-__SITE__/current
+# Only this worker runs the `scans` backend's tasks, and it is stopped now: a scan still
+# marked running was interrupted and goes back to the queue (the main worker's tasks are
+# another backend and stay as they are). A scan is idempotent (run_once).
+ExecStartPre=/srv/mytp-__SITE__/current/venv/bin/python manage.py requeue_interrupted_tasks --backend scans
+ExecStart=/srv/mytp-__SITE__/current/venv/bin/python manage.py db_worker \
+    --backend scans \
+    --queue-name scans \
+    --interval 1 \
+    --no-reload
+Restart=always
+RestartSec=5
+# SIGTERM lets the running scan finish; after TimeoutStopSec systemd kills it, and the
+# next start requeues that scan.
+KillSignal=SIGTERM
+TimeoutStopSec=60
+SyslogIdentifier=mytp-__SITE__-scan-worker
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+UMask=0027
+
+[Install]
+WantedBy=mytp-__SITE__-worker.service
