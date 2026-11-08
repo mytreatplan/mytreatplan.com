@@ -1084,7 +1084,8 @@ address, with Reply-To the sender. It has no default: set it in the same file,
 and restart `mytp-dev-gunicorn`. While it is empty, `check --deploy` fails
 (`mytp_publicsite.E007`) and messages are only stored. A message whose mail failed stays in
 the admin with its mail "Failed" (filter by mail), and the failure is reported to Sentry
-without values.
+without values. admindev keeps a copy of every message (see "Outbox", "Contact
+messages"); the mail does not depend on it.
 
 ## Erase an account
 
@@ -2117,7 +2118,7 @@ both kids), restart, let admindev switch, then remove the old entry and restart 
 
 ### Outbox
 
-Events (client records, entry 8; contact messages and the accounting feed later) go from
+Events (client records, entry 8; contact messages, entry 9; the accounting feed later) go from
 the portal to the admin site through an outbox (epic-admin-interface
 entry 3, AD-3, AD-18, AD-19; `integration.outbox`). Code that changes something the admin
 site must know calls `outbox.record(type, aggregate_id, aggregate_version, payload)` in
@@ -2198,6 +2199,49 @@ values) and skipped; the others are sent and the command exits non-zero at the e
 
 On admindev the copies are counted per region (its README, "Client records"); a row read
 straight from its database shows ciphertext in the names, email and mobile.
+
+#### Contact messages
+
+The admin site keeps a copy of every message sent through the contact form
+(epic-admin-interface entry 9, AD-18; `mytp_publicsite.contact_sync`), with the message's
+`uid` as the aggregate and its `sync_version` (bumped under the row's lock) as the
+version:
+
+| Write | Event |
+|-------|-------|
+| A contact form message stored | `contact_message.updated` (names, email, phone, country, the three yes/no answers, when sent), in the transaction that stores it; the inbox mail goes after the commit as before, and its status is not sent |
+| Delete in the Django admin (one, or the bulk action) | `contact_message.deleted` for each message sent before (its `contact_message.updated` still pending is deleted first), then the row: admindev deletes its copy; nothing for a message never sent |
+
+A failed inbox mail does not hold the copy back, and an unreachable admindev does not hold
+the mail back. A message whose state the contract refuses (very unlikely: the form's
+checks come first) is kept and mailed without its copy, reported to Sentry as
+`Contact form error: sync (...)` without values; `sync_contact_messages` names it.
+
+**Re-sync.** admindev's `resync_contact_message <uid>` sends a signed
+`POST /api/v1/contact-messages/resync` (`{"aggregate_id": "<uid>"}`, admindev only); the
+portal answers 202 and a worker task (its one argument the uid) emits the message's
+current state as its next version. A uid that is no message here (never, or deleted) is
+404 `unknown_contact_message`; any other body is 400 `invalid_body`. Log lines:
+`integration.contact_messages` (uid, outcome).
+
+**Backfill** (once per site after the deploy that adds the sync, and whenever admindev's
+copy must be rebuilt): every message, each in its own transaction, then the outbox
+delivers them.
+
+```sh
+cd /srv/mytp-dev/current
+sudo -u mytp-dev ./venv/bin/python manage.py sync_contact_messages --all       # "N contact_message.updated"
+sudo -u mytp-dev ./venv/bin/python manage.py sync_contact_messages <uid> ...   # some messages only
+# dev-ae (region ae), the same:
+cd /srv/mytp-dev-ae/current
+sudo -u mytp-dev-ae ./venv/bin/python manage.py sync_contact_messages --all
+sudo -u mytp-dev-ae ./venv/bin/python manage.py sync_contact_messages <uid> ...
+```
+
+A message whose stored state the contract refuses is named (`<uid> failed: ...`, no
+values) and skipped; the others are sent and the command exits non-zero at the end. On
+admindev the copies are counted per region (its README, "Contact messages"); a row read
+straight from its database shows ciphertext in the names, email, phone and country.
 
 ### Configuration snapshot
 

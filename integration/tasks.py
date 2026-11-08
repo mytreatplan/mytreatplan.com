@@ -10,6 +10,9 @@
   site's nudge (`integration.config.request_pull`).
 - `resync_client_task` (entry 8): emits one account's client event again
   (accounts.client_sync.resync), enqueued by the admin site's re-sync.
+- `resync_contact_message_task` (entry 9): emits one contact message's state again
+  (mytp_publicsite.contact_sync.resync), enqueued by the admin site's re-sync. Its one
+  argument is the message's uid: nothing of the message goes into the task.
 """
 import logging
 
@@ -68,4 +71,21 @@ def resync_client_task(uid):
         logger.warning('client resync: %s is not here', uid)
         return 'unknown'
     logger.info('client resync: %s -> %s', uid, event_type or 'nothing (staff)')
+    return event_type
+
+
+@task
+def resync_contact_message_task(uid):
+    """Emit the contact message `uid`'s current state again (entry 9): enqueued by the
+    admin site's re-sync (`POST /api/v1/contact-messages/resync`). Returns the event type
+    recorded (`contact_message.updated`), or 'unknown' for a uid that is no longer here
+    (deleted meanwhile)."""
+    from mytp_publicsite import contact_sync
+    from mytp_publicsite.models import ContactMessage
+    try:
+        event_type = contact_sync.resync(uid)
+    except ContactMessage.DoesNotExist:
+        logger.warning('contact message resync: %s is not here', uid)
+        return 'unknown'
+    logger.info('contact message resync: %s -> %s', uid, event_type)
     return event_type

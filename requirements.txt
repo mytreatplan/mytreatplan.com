@@ -38,4 +38,4 @@ typing_extensions==4.16.0
 typing-inspection==0.4.5
 urllib3==2.8.0
 # Shared code (mytp-core, AD-10): the wheel of a tag, rebuilt by scripts/vendor-mytp-core.sh.
-./vendor/mytp_core-0.13.0-py3-none-any.whl
+./vendor/mytp_core-0.14.0-py3-none-any.whl

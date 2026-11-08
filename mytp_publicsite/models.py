@@ -3,7 +3,8 @@
 One row per accepted message: the sender's details, encrypted at rest as every personal
 field (encryption policy, "Personal fields"), the three yes/no answers, when it was sent,
 and what became of the mail to CONTACT_INBOX. Kept until an admin deletes it (decision 1):
-no automatic deletion. The admin is read-only, plus delete.
+no automatic deletion. The admin is read-only, plus delete. The admin site keeps a copy
+(mytp_publicsite.contact_sync, epic-admin-interface entry 9).
 """
 import uuid
 
@@ -58,6 +59,11 @@ class ContactMessage(models.Model):
     sent_at = models.DateTimeField(_('sent at'), default=timezone.now, editable=False)
     mail_status = models.CharField(_('mail'), max_length=10, choices=MailStatus.choices,
                                    default=MailStatus.PENDING, editable=False)
+    # The contact message sync (mytp_publicsite.contact_sync, epic-admin-interface entry
+    # 9): the version of the last event sent to the admin site (its aggregate version),
+    # bumped under the row's lock. 0: never sent. The database default lets the previous
+    # release insert rows while a deploy migrates.
+    sync_version = models.BigIntegerField(default=0, db_default=0, editable=False)
 
     class Meta:
         ordering = ('-sent_at', '-id')

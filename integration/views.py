@@ -1,6 +1,6 @@
 """The interface endpoints the admin site calls (epic-admin-interface, AD-4): the ping
-(entry 1), the configuration snapshot's nudge (entry 4), the client re-sync (entry 8)
-and the remote reads (entry 5, integration.remote)."""
+(entry 1), the configuration snapshot's nudge (entry 4), the client re-sync (entry 8),
+the contact message re-sync (entry 9) and the remote reads (entry 5, integration.remote)."""
 import json
 import logging
 
@@ -14,6 +14,7 @@ from mytp_core import interface
 from mytp_core.contracts import errors as contract_errors
 from mytp_core.contracts import error_body, utc_text
 from mytp_core.contracts.events import UUID_RE
+from mytp_publicsite.models import ContactMessage
 
 from . import calls, config, remote, sample
 from .calls import signed_endpoint
@@ -21,6 +22,7 @@ from .outbox import admin_site_url
 
 logger = logging.getLogger('integration.config')
 clients_logger = logging.getLogger('integration.clients')
+contact_messages_logger = logging.getLogger('integration.contact_messages')
 
 
 @require_GET
@@ -65,7 +67,19 @@ def config_nudge(request):
 
 
 UNKNOWN_CLIENT = 'unknown_client'
+UNKNOWN_CONTACT_MESSAGE = 'unknown_contact_message'
 INVALID_BODY = 'invalid_body'
+
+
+def _resync_uid(request):
+    """The uid of a re-sync body `{"aggregate_id": "<uuid>"}` (no other key), or None."""
+    try:
+        data = json.loads(request.body)
+    except (ValueError, RecursionError):
+        data = None
+    uid = data.get('aggregate_id') if isinstance(data, dict) and set(data) == {
+        'aggregate_id'} else None
+    return uid if isinstance(uid, str) and UUID_RE.fullmatch(uid) else None
 
 
 @require_POST
@@ -104,6 +118,36 @@ def clients_resync(request):
     from .tasks import resync_client_task
     resync_client_task.enqueue(uid)
     clients_logger.info('client resync from %s: %s queued', issuer, uid)
+    return JsonResponse({'status': 'queued'}, status=202)
+
+
+@require_POST
+@signed_endpoint
+def contact_messages_resync(request):
+    """POST /api/v1/contact-messages/resync, signed by the admin site
+    (`resync_contact_message`), body `{"aggregate_id": "<uid>"}`: emit that contact
+    message's current state again (mytp_publicsite.contact_sync: `contact_message.updated`)
+    as its next version. Answers 202 `{"status": "queued"}` and enqueues the task
+    (`integration.tasks.resync_contact_message_task`); 404 `unknown_contact_message` for a
+    uid that is no message here (never one, or deleted); 400 `invalid_body` for any other
+    body (extra keys included). Only the admin site may ask: another signed peer is
+    refused as an unknown key (401)."""
+    refused = _not_the_admin_site(request)
+    if refused is not None:
+        return refused
+    uid = _resync_uid(request)
+    if uid is None:
+        return JsonResponse(error_body(INVALID_BODY, 'The body is not {"aggregate_id": '
+                                                     '"<uuid>"}.'), status=400)
+    issuer = request.interface_claims['iss']
+    if not ContactMessage.objects.filter(uid=uid).exists():
+        contact_messages_logger.info('contact message resync from %s: %s unknown', issuer,
+                                     uid)
+        return JsonResponse(error_body(UNKNOWN_CONTACT_MESSAGE,
+                                       'No contact message has this id here.'), status=404)
+    from .tasks import resync_contact_message_task
+    resync_contact_message_task.enqueue(uid)
+    contact_messages_logger.info('contact message resync from %s: %s queued', issuer, uid)
     return JsonResponse({'status': 'queued'}, status=202)
 
 

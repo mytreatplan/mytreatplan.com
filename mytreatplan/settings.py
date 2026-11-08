@@ -376,7 +376,8 @@ INSTALLED_APPS = [
     # events to the admin site (OutboxEvent, entry 3), the configuration snapshot pulled
     # from it (ConfigState, AdminDirectoryEntry, entry 4) and the commands ping_peer,
     # purge_interface_calls, dispatch_outbox, purge_outbox, pull_config and show_config;
-    # the client re-sync endpoint (entry 8).
+    # the client re-sync endpoint (entry 8); the contact message re-sync endpoint
+    # (entry 9).
     'integration.apps.IntegrationConfig',
     # The catalogue from the admin site's configuration snapshot (epic-catalogue entry 2):
     # read-only tables filled by the snapshot apply, the resolver that prices
@@ -661,5 +662,8 @@ LOGGING = {
         # The client re-sync asked by the admin site (integration.views, entry 8): the
         # uid and the outcome; never a name or an email.
         'integration.clients': {'handlers': ['console'], 'level': 'INFO'},
+        # The contact message re-sync asked by the admin site (integration.views, entry
+        # 9): the uid and the outcome; nothing of the message.
+        'integration.contact_messages': {'handlers': ['console'], 'level': 'INFO'},
     },
 }

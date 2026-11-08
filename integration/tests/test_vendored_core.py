@@ -1,6 +1,7 @@
 """The vendored mytp-core wheel is the release this site expects (epic-catalogue entry 1;
 the configuration snapshot, epic-admin-interface entry 4; the client record events,
-entry 8; the snapshot's catalogue section, epic-catalogue entry 2; remote reads, entry 5)."""
+entry 8; the snapshot's catalogue section, epic-catalogue entry 2; remote reads, entry 5;
+the contact message events, entry 9)."""
 
 from decimal import Decimal
 
@@ -11,7 +12,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.13.0'
+    assert mytp_core.__version__ == '0.14.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -25,7 +26,9 @@ def test_vendored_mytp_core_has_the_config_snapshot():
 
 def test_vendored_mytp_core_has_the_client_events_and_no_sample():
     from mytp_core import contracts
-    assert contracts.registered_types() == ['client.erased', 'client.updated']
+    assert contracts.registered_types() == ['client.erased', 'client.updated',
+                                            'contact_message.deleted',
+                                            'contact_message.updated']
     assert not hasattr(contracts, 'SAMPLE_RECORDED')
 
 
@@ -43,3 +46,12 @@ def test_vendored_mytp_core_has_remote_reads():
         'uuid', 'patient_name', 'assignee_uuid', 'note'}
     assert callable(interface.remote_actor) and callable(remote_record)
     assert errors.remote_read_error('access_log_unavailable')[1] == 503
+
+
+def test_vendored_mytp_core_has_the_contact_message_events():
+    from mytp_core import contracts
+    assert contracts.CONTACT_MESSAGE_READERS == {
+        'contact_message.updated': contracts.ContactMessageUpdatedReader,
+        'contact_message.deleted': contracts.ContactMessageDeletedReader}
+    assert contracts.payload_model_for('contact_message.updated') is (
+        contracts.ContactMessageUpdated)
