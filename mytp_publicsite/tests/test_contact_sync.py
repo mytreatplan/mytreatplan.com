@@ -459,7 +459,9 @@ def test_sync_contact_messages_by_uid():
 def test_sync_contact_messages_goes_on_after_a_message_the_contract_refuses():
     bad = stored()
     good = stored(first_name='Good')
-    ContactMessage.objects.filter(pk=bad.pk).update(aligners='maybe')  # not yes/no
+    # A data: URI in the free-text country: the form takes it, the central checks refuse it
+    # (it also fits every column on PostgreSQL, unlike an over-long answer).
+    ContactMessage.objects.filter(pk=bad.pk).update(country='data:text/plain;base64,QUJD')
     out, err = io.StringIO(), io.StringIO()
     with pytest.raises(CommandError, match=f'failed: {bad.uid}'):
         call_command('sync_contact_messages', '--all', stdout=out, stderr=err)
