@@ -24,7 +24,9 @@ accepted message is stored (`accept`), and once its row is committed a backgroun
 (`in_background`) mails it to CONTACT_INBOX (`build_message`: plain text, from
 DEFAULT_FROM_EMAIL, Reply-To the sender) through the default mailer (epic-login entry 9),
 and stores the outcome on the row (`MailStatus`). A failed send is reported to Sentry
-without values; the message stays in the admin.
+without values; the message stays in the admin. The admin site's copy
+(`contact_message.updated`, mytp_publicsite.contact_sync, epic-admin-interface entry 9) is
+recorded in the outbox in the transaction that stores the message, whatever the mail does.
 
 Nothing here logs or reports a message's values.
 """
@@ -33,6 +35,7 @@ import re
 import threading
 import time
 from datetime import timezone as dt_timezone
+from functools import partial
 
 import sentry_sdk
 from django.conf import settings
@@ -44,8 +47,11 @@ from django.db import connections, transaction
 from accounts.cache_mutex import CounterBusy, cache_mutex
 from accounts.login_guard import report_error
 from eventlog.service import client_ip
+from integration.outbox import OutboxError
+from mytp_core.contracts import ContractViolation, InvalidPayload, UnknownEventType
 from signup.limits import _ip_hash
 
+from . import contact_sync
 from .forms import clean_text
 from .models import ContactMessage, MailStatus
 
@@ -263,10 +269,32 @@ def in_background(function):
     return thread
 
 
+# The outbox's refusals of an event (the contract's, or the size): the message is kept
+# without its copy. Any other error rolls the message back.
+SYNC_REFUSALS = (InvalidPayload, ContractViolation, UnknownEventType, OutboxError)
+
+
+def start_mail(pk):
+    """The on-commit callback of an accepted message: its mail job, in the background."""
+    in_background(partial(mail_job, pk))
+
+
 def accept(cleaned_data):
-    """Store an accepted message; its mail goes once the row is committed."""
-    message = ContactMessage.objects.create(
-        **{field: cleaned_data.get(field) or '' for field, _label in MAIL_LABELS})
-    pk = message.pk
-    transaction.on_commit(lambda: in_background(lambda: mail_job(pk)))
+    """Store an accepted message and record its copy for the admin site
+    (`contact_message.updated`, mytp_publicsite.contact_sync) in one transaction; its mail
+    goes once the row is committed (the mail does not gate the copy, nor the copy the
+    mail). The mail's on-commit callback is registered first, before the outbox's (its
+    log line and nudge), so a failing outbox callback cannot drop it. An event the outbox
+    refuses (`SYNC_REFUSALS`: the contract's checks, which name fields, never values; or
+    the size) is reported without values and the message is kept without its copy
+    (`sync_contact_messages` names it later); any other failure rolls back both."""
+    with transaction.atomic():
+        message = ContactMessage.objects.create(
+            **{field: cleaned_data.get(field) or '' for field, _label in MAIL_LABELS})
+        transaction.on_commit(partial(start_mail, message.pk))
+        try:
+            with transaction.atomic():
+                contact_sync.emit(message)
+        except SYNC_REFUSALS as error:
+            _report('sync', error)
     return message

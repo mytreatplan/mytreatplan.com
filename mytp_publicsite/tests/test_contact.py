@@ -201,7 +201,9 @@ def test_the_mail_goes_only_once_the_row_is_committed(client, monkeypatch,
         client.post('/en/contact/', data)
         assert jobs == []  # nothing before the commit
 
-    assert len(callbacks) == 1
+    # The mail's callback comes first, before the outbox's (its log line and nudge, entry 9).
+    assert callbacks[0].func is contact.start_mail
+    assert callbacks[0].args == (ContactMessage.objects.get().pk,)
     callbacks[0]()
     assert len(jobs) == 1
 
