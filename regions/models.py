@@ -1,8 +1,9 @@
 """The country map (epic-regions entry 1, AD-3, AD-14): which region serves a country.
 
 One row per ISO 3166-1 alpha-2 code with its state: a region code (`eu`, `ae`) or
-`banned`. Read-only on the portal (no admin, no edit UI); until epic-catalogue a change is
-a data migration, later the admin site's configuration snapshot replaces the rows by code.
+`banned`. Read-only on the portal (no admin, no edit UI): seeded by migration 0002, then
+the admin site's configuration snapshot (its `country_map` section, epic-catalogue entry 3)
+replaces the rows by code (regions.applier).
 Not marked CROSSES_SITES: the code is the key on every site. Read it through
 regions.countries.lookup_country, never by comparing with a region name elsewhere.
 """

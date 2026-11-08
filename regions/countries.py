@@ -6,8 +6,9 @@ send the person. `lookup_country` answers it from the map (regions.models.Countr
 
 The lists below are the agreed seed (user, 2026-10-30 and 2026-11-01). The seed migration
 (regions/migrations/0002_seed_country_map.py) keeps its own frozen copy; a test fails
-when the migrated map and these lists diverge. Changing a country is a new data migration
-plus a change here.
+when the migrated map and these lists diverge. Since epic-catalogue entry 3 the Sysadmin
+changes a country on the admin site, and the configuration snapshot's `country_map`
+section replaces the rows by code (regions.applier); these lists stay the seed.
 """
 from dataclasses import dataclass
 

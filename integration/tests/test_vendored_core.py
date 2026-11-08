@@ -1,7 +1,8 @@
 """The vendored mytp-core wheel is the release this site expects (epic-catalogue entry 1;
 the configuration snapshot, epic-admin-interface entry 4; the client record events,
 entry 8; the snapshot's catalogue section, epic-catalogue entry 2; remote reads, entry 5;
-the contact message events, entry 9)."""
+the contact message events, entry 9; the snapshot's country map section,
+epic-catalogue entry 3)."""
 
 from decimal import Decimal
 
@@ -12,7 +13,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.14.0'
+    assert mytp_core.__version__ == '0.15.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -55,3 +56,10 @@ def test_vendored_mytp_core_has_the_contact_message_events():
         'contact_message.deleted': contracts.ContactMessageDeletedReader}
     assert contracts.payload_model_for('contact_message.updated') is (
         contracts.ContactMessageUpdated)
+
+
+def test_vendored_mytp_core_has_the_country_map_section():
+    from mytp_core.contracts import CountryMapEntry, CountryMapSection
+    assert ConfigSnapshot.model_fields['country_map'].is_required() is False
+    assert CountryMapSection.model_fields.keys() == {'countries'}
+    assert CountryMapEntry.model_fields.keys() == {'code', 'state'}

@@ -362,8 +362,9 @@ INSTALLED_APPS = [
     # generate_field_keys, generate_kms_field_key, kmscheck, runjob and backupdb.
     'mytp_core.apps.MytpCoreConfig',
     # The REGION profile (AD-13; regions/profiles.py, plain data) and the country map
-    # (regions.models.Country: each country's region or banned, read-only, seeded by
-    # migration; regions.countries.lookup_country).
+    # (regions.models.Country: each country's region or banned; seeded by migration, then
+    # replaced by code from the configuration snapshot's `country_map` section by
+    # regions.applier; read through regions.countries.lookup_country).
     'regions.apps.RegionsConfig',
     'accounts.apps.AccountsConfig',
     'eventlog.apps.EventlogConfig',

@@ -7,4 +7,8 @@ class RegionsConfig(AppConfig):
     verbose_name = 'Regions'
 
     def ready(self):
-        from . import checks  # noqa: F401  (registers regions.E001)
+        from integration import config
+
+        from . import applier, checks  # noqa: F401  (checks registers regions.E001)
+        # The snapshot's country map (epic-catalogue entry 3): regions.applier.
+        config.register_section_applier('country_map', applier.apply)
