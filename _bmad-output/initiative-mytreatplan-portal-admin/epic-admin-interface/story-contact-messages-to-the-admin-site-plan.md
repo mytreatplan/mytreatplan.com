@@ -3,7 +3,7 @@ title: 'Contact messages to the admin site'
 type: 'feature'
 ticket: '9'
 created: '2026-11-07'
-status: 'built'
+status: 'done'
 baseline_revision: 'portal 78b82eb, core 35fd7cb, admin efb3c9f'
 route: 'full'
 route_source: 'auto'
@@ -192,3 +192,13 @@ Opus reviews, one per repo (2026-11-07):
 
 **Manual checks (staging):**
 - `sync_contact_messages --all` on dev and dev-ae; a contact form sent on dev and on dev-ae → a record each on admindev; with admindev stopped, send one on dev → delivered after it starts; delete one in dev's Django admin → gone on admindev; raw admin database read shows ciphertext; the inbox email still arrives.
+
+## Staging
+
+2026-11-08, run by Claude with the user's delegation. mytp-core v0.14.0 (tag CI green); admin PR #20 merged and deployed to admindev; portal PR #75 merged with one PostgreSQL-only test failing (an over-long answer in a 3-character column; master's deploy was skipped), fixed by #76, whose run deployed dev and dev-ae green. Local suites: core 1115, admin 927 passed / 5 skipped, portal 2096 passed / 5 skipped + the 3 known PostgreSQL-only failures.
+- `sync_contact_messages --all`: dev sent 1 existing message, dev-ae 0.
+- A made-up contact message sent on dev and on dev-ae: mail `sent`, event delivered; admindev holds one record each (eu, ae).
+- admindev stopped (502): a message sent on dev stayed pending, then was delivered within a minute of admindev's start.
+- Deleted through dev's Django admin path (`delete_queryset`): row gone, tombstone v2 delivered, record gone on admindev; the others stay.
+- admindev raw read: no row holds the clear first name; the records decrypt correctly.
+- Not checked: the email's arrival in the company inbox (mail status `sent` only).
