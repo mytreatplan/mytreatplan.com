@@ -92,6 +92,37 @@ def test_a_us_doctor_gets_nothing(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
+def test_a_country_of_a_deactivated_group_falls_to_rest_of_world(admin):  # noqa: F811
+    # Epic-catalogue entry 3: the admin site deactivates Iberia.
+    subscriptions = [subscription(BASIC, 'basic', IBERIA, '10.00'),
+                     subscription(WORLD_BASIC, 'basic', WORLD, '0.00')]
+    pull(admin, 1, catalogue(subscriptions=subscriptions))
+    assert resolver.country_group('ES').name == 'Iberia'
+    assert priced('ES') == [('TPS', Money('90.00', 'EUR'))]
+    pull(admin, 2, catalogue(subscriptions=subscriptions, groups=[
+        group(IBERIA, 'Iberia', ['ES', 'PT'], active=False),
+        group(REST_OF_EU, 'Rest of EU', ['FR', 'DE']),
+        group(WORLD, 'Rest of world', [], catch_all=True)]))
+    assert resolver.country_group('ES').name == 'Rest of world'
+    assert priced('ES') == priced('US') == [('TPS', Money('100.00', 'EUR'))]
+    assert resolver.country_group('FR').name == 'Rest of EU'
+
+
+@pytest.mark.django_db
+def test_a_country_added_to_a_group_is_priced_as_that_group(admin):  # noqa: F811
+    # Epic-catalogue entry 3: the admin site adds FR to Iberia (and takes it from Rest of
+    # EU, as the one-active-group rule requires).
+    pull(admin, 1, catalogue())
+    assert priced('FR') == []
+    pull(admin, 2, catalogue(groups=[
+        group(IBERIA, 'Iberia', ['ES', 'FR', 'PT']),
+        group(REST_OF_EU, 'Rest of EU', ['DE']),
+        group(WORLD, 'Rest of world', [], catch_all=True)]))
+    assert resolver.country_group('FR').name == 'Iberia'
+    assert priced('FR') == [('TPS', Money('90.00', 'EUR'))]
+
+
+@pytest.mark.django_db
 def test_a_non_tps_product_is_listed_at_its_net_price(admin):  # noqa: F811
     pull(admin, 1, catalogue(products=[product(TPS, 'TPS', 'tps', '100.00'),
                                        product(OTHER, 'Retainers', 'other', '50.00')]))
@@ -256,7 +287,8 @@ def test_the_catalogue_applier_is_registered_once():
     for name in ('vouchers', 'version', 'admin_directory'):
         with pytest.raises(ValueError):
             config.register_section_applier(name, lambda section: None)
-    assert config.section_applier_names() == ('catalogue',)
+    # The regions app's country map (epic-catalogue entry 3) is the other section.
+    assert config.section_applier_names() == ('country_map', 'catalogue')
 
 
 @pytest.mark.django_db

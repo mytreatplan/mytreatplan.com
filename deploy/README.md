@@ -35,7 +35,7 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp-dev/shared/kms-client.*`; daily `kmscheck` job |
 | Signup and login codes | Twilio Verify (email via SendGrid, WhatsApp, SMS); credentials in `shared/settings.env` ("Twilio Verify") |
 | Geo-IP | DB-IP Lite country database `/srv/mytp-dev/shared/geoip/dbip-country-lite.mmdb` (CC BY 4.0), monthly `geoipupdate` job ("Geo-IP database") |
-| Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute; configuration snapshot pulled from it, `pullconfig` job every 5 minutes, `show_config`; the catalogue it carries, `price_catalogue` ("Interface with the admin site", "Outbox", "Configuration snapshot", "Catalogue") |
+| Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute; configuration snapshot pulled from it, `pullconfig` job every 5 minutes, `show_config`; the catalogue it carries, `price_catalogue`; the country map it carries ("Interface with the admin site", "Outbox", "Configuration snapshot", "Catalogue", "Country map") |
 | Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -2359,8 +2359,9 @@ straight from its database shows ciphertext in the names, email, phone and count
 
 The admin site owns the configuration every region applies (epic-admin-interface entry 4,
 AD-3 item 1, AD-22, interface I5; `integration.config`): the admin directory, who an
-admin actor UUID is (deleted admin users stay listed, inactive), and the catalogue
-(epic-catalogue entry 2; see "Catalogue" below). This portal pulls it
+admin actor UUID is (deleted admin users stay listed, inactive), the catalogue
+(epic-catalogue entry 2; see "Catalogue" below) and the country map (epic-catalogue entry
+3; see "Country map" below). This portal pulls it
 and keeps applying the last good one while the admin site is down. Admin users are never
 created here.
 
@@ -2368,7 +2369,7 @@ created here.
 |------|-------|
 | Pull | `pullconfig` job every 5 minutes (`manage.py pull_config`), plus a task on the worker after each signed `POST /api/v1/config/nudge` from the admin site (answered 202; nudges coalesce into one queued pull). A signed `GET <admin>/api/v1/config` to the only `INTERFACE_PEERS` entry (or `INTERFACE_ADMIN_SITE`) |
 | Check | the snapshot's signature (admindev's key from `INTERFACE_PEER_KEYS`, `typ: config`, this site as the audience, the SHA-256 of the snapshot and its version) and its shape (mytp-core's `verify_snapshot`) before anything is applied |
-| Apply | one transaction, the state row locked: a higher version replaces the directory (`integration_admindirectoryentry`) and every registered section (`register_section_applier`: the catalogue's `catalogue_*` tables; a snapshot without the section empties them) and becomes the applied one (`integration_configstate`); the same version changes nothing; an older one is refused (`stale`) |
+| Apply | one transaction, the state row locked: a higher version replaces the directory (`integration_admindirectoryentry`) and every registered section (`register_section_applier`: the catalogue's `catalogue_*` tables, which a snapshot without the section empties; the country map's `regions_country` rows, which a snapshot without the section leaves as they are) and becomes the applied one (`integration_configstate`); the same version changes nothing; an older one is refused (`stale`) |
 | Refusals | the applied snapshot stays; `last_error` holds the code only: `network`, `http_<status>[_<code>]`, `bad_answer`, `bad_signature`, `audience`, `expired`, `invalid_body`, `newer_format` (the admin site needs a newer mytp-core: a warning line once per version), `stale`, `not_configured`, `signing_key` (the KMS could not unwrap the signing key), `apply_failed`; `pull_config` prints one line with the code and exits 0 (the outage warning below reports it once), except `not_configured` (no admin site, peer keys or signing key), which fails the job so its Sentry monitor shows it |
 | Outage | no good pull for an hour: one Sentry warning "Configuration snapshot not pulled for an hour (<code>)" per outage, never the contents; the next good pull resets it |
 
@@ -2424,6 +2425,50 @@ dev, `pull_config` (or wait for the nudge), then the two commands above print 90
 and nothing. Until the first catalogue (or staff user) change on admindev after its
 deploy, the applied snapshot has no catalogue section and `price_catalogue` prints no
 offers.
+
+### Country map
+
+Which region serves each country, or whether it is banned (epic-regions entry 1, AD-3,
+AD-14; `regions.models.Country`, read only through `regions.countries.lookup_country`:
+the signup country check and its banned refusal, the region suggestion bar). Seeded by
+migration `regions/0002_seed_country_map.py`; since epic-catalogue entry 3 the admin
+site's Sysadmin edits it (one map for every region) and it arrives in the configuration
+snapshot's `country_map` section (mytp-core 0.15.0), applied with it, in its transaction,
+by `regions.applier`:
+
+- a listed country's row gets the listed state (created when missing); a country the
+  section does not list keeps its row;
+- a state this release does not know is skipped (the row kept) and counted;
+- a snapshot without the section (an admin site before 0.15.0, or before its first write
+  after the deploy) leaves the rows as they are: the seed stays the map.
+
+The applied log line adds `country map: <n> listed, <n> changed, <n> added, <n> skipped`
+(counts only). Look at one country:
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from regions.countries import lookup_country as l; print(l('FR'))"
+```
+
+Staging check (after both deploys). One map serves every region, so each change reaches
+dev and dev-ae at once (and, later, every production region): use a test country nobody
+signs up from, such as AQ (Antarctica, `eu` in the seed), and set it back at the end.
+
+1. Banned: as the Sysadmin on admindev, set AQ to banned. On dev, `pull_config` (or wait
+   for the nudge); the command above (with `l('AQ')`) prints `state='banned'`, and step 1
+   of signup refuses AQ with the banned message.
+2. Moved: set AQ to `ae`. Run `pull_config` and the command on both sites:
+
+   ```sh
+   for s in dev dev-ae; do
+       (cd /srv/mytp-$s/current && sudo -u mytp-$s ./venv/bin/python manage.py pull_config && \
+        sudo -u mytp-$s ./venv/bin/python manage.py shell -c \
+            "from regions.countries import lookup_country as l; print('$s', l('AQ'))")
+   done
+   ```
+
+   Both print `state='ae'`: dev's answer carries dev-ae's site and signup URLs, dev-ae's
+   none (its own region).
+3. Set AQ back to `eu` and run the loop again: both print `state='eu'`.
 
 ### Remote reads and the access log
 

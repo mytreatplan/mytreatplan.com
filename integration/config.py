@@ -2,9 +2,9 @@
 AD-4, AD-12, AD-22, interface I5).
 
 The admin site owns the configuration (the admin directory: who an admin actor UUID is;
-the catalogue, epic-catalogue entry 2) and serves it signed at ``GET /api/v1/config``;
-this portal pulls it and keeps applying the last good one while the admin site is down.
-Admin users are never created here (AD-22).
+the catalogue, epic-catalogue entry 2; the country map, entry 3) and serves it signed
+at ``GET /api/v1/config``; this portal pulls it and keeps applying the last good one
+while the admin site is down. Admin users are never created here (AD-22).
 
 `pull()` (the `pullconfig` job every 5 minutes, and the task `pull_config_task`, enqueued
 by the admin site's signed nudge, ``POST /api/v1/config/nudge``):
@@ -17,9 +17,10 @@ by the admin site's signed nudge, ``POST /api/v1/config/nudge``):
    ``sha`` and ``ver``, the contract's shape, the reader format);
 4. in one transaction with the state row locked: a version higher than the applied one
    replaces the admin directory and every registered section (`register_section_applier`:
-   the catalogue app's `catalogue`; a section the snapshot lacks is applied as None, so
-   its tables are emptied) and becomes the applied version; the same version changes
-   nothing (a good pull); a lower one is refused (`stale`).
+   the catalogue app's `catalogue`, the regions app's `country_map`; a section the
+   snapshot lacks is applied as None: the catalogue empties its tables, the country map
+   keeps its rows) and becomes the applied version; the same version changes nothing (a
+   good pull); a lower one is refused (`stale`).
 
 Every refusal or failure leaves the applied snapshot untouched and records its code only
 (`ConfigState.last_error`; never the snapshot): `network`, `peer_url`,
@@ -76,7 +77,8 @@ def register_section_applier(name, apply):
     """Apply the snapshot's section `name` (a field of mytp-core's ConfigSnapshot) with
     `apply(value)` whenever a new version is applied, inside its transaction: an error
     rolls the whole snapshot back (`apply_failed`). `value` is None when the snapshot
-    has no such section (an older admin site): the applier then empties its tables.
+    has no such section (an older admin site): the applier decides what that means (the
+    catalogue empties its tables, the country map keeps its rows).
     Registering the same function again is a no-op; another one under a taken name, or a
     name that is not a field of ConfigSnapshot, is a ValueError."""
     if name not in ConfigSnapshot.model_fields or name in HEADER_FIELDS:
