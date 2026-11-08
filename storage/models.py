@@ -20,11 +20,19 @@ CONTENT_TYPE_MAX_LENGTH = 255
 class StoredObject(models.Model):
     """A file in the region's bucket. Created only when its multipart upload has completed
     and HeadObject confirmed the size (storage.views.complete); deleted only through
-    storage.service.delete, which leaves a DeletionTrace."""
+    storage.service.delete, which leaves a DeletionTrace.
+
+    Its state (epic-platform entry 12, storage.tasks.scan_object_task): `quarantine`
+    until scanned; `clean` once the scan passed it (the object moved to `clean/<uuid>`);
+    `rejected` when the scanner found something or could not fully scan it: the object is
+    deleted from the bucket (with a DeletionTrace by the system) and the row kept, never
+    downloadable (decision 2026-11-07)."""
 
     QUARANTINE = 'quarantine'
     CLEAN = 'clean'
-    STATES = [(QUARANTINE, 'Quarantine (not scanned yet)'), (CLEAN, 'Clean (scanned)')]
+    REJECTED = 'rejected'
+    STATES = [(QUARANTINE, 'Quarantine (not scanned yet)'), (CLEAN, 'Clean (scanned)'),
+              (REJECTED, 'Rejected by the scan (deleted from the bucket)')]
 
     # AD-5: crosses sites; its UUID primary key is its global id.
     CROSSES_SITES = True

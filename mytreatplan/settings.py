@@ -98,6 +98,11 @@ STORAGE_SECRET_KEY = config('STORAGE_SECRET_KEY', default='')
 STORAGE_CORS_ORIGINS = config('STORAGE_CORS_ORIGINS', default='', cast=Csv())
 STORAGE_ABORT_INCOMPLETE_DAYS = config('STORAGE_ABORT_INCOMPLETE_DAYS', default=7, cast=int)
 STORAGE_SAMPLE_UPLOADS = config('STORAGE_SAMPLE_UPLOADS', default=False, cast=bool)
+# The clamd unix socket the scan worker streams each upload to (epic-platform entry 12,
+# storage.tasks.scan_object_task; deploy/README.md "Object storage" -> "Scanning"):
+# /run/clamav/clamd.ctl on the staging host. The check storage.E004 requires it whenever
+# storage is in use; without a scan no upload ever becomes downloadable.
+STORAGE_CLAMD_SOCKET = config('STORAGE_CLAMD_SOCKET', default='')
 
 # The deployment's site name on its host (epic-platform entry 1): each site has its own
 # Linux user mytp-<SITE>, home SITE_HOME and units (deploy/provision.sh). Staging runs
@@ -393,9 +398,17 @@ INSTALLED_APPS = [
 # (`manage.py db_worker`, deploy/systemd/worker.service.template) from the database
 # queue. Task code imports django.tasks and mytp_core.tasks only (enqueue_on_commit,
 # run_once), never the backend; retries that matter live on business rows.
+# `scans`: the virus scans of uploads (storage.tasks.scan_object_task, epic-platform
+# entry 12) on the site's second worker (deploy/systemd/scan-worker.service.template), so
+# a long scan never holds the main one. Its own backend alias (same table) so each
+# worker's `requeue_interrupted_tasks --backend` only requeues its own tasks.
 TASKS = {
     'default': {
         'BACKEND': 'django_tasks_db.DatabaseBackend',
+    },
+    'scans': {
+        'BACKEND': 'django_tasks_db.DatabaseBackend',
+        'QUEUES': ['scans'],
     },
 }
 

@@ -43,8 +43,10 @@ def staff_client(staff):
 
 @pytest.fixture
 def sample_object(staff):
+    """A scanned sample object (only those are downloadable, decision 2026-11-07)."""
     return StoredObject.objects.create(purpose='sample', uploaded_by=staff, size=12,
-                                       original_name='staging-test.bin')
+                                       original_name='staging-test.bin',
+                                       state=StoredObject.CLEAN)
 
 
 # --- Gates (T7) -----------------------------------------------------------------------
@@ -112,7 +114,7 @@ def test_download_button_records_then_redirects_to_a_5_minute_url(staff_client, 
                                  HTTP_USER_AGENT='Mozilla/5.0 (staging test browser)')
     assert response.status_code == 302
     assert response['Location'].startswith(
-        f'https://mytp-dev-files.s3.gra.io.cloud.ovh.net/quarantine/{sample_object.pk}?')
+        f'https://mytp-dev-files.s3.gra.io.cloud.ovh.net/clean/{sample_object.pk}?')
     assert 'X-Amz-Expires=300' in response['Location']
     row = RemoteAccess.objects.get(resource='stored_object')
     assert (row.outcome, row.purpose, row.access_reason, row.actor_uuid, row.object_id) == (
@@ -130,6 +132,17 @@ def test_download_button_without_a_record_gives_no_url(staff_client, sample_obje
     response = staff_client.post(download_url(sample_object.pk))
     assert response.status_code == 503
     assert 'amazonaws' not in response.content.decode() and 'X-Amz' not in response.content.decode()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('state', [StoredObject.QUARANTINE, StoredObject.REJECTED])
+def test_unscanned_objects_have_no_download(staff_client, staff, state):
+    obj = StoredObject.objects.create(purpose='sample', uploaded_by=staff, size=12,
+                                      original_name='staging-test.bin', state=state)
+    html = staff_client.get(PAGE).content.decode()
+    assert str(obj.pk) in html and f'<td>{state}</td>' in html
+    assert download_url(obj.pk) not in html
+    assert staff_client.post(download_url(obj.pk)).status_code == 403
 
 
 @pytest.mark.django_db
@@ -258,6 +271,10 @@ def test_staging_env_example_lists_the_storage_settings_without_secrets():
     for name in ('STORAGE_BUCKET', 'STORAGE_ACCESS_KEY', 'STORAGE_SECRET_KEY',
                  'STORAGE_CORS_ORIGINS'):
         assert values[name] == ''
+    # The socket of deploy/clamav/clamd.conf (epic-platform entry 12).
+    assert values['STORAGE_CLAMD_SOCKET'] == '/run/clamav/clamd.ctl'
+    assert 'LocalSocket /run/clamav/clamd.ctl' in (
+        REPO / 'deploy' / 'clamav' / 'clamd.conf').read_text().splitlines()
 
 
 def test_the_upload_spike_is_gone():

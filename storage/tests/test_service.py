@@ -109,10 +109,14 @@ def test_real_purposes_download_only_clean_objects(doctor):
         service.download_url(obj, doctor, 'doctor_view')
 
 
-def test_the_sample_purpose_downloads_from_quarantine(staff):
+def test_the_sample_purpose_downloads_only_clean_objects_too(staff):
+    """Decision 2026-11-07: no quarantine downloads for the sample purpose any more."""
     obj = stored(purpose='sample', uploaded_by=staff)
+    with pytest.raises(service.DownloadRefused):
+        service.download_url(obj, staff, 'sample_page')
+    obj = stored(purpose='sample', uploaded_by=staff, state=StoredObject.CLEAN)
     url = urlsplit(service.download_url(obj, staff, 'sample_page'))
-    assert url.path == f'/quarantine/{obj.pk}'
+    assert url.path == f'/clean/{obj.pk}'
 
 
 def test_unknown_purpose_or_inactive_user_is_refused(doctor):
@@ -166,6 +170,9 @@ def test_register_refuses_a_bad_or_duplicate_purpose():
             purposes.register(name, allow, allow)
     with pytest.raises(ValueError):
         purposes.register('other_files', allow, allow, max_size=0)
+    # Above clamd's scan limits (1 GiB) every file would be rejected.
+    with pytest.raises(ValueError):
+        purposes.register('other_files', allow, allow, max_size=1024 ** 3 + 1)
     with pytest.raises(TypeError):
         purposes.register('other_files', None, allow)
     assert purposes.get('other_files') is None
@@ -173,5 +180,6 @@ def test_register_refuses_a_bad_or_duplicate_purpose():
 
 def test_default_size_limit_is_1_gib():
     assert purposes.get('sample').max_size == purposes.DEFAULT_MAX_SIZE == 1024 ** 3
-    assert purposes.get('sample').download_quarantine is True
-    assert purposes.get(TEST_PURPOSE).download_quarantine is False
+    assert purposes.MAX_SCANNED_SIZE == 1024 ** 3
+    # No purpose may serve unscanned files any more (decision 2026-11-07).
+    assert not hasattr(purposes.get('sample'), 'download_quarantine')

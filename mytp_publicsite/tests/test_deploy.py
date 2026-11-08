@@ -281,6 +281,7 @@ SITE_TEMPLATES = [
     DEPLOY / 'systemd' / 'job@.service.template',
     DEPLOY / 'systemd' / 'job.timer.template',
     DEPLOY / 'systemd' / 'worker.service.template',
+    DEPLOY / 'systemd' / 'scan-worker.service.template',
     DEPLOY / 'nginx' / 'site.conf.template',
 ]
 # Names of the single-site layout. `/srv/mytp` followed by anything but `-<site>`.

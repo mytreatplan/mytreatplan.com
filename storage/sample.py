@@ -4,8 +4,10 @@ upload spike's until the first real purpose arrives (then both go).
 Only active staff, only with STORAGE_SAMPLE_UPLOADS=True (the check storage.E002 refuses
 it on a public site). The page (`/<lang>/storage/sample/`, routed only with the setting
 on) uploads with the widget, lists the sample objects and downloads or deletes them;
-every view answers 404 to anyone else. Sample objects may be downloaded from
-`quarantine/` (no scan before entry 12). English only, not in the translation catalogue.
+every view answers 404 to anyone else. Like every purpose, sample objects are
+downloadable only once the scan has passed them (state `clean`, decision 2026-11-07);
+the page shows each object's state (quarantine, clean, rejected). English only, not in
+the translation catalogue.
 """
 from functools import wraps
 
@@ -29,8 +31,7 @@ def sample_allowed(user):
 
 
 def register():
-    purposes.register(PURPOSE, sample_allowed, lambda user, obj: sample_allowed(user),
-                      download_quarantine=True)
+    purposes.register(PURPOSE, sample_allowed, lambda user, obj: sample_allowed(user))
 
 
 def sample_staff_only(view):

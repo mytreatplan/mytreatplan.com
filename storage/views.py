@@ -9,7 +9,8 @@ user (403 otherwise) and a CSRF token.
   them bound to it (400 otherwise); the hook is asked again each time.
 - `POST /storage/complete/`: after S3 completed the upload, HeadObject must show the
   declared size; then the StoredObject is created (the original file name encrypted) and
-  the PendingUpload removed. A wrong size deletes the object (400).
+  the PendingUpload removed, and its virus scan enqueued when that commits
+  (storage.tasks.scan_object_task). A wrong size deletes the object (400).
 
 Nothing here logs a key, URL, file name or credential (AD-23).
 """
@@ -26,8 +27,11 @@ from django.utils import timezone
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_POST
 
+from mytp_core.tasks import enqueue_on_commit
+
 from . import purposes, s3
 from .models import ORIGINAL_NAME_MAX_LENGTH, PendingUpload, StoredObject
+from .tasks import scan_object_task
 
 logger = logging.getLogger(__name__)
 
@@ -216,6 +220,9 @@ def complete(request):
                 id=object_id, purpose=pending.purpose, uploaded_by=request.user, size=size,
                 content_type=pending.content_type, original_name=name)
             pending.delete()
+            # The virus scan (epic-platform entry 12), once the row is committed; only
+            # the object's UUID goes into the task.
+            enqueue_on_commit(scan_object_task, str(object_id))
     except IntegrityError:
         # A concurrent call for the same upload recorded it first: answer as it did.
         stored = StoredObject.objects.filter(pk=object_id, uploaded_by=request.user).first()

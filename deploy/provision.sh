@@ -8,10 +8,12 @@
 #     bash deploy/provision.sh dev dev.mytpdso.com <htpasswd-user>
 #
 # Host-wide (shared by every site): packages, SSH hardening, firewall, the ACME webroot,
-# certbot.timer and the release command /usr/local/bin/mytp-release (deploy/release.sh).
+# certbot.timer, the release command /usr/local/bin/mytp-release (deploy/release.sh) and
+# the virus scanner (ClamAV: clamd with deploy/clamav/clamd.conf, freshclam).
 # Per site <site>: Linux user mytp-<site>, home /srv/mytp-<site>, sudoers rule
 # /etc/sudoers.d/mytp-<site>-deploy, units mytp-<site>-gunicorn.{socket,service},
-# mytp-<site>-worker.service (background tasks) and
+# mytp-<site>-worker.service (background tasks), mytp-<site>-scan-worker.service (virus
+# scans of uploads; portal sites only, once their live release scans) and
 # mytp-<site>-job@<job>.{service,timer}, password file /etc/nginx/mytp-<site>.htpasswd,
 # Nginx site mytp-<site>.conf and the domain's certificate. A run for one site never
 # touches another site's files, units, timers or Nginx config.
@@ -83,10 +85,24 @@ SUDOERS_FILE=/etc/sudoers.d/mytp-$SITE-deploy
 GUNICORN=mytp-$SITE-gunicorn
 JOB=mytp-$SITE-job
 WORKER=mytp-$SITE-worker
+SCAN_WORKER=mytp-$SITE-scan-worker
 RELEASE_COMMAND=/usr/local/bin/mytp-release
 CERT_FILE=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
 PACKAGES=(nginx certbot python3-certbot-nginx python3-venv python3-pip gettext libpq5 ufw apache2-utils curl
-    postgresql-client age openssl)
+    postgresql-client age openssl clamav-daemon clamav-freshclam)
+# The virus scanner (host-wide, deploy/clamav/): clamd reads its own configuration file
+# through a systemd drop-in; Debian's /etc/clamav/clamd.conf is left as it is.
+CLAMD_CONF=/etc/clamav/clamd-mytp.conf
+CLAMAV_DB_DIR=/var/lib/clamav
+# clamd's spool for streamed files, inside its own directory (which Debian's AppArmor
+# profile already lets it write); not /tmp, a RAM tmpfs on Debian 13.
+CLAMD_TMP=/var/lib/clamav/tmp
+# Debian enforces an AppArmor profile on clamd; its local include grants the portal's
+# configuration file and spool (deploy/clamav/apparmor-usr.sbin.clamd).
+CLAMD_APPARMOR_PROFILE=/etc/apparmor.d/usr.sbin.clamd
+CLAMD_APPARMOR_LOCAL=/etc/apparmor.d/local/usr.sbin.clamd
+CLAMD_SERVICE_DROPIN=/etc/systemd/system/clamav-daemon.service.d/mytp.conf
+CLAMD_SOCKET_DROPIN=/etc/systemd/system/clamav-daemon.socket.d/mytp.conf
 
 CHANGES=0
 WORK=$(mktemp -d)
@@ -140,6 +156,83 @@ if ((${#missing[@]})); then
     sudo apt-get update -q
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q "${missing[@]}"
     changed "installed ${missing[*]}"
+fi
+
+# --- Virus scanner (host-wide, AD-9) -----------------------------------------------
+# ClamAV from Debian's packages (1.4 LTS line; decision 2026-11-07): clamd with the
+# portal's configuration (deploy/clamav/clamd.conf: limits >= 1 GiB, a file it cannot
+# fully scan is FOUND, socket /run/clamav/clamd.ctl for the group clamav) and freshclam
+# keeping the signatures current. The portal sites' scan workers connect to it (see
+# "Scan worker" below); deploy/README.md "Object storage" -> "Scanning".
+step "Virus scanner (ClamAV)"
+clamd_changed=0
+ensure_dir "$CLAMD_TMP" 0700 clamav:clamav
+ensure_dir "$(dirname "$CLAMD_SERVICE_DROPIN")" 0755 root:root
+ensure_dir "$(dirname "$CLAMD_SOCKET_DROPIN")" 0755 root:root
+ensure_dir "$(dirname "$CLAMD_APPARMOR_LOCAL")" 0755 root:root
+install_file "$DEPLOY_DIR/clamav/clamd.conf" "$CLAMD_CONF" 0644 root:root && clamd_changed=1
+install_file "$DEPLOY_DIR/clamav/clamav-daemon.service.conf" "$CLAMD_SERVICE_DROPIN" 0644 root:root \
+    && clamd_changed=1
+install_file "$DEPLOY_DIR/clamav/clamav-daemon.socket.conf" "$CLAMD_SOCKET_DROPIN" 0644 root:root \
+    && clamd_changed=1
+# The AppArmor rules take effect when the profile is reloaded: only when AppArmor runs
+# and the local file changed.
+if install_file "$DEPLOY_DIR/clamav/apparmor-usr.sbin.clamd" "$CLAMD_APPARMOR_LOCAL" 0644 root:root; then
+    clamd_changed=1
+    if systemctl is-active --quiet apparmor.service && sudo test -f "$CLAMD_APPARMOR_PROFILE"; then
+        if sudo apparmor_parser -r "$CLAMD_APPARMOR_PROFILE"; then
+            changed "AppArmor profile usr.sbin.clamd reloaded"
+        else
+            echo "  WARNING: the AppArmor profile usr.sbin.clamd did not reload; see: sudo journalctl -k | grep -i apparmor" >&2
+        fi
+    fi
+fi
+((clamd_changed)) && sudo systemctl daemon-reload
+# clamd starts only once both signature databases exist (its unit's condition): on a new
+# host, fetch them once now (freshclam's own service may be fetching them already, so it
+# is stopped for that). A failure (e.g. the mirror's rate limit) warns; the next run
+# tries again.
+if ! compgen -G "$CLAMAV_DB_DIR/main.c[vl]d" >/dev/null \
+    || ! compgen -G "$CLAMAV_DB_DIR/daily.c[vl]d" >/dev/null; then
+    sudo systemctl stop clamav-freshclam.service 2>/dev/null || true
+    if sudo freshclam --quiet; then
+        changed "ClamAV signatures downloaded"
+    else
+        echo "  WARNING: freshclam could not download the signatures; run this script again." >&2
+    fi
+fi
+for unit in clamav-freshclam.service clamav-daemon.service; do
+    if ! systemctl is-enabled --quiet "$unit" 2>/dev/null; then
+        sudo systemctl enable "$unit" >/dev/null 2>&1
+        changed "$unit enabled"
+    fi
+done
+if ! systemctl is-active --quiet clamav-freshclam.service; then
+    sudo systemctl start clamav-freshclam.service
+    changed "clamav-freshclam started"
+fi
+clamd_action=""
+if ! systemctl is-active --quiet clamav-daemon.service; then
+    clamd_action=start
+elif ((clamd_changed)); then
+    clamd_action=restart
+fi
+if [[ -n $clamd_action ]]; then
+    # The socket unit (when Debian's clamd uses one) takes a new mode only when re-created.
+    if ((clamd_changed)) && systemctl cat clamav-daemon.socket >/dev/null 2>&1; then
+        sudo systemctl stop clamav-daemon.service clamav-daemon.socket
+        sudo systemctl start clamav-daemon.socket
+    fi
+    # A start succeeds without running clamd when its condition (the signatures) is not
+    # met, so it counts only once the unit is active. A clamd that cannot start must not
+    # stop the remaining steps.
+    if sudo systemctl "$clamd_action" clamav-daemon.service \
+        && systemctl is-active --quiet clamav-daemon.service; then
+        changed "clamav-daemon ${clamd_action}ed"
+    else
+        echo "  WARNING: clamav-daemon is not running after $clamd_action (no signatures yet, or a" \
+            "configuration or AppArmor error); see: sudo journalctl -u clamav-daemon -n 50" >&2
+    fi
 fi
 
 # --- SSH: keys only, no root login -------------------------------------------
@@ -297,6 +390,47 @@ if sudo test -f "$APP_HOME/current/requirements.txt" \
 else
     echo "  note: the live release has no task worker yet; $WORKER is not installed."
     echo "  Run this script again once a release with django-tasks-db is live."
+fi
+
+# --- Scan worker (epic-platform entry 12) -------------------------------------------
+# mytp-<site>-scan-worker.service: the site's second worker, for the `scans` task backend
+# only (the virus scans of uploads). It follows mytp-<site>-worker (WantedBy, PartOf), so
+# release.sh's stop and restart of that worker apply to it too. Installed only when the
+# live release scans uploads (the portal's storage/clamd.py; never on the admin site) and
+# the main worker is installed; until then provision.sh must run again once it is. The
+# site user joins the group clamav, which may open clamd's socket.
+step "Scan worker ($SITE)"
+if sudo test -f "$APP_HOME/current/storage/clamd.py" \
+    && sudo test -f "/etc/systemd/system/$WORKER.service"; then
+    if ! id -nG "$APP_USER" | tr ' ' '\n' | grep -qx clamav; then
+        sudo usermod -aG clamav "$APP_USER"
+        changed "$APP_USER added to the group clamav"
+    fi
+    render "$DEPLOY_DIR/systemd/scan-worker.service.template" "$WORK/scan-worker.service"
+    scan_worker_changed=0
+    if install_file "$WORK/scan-worker.service" "/etc/systemd/system/$SCAN_WORKER.service" 0644 root:root; then
+        scan_worker_changed=1
+        sudo systemctl daemon-reload
+    fi
+    if ! systemctl is-enabled --quiet "$SCAN_WORKER.service"; then
+        sudo systemctl enable "$SCAN_WORKER.service" >/dev/null 2>&1
+        changed "$SCAN_WORKER.service enabled"
+    fi
+    scan_worker_action=""
+    if ! systemctl is-active --quiet "$SCAN_WORKER.service"; then
+        scan_worker_action=start
+    elif ((scan_worker_changed)); then
+        scan_worker_action=restart
+    fi
+    if [[ -n $scan_worker_action ]]; then
+        if sudo systemctl "$scan_worker_action" "$SCAN_WORKER.service"; then
+            changed "$SCAN_WORKER.service ${scan_worker_action}ed"
+        else
+            echo "  WARNING: $SCAN_WORKER did not $scan_worker_action; see: sudo journalctl -u $SCAN_WORKER -n 50" >&2
+        fi
+    fi
+else
+    echo "  note: the live release does not scan uploads (or has no task worker); $SCAN_WORKER is not installed."
 fi
 
 # --- Scheduled jobs (deploy/jobs.conf) ----------------------------------------
