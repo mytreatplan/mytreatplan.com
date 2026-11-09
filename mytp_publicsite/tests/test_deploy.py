@@ -407,7 +407,7 @@ def no_privileges(tmp_path):
     under test can never change this machine."""
     bin_dir = tmp_path / 'bin'
     bin_dir.mkdir()
-    for tool in ('sudo', 'useradd', 'systemctl', 'apt-get', 'dpkg-query', 'ufw', 'nginx'):
+    for tool in ('sudo', 'useradd', 'systemctl', 'apt-get', 'dpkg-query', 'ufw', 'nginx', 'curl', 'gpg'):
         stub = bin_dir / tool
         stub.write_text('#!/bin/sh\necho "STUB $0 called" >&2\nexit 97\n')
         stub.chmod(0o755)
@@ -823,3 +823,236 @@ def test_an_extra_name_not_pointing_here_skips_the_certificate(tmp_path, cert):
     assert 'WARNING: mytreatplan.ie does not resolve to this host' in result.stderr
     assert 'mytreatplan.es does not resolve' not in result.stderr
     assert 'skipping the certificate' in result.stderr
+
+
+# --- PostgreSQL client tools from PGDG (epic-platform entry 14) --------------------------
+
+PGDG_FINGERPRINT = 'B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8'
+OTHER_FINGERPRINT = '0000000000000000000000000000000000000000'
+PGDG_KEY_OK = [('pub', PGDG_FINGERPRINT, '-'), ('sub', '1111111111111111111111111111111111111111', '-')]
+
+
+def _provision_setting(name):
+    return re.search(rf'^{name}=(.*)$', (DEPLOY / 'provision.sh').read_text(), re.M).group(1)
+
+
+def test_provision_pins_postgresql_client_18_and_the_pgdg_key():
+    script = (DEPLOY / 'provision.sh').read_text()
+    packages = re.search(r'^PACKAGES=\((.*?)\)', script, re.S | re.M).group(1).split()
+    assert 'gpg' in packages
+    # No metapackage: it would follow PGDG's newest major; later majors come deliberately.
+    assert 'postgresql-client' not in packages
+    assert _provision_setting('PG_CLIENT_PACKAGES') == '(postgresql-client-18)'
+    assert _provision_setting('PGDG_KEY_FINGERPRINT') == PGDG_FINGERPRINT
+    assert _provision_setting('PGDG_KEY_URL') == 'https://www.postgresql.org/media/keys/ACCC4CF8.asc'
+    assert _provision_setting('PGDG_URI') == 'https://apt.postgresql.org/pub/repos/apt'
+    assert _provision_setting('PGDG_PREFERENCES') == '/etc/apt/preferences.d/mytp-pgdg'
+    # The PGDG step is its own block, between the packages and the client install.
+    assert (script.index('step "Packages"') < script.index('# --- PostgreSQL apt repository (PGDG)')
+            < script.index('# --- PostgreSQL client tools') < script.index('# --- Virus scanner'))
+
+
+def _pgdg_steps(tmp_path, *, installed=(), key=PGDG_KEY_OK, download=True, garbled=False):
+    """provision.sh's packages, PGDG and client steps alone (install_packages too), with
+    sudo, apt-get, dpkg, dpkg-query, curl and gpg as executables logging to calls.log and
+    every path in tmp_path. `installed`: packages dpkg reports installed; `key`: the
+    downloaded key's (pub|sub, fingerprint, validity) rows, as gpg --with-colons
+    --show-keys lists them (the stub refuses other calls); `garbled`: the download is not
+    a key (gpg fails); `download`: curl succeeds. Calling it again on the same tmp_path is
+    a re-run. Returns (result, calls of this run)."""
+    bin_dir, root = tmp_path / 'bin', tmp_path / 'root'
+    bin_dir.mkdir(exist_ok=True)
+    root.mkdir(exist_ok=True)
+    (root / 'installed').write_text(''.join(f'{p}\n' for p in installed))
+    (root / 'download.asc').write_text(
+        'garbage\n' if garbled else ''.join(f'{kind} {fpr} {validity}\n' for kind, fpr, validity in key))
+    (root / 'os-release').write_text('PRETTY_NAME="Debian GNU/Linux 13 (trixie)"\n'
+                                     'VERSION_CODENAME=trixie\nID=debian\n')
+    calls = root / 'calls.log'
+    calls.write_text('')
+    q = shlex.quote
+    stubs = {
+        'sudo': 'exec env "$@"',
+        'apt-get': f'echo "apt-get $*" >>{q(str(calls))}',
+        'dpkg': '[ "$1" = --print-architecture ] && echo amd64',
+        'dpkg-query': f'grep -qx -- "${{@: -1}}" {q(str(root / "installed"))} '
+                      '&& printf "install ok installed"; exit 0',
+        'curl': (f'echo "curl $*" >>{q(str(calls))}\n'
+                 + ('' if download else 'exit 22\n')
+                 + 'while [ $# -gt 1 ]; do [ "$1" = -o ] && out=$2; shift; done\n'
+                 f'cp {q(str(root / "download.asc"))} "$out"'),
+        # Only the listing provision.sh asks for: --with-colons --show-keys FILE.
+        'gpg': ('[[ " $* " == *" --with-colons "* && " $* " == *" --show-keys "* ]] || exit 2\n'
+                'f=${@: -1}\n'
+                'while read -r kind fpr validity; do\n'
+                '    case $kind in\n'
+                '        pub|sub) echo "$kind:$validity:4096:1:X::::::::"; echo "fpr:::::::::$fpr:" ;;\n'
+                '        *) echo "gpg: no valid OpenPGP data found." >&2; exit 2 ;;\n'
+                '    esac\n'
+                'done <"$f"'),
+    }
+    for name, body in stubs.items():
+        stub = bin_dir / name
+        stub.write_text(f'#!/bin/bash\n{body}\n')
+        stub.chmod(0o755)
+    script = (DEPLOY / 'provision.sh').read_text()
+    block = script[script.index('# install_packages PKG...'):script.index('# --- Virus scanner')]
+    prelude = f'''set -euo pipefail
+export PATH={q(str(bin_dir))}:"$PATH"
+step() {{ echo "==> $*"; }}
+changed() {{ CHANGES=$((CHANGES + 1)); echo "  changed: $*"; }}
+install_file() {{ cmp -s "$1" "$2" 2>/dev/null && return 1; cp "$1" "$2"; changed "$2"; }}
+ensure_dir() {{ mkdir -p "$1"; }}
+CHANGES=0
+WORK={q(str(root / 'work'))}
+rm -rf "$WORK" && mkdir "$WORK"
+PACKAGES=(nginx gpg)
+PG_CLIENT_PACKAGES={_provision_setting('PG_CLIENT_PACKAGES')}
+PGDG_KEY_URL={_provision_setting('PGDG_KEY_URL')}
+PGDG_KEY_FINGERPRINT={_provision_setting('PGDG_KEY_FINGERPRINT')}
+PGDG_URI={_provision_setting('PGDG_URI')}
+PGDG_KEY={q(str(root / 'keyrings' / 'mytp-pgdg.asc'))}
+PGDG_SOURCES={q(str(root / 'mytp-pgdg.sources'))}
+PGDG_PREFERENCES={q(str(root / 'mytp-pgdg.pref'))}
+OS_RELEASE={q(str(root / 'os-release'))}
+'''
+    result = subprocess.run(['bash', '-c', prelude + block + 'echo "CHANGES=$CHANGES"\n'],
+                            capture_output=True, text=True)
+    return result, calls.read_text().splitlines()
+
+
+def _apt(calls):
+    return [c for c in calls if c.startswith('apt-get')]
+
+
+def _stanzas(text):
+    """The deb822 / apt preferences stanzas of `text` (comments dropped), as dicts."""
+    body = '\n'.join(line for line in text.splitlines() if not line.startswith('#'))
+    return [dict(line.split(': ', 1) for line in stanza.strip().splitlines())
+            for stanza in body.strip().split('\n\n')]
+
+
+@bash_only
+def test_pgdg_first_run_adds_the_source_and_installs_client_18(tmp_path):
+    result, calls = _pgdg_steps(tmp_path, installed=['nginx', 'gpg'])
+    assert result.returncode == 0, result.stderr
+    assert calls[0].startswith('curl -fsSL --proto =https --tlsv1.2 ')
+    assert calls[0].endswith(' https://www.postgresql.org/media/keys/ACCC4CF8.asc')
+    # One update, after the source is in place, then the explicit client package.
+    assert _apt(calls) == ['apt-get update -q', 'apt-get install -y -q postgresql-client-18']
+    root = tmp_path / 'root'
+    key = root / 'keyrings' / 'mytp-pgdg.asc'
+    assert key.read_text() == (root / 'download.asc').read_text()
+    assert _stanzas((root / 'mytp-pgdg.sources').read_text()) == [{
+        'Types': 'deb', 'URIs': 'https://apt.postgresql.org/pub/repos/apt',
+        'Suites': 'trixie-pgdg', 'Components': 'main', 'Architectures': 'amd64',
+        'Signed-By': str(key)}]
+    assert 'CHANGES=4' in result.stdout     # key, sources, preferences, package
+
+
+@bash_only
+def test_pgdg_preferences_keep_everything_else_below_debian(tmp_path):
+    result, _ = _pgdg_steps(tmp_path, installed=['nginx', 'gpg'])
+    assert result.returncode == 0, result.stderr
+    general, client = _stanzas((tmp_path / 'root' / 'mytp-pgdg.pref').read_text())
+    assert general == {'Package': '*', 'Pin': 'origin apt.postgresql.org', 'Pin-Priority': '100'}
+    # The client and what it needs at PGDG's versions (libpq5 18) at Debian's priority.
+    assert client == {'Package': 'postgresql-client-18 postgresql-client-common libpq5',
+                      'Pin': 'origin apt.postgresql.org', 'Pin-Priority': '500'}
+
+
+@bash_only
+def test_pgdg_rerun_changes_nothing(tmp_path):
+    _pgdg_steps(tmp_path, installed=['nginx', 'gpg'])
+    result, calls = _pgdg_steps(tmp_path, installed=['nginx', 'gpg', 'postgresql-client-18'])
+    assert result.returncode == 0, result.stderr
+    assert _apt(calls) == []
+    assert 'changed' not in result.stdout and 'CHANGES=0' in result.stdout
+
+
+@bash_only
+def test_pgdg_new_base_package_updates_once(tmp_path):
+    _pgdg_steps(tmp_path, installed=['nginx', 'gpg'])
+    result, calls = _pgdg_steps(tmp_path, installed=['gpg', 'postgresql-client-18'])
+    assert result.returncode == 0, result.stderr
+    assert _apt(calls) == ['apt-get update -q', 'apt-get install -y -q nginx']
+
+
+@bash_only
+@pytest.mark.parametrize('name,old,new', [
+    ('mytp-pgdg.sources', 'trixie-pgdg', 'bookworm-pgdg'),
+    ('mytp-pgdg.pref', 'Pin-Priority: 100', 'Pin-Priority: 990'),
+])
+def test_pgdg_a_changed_file_alone_runs_apt_update(tmp_path, name, old, new):
+    _pgdg_steps(tmp_path, installed=['nginx', 'gpg'])
+    path = tmp_path / 'root' / name
+    path.write_text(path.read_text().replace(old, new))
+    result, calls = _pgdg_steps(tmp_path, installed=['nginx', 'gpg', 'postgresql-client-18'])
+    assert result.returncode == 0, result.stderr
+    assert _apt(calls) == ['apt-get update -q']
+    assert old in path.read_text() and new not in path.read_text()
+
+
+@bash_only
+@pytest.mark.parametrize('key', [
+    [('pub', OTHER_FINGERPRINT, '-')],
+    [('pub', PGDG_FINGERPRINT, '-'), ('pub', OTHER_FINGERPRINT, '-')],
+    [('pub', OTHER_FINGERPRINT, '-'), ('sub', PGDG_FINGERPRINT, '-')],
+    [],
+])
+def test_pgdg_refuses_a_key_without_the_pinned_fingerprint(tmp_path, key):
+    result, calls = _pgdg_steps(tmp_path, installed=['nginx', 'gpg'], key=key)
+    assert result.returncode == 1
+    assert 'not the pinned PGDG key' in result.stderr and PGDG_FINGERPRINT in result.stderr
+    assert _apt(calls) == []
+    root = tmp_path / 'root'
+    assert not (root / 'keyrings' / 'mytp-pgdg.asc').exists()
+    assert not (root / 'mytp-pgdg.sources').exists()
+    assert not (root / 'mytp-pgdg.pref').exists()
+
+
+@bash_only
+@pytest.mark.parametrize('validity,word', [('e', 'expired'), ('r', 'revoked')])
+def test_pgdg_refuses_an_expired_or_revoked_key(tmp_path, validity, word):
+    _pgdg_steps(tmp_path, installed=['nginx', 'gpg'])
+    installed_key = (tmp_path / 'root' / 'keyrings' / 'mytp-pgdg.asc').read_text()
+    result, calls = _pgdg_steps(tmp_path, installed=['nginx', 'gpg', 'postgresql-client-18'],
+                                key=[('pub', PGDG_FINGERPRINT, validity)])
+    assert result.returncode == 1
+    assert 'ERROR: the PGDG key at' in result.stderr and f'is {word}' in result.stderr
+    assert _apt(calls) == []
+    # The installed key is left as it was.
+    assert (tmp_path / 'root' / 'keyrings' / 'mytp-pgdg.asc').read_text() == installed_key
+
+
+@bash_only
+def test_pgdg_a_garbled_download_stops_and_keeps_the_installed_key(tmp_path):
+    """Unlike a failed download (kept with a WARNING), a download that is not the pinned
+    key stops the run: it may be tampered with, so nothing is installed or updated."""
+    _pgdg_steps(tmp_path, installed=['nginx', 'gpg'])
+    installed_key = (tmp_path / 'root' / 'keyrings' / 'mytp-pgdg.asc').read_text()
+    result, calls = _pgdg_steps(tmp_path, installed=['nginx', 'gpg', 'postgresql-client-18'],
+                                garbled=True)
+    assert result.returncode == 1
+    assert 'not the pinned PGDG key' in result.stderr
+    assert _apt(calls) == []
+    assert (tmp_path / 'root' / 'keyrings' / 'mytp-pgdg.asc').read_text() == installed_key
+
+
+@bash_only
+def test_pgdg_keeps_the_installed_key_when_the_download_fails(tmp_path):
+    _pgdg_steps(tmp_path, installed=['nginx', 'gpg'])
+    result, calls = _pgdg_steps(tmp_path, installed=['nginx', 'gpg', 'postgresql-client-18'],
+                                download=False)
+    assert result.returncode == 0, result.stderr
+    assert 'WARNING: could not download' in result.stderr
+    assert _apt(calls) == [] and 'CHANGES=0' in result.stdout
+
+
+@bash_only
+def test_pgdg_without_a_key_and_no_download_stops(tmp_path):
+    result, calls = _pgdg_steps(tmp_path, installed=['nginx', 'gpg'], download=False)
+    assert result.returncode == 1
+    assert 'ERROR: could not download' in result.stderr
+    assert _apt(calls) == []
+    assert not (tmp_path / 'root' / 'mytp-pgdg.sources').exists()

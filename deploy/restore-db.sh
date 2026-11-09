@@ -29,7 +29,9 @@
 #
 # Downloads use the aws CLI with BACKUP_S3_ENDPOINT, BACKUP_S3_REGION, BACKUP_S3_BUCKET (and BACKUP_PREFIX
 # for --latest) plus AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY from the environment;
-# never pass keys as arguments. Needs age, psql and pg_restore 17 or newer.
+# never pass keys as arguments. Needs age, psql and pg_restore 17 or newer; a dump made
+# by pg_dump 18 (the servers' client since epic-platform entry 14) needs pg_restore 18
+# (brew install postgresql@18).
 #
 # The dump is decrypted in a pipe straight into pg_restore; no plaintext copy is written.
 set -euo pipefail
@@ -93,12 +95,12 @@ case ${PGHOSTADDR:-} in
 esac
 
 for tool in age psql pg_restore; do
-    command -v "$tool" >/dev/null || die "$tool not found (brew install age postgresql@$MIN_PG_MAJOR)"
+    command -v "$tool" >/dev/null || die "$tool not found (brew install age postgresql@18: a dump made by pg_dump 18 needs pg_restore 18)"
 done
 pg_major=$(pg_restore --version | sed -nE 's/.*\(PostgreSQL\) ([0-9]+).*/\1/p')
 [[ -n $pg_major ]] || die "could not read the pg_restore version"
 ((pg_major >= MIN_PG_MAJOR)) \
-    || die "pg_restore $pg_major is older than $MIN_PG_MAJOR (the server's version); install postgresql@$MIN_PG_MAJOR"
+    || die "pg_restore $pg_major is older than $MIN_PG_MAJOR (the server's version); install postgresql@18 (a dump made by pg_dump 18 needs pg_restore 18)"
 [[ -r $IDENTITY ]] || die "cannot read the identity file $IDENTITY"
 if [[ -n $FILE ]]; then
     [[ -f $FILE && -r $FILE ]] || die "cannot read the dump $FILE"

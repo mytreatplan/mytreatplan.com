@@ -349,9 +349,12 @@ encrypted `pg_dump` to Object Storage in **SBG** (`manage.py backupdb`). See
 
    Then, from a copy of the merged `deploy/`, re-run
    `bash ~/deploy/provision.sh dev dev.mytpdso.com <htpasswd-user>`: it installs
-   `postgresql-client` and `age`, creates `/srv/mytp-dev/shared/backup-tmp` (0700, `mytp-dev`)
-   and the `mytp-dev-job@backupdb.timer` (02:30 UTC). Check `pg_dump --version` says 17 (the
-   managed service's major version; `backupdb` refuses an older client).
+   the PostgreSQL client tools (`postgresql-client-18`, see
+   [PostgreSQL client tools](#postgresql-client-tools)) and `age`, creates
+   `/srv/mytp-dev/shared/backup-tmp` (0700, `mytp-dev`) and the
+   `mytp-dev-job@backupdb.timer` (02:30 UTC). Check `pg_dump --version` says 18: at least
+   the major version of every site's database service (dev and dev-ae: 17, admindev: 18);
+   `backupdb` refuses a client older than its server.
 7. **First backup by hand.**
 
    ```sh
@@ -1183,6 +1186,120 @@ sudo systemctl start mytp-dev-job@backupdb          # back up now
 sudo journalctl -u mytp-dev-job@backupdb -n 50      # last runs
 ```
 
+### PostgreSQL client tools
+
+`pg_dump`, `pg_restore` and `psql` are host-wide; every site's jobs use them. They must
+be at least the major version of every database service on the host (`backupdb` refuses
+an older client; a client serves its own major and older):
+
+| Site | Database service (checked 2026-11-09) |
+|------|---------------------------------------|
+| dev, dev-ae | one Managed PostgreSQL service, PostgreSQL 17 (17.11), each with its own database |
+| admindev | its own Managed PostgreSQL service, PostgreSQL 18 (18.6) |
+
+Debian 13 ships only the 17 client, so `provision.sh` adds the official PostgreSQL apt
+repository (PGDG) and installs `postgresql-client-18` from it (epic-platform entry 14;
+until then admindev's nightly `backupdb` failed with "pg_dump 17 is older than the
+database server (18)"). `/usr/bin/pg_dump` and the others are Debian's wrapper, which
+runs the newest major installed: 18, for the 17 service too. Debian's
+`postgresql-client-17` may stay installed; it is not used.
+
+- **The source:** `/etc/apt/sources.list.d/mytp-pgdg.sources` (deb822, suite
+  `<codename>-pgdg`, `Architectures` the host's, `Signed-By` the key below, so apt trusts
+  that key for this source only) and `/etc/apt/keyrings/mytp-pgdg.asc`. `provision.sh`
+  fetches the key at each run and installs it only when its one primary key has the
+  fingerprint pinned in the script (`PGDG_KEY_FINGERPRINT`, `B97B 0AFC AA1A 47F0 44F2
+  44A0 7FCC 7D46 ACCC 4CF8`), is neither expired nor revoked, and differs from the
+  installed one. Anything else that downloads (another key, an expired or revoked one,
+  or a page that is no key at all) stops the run with an ERROR before anything is
+  installed; the installed key stays. If the key cannot be downloaded at all, the
+  installed one is kept (a WARNING). Each file is written only when it differs, and
+  `apt-get update` runs only then.
+- **Pinned in apt:** `/etc/apt/preferences.d/mytp-pgdg` puts every PGDG package at
+  priority 100 (below Debian's 500: never installed or upgraded from PGDG unless asked
+  for), except `postgresql-client-18`, `postgresql-client-common` and `libpq5` at 500, so
+  the client and its dependencies resolve at PGDG's versions and get its updates.
+- **libpq comes from PGDG too:** `postgresql-client-18` needs PGDG's `libpq5` (18), which
+  replaces Debian's for the whole host. psycopg is installed without its binary extra,
+  so every site's database connections (TLS `verify-full` included) go through that
+  library, and its security fixes now come from PGDG's updates, not Debian's security
+  archive (an `apt upgrade` takes them; unattended-upgrades, if set up, covers Debian's
+  origins only).
+- **One explicit major:** `PG_CLIENT_PACKAGES=(postgresql-client-18)` in `provision.sh`,
+  never the `postgresql-client` metapackage (from PGDG it follows the newest major). A
+  service moving to a later major gets its client first: add `postgresql-client-<n>`
+  there (and to the preferences' second entry), re-provision, then upgrade the service.
+- **Check:**
+
+  ```sh
+  pg_dump --version                                  # pg_dump (PostgreSQL) 18.x
+  apt-cache policy libpq5 postgresql-client-18       # both Installed: 18.x-...pgdg13+1, from apt.postgresql.org (500)
+  apt-cache policy postgresql-common                 # Candidate: Debian's (PGDG's at 100 only)
+  gpg --show-keys /etc/apt/keyrings/mytp-pgdg.asc    # B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8, not [expired]/[revoked]
+  sudo -u mytp-dev /srv/mytp-dev/current/venv/bin/python -c \
+      "import psycopg; print(psycopg.pq.__impl__, psycopg.pq.version())"   # python 18xxxx (PGDG's libpq)
+  cd /srv/mytp-dev/current && sudo -u mytp-dev ./venv/bin/python manage.py check --database default
+  #   no issues: a real connection with the site's DB_SSLMODE=verify-full and DB_SSLROOTCERT
+  curl -s https://dev.mytpdso.com/healthz             # ok (SELECT 1 through the same library)
+  ```
+
+**One-off on the staging host (epic-platform entry 14).** First refresh both copies of
+the merged `deploy/`: `~/deploy` as usual, and `~/deploy-admindev` as the admin README's
+"Server setup" step 3 says (from your machine, in up-to-date checkouts of both repos):
+
+```sh
+ssh debian@<instance-ip> 'rm -rf ~/deploy ~/deploy-admindev'
+scp -r deploy debian@<instance-ip>:~/deploy
+scp -r deploy debian@<instance-ip>:~/deploy-admindev
+scp ../mytp-admin/deploy/jobs.conf ../mytp-admin/deploy/staging.env.example debian@<instance-ip>:~/deploy-admindev/
+```
+
+Then on the host, as `debian`:
+
+```sh
+grep -c '^PG_CLIENT_PACKAGES=' ~/deploy/provision.sh ~/deploy-admindev/provision.sh   # 1 each
+bash ~/deploy/provision.sh dev dev.mytpdso.com mytp-team < /dev/null      # installs postgresql-client-18
+bash ~/deploy/provision.sh dev-ae dev-ae.mytpdso.com mytp-team < /dev/null          # No changes
+WSGI_MODULE=mytp_admin.wsgi bash ~/deploy-admindev/provision.sh admindev admindev.mytpdso.com mytp-team < /dev/null   # No changes
+pg_dump --version                                    # 18.x
+sudo apt-get remove postgresql-client                # Debian's metapackage only (it would follow PGDG's newest major)
+for s in dev dev-ae admindev; do
+    sudo systemctl restart mytp-$s-gunicorn mytp-$s-worker   # load the new libpq5
+    sudo systemctl start mytp-$s-job@backupdb
+    sudo journalctl -u mytp-$s-job@backupdb -n 5 --no-pager | grep 'backupdb: uploaded'
+done   # staging-dev/..., staging-dev-ae/..., staging-admindev/mytp-admin-..., each 2 recipient(s)
+apt-cache policy postgresql-client | head -2        # Installed: (none)
+```
+
+Then the "Check" commands above, for each site (`dev`, `dev-ae`, `admindev`).
+`apt-get remove postgresql-client` leaves `postgresql-client-17` installed (a later
+`apt autoremove` may remove it; either is fine). Then admindev's restore test, once
+`admindev_restore_test` is on admindev's own service ("Per-site backups, restore test and
+monitoring" steps 5–7): `sudo systemctl start mytp-admindev-job@restoretest`, and
+`restoretest: ok site=admindev ...` in its journal.
+
+**Dropping PGDG** once Debian ships `postgresql-client-18` (from Debian 14 "forky"; check
+on the host after its upgrade that `apt-cache policy postgresql-client-18` lists a Debian
+version). The package name stays the same:
+
+1. In `provision.sh`, delete the "PostgreSQL apt repository (PGDG)" step and the
+   `PGDG_*` and `OS_RELEASE` settings, and the tests of that step in
+   `mytp_publicsite/tests/test_deploy.py`; `PG_CLIENT_PACKAGES` stays.
+2. On each host:
+
+   ```sh
+   sudo rm /etc/apt/sources.list.d/mytp-pgdg.sources /etc/apt/keyrings/mytp-pgdg.asc \
+       /etc/apt/preferences.d/mytp-pgdg
+   sudo apt-get update
+   apt-cache policy postgresql-client-18 libpq5     # candidates from Debian only
+   ```
+
+   The packages already installed from PGDG stay until Debian has a newer version; to
+   take Debian's at once: `sudo apt-get install --allow-downgrades
+   postgresql-client-18/<codename> postgresql-client-common/<codename>
+   libpq5/<codename>`, then restart each site's Gunicorn and worker.
+3. Re-provision: "No changes" in the packages steps, `pg_dump --version` still 18.
+
 ### Restore test (weekly, on the server)
 
 The `restoretest` job (mytp-core 0.18.0, `manage.py restoretest`) proves every week that
@@ -1310,23 +1427,31 @@ command yourself, in your own terminal; nothing below prints a secret. Never `ca
 
    Sentry → Issues, filtered per environment: one `environment check <site>` in each of
    `dev`, `dev-ae`, `admindev`, and the alert email for each.
-5. **Scratch databases and their users** (on the OVHcloud Managed PostgreSQL service
-   that serves dev, dev-ae and admindev). In the panel, add three databases and three
-   **plain** users of the same names: `dev_restore_test`, `dev_ae_restore_test`,
-   `admindev_restore_test`; keep each password in the team password manager ("MyTreatplan
-   staging restore test databases"). Never use the service admin (`avnadmin`) or any
+5. **Scratch databases and their users**, each on its site's own Managed PostgreSQL
+   service: `dev_restore_test` and `dev_ae_restore_test` on the service that serves dev
+   and dev-ae (PostgreSQL 17), `admindev_restore_test` on admindev's own service
+   (PostgreSQL 18; never on the 17 one: admindev's dump comes from an 18 server and is
+   restored on the same version). In each service's panel, add the databases and
+   **plain** users of the same names; keep each password in the team password manager
+   ("MyTreatplan staging restore test databases"). Never use the service admin (`avnadmin`) or any
    user that can create roles or databases: `restoretest` refuses a role with
    `rolsuper`, `rolcreaterole` or `rolcreatedb` (code `scratch-db`). Then make each user
    the owner of its database and of its `public` schema (the panel makes them the service
-   admin's; the job drops and makes `public` again at each run). From the host, as the
-   service admin (psql asks for its password, once per database):
+   admin's; the job drops and makes `public` again at each run). From the host, as each
+   service's admin (psql asks for its password, once per database; the host and port
+   are that service's, from its panel):
 
    ```sh
-   for d in dev_restore_test dev_ae_restore_test admindev_restore_test; do
-       psql "host=<db-host> port=<db-port> dbname=$d user=avnadmin sslmode=require" \
-           -c "ALTER DATABASE $d OWNER TO $d" -c "ALTER SCHEMA public OWNER TO $d" \
-           -c "SELECT rolname, rolsuper, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = '$d'"
-   done
+   owners() {   # <db-host> <db-port> <database>...
+       local host=$1 port=$2 d; shift 2
+       for d in "$@"; do
+           psql "host=$host port=$port dbname=$d user=avnadmin sslmode=require" \
+               -c "ALTER DATABASE $d OWNER TO $d" -c "ALTER SCHEMA public OWNER TO $d" \
+               -c "SELECT rolname, rolsuper, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = '$d'"
+       done
+   }
+   owners <dev-db-host> <dev-db-port> dev_restore_test dev_ae_restore_test     # the 17 service
+   owners <admindev-db-host> <admindev-db-port> admindev_restore_test          # admindev's 18 service
    # each: <name>|f|f|f
    ```
 
@@ -1334,7 +1459,8 @@ command yourself, in your own terminal; nothing below prints a secret. Never `ca
 6. **The scratch database URL** in each `settings.env`. First delete an empty
    `RESTORE_TEST_DATABASE_URL=` line copied from a template (one line per key: the
    settings loader keeps the last, and the counts below expect 1), then append the real one: this asks for the host and port
-   (from the panel) and the user's password (not echoed), and URL-encodes the password.
+   (from the panel of the site's service: admindev's is its own) and the user's password
+   (not echoed), and URL-encodes the password.
    Run it once per site (`dev` / `dev_restore_test`, `dev-ae` / `dev_ae_restore_test`,
    `admindev` / `admindev_restore_test`):
 
@@ -1353,8 +1479,8 @@ command yourself, in your own terminal; nothing below prints a secret. Never `ca
    sudo grep -c '^RESTORE_TEST_DATABASE_URL=' /srv/mytp-$site/shared/settings.env    # 1
    ```
 
-   `DB_SSLMODE=verify-full` and `DB_SSLROOTCERT` apply to it too (the same service and
-   CA). Check the connection as the site's user (prints names only):
+   `DB_SSLMODE=verify-full` and `DB_SSLROOTCERT` apply to it too (the site's service and
+   its CA). Check the connection as the site's user (prints names only):
 
    ```sh
    sudo -u mytp-$site sh -ec 'url=$(sed -n "s/^RESTORE_TEST_DATABASE_URL=//p" /srv/mytp-'$site'/shared/settings.env)
@@ -1470,13 +1596,16 @@ deploy`; admindev: with the admin repo's `jobs.conf` of its commit), so the inst
 
 Proves the dumps can be restored, by hand (before a production go-live, after a change
 to the backups, or when the weekly job fails and the cause is unclear). On a team Mac,
-never on the server, into a local, empty database. Needs `age`, PostgreSQL 17 client tools (`pg_restore`, `psql`), a local
-PostgreSQL, and either the `aws` CLI with the S3 keys or a dump downloaded by hand:
+never on the server, into a local, empty database. Needs `age`, PostgreSQL 18 client tools (`pg_restore`, `psql`: the
+server's `pg_dump` is 18 since epic-platform entry 14, and `pg_restore` cannot read a dump
+from a newer `pg_dump`), a local PostgreSQL 18, and either the `aws` CLI with the S3 keys
+or a dump downloaded by hand (a Mac with `postgresql@17`: `brew services stop
+postgresql@17` first, then install 18 as below):
 
 ```sh
-brew install age postgresql@17 awscli
-export PATH="$(brew --prefix postgresql@17)/bin:$PATH"   # keg-only formula
-brew services start postgresql@17
+brew install age postgresql@18 awscli
+export PATH="$(brew --prefix postgresql@18)/bin:$PATH"   # keg-only formula
+brew services start postgresql@18
 createdb mytp_restore_test
 # The bucket keys from the password manager, in the environment (never as arguments):
 export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
@@ -1961,6 +2090,7 @@ firewall, certificate renewal and the release command are shared by the host.
 | Nginx | `/etc/nginx/sites-available/mytp-<site>.conf`, password file `/etc/nginx/mytp-<site>.htpasswd` |
 | Deploy rights | `/etc/sudoers.d/mytp-<site>-deploy` |
 | Deploy | `/usr/local/bin/mytp-release <site> <sha> /srv/mytp-<site>/incoming/<sha>.tar.gz`, as `mytp-<site>` |
+| Database | its own database and user on a Managed PostgreSQL service: dev and dev-ae share one service (PostgreSQL 17), admindev has its own (PostgreSQL 18); the host's client tools are version 18 and serve both ([PostgreSQL client tools](#postgresql-client-tools)) |
 
 The app reads `SITE` (default `dev`) and derives its server paths from it
 (`SITE_HOME` = `/srv/mytp-<site>`: the provisioned `jobs.conf` copy and the backup temp
