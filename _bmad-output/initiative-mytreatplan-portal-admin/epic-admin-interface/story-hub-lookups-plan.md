@@ -3,7 +3,7 @@ title: 'Hub lookups'
 type: 'feature'
 ticket: '7'
 created: '2026-11-09'
-status: 'built'
+status: 'done'
 baseline_revision: 'portal 4aae9a8, core 3f0974a, admin 3cac370'
 route: 'full'
 route_source: 'auto'
@@ -131,3 +131,11 @@ Review (2026-11-09), all applied as patches (see Implementation Notes, "Review p
 
 **Manual checks (staging):**
 - `INTERFACE_SAMPLE_LOOKUPS=True` on admindev; `hub_lookup sample` on dev and dev-ae → answers, accepted `InterfaceCall` rows on admindev with each issuer; admindev stopped → `unavailable` in ≤ 10 s and dev's home page 200; setting off → refused.
+
+## Staging
+
+2026-11-09, run by Claude with the user's delegation. mytp-core v0.17.0 (tag pushed); admin PR #23 and portal PR #81 merged after their checks passed, deploys green on admindev, dev and dev-ae. Local suites: core 1222; admin 1051 passed / 8 skipped (SQLite), 1059 on PostgreSQL 17; portal 2304 passed / 8 skipped + the 3 known PostgreSQL-only failures (SQLite), 2315 on PostgreSQL 17.
+- `INTERFACE_SAMPLE_LOOKUPS=True` added to admindev's settings (no other change), restarted, `check` clean.
+- `hub_lookup sample` on dev → answered (region eu, made-up slots); on dev-ae → answered (region ae); admindev's `InterfaceCall` shows both accepted with their issuers.
+- admindev stopped: dev's lookup → `unavailable (http_502)` in 2 s (nginx answered for the stopped app); dev's `/healthz` 200 and its home page 200 (test client).
+- Setting off: `refused (http_404_not_found)`, logged refused on admindev; set back on → answered. The setting stays on for staging.
