@@ -3,7 +3,7 @@ title: 'Interface operations'
 type: 'feature'
 ticket: '10'
 created: '2026-11-09'
-status: 'built'
+status: 'done'
 baseline_revision: 'portal 241308a, admin 642fa37'
 route: 'full'
 route_source: 'auto'
@@ -121,3 +121,12 @@ Opus review, security and operations focus (2026-11-09); validation, rendering i
 
 **Manual checks (staging):**
 - Render check with a sample `API_PEER_IPS` on a scratch copy (not applied to staging); rotate admindev's signing key by the runbook with `ping_peer` before and after; low thresholds on dev, admindev stopped, one warning each kind, recovery resets; thresholds back.
+
+## Staging
+
+2026-11-09/10, run by Claude with the user's delegation. Portal PR #85 and admin PR #27 merged after their checks passed; deploys green (migration 0008 applied). Portal suite 2436 passed / 8 skipped + the 3 known PostgreSQL-only failures, 2447 on PostgreSQL 17.
+- Re-provisioned dev, dev-ae (checkinterface timer added) and admindev without `API_PEER_IPS`: each printed the "no IP allowlist" notice, no WARNING; a second run: No changes. `check_interface` on dev and dev-ae: outbox ok, config ok. `/api/v1/ping` unsigned from the host: 401. (The allowlist render check was run locally by the implementer on a scratch copy; not applied to staging.)
+- Alerts with thresholds 2 and 5 minutes on dev and admindev stopped (socket and service), one made-up contact message recorded: outbox `warned` at 2 minutes, then `still_failing`; config `warned` at 6 minutes, then `still_failing` (no repeat warnings). admindev started: the event delivered, both `recovered`; the two threshold lines removed (back to 15 and 60, `ok`).
+- Rotation of dev's key: generated `sig202611092329` (only the public key printed), switched dev's signer, checked, restarted; admindev's old kid `sig20261105` retired; pings both ways and dev's pull pass. Incident during the rehearsal: Claude's own script cut the public key's trailing `=` (a `cut -d=` in the operator's shell, not the runbook), so `add_peer_key` refused it and, the script not stopping, dev signed with an unknown kid for about 30 seconds (one refused call, nothing lost: no pending events, the pull kept its snapshot); the key was then added and everything passed. Lesson for operators: copy the whole public key, padding included (the runbook's commands do).
+- Rotation of admindev's key: generated `sig202611092330`; dev and dev-ae accepted both kids (`check` before each restart), admindev switched its signer; pings admindev↔dev, admindev↔dev-ae and both pulls pass, dev's call log shows admindev's calls with the new kid and 0 `unknown_key`; then each portal kept only the new entry (`check`, restart), all pings and pulls pass; `signing-key.old` removed.
+- Pending with the user: whether a re-provision without `API_PEER_IPS` must refuse to remove an installed allowlist (fail closed) instead of warning.
