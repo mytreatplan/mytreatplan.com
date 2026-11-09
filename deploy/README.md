@@ -2528,6 +2528,54 @@ read, as the portal's tests do); each read (and each refusal) is a row in that r
 `integration_remoteaccess` revoked from a test database role, granted back afterwards),
 the read answers 503.
 
+### Remote writes
+
+An admin user changes a regional record through the admin site (epic-admin-interface
+entry 6, interface I7, AD-3, AD-15; mytp-core 0.16.0). The admin site signs
+`POST /api/v1/remote/sample-record` with the user's access (as a read) and the body
+`{"idempotency_key": "<uuid>", "expected_version": <n>, "object_id": "<uuid>", "changes":
+{"note": "..."}}` (`object_id`, optional, is the record of the user's last read: another
+record is never written, 404 instead).
+This region checks the user and the fields (`mytp_core.access`: each role's writable
+fields; the sample's note for the Sysadmin, the Clinical Manager and an assigned Clinical
+User), answers a key it has seen from its stored answer, writes and commits the access log
+row (`operation` `write`; `fields` the names the answer returns, as a read; the changed
+names in `access_reason`, such as `write:note`), and only then applies the change
+through `integration.sample.update_sample_record` (row lock, version check, version + 1),
+storing the key and the answer in the same transaction.
+
+| Answer | When |
+|--------|------|
+| 200 the record (as a read, with the new `version`) | applied; or the same user's same key and body again (the stored answer, nothing applied twice, after a granted `write` row with access reason `replay:<changed names>`; 503 if that row cannot be written) |
+| 400 `invalid_body` | not a write request (closed shape; note at most 500 characters); logged refused |
+| 401 (`unknown_key`, ...) | not signed by the admin site, or signed for another body; in the call log only |
+| 403 `forbidden` | as a read, or a field outside the role's writable fields (reason `field`); logged refused with the names it tried to change |
+| 404 `not_found` | no record, or not the record `object_id` names (a reseed meanwhile; logged), or the sample setting off |
+| 409 `stale_version` + `current_version` | the record changed since the user's read; nothing applied; a refused row follows the granted one |
+| 422 `idempotency_key_reused` | the same user's key with another body; nothing applied; logged refused |
+| 503 `access_log_unavailable` | the log row could not be written: nothing applied |
+
+Idempotency keys are the table `integration_remotewrite` (admin user UUID + key unique,
+the request's SHA-256, the status and the answer, encrypted); the daily `purgeoutbox` job
+deletes keys older than 7 days (it now prints `purge_outbox: <n> events deleted, <m>
+remote write keys deleted`). A retry after that is a new write, which the version still
+guards (409). `seed_sample_record` puts the new record at version 1.
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from integration.models import RemoteAccess; print(list(RemoteAccess.objects.filter(operation='write').values_list('at', 'role', 'fields', 'access_reason', 'outcome', 'reason')[:10]))"
+sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from integration.models import SampleRecord, RemoteWrite; print(SampleRecord.objects.values_list('version', flat=True).first(), RemoteWrite.objects.count())"
+```
+
+Staging checks (after both deploys, the admin site first): on admindev as a Clinical
+Manager, change the sample note on dev and on dev-ae from the Patients area's "Remote
+sample record" page; send the same request again (reload the answer page and confirm
+the browser's resubmit: the same form, so the same key and body) and get the same answer
+with one change (the version went up once); a write from an old version (a second
+tab read before the change) shows "changed meanwhile, reload" (409); each write is a
+`write` row in that region's `integration_remoteaccess` (`fields` the names returned,
+`access_reason` `write:note`, or `replay:note` for the resent request); admindev's database holds no
+note text (its audit rows name the resource, region, record and outcome only).
+
 ## Rollback
 
 On the server as `debian`:

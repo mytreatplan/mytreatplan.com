@@ -2,7 +2,7 @@
 the configuration snapshot, epic-admin-interface entry 4; the client record events,
 entry 8; the snapshot's catalogue section, epic-catalogue entry 2; remote reads, entry 5;
 the contact message events, entry 9; the snapshot's country map section,
-epic-catalogue entry 3)."""
+epic-catalogue entry 3; remote writes, entry 6)."""
 
 from decimal import Decimal
 
@@ -13,7 +13,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.15.0'
+    assert mytp_core.__version__ == '0.16.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -63,3 +63,13 @@ def test_vendored_mytp_core_has_the_country_map_section():
     assert ConfigSnapshot.model_fields['country_map'].is_required() is False
     assert CountryMapSection.model_fields.keys() == {'countries'}
     assert CountryMapEntry.model_fields.keys() == {'code', 'state'}
+
+
+def test_vendored_mytp_core_has_remote_writes():
+    from mytp_core import access
+    from mytp_core.contracts import RESOURCE_WRITERS, errors, stale_version_body
+    assert access.writable('sample_record', 'clinical_manager') == {'note'}
+    assert set(RESOURCE_WRITERS) == {'sample_record'}
+    assert errors.REMOTE_WRITE_STATUS['stale_version'] == 409
+    assert errors.REMOTE_WRITE_STATUS['idempotency_key_reused'] == 422
+    assert stale_version_body(2)['current_version'] == 2

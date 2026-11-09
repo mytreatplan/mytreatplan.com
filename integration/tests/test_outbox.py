@@ -610,7 +610,8 @@ def test_purge_deletes_old_delivered_rows_and_keeps_rejected_ones():
         state='delivered', delivered_at=now - timedelta(days=29))
     out = io.StringIO()
     call_command('purge_outbox', stdout=out)
-    assert out.getvalue() == 'purge_outbox: 2 events deleted\n'
+    assert out.getvalue() == ('purge_outbox: 2 events deleted, 0 remote write keys '
+                              'deleted\n')
     assert set(OutboxEvent.objects.values_list('pk', flat=True)) == {
         old_rejected.pk, recent.pk}
     # The counter row keeps the sequence going once every event of `other` is gone.

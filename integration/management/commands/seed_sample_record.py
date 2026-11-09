@@ -5,7 +5,7 @@ admin site reads remotely.
         [--patient-name TEXT] [--amount 123.45] [--currency EUR] [--note TEXT]
 
 Only with INTERFACE_SAMPLE_RECORDS=True. Replaces any earlier sample record, so the region
-has exactly one; prints its UUID only (never the patient name). `--assignee` is the admin
+has exactly one, at version 1 (entry 6); prints its UUID only (never the patient name). `--assignee` is the admin
 user (a Clinical User, to check the `assigned` scope) the record is assigned to.
 """
 import uuid
@@ -50,6 +50,6 @@ class Command(BaseCommand):
             SampleRecord.objects.all().delete()
             record = SampleRecord.objects.create(
                 patient_name=patient_name, amount_value=money.amount, currency=money.currency,
-                assignee_uuid=assignee_uuid, note=note)
+                assignee_uuid=assignee_uuid, note=note, version=1)
         self.stdout.write(f'sample record {record.uuid}'
                           + (f' assigned to {assignee_uuid}' if assignee_uuid else ''))
