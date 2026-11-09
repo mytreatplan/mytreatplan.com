@@ -3,7 +3,7 @@ title: 'Signup re-checks a banned country before creating the account'
 type: 'bugfix'
 ticket: ''
 created: '2026-11-09'
-status: 'built'
+status: 'done'
 baseline_revision: ''
 route: 'oneshot'
 route_source: 'auto'
@@ -84,3 +84,7 @@ Signup tests 510 passed; portal full suite (SQLite) 2194 passed, 5 skipped, the 
 
 **Manual checks (staging):**
 - On admindev ban AQ; on dev a signup that chose AQ at step 1 earlier (made before the ban, or with the test client) is refused at the last step; set AQ back to eu.
+
+## Staging
+
+2026-11-09: PR #79 merged after its checks passed (PostgreSQL CI green); deployed green to dev and dev-ae, the re-check present in both live releases. The behaviour is proved by the three tests (CI, PostgreSQL). The live browser check (a signup with AQ stopped at the mobile code, AQ banned, then the code submitted) needs real email and SMS codes and was not run; optional for the user.
