@@ -16,11 +16,17 @@
   UUID is). Replaced together, in one transaction, only by a higher version.
 - RemoteAccess (entry 5, AD-4, AD-22): this region's access log. Every remote read by an
   admin user (granted or refused) and every download of a stored file
-  (storage.service), written before any data leaves (integration.access_log). Append
-  only; kept ACCESS_RETENTION (5 calendar years, like the activity records), then
-  deleted by the daily `eventlog_retention` job.
+  (storage.service), written before any data leaves (integration.access_log); every
+  remote write (entry 6) before it is applied (`operation` `write`). Append only; kept
+  ACCESS_RETENTION (5 calendar years, like the activity records), then deleted by the
+  daily `eventlog_retention` job.
 - SampleRecord (entry 5, staging only, INTERFACE_SAMPLE_RECORDS): the record the admin
-  site reads remotely until epic-ordering's patients exist; then it goes.
+  site reads and (entry 6) changes remotely until epic-ordering's patients exist; then
+  it goes.
+- RemoteWrite (entry 6, AD-3, AD-15): the idempotency keys of applied remote writes (one
+  per admin user and key), with the request's hash and the answer given, so a retry gets
+  the same answer and is applied once. Kept REMOTE_WRITE_RETENTION_DAYS, then deleted by
+  the daily `purgeoutbox` job.
 """
 import uuid
 from decimal import Decimal
@@ -39,6 +45,8 @@ OUTBOX_RETENTION_DAYS = 30
 # Decision (user, 2026-11-07, entry 5): access log rows are kept 5 calendar years, like
 # the activity records (eventlog.retention.ACTIVITY_RETENTION).
 ACCESS_RETENTION = relativedelta(years=5)
+# Decision (user, 2026-11-09, entry 6): remote write idempotency keys are kept 7 days.
+REMOTE_WRITE_RETENTION_DAYS = 7
 
 
 class InterfaceCall(models.Model):
@@ -211,8 +219,20 @@ class RemoteAccess(models.Model):
     GRANTED = 'granted'
     REFUSED = 'refused'
     OUTCOMES = [(GRANTED, 'Granted'), (REFUSED, 'Refused')]
+    READ = 'read'
+    WRITE = 'write'
+    OPERATIONS = [(READ, 'Read'), (WRITE, 'Write')]
 
     at = models.DateTimeField(default=timezone.now, db_index=True)
+    # Entry 6: a read (remote reads, downloads) or a remote write. A granted write's
+    # `fields` are the names the answer returns, as a read's (decision user, 2026-11-09),
+    # and its `access_reason` is `write:<changed names>` (`replay:<names>` for a retry
+    # answered from its stored answer); granted means allowed to try (the row is written
+    # before applying); a write refused as stale adds a refused row. A refused write's
+    # `fields` are the names it tried to change.
+    # db_default: the release before entry 6 still inserts rows during a rollback.
+    operation = models.CharField(max_length=5, choices=OPERATIONS, default=READ,
+                                 db_default=READ)
     actor_type = models.CharField(max_length=10, choices=ACTOR_TYPES)
     # None when a refused token carried no valid `sub`.
     actor_uuid = models.UUIDField(null=True, blank=True)
@@ -229,14 +249,16 @@ class RemoteAccess(models.Model):
     object_id = models.CharField(max_length=64, blank=True)
     # A download: the stored object's purpose (StoredObject.purpose, such as `sample`)
     # and why the portal user downloaded it (storage.service's reason code, such as
-    # `sample_page`). Both empty for a remote read.
+    # `sample_page`). Both empty for a remote read; a remote write's access reason is
+    # above (`operation`).
     purpose = models.CharField(max_length=40, blank=True)
     access_reason = models.CharField(max_length=50, blank=True)
     # The names of the fields returned, sorted; empty when refused.
     fields = models.JSONField(default=list, blank=True)
     outcome = models.CharField(max_length=10, choices=OUTCOMES)
-    # Refused: mytp_core.access's reason (actor, region, role, assigned), `not_found`, or
-    # `download_refused`. Empty when granted.
+    # Refused: mytp_core.access's reason (actor, region, role, assigned, field),
+    # `not_found`, `download_refused`, or for a write `stale_version` or
+    # `idempotency_key_reused`. Empty when granted.
     reason = models.CharField(max_length=32, blank=True)
 
     objects = RemoteAccessQuerySet.as_manager()
@@ -263,7 +285,8 @@ class SampleRecord(models.Model):
     """The staging-only sample record (INTERFACE_SAMPLE_RECORDS, `seed_sample_record`): a
     patient name (encrypted, as patient data is), an amount (a financial field), an
     assignee (an admin user's UUID, for the Clinical User's `assigned` scope) and a
-    note."""
+    note; `version` (entry 6) starts at 1 and goes up by one on each applied remote
+    write (integration.sample.update_sample_record)."""
 
     uuid = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient_name = EncryptedCharField(max_length=150)
@@ -272,6 +295,9 @@ class SampleRecord(models.Model):
     currency = models.CharField(max_length=3, default='EUR')
     assignee_uuid = models.UUIDField(null=True, blank=True)
     note = models.CharField(max_length=500, blank=True)
+    # db_default: the release before entry 6 (seed_sample_record) still inserts rows
+    # during a rollback.
+    version = models.BigIntegerField(default=1, db_default=1)
     created_at = models.DateTimeField(default=timezone.now)
 
     class Meta:
@@ -283,3 +309,35 @@ class SampleRecord(models.Model):
     @property
     def amount(self):
         return Money(self.amount_value, self.currency)
+
+
+# --- Remote write idempotency keys (entry 6) ---------------------------------------------
+
+class RemoteWrite(models.Model):
+    """An applied remote write's idempotency key (decision 2026-11-09): one per admin user
+    (`actor_uuid`, the token's `sub`) and key, with the SHA-256 of the request (resource,
+    expected version, changes) and the answer given (HTTP status and body). A retry with
+    the same key and the same body gets that answer again; another body is refused (422
+    `idempotency_key_reused`). Written in the same transaction as the change
+    (integration.remote), so a key exists only for an applied write. The body holds the
+    record's fields the actor could read, so it is encrypted. Deleted after
+    REMOTE_WRITE_RETENTION_DAYS by `purge_outbox` (integration.remote.purge_writes)."""
+
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    actor_uuid = models.UUIDField()
+    idempotency_key = models.UUIDField()
+    resource = models.CharField(max_length=64)
+    object_id = models.CharField(max_length=64)
+    # SHA-256 hex of the request's canonical JSON (integration.remote.request_hash).
+    request_hash = models.CharField(max_length=64)
+    status = models.PositiveSmallIntegerField()
+    response = EncryptedJSONField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['actor_uuid', 'idempotency_key'],
+                                    name='integration_remotewrite_actor_key'),
+        ]
+
+    def __str__(self):
+        return f'Remote write {self.idempotency_key} ({self.resource} {self.status})'

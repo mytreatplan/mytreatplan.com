@@ -93,13 +93,15 @@ def test_clinical_manager_sees_the_name_but_not_the_amount(client, record):
         'resource': 'sample_record', 'region': 'eu', 'object_id': str(record.uuid),
         'fields': CLINICAL_FIELDS,
         'data': {'uuid': str(record.uuid), 'patient_name': NAME, 'assignee_uuid': ME,
-                 'note': 'Staging sample'}}
+                 'note': 'Staging sample'},
+        'version': 1}
     row = only_access()
     assert (row.actor_type, str(row.actor_uuid), row.role, row.source_site, row.source_ip,
             row.resource, row.object_id, row.fields, row.outcome, row.reason) == (
         'admin', ME, 'clinical_manager', 'admindev', '203.0.113.9', 'sample_record',
         str(record.uuid), CLINICAL_FIELDS, 'granted', '')
     assert (row.user_agent, row.purpose, row.access_reason) == ('mytp-admindev-test', '', '')
+    assert row.operation == 'read'
 
 
 @pytest.mark.django_db
@@ -254,8 +256,11 @@ def test_another_portal_is_refused_even_with_the_setting_off(client, record, set
 
 
 @pytest.mark.django_db
-def test_a_read_is_get_only(client, record):
-    assert client.post(URL).status_code == 405
+def test_the_route_is_get_and_post_only(client, record):
+    # POST is the remote write (entry 6, test_remote_write); unsigned, it is refused.
+    assert client.put(URL).status_code == 405
+    assert client.delete(URL).status_code == 405
+    assert client.post(URL).status_code == 401
 
 
 @pytest.mark.django_db

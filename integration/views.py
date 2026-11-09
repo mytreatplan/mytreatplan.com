@@ -1,6 +1,7 @@
 """The interface endpoints the admin site calls (epic-admin-interface, AD-4): the ping
 (entry 1), the configuration snapshot's nudge (entry 4), the client re-sync (entry 8),
-the contact message re-sync (entry 9) and the remote reads (entry 5, integration.remote)."""
+the contact message re-sync (entry 9), the remote reads (entry 5) and the remote writes
+(entry 6; integration.remote)."""
 import json
 import logging
 
@@ -8,7 +9,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.http import JsonResponse
 from django.utils import timezone
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from mytp_core import interface
 from mytp_core.contracts import errors as contract_errors
@@ -151,12 +152,15 @@ def contact_messages_resync(request):
     return JsonResponse({'status': 'queued'}, status=202)
 
 
-@require_GET
+@require_http_methods(['GET', 'POST'])
 @signed_endpoint
 def remote_sample_record(request):
-    """GET /api/v1/remote/sample-record, signed by the admin site with the admin user's
-    access (staging only, INTERFACE_SAMPLE_RECORDS): the newest sample record, with the
-    fields the user's role sees (integration.remote). Another signed peer is refused (401
+    """/api/v1/remote/sample-record, signed by the admin site with the admin user's
+    access (staging only, INTERFACE_SAMPLE_RECORDS). GET: the newest sample record, with
+    the fields the user's role sees and its version (integration.remote.remote_read).
+    POST (entry 6): a remote write of its note (`RemoteWriteRequest`; idempotent,
+    versioned: integration.remote.remote_write, through
+    integration.sample.update_sample_record). Another signed peer is refused (401
     `unknown_key`) first, whatever the setting; then 404 `not_found` when the setting
     is off."""
     refused = _not_the_admin_site(request)
@@ -164,5 +168,9 @@ def remote_sample_record(request):
         return refused
     if not sample.enabled():
         return remote.error(contract_errors.NOT_FOUND)
+    if request.method == 'POST':
+        return remote.remote_write(request, sample.RESOURCE, sample.load,
+                                   sample.update_sample_record, sample.build,
+                                   assignee=sample.assignee, version=sample.version)
     return remote.remote_read(request, sample.RESOURCE, None, sample.load, sample.build,
-                              assignee=sample.assignee)
+                              assignee=sample.assignee, version=sample.version)
