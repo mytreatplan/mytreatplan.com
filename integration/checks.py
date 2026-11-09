@@ -9,14 +9,19 @@ setting is an error naming it, so the runbook's `check` shows it before a call f
 - integration.E005: the outbox cannot tell the admin site (`outbox.admin_site()`):
   INTERFACE_ADMIN_SITE not in INTERFACE_PEERS, or several INTERFACE_PEERS without it;
 - integration.E006: INTERFACE_SAMPLE_RECORDS on a public site (ROBOTS_NOINDEX off): the
-  sample record is for staging only (entry 5).
+  sample record is for staging only (entry 5);
+- integration.E007: HUB_LOOKUP_TIMEOUT not a number above 0 and at most the lookups'
+  overall cap (`hub.OVERALL_CAP`, 10 seconds; entry 7).
 """
+import math
+
 from django.core.checks import Error, register
 
 from mytp_core import interface
 
 ADMIN_SITE_NOT_A_PEER = 'integration.E005'
 SAMPLE_ON_PUBLIC_SITE = 'integration.E006'
+BAD_HUB_LOOKUP_TIMEOUT = 'integration.E007'
 
 
 @register()
@@ -60,4 +65,13 @@ def check_interface_settings(app_configs=None, **kwargs):
             'the sample record is for staging only.',
             hint='Remove INTERFACE_SAMPLE_RECORDS from settings.env.',
             id=SAMPLE_ON_PUBLIC_SITE))
+    from .hub import OVERALL_CAP
+    timeout = getattr(settings, 'HUB_LOOKUP_TIMEOUT', None)
+    if (not isinstance(timeout, (int, float)) or isinstance(timeout, bool)
+            or not math.isfinite(timeout) or not 0 < timeout <= OVERALL_CAP):
+        errors.append(Error(
+            f'HUB_LOOKUP_TIMEOUT must be a number of seconds above 0 and at most '
+            f'{OVERALL_CAP} (the hub lookups\' overall cap).',
+            hint='Remove HUB_LOOKUP_TIMEOUT from settings.env (default 3).',
+            id=BAD_HUB_LOOKUP_TIMEOUT))
     return errors
