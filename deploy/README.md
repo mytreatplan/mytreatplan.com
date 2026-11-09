@@ -2576,6 +2576,64 @@ tab read before the change) shows "changed meanwhile, reload" (409); each write 
 `access_reason` `write:note`, or `replay:note` for the resent request); admindev's database holds no
 note text (its audit rows name the resource, region, record and outcome only).
 
+### Hub lookups
+
+This region reads admin-owned live data from the admin site (epic-admin-interface entry
+7, interface I10, AD-3 channel 4, AD-21; mytp-core 0.17.0): later specialist
+availability and slot holds (epic-appointments), today only a staging sample. Nothing
+else goes over this channel (no catalogue, directory or snapshot data). `integration.hub.lookup(path,
+reader)` signs `GET <admin site>/api/v1/hub/<name>?region=<REGION>` for the admin site
+(INTERFACE_ADMIN_SITE, or the only INTERFACE_PEERS entry), waits at most
+`HUB_LOOKUP_TIMEOUT` seconds (default 3) per socket operation and 10 seconds in all, reads
+at most 64 KB and checks the answer against the lookup's closed contract model. Nothing
+of the answer is cached or stored: each lookup asks again.
+
+| Outcome | When |
+|---------|------|
+| the answer | 200 with the lookup's model, for this region |
+| `unavailable (network)` | no answer (the admin site down, DNS, TLS, refused connection, or a hung admin site sending nothing) |
+| `unavailable (timeout)` | no full answer within 10 seconds (also a hung KMS on this worker's first lookup, see below) |
+| `unavailable (busy)` | 4 lookups of this process still running (earlier ones past the cap); no call made |
+| `unavailable (http_5xx...)`, `unavailable (http_401_<code>)` | the admin site failing, or refusing this site's signature (keys) |
+| `unavailable (bad_answer)` | too large, not JSON, not the lookup's model, or for another region |
+| `unavailable (not_configured)`, `unavailable (signing_key)` | INTERFACE_PEERS / REGION / the signing key setting not usable here, or the KMS refusing the key |
+| `unavailable (peer_url)` | the admin site's URL refused by mytp-core before the call (http:// without DEBUG; INTERFACE_PEERS is checked first, so normally `not_configured` instead) |
+| `unavailable (error)` | anything unexpected (a bug, a thread that could not start); nothing else is said |
+| `refused (http_403_region_mismatch)` | the admin site does not know this site as the region it named |
+| `refused (http_404_not_found)` | the lookup is not served (the admin's sample setting off or a public admin deploy, or an older admin site) |
+
+A hung admin site (connection open, nothing sent) shows as `unavailable (network)` after
+`HUB_LOOKUP_TIMEOUT` seconds (the socket timeout); `timeout` is for an answer still
+coming in at 10 seconds (a slow drip). A lookup past the cap leaves its thread to end on
+its own; at most 4 such threads run per process, then lookups are `busy` until one ends.
+The first lookup in each gunicorn worker may unwrap this site's signing key through the
+KMS inside the lookup's thread, so a hung KMS shows as `timeout` there (the next lookup
+tries again).
+
+Each lookup writes one line (logger `integration.hub`, in `journalctl -u
+mytp-dev-gunicorn` or the command's output): `hub lookup <path>: answered`, or a warning
+`hub lookup <path>: <outcome> (<code>)`; never the answer, and no Sentry event. A failed
+lookup never breaks anything else: the caller shows "unavailable" for that feature only.
+`check` fails (integration.E007) when `HUB_LOOKUP_TIMEOUT` is not above 0 and at most 10;
+a value that is not a number at all (`HUB_LOOKUP_TIMEOUT=abc`) already fails when the
+settings are imported, so every `manage.py` command and gunicorn fail to start.
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py hub_lookup sample
+```
+
+It prints the answer as JSON; on a failure it prints the warning log line, then one error
+line (`hub_lookup sample: unavailable (network)`), and exits 1.
+
+Staging checks (after both deploys, the admin site first; admindev with
+`INTERFACE_SAMPLE_LOOKUPS=True`, its README "Hub lookups"): `hub_lookup sample` on dev and
+on dev-ae prints a few sample slots for `eu` and `ae`, and admindev's call log has an
+accepted row for each with `iss` `dev` and `dev-ae`; with admindev's gunicorn stopped,
+`hub_lookup sample` on dev prints `unavailable (network)` (or `timeout`) within 10 seconds
+and `curl -s -o /dev/null -w '%{http_code}' -u <htpasswd-user> https://dev.mytpdso.com/en/`
+still answers 200; with the setting removed on admindev (restart), it prints `refused
+(http_404_not_found)`.
+
 ## Rollback
 
 On the server as `debian`:

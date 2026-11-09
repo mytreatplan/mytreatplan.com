@@ -344,6 +344,11 @@ INTERFACE_ADMIN_SITE = config('INTERFACE_ADMIN_SITE', default='')
 # serves the sample record at /api/v1/remote/sample-record and allows
 # `manage.py seed_sample_record`. Removed when epic-ordering's patients exist.
 INTERFACE_SAMPLE_RECORDS = config('INTERFACE_SAMPLE_RECORDS', default=False, cast=bool)
+# Hub lookups (epic-admin-interface entry 7, AD-3 channel 4, integration.hub): live reads
+# of admin-owned data. HUB_LOOKUP_TIMEOUT (seconds) is urllib's socket timeout for each
+# socket operation of a lookup; a lookup also stops after 10 seconds in all
+# (integration.hub.OVERALL_CAP). The check integration.E007 wants 0 < value <= 10.
+HUB_LOOKUP_TIMEOUT = config('HUB_LOOKUP_TIMEOUT', default=3, cast=float)
 
 # Application definition
 
@@ -679,5 +684,8 @@ LOGGING = {
         # The contact message re-sync asked by the admin site (integration.views, entry
         # 9): the uid and the outcome; nothing of the message.
         'integration.contact_messages': {'handlers': ['console'], 'level': 'INFO'},
+        # Hub lookups (integration.hub, entry 7): one line per lookup, the path and the
+        # outcome code (a warning when it failed); never the answer.
+        'integration.hub': {'handlers': ['console'], 'level': 'INFO'},
     },
 }

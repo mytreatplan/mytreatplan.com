@@ -2,7 +2,7 @@
 the configuration snapshot, epic-admin-interface entry 4; the client record events,
 entry 8; the snapshot's catalogue section, epic-catalogue entry 2; remote reads, entry 5;
 the contact message events, entry 9; the snapshot's country map section,
-epic-catalogue entry 3; remote writes, entry 6)."""
+epic-catalogue entry 3; remote writes, entry 6; hub lookups, entry 7)."""
 
 from decimal import Decimal
 
@@ -13,7 +13,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.16.0'
+    assert mytp_core.__version__ == '0.17.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -73,3 +73,13 @@ def test_vendored_mytp_core_has_remote_writes():
     assert errors.REMOTE_WRITE_STATUS['stale_version'] == 409
     assert errors.REMOTE_WRITE_STATUS['idempotency_key_reused'] == 422
     assert stale_version_body(2)['current_version'] == 2
+
+
+def test_vendored_mytp_core_has_hub_lookups():
+    from mytp_core.contracts import LOOKUP_READERS, MAX_LOOKUP_BYTES, SampleAvailability, errors
+    from mytp_core.contracts.hub import SAMPLE_AVAILABILITY_PATH
+    assert LOOKUP_READERS == {'sample_availability': SampleAvailability}
+    assert SAMPLE_AVAILABILITY_PATH == '/api/v1/hub/sample-availability'
+    assert MAX_LOOKUP_BYTES == 64 * 1024
+    assert errors.HUB_LOOKUP_STATUS == {'invalid_request': 400, 'region_mismatch': 403,
+                                        'not_found': 404}
