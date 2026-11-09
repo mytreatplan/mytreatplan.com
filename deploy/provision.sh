@@ -7,9 +7,11 @@
 #     bash deploy/provision.sh <site> <domain> <htpasswd-user>
 #     bash deploy/provision.sh dev dev.mytpdso.com <htpasswd-user>
 #
-# Host-wide (shared by every site): packages, SSH hardening, firewall, the ACME webroot,
-# certbot.timer, the release command /usr/local/bin/mytp-release (deploy/release.sh) and
-# the virus scanner (ClamAV: clamd with deploy/clamav/clamd.conf, freshclam).
+# Host-wide (shared by every site): packages, the PostgreSQL client tools (from the
+# PostgreSQL apt repository, PGDG, until Debian ships them), SSH hardening, firewall, the
+# ACME webroot, certbot.timer, the release command /usr/local/bin/mytp-release
+# (deploy/release.sh) and the virus scanner (ClamAV: clamd with deploy/clamav/clamd.conf,
+# freshclam).
 # Per site <site>: Linux user mytp-<site>, home /srv/mytp-<site>, sudoers rule
 # /etc/sudoers.d/mytp-<site>-deploy, units mytp-<site>-gunicorn.{socket,service},
 # mytp-<site>-worker.service (background tasks), mytp-<site>-scan-worker.service (virus
@@ -89,7 +91,28 @@ SCAN_WORKER=mytp-$SITE-scan-worker
 RELEASE_COMMAND=/usr/local/bin/mytp-release
 CERT_FILE=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
 PACKAGES=(nginx certbot python3-certbot-nginx python3-venv python3-pip gettext libpq5 ufw apache2-utils curl
-    postgresql-client age openssl clamav-daemon clamav-freshclam)
+    gpg age openssl clamav-daemon clamav-freshclam)
+# The PostgreSQL client tools (pg_dump, pg_restore, psql), host-wide, installed after the
+# PGDG source below: one explicit major, the newest of the sites' database services
+# (staging: dev and dev-ae on 17, admindev on 18). A client serves servers of its major
+# and older, and Debian's wrapper (/usr/bin/pg_dump) runs the newest major installed. A
+# later major is added here deliberately, never pulled in by a metapackage.
+PG_CLIENT_PACKAGES=(postgresql-client-18)
+# The official PostgreSQL apt repository (PGDG), only while Debian has no
+# postgresql-client-18 (its "PostgreSQL apt repository" step, removable on its own;
+# deploy/README.md "PostgreSQL client tools" says how to drop it). Its signing key is
+# pinned by fingerprint and checked before it is installed; apt trusts it for this
+# source only (Signed-By). An apt preferences file keeps every other PGDG package below
+# Debian's (priority 100): only the client, its common files and libpq5 come from PGDG.
+# libpq5 is then PGDG's 18 for the whole host, the library psycopg (no binary extra)
+# loads for every site's database connections, so its security fixes come from PGDG.
+PGDG_KEY_URL=https://www.postgresql.org/media/keys/ACCC4CF8.asc
+PGDG_KEY_FINGERPRINT=B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8
+PGDG_KEY=/etc/apt/keyrings/mytp-pgdg.asc
+PGDG_SOURCES=/etc/apt/sources.list.d/mytp-pgdg.sources
+PGDG_PREFERENCES=/etc/apt/preferences.d/mytp-pgdg
+PGDG_URI=https://apt.postgresql.org/pub/repos/apt
+OS_RELEASE=/etc/os-release
 # The virus scanner (host-wide, deploy/clamav/): clamd reads its own configuration file
 # through a systemd drop-in; Debian's /etc/clamav/clamd.conf is left as it is.
 CLAMD_CONF=/etc/clamav/clamd-mytp.conf
@@ -144,19 +167,113 @@ ensure_dir() {
     changed "$path/"
 }
 
-# --- Packages ---------------------------------------------------------------
-step "Packages"
-missing=()
-for pkg in "${PACKAGES[@]}"; do
-    if [[ $(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null) != "install ok installed" ]]; then
-        missing+=("$pkg")
+# install_packages PKG... -- installs those not installed yet, after one `apt-get update`
+# per run (APT_UPDATED; a step that changes the apt sources updates again itself).
+APT_UPDATED=0
+install_packages() {
+    local pkg missing=()
+    for pkg in "$@"; do
+        if [[ $(dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null) != "install ok installed" ]]; then
+            missing+=("$pkg")
+        fi
+    done
+    ((${#missing[@]})) || return 0
+    if ((!APT_UPDATED)); then
+        sudo apt-get update -q
+        APT_UPDATED=1
     fi
-done
-if ((${#missing[@]})); then
-    sudo apt-get update -q
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -q "${missing[@]}"
     changed "installed ${missing[*]}"
+}
+
+# --- Packages ---------------------------------------------------------------
+step "Packages"
+install_packages "${PACKAGES[@]}"
+
+# --- PostgreSQL apt repository (PGDG) ------------------------------------------------
+# Removable on its own once Debian ships postgresql-client-18 (deploy/README.md
+# "PostgreSQL client tools"): delete this step and the PGDG_* settings, and remove the
+# three files on each host; the package name stays and then comes from Debian.
+# The key is fetched at every run (so a renewed expiry date arrives) and installed only
+# when its one primary key has the pinned fingerprint, is neither expired nor revoked,
+# and its content differs; the sources file (deb822, Signed-By that key) and the apt
+# preferences only when they differ; `apt-get update` only when one of the three
+# changed. Without a download the installed key is kept (a WARNING); a download that is
+# not that key (another key, an expired or revoked one, or garbage) stops the run.
+step "PostgreSQL apt repository (PGDG)"
+# pgdg_key_status FILE -- prints `ok` when FILE holds exactly one primary key, the pinned
+# one, valid; otherwise `expired`, `revoked` or `mismatch`.
+pgdg_key_status() {
+    local gnupg keys
+    gnupg=$(mktemp -d "$WORK/gnupg.XXXXXX")
+    keys=$(gpg --homedir "$gnupg" --batch --no-autostart --with-colons --show-keys "$1" \
+        2>/dev/null | awk -F: '$1 == "pub" {validity = $2; primary = 1; next}
+                               primary && $1 == "fpr" {print $10 ":" validity; primary = 0}') \
+        || keys=""
+    if [[ $keys != "$PGDG_KEY_FINGERPRINT":* || $keys == *$'\n'* ]]; then
+        echo mismatch
+    elif [[ ${keys#*:} == e ]]; then
+        echo expired
+    elif [[ ${keys#*:} == r ]]; then
+        echo revoked
+    else
+        echo ok
+    fi
+}
+pgdg_changed=0
+pgdg_codename=$( (. "$OS_RELEASE" && printf '%s' "${VERSION_CODENAME:-}") 2>/dev/null || true)
+[[ $pgdg_codename =~ ^[a-z]+$ ]] \
+    || { echo "ERROR: no Debian codename in $OS_RELEASE for the PGDG source." >&2; exit 1; }
+ensure_dir "$(dirname "$PGDG_KEY")" 0755 root:root
+if curl -fsSL --proto '=https' --tlsv1.2 --retry 2 --max-time 60 -o "$WORK/pgdg.asc" "$PGDG_KEY_URL"; then
+    pgdg_key=$(pgdg_key_status "$WORK/pgdg.asc")
+    if [[ $pgdg_key == mismatch ]]; then
+        echo "ERROR: the key at $PGDG_KEY_URL is not the pinned PGDG key" \
+            "($PGDG_KEY_FINGERPRINT); nothing installed." >&2
+        exit 1
+    elif [[ $pgdg_key != ok ]]; then
+        echo "ERROR: the PGDG key at $PGDG_KEY_URL ($PGDG_KEY_FINGERPRINT) is $pgdg_key;" \
+            "nothing installed. Check https://www.postgresql.org/download/linux/debian/." >&2
+        exit 1
+    fi
+    install_file "$WORK/pgdg.asc" "$PGDG_KEY" 0644 root:root && pgdg_changed=1
+elif sudo test -f "$PGDG_KEY"; then
+    echo "  WARNING: could not download $PGDG_KEY_URL; the installed key is kept." >&2
+else
+    echo "ERROR: could not download $PGDG_KEY_URL (the PGDG signing key); run this script again." >&2
+    exit 1
 fi
+cat >"$WORK/pgdg.sources" <<EOF
+# Installed by deploy/provision.sh: the PostgreSQL apt repository (PGDG), for
+# ${PG_CLIENT_PACKAGES[*]} until Debian ships it (deploy/README.md "PostgreSQL client tools").
+Types: deb
+URIs: $PGDG_URI
+Suites: $pgdg_codename-pgdg
+Components: main
+Architectures: $(dpkg --print-architecture)
+Signed-By: $PGDG_KEY
+EOF
+install_file "$WORK/pgdg.sources" "$PGDG_SOURCES" 0644 root:root && pgdg_changed=1
+cat >"$WORK/pgdg.pref" <<'EOF'
+# Installed by deploy/provision.sh: nothing from the PostgreSQL apt repository (PGDG)
+# unless asked for, except the client and what it needs from there.
+Package: *
+Pin: origin apt.postgresql.org
+Pin-Priority: 100
+
+Package: postgresql-client-18 postgresql-client-common libpq5
+Pin: origin apt.postgresql.org
+Pin-Priority: 500
+EOF
+install_file "$WORK/pgdg.pref" "$PGDG_PREFERENCES" 0644 root:root && pgdg_changed=1
+if ((pgdg_changed)); then
+    sudo apt-get update -q
+    APT_UPDATED=1
+fi
+
+# --- PostgreSQL client tools (host-wide) ---------------------------------------------
+step "PostgreSQL client tools"
+install_packages "${PG_CLIENT_PACKAGES[@]}"
 
 # --- Virus scanner (host-wide, AD-9) -----------------------------------------------
 # ClamAV from Debian's packages (1.4 LTS line; decision 2026-11-07): clamd with the

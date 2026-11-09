@@ -53,6 +53,7 @@ The platform both sites stand on. Not the country map or routing (epic-regions),
 
 ## Notes
 
+- Entry 14 (2026-11-09): the production checks are in epic-eu-golive's Done when 3 (sub-list "epic-platform (entry 14)", 3f–3m). Found on staging: admindev's database is its own PostgreSQL 18 service (dev and dev-ae share a 17 one), and the host had only the 17 client, so admindev's nightly `backupdb` failed from at least 2026-11-03; `provision.sh` now installs `postgresql-client-18` from the PostgreSQL apt repository (PGDG), to drop once Debian ships it (deploy/README.md "PostgreSQL client tools").
 - Decision (2026-11-01): Sentry stays on the Developer plan for now (one cron monitor, no pay-as-you-go top-up). The `mytp-{site}-*` cron monitors exist but are disabled, so failed jobs and a stopped worker do not alert. On the upgrade, enable every `mytp-dev-*`, `mytp-admindev-*` and later `mytp-dev-ae-*` monitor and set Notify to devops@. Must be done before production go-live (epic 15).
 - Decision (2026-10-30): entry 12's memory question is settled: the staging instance has 6.7 GB RAM (6.1 GB available with dev running), enough for clamd beside three sites.
 - Tracer bullet: entry 1. dev redeploys under the per-site layout, proving the tooling every other site uses.

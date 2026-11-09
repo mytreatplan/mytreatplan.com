@@ -743,8 +743,9 @@ def test_restore_refuses_bad_basename_or_table(restore_env, args):
 
 def test_provision_installs_backup_packages_and_temp_dir():
     script = (DEPLOY / 'provision.sh').read_text()
-    packages = re.search(r'PACKAGES=\((.*?)\)', script, re.S).group(1).split()
-    assert 'postgresql-client' in packages
+    packages = re.search(r'^PACKAGES=\((.*?)\)', script, re.S | re.M).group(1).split()
+    client = re.search(r'^PG_CLIENT_PACKAGES=\((.*?)\)', script, re.S | re.M).group(1).split()
+    assert client == ['postgresql-client-18']
     assert 'age' in packages
     assert 'ensure_dir "$APP_HOME/shared/backup-tmp" 0700 "$APP_USER:$APP_USER"' in script
 
