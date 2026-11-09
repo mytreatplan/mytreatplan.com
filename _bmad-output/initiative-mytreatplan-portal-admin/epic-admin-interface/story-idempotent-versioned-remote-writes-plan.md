@@ -3,7 +3,7 @@ title: 'Idempotent versioned remote writes'
 type: 'feature'
 ticket: '6'
 created: '2026-11-09'
-status: 'built'
+status: 'done'
 baseline_revision: 'portal bc86f82, core f5a64a3, admin aaa705d'
 route: 'full'
 route_source: 'auto'
@@ -140,3 +140,13 @@ Opus reviews, one per repo (2026-11-09); no blocking defects:
 
 **Manual checks (staging):**
 - On admindev as a Clinical Manager: change the sample note on dev and on dev-ae; resend the same request (command) → same answer, one change; a write from an old version → 409; each write in that region's `RemoteAccess`; admindev's database holds no note text.
+
+## Staging
+
+2026-11-09, run by Claude with the user's delegation. mytp-core v0.16.0 (tag pushed); admin PR #22 merged after its checks passed and deployed to admindev; portal PR #80 merged after its checks passed, CI and deploy green on dev and dev-ae. Local suites: core 1193; admin 1013 passed / 8 skipped (SQLite), 1021 on PostgreSQL 17; portal 2254 passed / 8 skipped + the 3 known PostgreSQL-only failures (SQLite), 2265 on PostgreSQL 17. From admindev, as a Clinical Manager (in-memory user), on dev (eu) and dev-ae (ae):
+- write of the note from version 1 → 200, version 2; the same request again → the same answer, applied once;
+- a new key from version 1 → 409 `stale_version`, current version 2; the first key with another note → 422 `idempotency_key_reused`;
+- a read afterwards shows version 2 and the written note;
+- each region's `RemoteAccess`: `granted write:note` and `granted replay:note` with the returned fields (assignee_uuid, note, patient_name, uuid; no amount), the refused `stale_version` and `idempotency_key_reused` rows; one key stored;
+- admindev's database: no row holds the note text.
+The sample notes on dev and dev-ae now hold the made-up check text.
