@@ -381,6 +381,11 @@ class _LegalNotAccepted(Exception):
     """The pending registration has no accepted Terms or Conditions (CAP-4)."""
 
 
+class _CountryBanned(Exception):
+    """The pending registration's country was banned after step 1 (the country map is
+    edited on the admin site, epic-catalogue entry 3)."""
+
+
 class _AlreadyRegistered(Exception):
     """The email or the mobile was registered while this signup was in progress."""
 
@@ -417,6 +422,11 @@ def _create_account(request, index, step, form, pending, attempt):
                            .values_list('document__kind', flat=True))
             if not set(LegalDocument.REQUIRED_KINDS) <= accepted:
                 raise _LegalNotAccepted
+            # The country may have been banned since step 1 (a pending registration lives
+            # 24 h and can be resumed): checked again before anything is created.
+            country = pending.country.code if pending.country else ''
+            if lookup_country(country).banned:
+                raise _CountryBanned(country)
             user = user_model(email=pending.email, password=pending.password, **{
                 name: getattr(pending, name) for name in PendingRegistration.USER_FIELDS})
             user.save()
@@ -442,6 +452,14 @@ def _create_account(request, index, step, form, pending, attempt):
                         field=legal_step.slug, reason='legal_not_accepted')
         PendingRegistration.objects.filter(pk=pending.pk).update(step=legal_step.slug)
         return redirect(step_url(legal_index))
+    except _CountryBanned as banned:
+        # Back to step 1, which shows the banned refusal under the country; the later
+        # steps stay done, so an allowed country leads straight back to the end.
+        eventlog.record(attempt, 'rejected', request=request, step=step.slug,
+                        field='country', reason='country_banned',
+                        data={'country': banned.args[0]})
+        PendingRegistration.objects.filter(pk=pending.pk).update(step=STEPS[0].slug)
+        return redirect('signup')
     except PendingRegistration.DoesNotExist:
         # Already completed (e.g. the form was sent twice); start again.
         request.session.pop(SESSION_KEY, None)
