@@ -436,7 +436,9 @@ fi
 # --- Scheduled jobs (deploy/jobs.conf) ----------------------------------------
 # One mytp-<site>-job@<name>.timer per line of jobs.conf, firing
 # mytp-<site>-job@<name>.service. This site's timers no longer listed are stopped and
-# removed; other sites' timers are never looked at.
+# removed; other sites' timers are never looked at. A line may end with a fourth field,
+# the sites it applies to (`| dev,dev-ae`, mytp-core 0.18.0): lines for other sites are
+# skipped, so one job name can have a schedule per site (the weekly restore test).
 step "Scheduled jobs ($SITE)"
 jobs_changed=0
 render "$DEPLOY_DIR/systemd/job@.service.template" "$WORK/job@.service"
@@ -446,12 +448,32 @@ fi
 timer_template=$(sed "s/__SITE__/$SITE/g" "$DEPLOY_DIR/systemd/job.timer.template")
 job_names=()
 changed_timers=()
-while IFS='|' read -r name _command schedule extra || [[ -n $name ]]; do
+# A site name as mytp-core's jobs.SITE_RE (and this script's own site check).
+site_re='^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$'
+while IFS= read -r line || [[ -n $line ]]; do
+    IFS='|' read -r name _command schedule sites extra <<<"$line"
     name=$(trim "$name")
     [[ -z $name || $name == \#* ]] && continue
     schedule=$(trim "$schedule")
     [[ $name =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo "jobs.conf: invalid job name '$name'" >&2; exit 1; }
-    [[ -n $schedule && -z $extra ]] || { echo "jobs.conf: expected 'name | command | schedule' for '$name'" >&2; exit 1; }
+    [[ -n $schedule && -z $extra ]] || { echo "jobs.conf: expected 'name | command | schedule [| sites]' for '$name'" >&2; exit 1; }
+    separators=${line//[^|]/}
+    if ((${#separators} == 3)); then
+        # The sites field: comma-separated site names, spaces around commas allowed; an
+        # empty field or element, a bad or repeated name stops the run.
+        sites=$(trim "$sites")
+        [[ -n $sites && ! $sites =~ (^|,)[[:space:]]*(,|$) ]] \
+            || { echo "jobs.conf: empty sites field or entry for '$name'" >&2; exit 1; }
+        IFS=',' read -r -a site_list <<<"$sites"
+        seen=,
+        for entry in "${site_list[@]}"; do
+            entry=$(trim "$entry")
+            [[ $entry =~ $site_re ]] || { echo "jobs.conf: invalid site '$entry' for '$name'" >&2; exit 1; }
+            [[ $seen != *",$entry,"* ]] || { echo "jobs.conf: site '$entry' listed twice for '$name'" >&2; exit 1; }
+            seen+="$entry,"
+        done
+        [[ $seen == *",$SITE,"* ]] || continue   # another site's line
+    fi
     for existing in "${job_names[@]}"; do
         [[ $existing != "$name" ]] || { echo "jobs.conf: duplicate job '$name'" >&2; exit 1; }
     done

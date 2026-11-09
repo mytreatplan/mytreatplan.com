@@ -645,7 +645,7 @@ def test_staging_env_example_lists_sentry_without_secret():
         if line.strip() and not line.startswith('#')
     )
     assert values['SENTRY_DSN'] == ''
-    assert values['SENTRY_ENVIRONMENT'] == 'staging'
+    assert values['SENTRY_ENVIRONMENT'] == 'dev'  # the site's own environment (AD-24)
 
 
 def test_sentry_sdk_pinned():

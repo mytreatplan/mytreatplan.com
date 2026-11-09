@@ -229,6 +229,8 @@ CACHES = {
 # codes; Twilio's failures reach Sentry through the callers' `signup.steps` errors), so
 # that logger never reaches Sentry.
 SENTRY_DSN = config('SENTRY_DSN', default='')
+# Each site reports to its own environment, named after the site (AD-24): `dev`, `dev-ae`
+# on staging; `portal-eu`, `portal-ae` in production.
 SENTRY_ENVIRONMENT = config('SENTRY_ENVIRONMENT', default='development')
 _revision_file = BASE_DIR / 'REVISION'
 SENTRY_RELEASE = config(
@@ -255,8 +257,8 @@ MYTP_INSTALLED_JOBS_FILE = SITE_HOME / 'shared' / 'jobs.conf'
 # encrypts it with `age` for BACKUP_AGE_RECIPIENT (a public key; the private identity
 # never reaches the server) and uploads it to an S3-compatible bucket in another region
 # (OVHcloud Object Storage SBG). All empty by default; the command refuses to run and
-# names the first missing key. BACKUP_PREFIX is the object key prefix, e.g. `staging/`.
-# See deploy/README.md, "Backups and restore".
+# names the first missing key. BACKUP_PREFIX is the object key prefix, one per site:
+# `staging-<site>/` (AD-24). See deploy/README.md, "Backups and restore".
 BACKUP_S3_ENDPOINT = config('BACKUP_S3_ENDPOINT', default='')
 BACKUP_S3_REGION = config('BACKUP_S3_REGION', default='')
 BACKUP_S3_BUCKET = config('BACKUP_S3_BUCKET', default='')
@@ -270,6 +272,13 @@ BACKUP_TMP_DIR = config('BACKUP_TMP_DIR', default=str(SITE_HOME / 'shared' / 'ba
 # Objects are named <BACKUP_PREFIX><MYTP_BACKUP_BASENAME>-<UTC time>.dump.age; the name
 # deploy/restore-db.sh and the existing dumps use.
 MYTP_BACKUP_BASENAME = 'mytreatplan'
+# The weekly restore test (mytp-core 0.18.0): every dump is also encrypted to the site's
+# restore-only key (a public key, printed by `manage.py generate_restore_identity`), whose
+# identity is stored in RESTORE_AGE_IDENTITY_FILE wrapped by the site's KMS key and only
+# ever unwrapped in memory by `restoretest`. Empty: dumps for the team key only.
+BACKUP_AGE_RESTORE_RECIPIENT = config('BACKUP_AGE_RESTORE_RECIPIENT', default='')
+RESTORE_AGE_IDENTITY_FILE = config(
+    'RESTORE_AGE_IDENTITY_FILE', default=str(SITE_HOME / 'shared' / 'restore-identity.json'))
 
 
 # OVHcloud KMS (story 1.15): data keys for field encryption are wrapped by a service key
@@ -475,6 +484,21 @@ if DB_SSLMODE:
     _db_options['sslmode'] = DB_SSLMODE
 if DB_SSLROOTCERT:
     _db_options['sslrootcert'] = DB_SSLROOTCERT
+
+# The weekly restore test (mytp-core `restoretest`, AD-24; deploy/README.md "Restore test
+# (weekly, on the server)"): the scratch database `<site>_restore_test` on the site's
+# managed PostgreSQL service, with its own user (never the site's database or user),
+# over the same TLS settings. Empty (the default) means not set up: the job fails with
+# code `settings`. The sanity check counts the site's users in accounts_user.
+_restore_test_url = config('RESTORE_TEST_DATABASE_URL', default='')
+RESTORE_TEST_DATABASE = dj_database_url.parse(_restore_test_url) if _restore_test_url else {}
+if RESTORE_TEST_DATABASE:
+    _restore_options = RESTORE_TEST_DATABASE.setdefault('OPTIONS', {})
+    if DB_SSLMODE:
+        _restore_options['sslmode'] = DB_SSLMODE
+    if DB_SSLROOTCERT:
+        _restore_options['sslrootcert'] = DB_SSLROOTCERT
+RESTORE_TEST_USER_TABLE = 'accounts_user'
 
 
 # Custom user model (accounts.User). Must be set before the first migration.
