@@ -1,20 +1,29 @@
 #!/usr/bin/env bash
-# Restore test for the off-region backups (story 1.14). Run on a team Mac, never on the
-# server: it restores one encrypted dump made by `manage.py backupdb` into an EMPTY
+# Manual restore test for the off-region backups (story 1.14; the weekly automatic one is
+# `manage.py restoretest` on the server, mytp-core 0.18.0). Run on a team Mac, never on
+# the server: it restores one encrypted dump made by `manage.py backupdb` into an EMPTY
 # local PostgreSQL database whose name ends in `_restore_test`, then prints the number
-# of applied migrations and of users to compare with staging.
+# of applied migrations and of users to compare with staging. It serves every site:
+# the portal's dumps by default, the admin site's with
+# `--basename mytp-admin --user-table staff_user`.
 #
 #     createdb mytp_restore_test
 #     bash deploy/restore-db.sh --identity <age-identity-file> --file <dump.age>
 #     bash deploy/restore-db.sh --identity <age-identity-file> --latest
-#     bash deploy/restore-db.sh --identity <age-identity-file> --object staging/mytreatplan-...dump.age
+#     bash deploy/restore-db.sh --identity <age-identity-file> --object staging-dev/mytreatplan-...dump.age
 #
 # Options:
 #   --identity FILE  the age private key (from the team password manager); required.
 #                    Process substitution works, e.g. --identity <(op read ...).
 #   --file FILE      a dump already downloaded by hand, or
 #   --object KEY     download this object from the bucket, or
-#   --latest         download the newest object under BACKUP_PREFIX.
+#   --latest         download the newest `<BACKUP_PREFIX><basename>-<UTC time>.dump.age`
+#                    (prefix and basename, by the time in the name: another site's dump
+#                    in the same prefix is never taken).
+#   --basename NAME  the site's MYTP_BACKUP_BASENAME (default mytreatplan, the portal;
+#                    mytp-admin for the admin site).
+#   --user-table T   the site's user table for the count (default accounts_user, the
+#                    portal; staff_user for the admin site).
 #   --db NAME        target database (default mytp_restore_test).
 #   --dry-run        run every check (including that the target is empty), restore nothing.
 #
@@ -27,6 +36,8 @@ set -euo pipefail
 
 MIN_PG_MAJOR=17
 DB=mytp_restore_test
+BASENAME=mytreatplan
+USER_TABLE=accounts_user
 IDENTITY=
 FILE=
 OBJECT=
@@ -46,6 +57,8 @@ while (($#)); do
         --object) OBJECT=${2:-}; shift 2 || usage ;;
         --latest) LATEST=1; shift ;;
         --db) DB=${2:-}; shift 2 || usage ;;
+        --basename) BASENAME=${2:-}; shift 2 || usage ;;
+        --user-table) USER_TABLE=${2:-}; shift 2 || usage ;;
         --dry-run) DRY_RUN=1; shift ;;
         -h|--help) usage ;;
         *) echo "Unknown option: $1" >&2; usage ;;
@@ -56,6 +69,10 @@ done
 [[ $DB =~ ^[a-z0-9_]+_restore_test$ ]] \
     || die "refusing to restore into '$DB': the target database name must end in _restore_test"
 [[ $DB != mytreatplan ]] || die "refusing to restore into mytreatplan"
+[[ $BASENAME =~ ^[a-z0-9][a-z0-9_-]*$ ]] || die "--basename must be lowercase letters, digits, '-' or '_'"
+[[ $USER_TABLE =~ ^[a-z_][a-z0-9_]*$ ]] || die "--user-table must be a plain table name"
+[[ ${BACKUP_PREFIX:-} =~ ^[A-Za-z0-9._/-]*$ ]] \
+    || die "BACKUP_PREFIX may hold only letters, digits, '.', '_', '/' and '-'"
 
 sources=0
 [[ -n $FILE ]] && sources=$((sources + 1))
@@ -93,6 +110,20 @@ if [[ -z $FILE ]]; then
 fi
 
 psql_q() { psql -X -q -At -v ON_ERROR_STOP=1 -d "$DB" -c "$1"; }
+# The newest of the keys on stdin named exactly <prefix><basename>-<yyyymmddThhmmssZ>.dump.age
+# (the prefix is stripped as text, never used as a pattern; the time sorts as text).
+latest_dump() {
+    local prefix=${BACKUP_PREFIX:-} key rest best=
+    while IFS= read -r key; do
+        [[ $key == "$prefix"* ]] || continue
+        rest=${key#"$prefix"}
+        [[ $rest =~ ^${BASENAME}-[0-9]{8}T[0-9]{6}Z\.dump\.age$ ]] || continue
+        if [[ -z $best || $rest > ${best#"$prefix"} ]]; then
+            best=$key
+        fi
+    done
+    printf '%s' "$best"
+}
 
 relations=$(psql_q "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
@@ -102,20 +133,28 @@ relations=$(psql_q "SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid
 ((relations == 0)) \
     || die "refusing to restore: database '$DB' is not empty ($relations relations); dropdb $DB && createdb $DB"
 
+export AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+s3() { aws --endpoint-url "$BACKUP_S3_ENDPOINT" --region "$BACKUP_S3_REGION" "$@"; }
+
+# With --latest the bucket is listed before the dry run ends, so a dry run names the dump.
+if ((LATEST)); then
+    # Prefix and basename, newest by the UTC time in the name.
+    OBJECT=$(s3 s3api list-objects-v2 --bucket "$BACKUP_S3_BUCKET" \
+            --prefix "${BACKUP_PREFIX:-}$BASENAME-" --query 'Contents[].Key' --output text \
+        | tr '\t' '\n' | latest_dump)
+    [[ -n $OBJECT ]] || die "no $BASENAME dumps under '${BACKUP_PREFIX:-}' in $BACKUP_S3_BUCKET"
+fi
+
 if ((DRY_RUN)); then
-    echo "Dry run: checks passed. Would restore ${FILE:-${OBJECT:-the newest object under ${BACKUP_PREFIX:-}}} into empty database '$DB'."
+    if ((LATEST)); then
+        echo "Dry run: checks passed. Would restore $OBJECT (the newest $BASENAME dump under '${BACKUP_PREFIX:-}') into empty database '$DB'."
+    else
+        echo "Dry run: checks passed. Would restore ${FILE:-$OBJECT} into empty database '$DB'."
+    fi
     exit 0
 fi
 
 # --- Download ---------------------------------------------------------------------------
-export AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
-s3() { aws --endpoint-url "$BACKUP_S3_ENDPOINT" --region "$BACKUP_S3_REGION" "$@"; }
-
-if ((LATEST)); then
-    OBJECT=$(s3 s3api list-objects-v2 --bucket "$BACKUP_S3_BUCKET" --prefix "${BACKUP_PREFIX:-}" \
-        --query 'sort_by(Contents || `[]`, &LastModified)[-1].Key' --output text)
-    [[ -n $OBJECT && $OBJECT != None ]] || die "no objects under '${BACKUP_PREFIX:-}' in $BACKUP_S3_BUCKET"
-fi
 if [[ -n $OBJECT ]]; then
     echo "==> Downloading $OBJECT"
     WORK=$(mktemp -d)
@@ -131,7 +170,7 @@ age --decrypt --identity "$IDENTITY" "$FILE" \
 
 # --- Sanity check -----------------------------------------------------------------------
 migrations=$(psql_q "SELECT count(*) FROM django_migrations")
-users=$(psql_q "SELECT count(*) FROM accounts_user")
+users=$(psql_q "SELECT count(*) FROM $USER_TABLE")
 last=$(psql_q "SELECT app || '.' || name FROM django_migrations ORDER BY applied DESC, id DESC LIMIT 1")
 echo "Restore OK into $DB"
 echo "  applied migrations: $migrations (latest: $last)"

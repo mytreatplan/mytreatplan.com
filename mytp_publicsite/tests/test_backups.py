@@ -375,6 +375,79 @@ def test_backupdb_never_deletes():
 
 # --- Through runjob: Sentry --------------------------------------------------------------
 
+def test_restoretest_job_weekly_and_staggered_per_site():
+    """Epic-platform entry 13: Sunday night, dev and dev-ae an hour apart (one jobs.conf,
+    one line per site; each site's own Sentry monitor)."""
+    dev = jobs.load_jobs(jobs.release_jobs_file(), 'dev')['restoretest']
+    dev_ae = jobs.load_jobs(jobs.release_jobs_file(), 'dev-ae')['restoretest']
+    assert (dev.command, dev.args) == ('restoretest', ())
+    assert dev.crontab == '30 21 * * 0'
+    assert dev_ae.crontab == '30 22 * * 0'
+    # A site without its own line (production, for now) has no restore test.
+    assert 'restoretest' not in jobs.load_jobs(jobs.release_jobs_file(), 'portal-eu')
+
+
+RESTORE_ENV = ('RESTORE_TEST_DATABASE_URL', 'BACKUP_AGE_RESTORE_RECIPIENT',
+               'RESTORE_AGE_IDENTITY_FILE', 'DB_SSLMODE', 'DB_SSLROOTCERT')
+
+
+@pytest.fixture
+def reload_settings():
+    """Load the settings module again under a given environment (a MonkeyPatch of its
+    own), and reload it once more after the environment is restored."""
+    import importlib
+
+    import mytreatplan.settings as site_settings
+    patch = pytest.MonkeyPatch()
+
+    def load(**env):
+        for name in RESTORE_ENV:
+            patch.delenv(name, raising=False)
+        for name, value in env.items():
+            patch.setenv(name, value)
+        return importlib.reload(site_settings)
+    yield load
+    patch.undo()
+    importlib.reload(site_settings)
+
+
+def test_restore_test_settings_default_to_not_set_up(reload_settings):
+    loaded = reload_settings()
+
+    assert loaded.RESTORE_TEST_DATABASE == {}
+    assert loaded.BACKUP_AGE_RESTORE_RECIPIENT == ''
+    assert loaded.RESTORE_AGE_IDENTITY_FILE == str(
+        loaded.SITE_HOME / 'shared' / 'restore-identity.json')
+    assert loaded.RESTORE_TEST_USER_TABLE == 'accounts_user'
+    from django.contrib.auth import get_user_model
+    assert get_user_model()._meta.db_table == loaded.RESTORE_TEST_USER_TABLE
+
+
+def test_restore_test_settings_from_the_environment(reload_settings):
+    """The scratch database URL is parsed like DATABASE_URL, with DB_SSLMODE and
+    DB_SSLROOTCERT on top (the same managed service)."""
+    loaded = reload_settings(
+        RESTORE_TEST_DATABASE_URL='postgres://x_restore_test:pw-not-secret@db.example:5432/x_restore_test',
+        BACKUP_AGE_RESTORE_RECIPIENT='age1' + 'q' * 58,
+        RESTORE_AGE_IDENTITY_FILE='/tmp/elsewhere.json',
+        DB_SSLMODE='verify-full', DB_SSLROOTCERT='/srv/ca.pem')
+
+    db = loaded.RESTORE_TEST_DATABASE
+    assert (db['NAME'], db['USER'], db['HOST'], db['PORT']) == (
+        'x_restore_test', 'x_restore_test', 'db.example', 5432)
+    assert 'postgresql' in db['ENGINE']
+    assert db['OPTIONS'] == {'sslmode': 'verify-full', 'sslrootcert': '/srv/ca.pem'}
+    assert loaded.BACKUP_AGE_RESTORE_RECIPIENT == 'age1' + 'q' * 58
+    assert loaded.RESTORE_AGE_IDENTITY_FILE == '/tmp/elsewhere.json'
+
+
+def test_restore_test_url_without_tls_settings(reload_settings):
+    loaded = reload_settings(
+        RESTORE_TEST_DATABASE_URL='postgres://x_restore_test:pw@db.example:5432/x_restore_test')
+
+    assert loaded.RESTORE_TEST_DATABASE['OPTIONS'] == {}
+
+
 def test_backupdb_job_declared_nightly():
     job = jobs.load_jobs(jobs.release_jobs_file())['backupdb']
     assert (job.command, job.args) == ('backupdb', ())
@@ -435,6 +508,14 @@ printf '%s\n' "$@" > "$FAKE_LOG/pg_restore.args"
 cat > "$FAKE_LOG/pg_restore.stdin"
 '''
 
+FAKE_AWS = r'''#!/bin/sh
+printf '%s\n' "$*" >> "$FAKE_LOG/aws.calls"
+case "$*" in
+    *list-objects-v2*) printf '%s\n' "$FAKE_AWS_KEYS" | tr ' ' '\t' ;;
+    *" s3 cp "*) for last; do :; done; printf 'age-encryption.org/v1\nCTQZC qhzc' > "$last" ;;
+esac
+'''
+
 FAKE_AGE_DECRYPT = r'''#!/bin/sh
 printf '%s\n' "$@" > "$FAKE_LOG/age.args"
 eval "last=\${$#}"
@@ -451,6 +532,7 @@ def restore_env(tmp_path):
     _write_tool(bin_dir, 'psql', FAKE_PSQL)
     _write_tool(bin_dir, 'pg_restore', FAKE_PG_RESTORE)
     _write_tool(bin_dir, 'age', FAKE_AGE_DECRYPT)
+    _write_tool(bin_dir, 'aws', FAKE_AWS)
     identity = tmp_path / 'identity.txt'
     identity.write_text('AGE-SECRET-KEY-1FAKE\n')
     dump = tmp_path / 'mytreatplan-20261012T023000Z.dump.age'
@@ -557,6 +639,106 @@ def test_restore_pipes_decrypted_dump_and_prints_counts(restore_env):
     assert 'users:              7' in result.stdout
 
 
+S3_ENV = dict(BACKUP_S3_ENDPOINT='https://s3.example.invalid', BACKUP_S3_REGION='sbg',
+              BACKUP_S3_BUCKET='bucket')
+
+
+@needs_sh
+def test_restore_latest_takes_prefix_and_basename_newest_by_name(restore_env):
+    """Epic-platform entry 13: another site's dump in the same prefix is never taken."""
+    run, log, identity, dump = restore_env
+    keys = ' '.join([
+        'staging/mytreatplan-20261101T023000Z.dump.age',
+        'staging/mytreatplan-20261103T023000Z.dump.age',
+        'staging/mytreatplan-20261102T023000Z.dump.age',
+        'staging/mytreatplan-x-20261109T023000Z.dump.age',
+        'staging/mytreatplan-20261104T023000Z.dump.age.part',
+    ])
+
+    result = run('--identity', str(identity), '--latest', BACKUP_PREFIX='staging/',
+                 FAKE_AWS_KEYS=keys, **S3_ENV)
+
+    assert result.returncode == 0, result.stderr
+    calls = (log / 'aws.calls').read_text()
+    assert '--prefix staging/mytreatplan-' in calls
+    assert 's3://bucket/staging/mytreatplan-20261103T023000Z.dump.age' in calls
+
+
+@needs_sh
+def test_restore_latest_for_the_admin_site(restore_env):
+    run, log, identity, dump = restore_env
+
+    result = run('--identity', str(identity), '--latest', '--basename', 'mytp-admin',
+                 '--user-table', 'staff_user', BACKUP_PREFIX='staging-admindev/',
+                 FAKE_AWS_KEYS='staging-admindev/mytp-admin-20261108T024000Z.dump.age', **S3_ENV)
+
+    assert result.returncode == 0, result.stderr
+    assert '--prefix staging-admindev/mytp-admin-' in (log / 'aws.calls').read_text()
+    assert 'FROM staff_user' in (log / 'psql.calls').read_text()
+
+
+@needs_sh
+def test_restore_latest_without_a_matching_dump(restore_env):
+    run, log, identity, dump = restore_env
+
+    result = run('--identity', str(identity), '--latest', BACKUP_PREFIX='staging/',
+                 FAKE_AWS_KEYS='staging/mytp-admin-20261108T024000Z.dump.age', **S3_ENV)
+
+    assert result.returncode != 0
+    assert 'no mytreatplan dumps' in result.stderr
+    assert not (log / 'pg_restore.args').exists()
+
+
+@needs_sh
+def test_restore_latest_dry_run_names_the_dump_and_downloads_nothing(restore_env):
+    run, log, identity, dump = restore_env
+
+    result = run('--identity', str(identity), '--latest', '--dry-run', BACKUP_PREFIX='staging-dev/',
+                 FAKE_AWS_KEYS='staging-dev/mytreatplan-20261108T023000Z.dump.age', **S3_ENV)
+
+    assert result.returncode == 0, result.stderr
+    assert ('Would restore staging-dev/mytreatplan-20261108T023000Z.dump.age (the newest '
+            "mytreatplan dump under 'staging-dev/')") in result.stdout
+    assert ' s3 cp ' not in (log / 'aws.calls').read_text()
+    assert not (log / 'pg_restore.args').exists()
+
+
+@needs_sh
+@pytest.mark.parametrize('prefix', ['staging dev/', 'staging/*', 'a$(x)/', 'staging[a]/'])
+def test_restore_refuses_an_odd_prefix(restore_env, prefix):
+    run, log, identity, dump = restore_env
+
+    result = run('--identity', str(identity), '--latest', BACKUP_PREFIX=prefix,
+                 FAKE_AWS_KEYS='x', **S3_ENV)
+
+    assert result.returncode != 0 and 'BACKUP_PREFIX may hold only' in result.stderr
+    assert not (log / 'aws.calls').exists()
+
+
+@needs_sh
+def test_restore_latest_takes_the_prefix_as_text(restore_env):
+    """A '.' in the prefix is a dot, not "any character"."""
+    run, log, identity, dump = restore_env
+
+    result = run('--identity', str(identity), '--latest', '--dry-run', BACKUP_PREFIX='a.b/',
+                 FAKE_AWS_KEYS='axb/mytreatplan-20261109T023000Z.dump.age '
+                               'a.b/mytreatplan-20261101T023000Z.dump.age', **S3_ENV)
+
+    assert result.returncode == 0, result.stderr
+    assert 'Would restore a.b/mytreatplan-20261101T023000Z.dump.age' in result.stdout
+
+
+@needs_sh
+@pytest.mark.parametrize('args', [['--basename', '../x'], ['--user-table', 'users; drop']])
+def test_restore_refuses_bad_basename_or_table(restore_env, args):
+    run, log, identity, dump = restore_env
+
+    result = run('--identity', str(identity), '--file', str(dump), *args)
+
+    assert result.returncode != 0
+    assert not (log / 'psql.calls').exists()
+
+
 # --- Deploy files ---------------------------------------------------------------------------
 
 def test_provision_installs_backup_packages_and_temp_dir():
@@ -565,6 +747,153 @@ def test_provision_installs_backup_packages_and_temp_dir():
     assert 'postgresql-client' in packages
     assert 'age' in packages
     assert 'ensure_dir "$APP_HOME/shared/backup-tmp" 0700 "$APP_USER:$APP_USER"' in script
+
+
+def _provision_job_lines(site, jobs_conf, systemd_dir=None):
+    """provision.sh's "Scheduled jobs" loops (read jobs.conf, install the site's timers,
+    remove its timers no longer listed), run for `site` against a fake systemd folder
+    (`install_file`, `sudo` and `changed` are stubs). stdout: one `name|schedule` per
+    timer installed, then the `changed:` lines."""
+    script = (DEPLOY / 'provision.sh').read_text()
+    trim = script[script.index('trim() {'):]
+    trim = trim[:trim.index('\n}\n') + 3]
+    loops = script[script.index("# A site name as mytp-core's jobs.SITE_RE"):]
+    loops = loops[:loops.index('if ((jobs_changed)); then')]
+    loops = loops.replace('    job_names+=("$name")\n',
+                          '    job_names+=("$name")\n    printf "%s|%s\\n" "$name" "$schedule"\n')
+    systemd_dir = systemd_dir or Path(jobs_conf).parent / 'systemd'
+    systemd_dir.mkdir(exist_ok=True)
+    loops = loops.replace('/etc/systemd/system', str(systemd_dir))
+    work = Path(jobs_conf).parent / 'work'
+    work.mkdir(exist_ok=True)
+    # No `set -u`: macOS's bash 3.2 calls an empty array unbound (the host runs bash 5).
+    body = (f'set -eo pipefail\nSITE={site}\nJOB=mytp-$SITE-job\nWORK={work}\n'
+            f'DEPLOY_DIR={Path(jobs_conf).parent}\n{trim}\n'
+            'changed() { echo "  changed: $*"; }\n'
+            'sudo() { [[ $1 == systemctl ]] && return 0; "$@"; }\n'
+            'install_file() { cp "$1" "$2"; }\n'
+            "timer_template='OnCalendar=__SCHEDULE__ (__NAME__)'\n"
+            'job_names=()\nchanged_timers=()\njobs_changed=0\n'
+            f'{loops}')
+    body = body.replace('done <"$DEPLOY_DIR/jobs.conf"', 'done <"$1"')
+    return subprocess.run(['bash', '-c', body, 'provision', str(jobs_conf)],
+                          capture_output=True, text=True, timeout=30)
+
+
+def _installed(result):
+    return dict(line.split('|') for line in result.stdout.splitlines() if '|' in line)
+
+
+@needs_sh
+@pytest.mark.parametrize('site, schedule', [('dev', 'Sun *-*-* 21:30:00 UTC'),
+                                            ('dev-ae', 'Sun *-*-* 22:30:00 UTC')])
+def test_provision_installs_each_sites_own_restoretest_timer(site, schedule, tmp_path):
+    conf = tmp_path / 'jobs.conf'
+    conf.write_text((DEPLOY / 'jobs.conf').read_text())
+
+    result = _provision_job_lines(site, conf)
+
+    assert result.returncode == 0, result.stderr
+    lines = _installed(result)
+    assert lines['restoretest'] == schedule
+    assert lines['backupdb'] == '*-*-* 02:30:00 UTC'
+    # Exactly the lines mytp-core's runjob reads for that site (the Sentry monitors).
+    assert set(lines) == set(jobs.load_jobs(DEPLOY / 'jobs.conf', site))
+    assert (tmp_path / 'systemd' / f'mytp-{site}-job@restoretest.timer').read_text() == (
+        f'OnCalendar={schedule} (restoretest)\n')
+
+
+@needs_sh
+def test_provision_skips_other_sites_lines(tmp_path):
+    conf = tmp_path / 'jobs.conf'
+    conf.write_text('a | x | *-*-* 01:00 UTC | dev-ae , admindev\n')
+
+    assert _installed(_provision_job_lines('dev', conf)) == {}
+    assert _installed(_provision_job_lines('admindev', conf)) == {'a': '*-*-* 01:00 UTC'}
+    assert _installed(_provision_job_lines('dev-ae', conf)) == {'a': '*-*-* 01:00 UTC'}
+
+
+@needs_sh
+@pytest.mark.parametrize('line, message', [
+    ('a | x | *-*-* 01:00 UTC | Dev', 'invalid site'),
+    ('a | x | *-*-* 01:00 UTC | dev-', 'invalid site'),
+    ('a | x | *-*-* 01:00 UTC | dev ae', 'invalid site'),
+    ('a | x | *-*-* 01:00 UTC | dev,dev', 'listed twice'),
+    ('a | x | *-*-* 01:00 UTC |', 'empty sites'),
+    ('a | x | *-*-* 01:00 UTC |  ', 'empty sites'),
+    ('a | x | *-*-* 01:00 UTC | dev,', 'empty sites'),
+    ('a | x | *-*-* 01:00 UTC | ,dev', 'empty sites'),
+    ('a | x | *-*-* 01:00 UTC | dev,,dev-ae', 'empty sites'),
+    ('a | x | *-*-* 01:00 UTC | dev | more', 'expected'),
+])
+def test_provision_refuses_a_bad_sites_field(tmp_path, line, message):
+    conf = tmp_path / 'jobs.conf'
+    conf.write_text(line + '\n')
+
+    result = _provision_job_lines('dev', conf)
+
+    assert result.returncode != 0 and message in result.stderr, result.stderr
+    # The same lines fail mytp-core's parser too (the tests of every jobs.conf).
+    with pytest.raises(ValueError):
+        jobs.parse_job_lines(line)
+
+
+@needs_sh
+def test_provision_refuses_overlapping_site_lines(tmp_path):
+    conf = tmp_path / 'jobs.conf'
+    conf.write_text('a | x | *-*-* 01:00 UTC | dev\n'
+                    'a | x | *-*-* 02:00 UTC | dev-ae, dev\n')
+
+    result = _provision_job_lines('dev', conf)
+
+    assert result.returncode != 0 and "duplicate job 'a'" in result.stderr
+    # A site in neither line is not concerned.
+    assert _provision_job_lines('admindev', conf).returncode == 0
+
+
+@needs_sh
+def test_provision_removes_a_timer_whose_line_moved_to_another_site(tmp_path):
+    systemd = tmp_path / 'systemd'
+    systemd.mkdir()
+    for unit in ('mytp-dev-job@restoretest.timer', 'mytp-dev-job@backupdb.timer',
+                 'mytp-dev-ae-job@restoretest.timer'):
+        (systemd / unit).write_text('old\n')
+    conf = tmp_path / 'jobs.conf'
+    conf.write_text('backupdb | backupdb | *-*-* 02:30:00 UTC\n'
+                    'restoretest | restoretest | Sun *-*-* 22:30:00 UTC | dev-ae\n')
+
+    result = _provision_job_lines('dev', conf, systemd)
+
+    assert result.returncode == 0, result.stderr
+    assert 'changed: removed mytp-dev-job@restoretest.timer' in result.stdout
+    assert sorted(p.name for p in systemd.iterdir()) == [
+        'mytp-dev-ae-job@restoretest.timer', 'mytp-dev-job@backupdb.timer']
+
+
+ADMIN_JOBS = REPO.parent / 'mytp-admin' / 'deploy' / 'jobs.conf'
+
+
+@needs_sh
+@pytest.mark.parametrize('source', ['sibling', 'inline'])
+def test_provision_installs_the_admin_sites_jobs_conf_for_admindev(tmp_path, source):
+    """admindev is provisioned with this provision.sh and the admin repo's jobs.conf (one
+    site: three-field lines). The sibling checkout's file when there is one (locally),
+    and always a copy of its restoretest line."""
+    conf = tmp_path / 'jobs.conf'
+    if source == 'sibling':
+        if not ADMIN_JOBS.is_file():
+            pytest.skip('no ../mytp-admin checkout')
+        conf.write_text(ADMIN_JOBS.read_text())
+    else:
+        conf.write_text('backupdb | backupdb | *-*-* 02:40:00 UTC\n'
+                        'restoretest | restoretest | Sun *-*-* 23:30:00 UTC\n')
+
+    result = _provision_job_lines('admindev', conf)
+
+    assert result.returncode == 0, result.stderr
+    lines = _installed(result)
+    assert lines['restoretest'] == 'Sun *-*-* 23:30:00 UTC'
+    assert set(lines) == set(jobs.load_jobs(conf, 'admindev'))
 
 
 def test_backup_tmp_dir_default_matches_provision():
@@ -585,8 +914,12 @@ def test_staging_env_example_lists_backup_settings_without_secrets():
     assert values['BACKUP_S3_ACCESS_KEY'] == ''
     assert values['BACKUP_S3_SECRET_KEY'] == ''
     assert values['BACKUP_AGE_RECIPIENT'] == ''
-    assert values['BACKUP_PREFIX'] == 'staging/'
+    assert values['BACKUP_PREFIX'] == 'staging-dev/'  # one prefix per site (AD-24)
     assert 'sbg' in values['BACKUP_S3_ENDPOINT']
+    # The restore test (epic-platform entry 13): typed on the server only.
+    assert values['BACKUP_AGE_RESTORE_RECIPIENT'] == ''
+    assert values['RESTORE_TEST_DATABASE_URL'] == ''
+    assert values['SENTRY_ENVIRONMENT'] == 'dev'  # the site's own environment
 
 
 def test_requirements_pin_boto3():

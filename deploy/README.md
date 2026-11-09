@@ -28,15 +28,15 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Firewall | ufw: 22, 80, 443 only |
 | Scheduled jobs | `mytp-dev-job@<name>.timer` → `mytp-dev-job@<name>.service`, one per line of `jobs.conf` |
 | Background tasks | `mytp-dev-worker.service` (`manage.py db_worker`, django-tasks-db); heartbeat on Sentry monitor `mytp-dev-worker` ("Background tasks"); `mytp-dev-scan-worker.service` for the virus scans only, stopped and started with it ("Scanning") |
-| Health URL | `https://dev.mytpdso.com/healthz` (no password), watched by UptimeRobot |
+| Health URL | `https://<site>.mytpdso.com/healthz` (no password), one UptimeRobot monitor per site (dev, dev-ae, admindev) |
 | Object storage | doctors' files in the region's bucket (`mytp-dev-files`, GRA), `STORAGE_*` in `shared/settings.env`; `storage_bucket --apply/--inspect`; staff sample page `/en/storage/sample/` ("Object storage"); every upload virus-scanned by ClamAV (host-wide `clamav-daemon`, `clamav-freshclam`; `STORAGE_CLAMD_SOCKET`) before it can be downloaded ("Scanning") |
-| Off-region backups | nightly `backupdb` job → Object Storage SBG (`age`-encrypted); restore test: `restore-db.sh` |
+| Off-region backups | nightly `backupdb` job → Object Storage SBG under `staging-<site>/` (`age`-encrypted); weekly `restoretest` job on the server; manual restore test: `restore-db.sh` |
 | Field keys | KMS-wrapped: `FIELD_KMS_KEYS`, `BLIND_INDEX_KMS_KEY` in `shared/settings.env` (`FIELD_KEY_PROVIDER=accounts.crypto.KMSKeyProvider`); password manager: key ids and wrapped values, never plain keys (step 12, "Keys (KMS)") |
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp-dev/shared/kms-client.*`; daily `kmscheck` job |
 | Signup and login codes | Twilio Verify (email via SendGrid, WhatsApp, SMS); credentials in `shared/settings.env` ("Twilio Verify") |
 | Geo-IP | DB-IP Lite country database `/srv/mytp-dev/shared/geoip/dbip-country-lite.mmdb` (CC BY 4.0), monthly `geoipupdate` job ("Geo-IP database") |
 | Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute; configuration snapshot pulled from it, `pullconfig` job every 5 minutes, `show_config`; the catalogue it carries, `price_catalogue`; the country map it carries ("Interface with the admin site", "Outbox", "Configuration snapshot", "Catalogue", "Country map") |
-| Errors and job alerts | Sentry (EU region), alerts to devops@mytreatplan.com |
+| Errors and job alerts | Sentry (EU region), one environment per site (`dev`, `dev-ae`, `admindev`), alerts to devops@mytreatplan.com |
 
 Files in this folder:
 
@@ -49,7 +49,8 @@ Files in this folder:
 - `jobs.conf`: the scheduled jobs (name, `manage.py` command, schedule).
 - `run-job.sh <site> <name>`: runs one job in the site's live release (started by
   `mytp-<site>-job@.service`).
-- `restore-db.sh`: the restore test for the off-region backups (run on a team Mac).
+- `restore-db.sh`: the manual restore test for the off-region backups (run on a team Mac;
+  the weekly automatic one is `manage.py restoretest` on the server).
 - `nginx/site.conf.template`, `systemd/*.template`, `sudoers/deploy.template`: rendered
   per site by `provision.sh` (`__SITE__` becomes the site name).
 - `staging.env.example`: template for `shared/settings.env` (written for `dev`).
@@ -173,7 +174,9 @@ curl -s https://dev.mytpdso.com/healthz                  # ok, site: dev, region
    sending; this is a second layer).
 4. Alerts → Create Alert → Issues, with the conditions "A new issue is created" **or**
    "The issue changes state from resolved to unresolved" (a regression), environment
-   `staging` → send an email to **devops@mytreatplan.com**. Add the address as a team member or use
+   **All Environments** (each site reports to its own: `dev`, `dev-ae`, `admindev`; see
+   "Per-site backups, restore test and monitoring") → send an email to
+   **devops@mytreatplan.com**. Add the address as a team member or use
    Settings → Notifications so it can receive mail.
 5. Crons: nothing to create by hand. The first run of each job creates its monitor
    (`mytp-<site>-<name>`, e.g. `mytp-dev-clearsessions`, schedule taken from `jobs.conf`, 30 min margin, 60 min max
@@ -186,8 +189,9 @@ curl -s https://dev.mytpdso.com/healthz                  # ok, site: dev, region
    sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker
    ```
 
-   `SENTRY_ENVIRONMENT=staging` is already there. The release is the git SHA (each
-   release's `REVISION` file, written by `release.sh`).
+   `SENTRY_ENVIRONMENT=dev` is already there (the site's name; `dev-ae` and `admindev` on
+   theirs). The release is the git SHA (each release's `REVISION` file, written by
+   `release.sh`).
 7. Check: force an error and see it arrive (no personal data) and the email go out:
 
    ```sh
@@ -247,6 +251,8 @@ Sentry (`MYTP_SENTRY_IGNORED_LOGGERS` in settings). Locally and in CI `SENTRY_DS
 2. New monitor: type **HTTP(s)** (not Ping or Port: those stay green when only Gunicorn is
    down), URL `https://dev.mytpdso.com/healthz`, interval 5 min, alert contact
    devops@mytreatplan.com. Optionally a **Keyword** monitor for `ok`. Wait until it shows Up.
+   Each site has its own monitor, the same way: `https://dev-ae.mytpdso.com/healthz` and
+   `https://admindev.mytpdso.com/healthz` (epic-platform entry 13).
 3. Check: `sudo systemctl stop mytp-dev-gunicorn.service mytp-dev-gunicorn.socket`, then confirm
    from your machine that `curl -s -o /dev/null -w '%{http_code}\n'
    https://dev.mytpdso.com/healthz` prints `502`. Keep it stopped for **at least 10
@@ -277,7 +283,9 @@ encrypted `pg_dump` to Object Storage in **SBG** (`manage.py backupdb`). See
    fails with `AccessDenied` even under an `s3:*` policy. Copy the S3 endpoint
    (e.g. `https://s3.sbg.io.cloud.ovh.net`) and region (`sbg`).
 3. **Retention: 30 daily dumps.** Add a lifecycle rule that expires objects after 30
-   days. In your own terminal (keys never pasted into chats or tickets), with the admin
+   days. Each site has its own prefix, `staging-<site>/`, and its own rule (the rules
+   for all three staging sites are in "Per-site backups, restore test and monitoring";
+   the one below is the first one, from before the per-site prefixes). In your own terminal (keys never pasted into chats or tickets), with the admin
    user's keys in `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (never the server's user):
 
    ```sh
@@ -348,7 +356,7 @@ encrypted `pg_dump` to Object Storage in **SBG** (`manage.py backupdb`). See
 
    ```sh
    sudo systemctl start mytp-dev-job@backupdb           # waits until it finishes
-   sudo journalctl -u mytp-dev-job@backupdb -n 20       # "backupdb: uploaded staging/mytreatplan-...dump.age"
+   sudo journalctl -u mytp-dev-job@backupdb -n 20       # "backupdb: uploaded staging-dev/mytreatplan-...dump.age"
    ```
 
    The object appears in the SBG container. Downloaded, it starts with
@@ -366,7 +374,9 @@ encrypted `pg_dump` to Object Storage in **SBG** (`manage.py backupdb`). See
    It exits non-zero; Sentry shows an error check-in and an issue (without the keys), and
    devops@mytreatplan.com gets the alert. The next nightly run turns the monitor ok again.
 9. **First restore test**: follow "Restore test" under
-   [Backups and restore](#backups-and-restore) and record it.
+   [Backups and restore](#backups-and-restore) and record it. The weekly automatic
+   restore test on the server needs its own setup: "Per-site backups, restore test and
+   monitoring".
 
 ### 11. KMS (OVHcloud Key Management Service)
 
@@ -737,7 +747,11 @@ backwards-compatible.
 
 ## Scheduled jobs
 
-Jobs are listed in `deploy/jobs.conf`, one per line: `name | manage.py command | schedule`.
+Jobs are listed in `deploy/jobs.conf`, one per line: `name | manage.py command | schedule`,
+optionally `| sites` (comma-separated: the line applies only to those sites; mytp-core
+0.18.0). dev and dev-ae read the same file, so a job they must run at different times
+(the weekly `restoretest`) has one line per site; `provision.sh` installs only the site's
+own lines, and each site gets its own Sentry monitor.
 The schedule is a systemd `OnCalendar` in UTC, e.g. `*-*-* 03:30:00 UTC` (daily) or
 `Mon *-*-* 02:00 UTC` (weekly); `mytp_core/jobs.py` (mytp-core) lists the forms supported
 (they must also map to the Sentry monitor's crontab, and the tests check every line).
@@ -751,10 +765,15 @@ the timers: `release.sh` prints a warning, and you must re-run `provision.sh`.
 Each job runs as `mytp-dev` in `/srv/mytp-dev/current` via `deploy/run-job.sh dev <name>` →
 `manage.py runjob <name>` (from mytp-core), which sends Sentry cron check-ins (in progress,
 then ok or error) to the monitor `mytp-<site>-<name>`, e.g. `mytp-dev-clearsessions`. The
-site name (`SITE`), not the Sentry environment, tells the monitors apart, since several
-sites on one host share the environment `staging`. A missed run (host down, timer gone) shows as a missed check-in in Sentry; a
+site name (`SITE`) tells the monitors apart; each site also reports to its own Sentry
+environment, named after it (`dev`, `dev-ae`, `admindev`). A missed run (host down, timer gone) shows as a missed check-in in Sentry; a
 failed run exits non-zero, so the unit is marked failed. Timers are `Persistent=true`:
 a run missed while the host was down happens at boot.
+
+**Rollback below mytp-core 0.18.0:** a release with an older mytp-core cannot read a
+`jobs.conf` with site-scoped lines (the fourth field). Re-provision the site from the
+older commit's `deploy/` first, then roll back ("Per-site backups, restore test and
+monitoring", last paragraph).
 
 To add a job:
 
@@ -1131,7 +1150,7 @@ it is **erased**, for example when the user asks (GDPR art. 17).
 | Layer | Where | Retention | Who restores |
 |-------|-------|-----------|--------------|
 | OVHcloud managed backups | same provider region as the database (GRA) | 2 days (staging plan, checked 2026-10-12; stored in Gravelines and Strasbourg) | OVHcloud panel (restore or fork the service) |
-| Nightly `backupdb` dump | Object Storage **SBG**, `staging/mytreatplan-<UTC>.dump.age` | 30 daily dumps (bucket lifecycle rule) | `deploy/restore-db.sh` |
+| Nightly `backupdb` dump | Object Storage **SBG**, `staging-<site>/<basename>-<UTC>.dump.age` (`mytreatplan` for dev and dev-ae, `mytp-admin` for admindev) | 30 daily dumps (one bucket lifecycle rule per prefix) | `deploy/restore-db.sh` by hand; checked weekly by the `restoretest` job |
 
 The managed backups cover everyday mistakes; the SBG dumps cover losing the GRA region or
 the managed service, or a managed backup that does not restore.
@@ -1147,7 +1166,9 @@ keys it was encrypted with (step 12, "Backups need the same keys").
    `pg_dump` is older (major version) than the server;
 2. runs `pg_dump --format=custom --no-owner --no-privileges` over TLS (`DB_SSLMODE`,
    `DB_SSLROOTCERT`), with the password only in its environment, piped straight into
-   `age -r $BACKUP_AGE_RECIPIENT`; only ciphertext is written, in
+   `age -r $BACKUP_AGE_RECIPIENT -r $BACKUP_AGE_RESTORE_RECIPIENT` (the team's key and
+   the site's restore-only key; the second only once it is set); only ciphertext is
+   written, in
    `/srv/mytp-dev/shared/backup-tmp` (0700, `mytp-dev`);
 3. uploads it as `<BACKUP_PREFIX>mytreatplan-<yyyymmddThhmmssZ>.dump.age`, checks the object
    exists with the same size, and removes the temp file whatever happened.
@@ -1162,10 +1183,294 @@ sudo systemctl start mytp-dev-job@backupdb          # back up now
 sudo journalctl -u mytp-dev-job@backupdb -n 50      # last runs
 ```
 
-### Restore test (quarterly)
+### Restore test (weekly, on the server)
 
-Proves the dumps can be restored. On a team Mac, never on the server, into a local,
-empty database. Needs `age`, PostgreSQL 17 client tools (`pg_restore`, `psql`), a local
+The `restoretest` job (mytp-core 0.18.0, `manage.py restoretest`) proves every week that
+the site's latest dump restores. Sunday night, staggered: dev 21:30, dev-ae 22:30,
+admindev 23:30 UTC. On the server, as the site's user, it:
+
+1. takes the newest `staging-<site>/<basename>-<UTC>.dump.age` (prefix **and** basename:
+   another site's dump is never taken; none, or the newest older than 8 days, fails);
+2. downloads it (ciphertext only) into `shared/backup-tmp`, unwraps the site's
+   restore-only `age` identity through the KMS **in memory** and pipes
+   `age --decrypt | pg_restore --single-transaction` into the scratch database
+   `<site>_restore_test` (on the site's PostgreSQL service, with its own user, never the
+   site's database or user);
+3. checks it: applied migrations, all known to the live database (a dump of another site
+   fails), and the site's user table (`accounts_user`; `staff_user` on admindev);
+4. empties the scratch database and removes the file, whatever happened.
+
+Success is one journal line, `restoretest: ok site=<site> dump=<UTC time> (<n> h old,
+<n> bytes) migrations=<restored>/<live> users=<n> in <n>s`, and an ok check-in on the
+Sentry monitor `mytp-<site>-restoretest` (disabled on the current plan, like the other
+monitors). A failure is one Sentry error in the site's environment, `restoretest:
+site=<site> code=<code>: <detail>`, and the unit fails. The codes: `settings`, `tools`,
+`tmp-dir`, `identity`, `scratch-db`, `list`, `no-dump`, `stale-dump`, `download`,
+`decrypt`, `restore`, `check`, `cleanup`, `interrupted`. No message holds a password, a
+key, the identity, the endpoint or a row of the dump.
+
+**Two keys.** Every dump is encrypted to the team's key (`BACKUP_AGE_RECIPIENT`, private
+half in the team password manager only, never on a server) and to the site's own
+restore-only key (`BACKUP_AGE_RESTORE_RECIPIENT`). The restore identity exists only in
+`/srv/mytp-<site>/shared/restore-identity.json` (mode 600), encrypted under a data key
+wrapped by the site's KMS service key: it is useless without the KMS, never printed and
+never written in plain. It is not copied anywhere: if it is lost, make a new one (step 7
+below); the team key still opens every dump. Dumps made before the restore key was set
+open with the team key only, so the restore test fails with `decrypt` until the next
+nightly backup.
+
+```sh
+sudo systemctl start mytp-dev-job@restoretest        # run now (waits until it finishes)
+sudo journalctl -u mytp-dev-job@restoretest -n 20     # "restoretest: ok site=dev ..."
+```
+
+### Per-site backups, restore test and monitoring (epic-platform entry 13)
+
+The one runbook for all three staging sites (dev, dev-ae and admindev; the admin site's
+README points here). One-off, in this order, once the mytp-core 0.18.0 releases are
+live (admindev after the admin site's merge, dev and dev-ae after this repo's). Run every
+command yourself, in your own terminal; nothing below prints a secret. Never `cat` a
+`settings.env`.
+
+1. **Lifecycle rules, as the bucket owner** (step 10.3: your own terminal, the admin S3
+   user's keys in `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`). First read the rules
+   that are there now:
+
+   ```sh
+   export AWS_REQUEST_CHECKSUM_CALCULATION=when_required AWS_RESPONSE_CHECKSUM_VALIDATION=when_required
+   aws --endpoint-url https://s3.sbg.io.cloud.ovh.net --region sbg s3api get-bucket-lifecycle-configuration \
+       --bucket mytp-backups-staging --query 'Rules[].[ID,Filter.Prefix]' --output text
+   # expected, nothing else: expire-dumps-30d  staging/   and   expire-dev-ae-dumps-30d  staging-dev-ae/
+   ```
+
+   **If any other rule is listed, stop**: the command below replaces the whole set, so
+   add that rule to it first. Then put one 30-day rule per prefix, keeping the two
+   existing IDs (the `staging/` rule stays: dev's and admindev's old dumps expire under
+   it):
+
+   ```sh
+   rule() { printf '{"ID": "%s", "Status": "Enabled", "Filter": {"Prefix": "%s"}, "Expiration": {"Days": 30}, "AbortIncompleteMultipartUpload": {"DaysAfterInitiation": 2}}' "$1" "$2"; }
+   aws --endpoint-url https://s3.sbg.io.cloud.ovh.net --region sbg s3api put-bucket-lifecycle-configuration \
+       --bucket mytp-backups-staging --lifecycle-configuration "{\"Rules\": [$(rule expire-dumps-30d staging/), \
+       $(rule expire-dev-dumps-30d staging-dev/), $(rule expire-dev-ae-dumps-30d staging-dev-ae/), \
+       $(rule expire-admindev-dumps-30d staging-admindev/)]}"
+   aws --endpoint-url https://s3.sbg.io.cloud.ovh.net --region sbg s3api get-bucket-lifecycle-configuration \
+       --bucket mytp-backups-staging --query 'Rules[].[ID,Filter.Prefix,Expiration.Days]' --output text
+   # four rules: staging/, staging-dev/, staging-dev-ae/, staging-admindev/; 30 each
+   ```
+
+   Once the last `staging/` dump has expired (30 days after step 2), that rule can go:
+   read the rules again and put the three per-site ones only.
+2. **Prefixes.** On the host, as `debian`: dev and admindev move from `staging/` to
+   their own prefix (dev-ae already has `staging-dev-ae/`). Nothing is printed; check
+   each file with its own value:
+
+   ```sh
+   sudo -u mytp-dev sed -i 's#^BACKUP_PREFIX=.*#BACKUP_PREFIX=staging-dev/#' /srv/mytp-dev/shared/settings.env
+   sudo -u mytp-admindev sed -i 's#^BACKUP_PREFIX=.*#BACKUP_PREFIX=staging-admindev/#' /srv/mytp-admindev/shared/settings.env
+   sudo grep -c -x 'BACKUP_PREFIX=staging-dev/' /srv/mytp-dev/shared/settings.env               # 1
+   sudo grep -c -x 'BACKUP_PREFIX=staging-dev-ae/' /srv/mytp-dev-ae/shared/settings.env         # 1
+   sudo grep -c -x 'BACKUP_PREFIX=staging-admindev/' /srv/mytp-admindev/shared/settings.env     # 1
+   sudo grep -c '^BACKUP_PREFIX=' /srv/mytp-dev/shared/settings.env /srv/mytp-dev-ae/shared/settings.env /srv/mytp-admindev/shared/settings.env   # 1 each
+   ```
+
+3. **Sentry alerts first** (so none goes dark when the environments change in step 4).
+   In Sentry: the issue alert of step 8.4 → environment **All Environments** (it was
+   `staging`). The metric monitors filtered on `staging` → **All Environments** too
+   (their message filters are already site-specific): "Signup code sends failing"
+   (portal, "Sentry alert on failed sends"), and the admin site's
+   `message:"Admin sign-in code send failed"` monitor and `staff account` alert (its
+   README, "Sentry"). They can be narrowed to `dev`/`dev-ae` and `admindev` once step 4
+   is done.
+4. **Sentry environments**, each site's own, then restart its processes (the jobs read
+   the file at each run). Check each file with its own value:
+
+   ```sh
+   sudo -u mytp-dev sed -i 's#^SENTRY_ENVIRONMENT=.*#SENTRY_ENVIRONMENT=dev#' /srv/mytp-dev/shared/settings.env
+   sudo -u mytp-dev-ae sed -i 's#^SENTRY_ENVIRONMENT=.*#SENTRY_ENVIRONMENT=dev-ae#' /srv/mytp-dev-ae/shared/settings.env
+   sudo -u mytp-admindev sed -i 's#^SENTRY_ENVIRONMENT=.*#SENTRY_ENVIRONMENT=admindev#' /srv/mytp-admindev/shared/settings.env
+   sudo grep -c -x 'SENTRY_ENVIRONMENT=dev' /srv/mytp-dev/shared/settings.env                   # 1
+   sudo grep -c -x 'SENTRY_ENVIRONMENT=dev-ae' /srv/mytp-dev-ae/shared/settings.env             # 1
+   sudo grep -c -x 'SENTRY_ENVIRONMENT=admindev' /srv/mytp-admindev/shared/settings.env         # 1
+   sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker mytp-dev-ae-gunicorn mytp-dev-ae-worker \
+       mytp-admindev-gunicorn mytp-admindev-worker
+   ```
+
+   (A file with no `SENTRY_ENVIRONMENT` line, count 0: add it with `echo
+   SENTRY_ENVIRONMENT=<site> | sudo -u mytp-<site> tee -a /srv/mytp-<site>/shared/settings.env
+   >/dev/null`.) Then a test message from each site, which must show under its own
+   environment:
+
+   ```sh
+   for s in dev dev-ae admindev; do
+       (cd /srv/mytp-$s/current && sudo -u mytp-$s ./venv/bin/python manage.py shell -c \
+           "import sentry_sdk; sentry_sdk.capture_message('environment check $s'); sentry_sdk.flush()")
+   done
+   ```
+
+   Sentry → Issues, filtered per environment: one `environment check <site>` in each of
+   `dev`, `dev-ae`, `admindev`, and the alert email for each.
+5. **Scratch databases and their users** (on the OVHcloud Managed PostgreSQL service
+   that serves dev, dev-ae and admindev). In the panel, add three databases and three
+   **plain** users of the same names: `dev_restore_test`, `dev_ae_restore_test`,
+   `admindev_restore_test`; keep each password in the team password manager ("MyTreatplan
+   staging restore test databases"). Never use the service admin (`avnadmin`) or any
+   user that can create roles or databases: `restoretest` refuses a role with
+   `rolsuper`, `rolcreaterole` or `rolcreatedb` (code `scratch-db`). Then make each user
+   the owner of its database and of its `public` schema (the panel makes them the service
+   admin's; the job drops and makes `public` again at each run). From the host, as the
+   service admin (psql asks for its password, once per database):
+
+   ```sh
+   for d in dev_restore_test dev_ae_restore_test admindev_restore_test; do
+       psql "host=<db-host> port=<db-port> dbname=$d user=avnadmin sslmode=require" \
+           -c "ALTER DATABASE $d OWNER TO $d" -c "ALTER SCHEMA public OWNER TO $d" \
+           -c "SELECT rolname, rolsuper, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = '$d'"
+   done
+   # each: <name>|f|f|f
+   ```
+
+   These users get no right on the sites' own databases (they own nothing there).
+6. **The scratch database URL** in each `settings.env`. First delete an empty
+   `RESTORE_TEST_DATABASE_URL=` line copied from a template (one line per key: the
+   settings loader keeps the last, and the counts below expect 1), then append the real one: this asks for the host and port
+   (from the panel) and the user's password (not echoed), and URL-encodes the password.
+   Run it once per site (`dev` / `dev_restore_test`, `dev-ae` / `dev_ae_restore_test`,
+   `admindev` / `admindev_restore_test`):
+
+   ```sh
+   site=dev; db=dev_restore_test
+   sudo -u mytp-$site sed -i '/^RESTORE_TEST_DATABASE_URL=$/d' /srv/mytp-$site/shared/settings.env
+   sudo -u mytp-$site DB=$db SITE_NAME=$site python3 -c '
+   import getpass, os, urllib.parse
+   db, site = os.environ["DB"], os.environ["SITE_NAME"]
+   host = input("Database host: ").strip()
+   port = input("Database port: ").strip()
+   password = urllib.parse.quote(getpass.getpass(f"{db} password: "), safe="")
+   with open(f"/srv/mytp-{site}/shared/settings.env", "a") as f:
+       f.write(f"RESTORE_TEST_DATABASE_URL=postgres://{db}:{password}@{host}:{port}/{db}?sslmode=require\n")
+   '
+   sudo grep -c '^RESTORE_TEST_DATABASE_URL=' /srv/mytp-$site/shared/settings.env    # 1
+   ```
+
+   `DB_SSLMODE=verify-full` and `DB_SSLROOTCERT` apply to it too (the same service and
+   CA). Check the connection as the site's user (prints names only):
+
+   ```sh
+   sudo -u mytp-$site sh -ec 'url=$(sed -n "s/^RESTORE_TEST_DATABASE_URL=//p" /srv/mytp-'$site'/shared/settings.env)
+   psql "$url" -qAt -c "SELECT current_user, current_database(),
+       (SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname = '\''public'\'')"'
+   # e.g. dev_restore_test|dev_restore_test|dev_restore_test
+   ```
+
+7. **The restore identity of each site**, made on the server with the live release (it
+   needs mytp-core 0.18.0 and the site's KMS settings; dev-ae's is wrapped by dev's EU
+   service key, like its field keys). The identity goes straight into the KMS-wrapped
+   file; only the public key is printed, and it goes straight into `settings.env`, after
+   an empty `BACKUP_AGE_RESTORE_RECIPIENT=` line is deleted:
+
+   ```sh
+   for s in dev dev-ae admindev; do
+       sudo -u mytp-$s sed -i '/^BACKUP_AGE_RESTORE_RECIPIENT=$/d' /srv/mytp-$s/shared/settings.env
+       (cd /srv/mytp-$s/current && sudo -u mytp-$s sh -ec \
+           "line=\$(./venv/bin/python manage.py generate_restore_identity)
+           printf '%s\n' \"\$line\" >> /srv/mytp-$s/shared/settings.env")
+       sudo ls -l /srv/mytp-$s/shared/restore-identity.json                                  # -rw------- mytp-<site>
+       sudo grep -c '^BACKUP_AGE_RESTORE_RECIPIENT=' /srv/mytp-$s/shared/settings.env        # 1
+       sudo grep -c '^BACKUP_AGE_RESTORE_RECIPIENT=age1' /srv/mytp-$s/shared/settings.env    # 1
+   done
+   ```
+
+   Nothing goes to the password manager: the team key is the backup of every dump. To
+   replace a lost or damaged identity later, run the command with `--replace` and
+   replace the `BACKUP_AGE_RESTORE_RECIPIENT` line with the one it prints.
+8. **Timers.** First check that each site's **live** release runs mytp-core 0.18.0 or
+   newer: an older one cannot read the new `jobs.conf` (its fourth field), and once
+   `provision.sh` installs that file every job of the site would fail:
+
+   ```sh
+   for s in dev dev-ae admindev; do
+       printf '%s ' $s; sudo -u mytp-$s /srv/mytp-$s/current/venv/bin/python -c 'import mytp_core; print(mytp_core.__version__)'
+   done   # 0.18.0 (or newer) for each; otherwise wait for that site's deploy
+   ```
+
+   Then re-provision each site from up-to-date copies: dev and dev-ae from the merged
+   portal `deploy/` (`~/deploy`); admindev from `~/deploy-admindev`, the same merged
+   portal `deploy/` with the admin repo's `jobs.conf` and `staging.env.example` copied
+   in (the admin README, "Server setup" step 3), always with
+   `WSGI_MODULE=mytp_admin.wsgi`:
+
+   ```sh
+   bash ~/deploy/provision.sh dev dev.mytpdso.com mytp-team < /dev/null
+   bash ~/deploy/provision.sh dev-ae dev-ae.mytpdso.com mytp-team < /dev/null
+   WSGI_MODULE=mytp_admin.wsgi bash ~/deploy-admindev/provision.sh admindev admindev.mytpdso.com mytp-team < /dev/null
+   systemctl list-timers 'mytp-*-job@restoretest.timer'    # three: Sun 21:30 (dev), 22:30 (dev-ae), 23:30 (admindev) UTC
+   ```
+
+9. **First backup of each site**, now with both keys and under its own prefix:
+
+   ```sh
+   for s in dev dev-ae admindev; do
+       sudo systemctl start mytp-$s-job@backupdb
+       sudo journalctl -u mytp-$s-job@backupdb -n 5 --no-pager | grep 'backupdb: uploaded'
+   done
+   # "uploaded staging-dev/mytreatplan-...dump.age (... bytes) to ..., 2 recipient(s)", and
+   # staging-dev-ae/mytreatplan-..., staging-admindev/mytp-admin-..., each with 2 recipient(s)
+   ```
+
+10. **First restore test of each site**, one after the other:
+
+    ```sh
+    for s in dev dev-ae admindev; do
+        sudo systemctl start mytp-$s-job@restoretest
+        sudo journalctl -u mytp-$s-job@restoretest -n 5 --no-pager | grep restoretest
+    done
+    # restoretest: ok site=dev dump=... migrations=<n>/<n> users=<n> in ...s (then dev-ae, admindev)
+    ```
+
+    Compare the user counts with the live ones ("Restore test (manual)" below has the
+    command). Then the failure path, once, on dev (an unreachable scratch database; the
+    variable beats `settings.env`):
+
+    ```sh
+    cd /srv/mytp-dev/current
+    sudo -u mytp-dev RESTORE_TEST_DATABASE_URL=postgres://dev_restore_test@127.0.0.1:1/dev_restore_test \
+        ./venv/bin/python manage.py runjob restoretest
+    # exits non-zero: "restoretest: site=dev code=scratch-db: could not connect (OperationalError ...)"
+    ```
+
+    Sentry shows one issue in environment `dev` with that text and no password, host or
+    key; the alert email goes to devops@mytreatplan.com.
+11. **Sentry monitors.** `mytp-dev-restoretest`, `mytp-dev-ae-restoretest` and
+    `mytp-admindev-restoretest` appear at their first run: disable them as the others
+    while the plan has no crons (enable them, with **Notify** devops@mytreatplan.com,
+    after the plan upgrade).
+12. **UptimeRobot.** Add two monitors as in step 9: `https://dev-ae.mytpdso.com/healthz`
+    and `https://admindev.mytpdso.com/healthz` (HTTP(s), 5 minutes, alert contact
+    devops@mytreatplan.com). The dashboard shows three monitors Up.
+13. **The next morning**, as the bucket owner (step 1's terminal): one fresh dump under
+    each prefix, nothing new under `staging/`:
+
+    ```sh
+    for p in staging-dev/ staging-dev-ae/ staging-admindev/ staging/; do
+        aws --endpoint-url https://s3.sbg.io.cloud.ovh.net --region sbg s3api list-objects-v2 \
+            --bucket mytp-backups-staging --prefix "$p" --query 'Contents[-1].[Key,LastModified]' --output text
+    done
+    ```
+
+**Rollback below mytp-core 0.18.0.** Once step 8 has installed the new `jobs.conf`
+(`/srv/mytp-<site>/shared/jobs.conf`, with the per-site `restoretest` lines), a release
+with an older mytp-core cannot read it, and every job of that site fails (`runjob`
+reads the installed copy). Before pointing `current` back at such a release ("Rollback"),
+re-provision the site from the `deploy/` of that older commit (`git archive <sha>
+deploy`; admindev: with the admin repo's `jobs.conf` of its commit), so the installed
+`jobs.conf` and timers match it; then roll back. Rolling forward again needs step 8.
+
+### Restore test (manual)
+
+Proves the dumps can be restored, by hand (before a production go-live, after a change
+to the backups, or when the weekly job fails and the cause is unclear). On a team Mac,
+never on the server, into a local, empty database. Needs `age`, PostgreSQL 17 client tools (`pg_restore`, `psql`), a local
 PostgreSQL, and either the `aws` CLI with the S3 keys or a dump downloaded by hand:
 
 ```sh
@@ -1175,18 +1480,22 @@ brew services start postgresql@17
 createdb mytp_restore_test
 # The bucket keys from the password manager, in the environment (never as arguments):
 export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
-export BACKUP_S3_ENDPOINT=https://s3.sbg.io.cloud.ovh.net BACKUP_S3_REGION=sbg BACKUP_S3_BUCKET=mytp-backups-staging BACKUP_PREFIX=staging/
+export BACKUP_S3_ENDPOINT=https://s3.sbg.io.cloud.ovh.net BACKUP_S3_REGION=sbg BACKUP_S3_BUCKET=mytp-backups-staging BACKUP_PREFIX=staging-dev/
 # The private key from the password manager, in a temp file only for the run. Never
 # inside the repository folder or another synced folder (Google Drive, iCloud):
 KEY=$(mktemp) && nano "$KEY"     # paste the whole key entry
 bash deploy/restore-db.sh --identity "$KEY" --latest
-#   or --object staging/mytreatplan-<...>.dump.age, or --file <downloaded>.dump.age
+#   or --object staging-dev/mytreatplan-<...>.dump.age, or --file <downloaded>.dump.age
 #   --dry-run runs every check without restoring.
+#   admindev: BACKUP_PREFIX=staging-admindev/ and --basename mytp-admin --user-table staff_user
 rm "$KEY"; unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 ```
 
 The script refuses any target whose name does not end in `_restore_test` (default
-`mytp_restore_test`), any target that is not empty, and a non-local `PGHOST`. It decrypts
+`mytp_restore_test`), any target that is not empty, and a non-local `PGHOST`. `--latest`
+takes the newest `<BACKUP_PREFIX><basename>-<UTC time>.dump.age` by the time in its name
+(prefix and basename: the admin site's `mytp-admin-...` dumps are never taken for the
+portal, nor the reverse). It decrypts
 in a pipe straight into `pg_restore --single-transaction` (no plaintext file), then prints
 the number of applied migrations and of users. Compare them with staging:
 
@@ -1804,13 +2113,13 @@ command yourself, in your own terminal. Nothing below prints a secret; never `ca
 
    ```sh
    sudo install -m 600 -o mytp-dev-ae -g mytp-dev-ae /dev/null /srv/mytp-dev-ae/shared/settings.env
-   sudo sh -c "grep -v -E '^(SITE|REGION|SECRET_KEY|DATABASE_URL|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|SITE_URL|DB_SSLROOTCERT|BACKUP_PREFIX|KMS_CLIENT_CERT|KMS_CLIENT_KEY|FIELD_ENCRYPTION_KEYS|BLIND_INDEX_KEY|FIELD_KEY_PROVIDER|FIELD_KMS_KEYS|BLIND_INDEX_KMS_KEY|STORAGE_[A-Z_]+|REGION_SITE_URL_[A-Z]+)=' \
+   sudo sh -c "grep -v -E '^(SITE|REGION|SECRET_KEY|DATABASE_URL|ALLOWED_HOSTS|CSRF_TRUSTED_ORIGINS|SITE_URL|DB_SSLROOTCERT|BACKUP_PREFIX|BACKUP_AGE_RESTORE_RECIPIENT|RESTORE_TEST_DATABASE_URL|SENTRY_ENVIRONMENT|KMS_CLIENT_CERT|KMS_CLIENT_KEY|FIELD_ENCRYPTION_KEYS|BLIND_INDEX_KEY|FIELD_KEY_PROVIDER|FIELD_KMS_KEYS|BLIND_INDEX_KMS_KEY|STORAGE_[A-Z_]+|REGION_SITE_URL_[A-Z]+)=' \
        /srv/mytp-dev/shared/settings.env > /srv/mytp-dev-ae/shared/settings.env"
    sudo -u mytp-dev-ae sh -ec 'k=$(python3 -c "import secrets; print(secrets.token_urlsafe(50))")
    printf "%s\n" SITE=dev-ae REGION=ae "SECRET_KEY=$k" \
        ALLOWED_HOSTS=dev-ae.mytpdso.com CSRF_TRUSTED_ORIGINS=https://dev-ae.mytpdso.com \
        SITE_URL=https://dev-ae.mytpdso.com DB_SSLROOTCERT=/srv/mytp-dev-ae/shared/db-ca.pem \
-       BACKUP_PREFIX=staging-dev-ae/ \
+       BACKUP_PREFIX=staging-dev-ae/ SENTRY_ENVIRONMENT=dev-ae \
        KMS_CLIENT_CERT=/srv/mytp-dev-ae/shared/kms-client.crt \
        KMS_CLIENT_KEY=/srv/mytp-dev-ae/shared/kms-client.key \
        FIELD_ENCRYPTION_KEYS= BLIND_INDEX_KEY= STORAGE_SAMPLE_UPLOADS=False \
@@ -1818,7 +2127,8 @@ command yourself, in your own terminal. Nothing below prints a secret; never `ca
        >> /srv/mytp-dev-ae/shared/settings.env'
    ```
 
-   Then the database URL. This asks for the host and port (from the panel) and the
+   Its restore test (scratch database, restore identity) is set up as in "Per-site
+   backups, restore test and monitoring", steps 5–7. Then the database URL. This asks for the host and port (from the panel) and the
    `mytp_dev_ae` password (not echoed), URL-encodes the password (a password with
    `@ : / # % &` breaks a URL typed by hand) and appends the line:
 
@@ -1865,7 +2175,9 @@ command yourself, in your own terminal. Nothing below prints a secret; never `ca
    for schema public` means step 2.3 was skipped.
 6. **Backup retention.** dev-ae's dumps go to dev's bucket under `staging-dev-ae/`, but
    the bucket's only lifecycle rule (step 10.3) expires `staging/` only, and the
-   server's S3 user cannot delete. As the bucket owner, as in step 10.3 (your own
+   server's S3 user cannot delete. (Since epic-platform entry 13 every site has its own
+   prefix and rule: "Per-site backups, restore test and monitoring", step 1, puts all of
+   them.) As the bucket owner, as in step 10.3 (your own
    terminal, the admin user's keys in `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`),
    put both rules: `put-bucket-lifecycle-configuration` replaces the whole set, so the
    `staging/` rule is repeated unchanged.
@@ -1954,8 +2266,9 @@ command yourself, in your own terminal. Nothing below prints a secret; never `ca
     ```
 
     Only dev-ae's count goes up by one. Sentry monitors for dev-ae's jobs
-    (`mytp-dev-ae-*`) wait for the plan upgrade, like dev's and admindev's; dev-ae has no
-    Sentry environment of its own yet, and no restore test of its own (entry 13).
+    (`mytp-dev-ae-*`) wait for the plan upgrade, like dev's and admindev's. dev-ae reports
+    to its own Sentry environment, `dev-ae`, and has its own weekly restore test
+    (epic-platform entry 13).
 
 **Region site URLs (epic-regions entry 1).** The country map sends a person whose
 country the other region serves to that region's site: dev sends them to dev-ae and
@@ -2646,6 +2959,9 @@ sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker
 ```
 
 This does not reverse database migrations. The next push to `master` deploys over it.
+A release with mytp-core older than 0.18.0 cannot read the site-scoped lines of the
+installed `jobs.conf`: re-provision the site from that commit's `deploy/` **before**
+the `ln -sfn` ("Per-site backups, restore test and monitoring", last paragraph).
 To re-deploy a commit, re-run its `deploy-staging` job in GitHub Actions; this does not
 work for commits built before the `deploy/release-ready` marker (epic-platform entry 10),
 whose tarballs the release command refuses: use the `ln -sfn` above while the release is
