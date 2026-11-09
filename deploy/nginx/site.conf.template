@@ -6,6 +6,9 @@
 # The site's redirect-only names (provision.sh EXTRA_DOMAINS, production EU only) fill the
 # EXTRA_DOMAINS placeholder. Unset, the placeholder is dropped with the space before it,
 # and so is the section between the EXTRA_BEGIN and EXTRA_END markers.
+# The /api/ allowlist (provision.sh API_PEER_IPS, production only) replaces the
+# API_ALLOW placeholder with a line per address; unset, the section between the
+# API_ALLOW_BEGIN and API_ALLOW_END markers is dropped.
 
 upstream mytp-__SITE__-gunicorn {
     server unix:/run/mytp-__SITE__-gunicorn.sock fail_timeout=0;
@@ -71,10 +74,16 @@ server {
     }
 
     # The interface between the admin site and the portals (AD-4): every request is signed
-    # (Ed25519, checked by Django), so no team password; bodies up to 1 MB. Production adds
-    # an IP allowlist here (epic-eu-golive).
+    # (Ed25519, checked by Django), so no team password; bodies up to 1 MB. Production
+    # lets only the peers' addresses through (provision.sh API_PEER_IPS; every other
+    # address gets 403); without API_PEER_IPS (staging) the section between the API_ALLOW
+    # markers is dropped.
     location /api/ {
         auth_basic off;
+# __API_ALLOW_BEGIN__
+        __API_ALLOW__
+        deny all;
+# __API_ALLOW_END__
         client_max_body_size 1m;
         proxy_pass http://mytp-__SITE__-gunicorn;
         proxy_set_header Host $host;

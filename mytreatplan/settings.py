@@ -358,6 +358,12 @@ INTERFACE_SAMPLE_RECORDS = config('INTERFACE_SAMPLE_RECORDS', default=False, cas
 # socket operation of a lookup; a lookup also stops after 10 seconds in all
 # (integration.hub.OVERALL_CAP). The check integration.E007 wants 0 < value <= 10.
 HUB_LOOKUP_TIMEOUT = config('HUB_LOOKUP_TIMEOUT', default=3, cast=float)
+# Interface health (epic-admin-interface entry 10, integration.alerts): the `checkinterface`
+# job (every 5 minutes) sends one Sentry warning per outage when the oldest pending outbox
+# event is older than OUTBOX_ALERT_MINUTES, or the last good configuration pull older than
+# CONFIG_ALERT_MINUTES. Whole minutes, at least 1 (checks integration.E008 and E009).
+OUTBOX_ALERT_MINUTES = config('OUTBOX_ALERT_MINUTES', default=15, cast=int)
+CONFIG_ALERT_MINUTES = config('CONFIG_ALERT_MINUTES', default=60, cast=int)
 
 # Application definition
 

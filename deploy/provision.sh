@@ -35,6 +35,13 @@
 # them with a 301 to https://<domain>, path and query kept, and the site's certificate
 # covers them. Not stored on the server: give it on every run; a run without it removes
 # the redirect (with a warning).
+#
+# API_PEER_IPS: space-separated IPv4/IPv6 addresses or CIDR ranges allowed to reach /api/
+# (production only: on a portal the admin site's egress addresses, on the admin site the
+# portals'). Nginx then answers every other address on /api/ with 403; the rest of the
+# site is unaffected. Not stored on the server: give it on every run; a run without it
+# renders no allowlist (staging) and says so, and removes an installed one (with a
+# warning).
 set -euo pipefail
 
 SITE_RE='^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$'
@@ -72,6 +79,78 @@ for name in $extra_raw; do
 done
 set +f
 unset extra_raw domain_lc name
+# API_PEER_IPS: each an IPv4 address (dotted quad, no leading zeros) or an IPv6 address
+# (hex groups, at most one '::', no embedded IPv4), with an optional /prefix (8-32 or
+# 16-128: a wider range is no allowlist), no duplicates, on one line. Normalised to lowercase values separated by one space ("" when
+# unset).
+valid_ipv4() {
+    local IFS=. octet
+    local -a octets
+    [[ $1 =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]] || return 1
+    read -ra octets <<<"$1"
+    for octet in "${octets[@]}"; do
+        [[ $octet =~ ^(0|[1-9][0-9]{0,2})$ ]] && ((octet <= 255)) || return 1
+    done
+}
+valid_ipv6() {
+    local addr=$1 head tail groups=0 group part
+    local -a parts
+    [[ $addr =~ ^[0-9a-f:]+$ && $addr != *:::* ]] || return 1
+    if [[ $addr == *::* ]]; then
+        head=${addr%%::*}
+        tail=${addr#*::}
+        [[ $tail != *::* ]] || return 1
+    else
+        head=$addr
+        tail=""
+    fi
+    for part in "$head" "$tail"; do
+        [[ -n $part ]] || continue
+        IFS=: read -ra parts <<<"$part"
+        [[ $part != :* && $part != *: ]] || return 1
+        for group in "${parts[@]}"; do
+            [[ $group =~ ^[0-9a-f]{1,4}$ ]] || return 1
+            groups=$((groups + 1))
+        done
+    done
+    if [[ $addr == *::* ]]; then
+        ((groups <= 7))
+    else
+        ((groups == 8))
+    fi
+}
+valid_peer_ip() {
+    local addr=${1%/*} prefix=""
+    if [[ $1 == */* ]]; then
+        prefix=${1#*/}
+        [[ $prefix =~ ^[1-9][0-9]{0,2}$ ]] || return 1
+    fi
+    if valid_ipv4 "$addr"; then
+        [[ -z $prefix ]] || ((prefix >= 8 && prefix <= 32))
+    elif valid_ipv6 "$addr"; then
+        [[ -z $prefix ]] || ((prefix >= 16 && prefix <= 128))
+    else
+        return 1
+    fi
+}
+if [[ ${API_PEER_IPS:-} == *[$'\n\r']* ]]; then
+    echo "Invalid API_PEER_IPS: a line break (addresses separated by spaces, on one line)" >&2
+    exit 2
+fi
+peers_raw=$(printf '%s' "${API_PEER_IPS:-}" | tr '[:upper:]' '[:lower:]')
+API_PEER_IPS=""
+set -f
+for peer in $peers_raw; do
+    if ! valid_peer_ip "$peer" || [[ " $API_PEER_IPS " == *" $peer "* ]]; then
+        set +f
+        echo "Invalid API_PEER_IPS: '${peer}' (IPv4 or IPv6 addresses or CIDR ranges," \
+            "at most /8 or /16 wide, space-separated, no duplicates)" >&2
+        exit 2
+    fi
+    API_PEER_IPS=${API_PEER_IPS:+$API_PEER_IPS }$peer
+done
+set +f
+unset peers_raw peer
 if [[ $EUID -eq 0 ]]; then
     echo "Run this as the login user (debian), not as root; it uses sudo itself." >&2
     exit 2
@@ -677,12 +756,26 @@ cert_missing_names() {
 
 # render_nginx FULL(0|1): HTTP-only until the certificate exists. The EXTRA_DOMAINS
 # answer ACME and redirect on port 80 always; their HTTPS redirect block is installed
-# only once the certificate covers them all.
+# only once the certificate covers them all. API_PEER_IPS: one `allow` line each in
+# /api/, then `deny all;`; unset, no allowlist (the marker section is dropped).
 render_nginx() {
     local extra_sed=(-e 's/ __EXTRA_DOMAINS__//g')
     [[ -n $EXTRA_DOMAINS ]] && extra_sed=(-e "s/__EXTRA_DOMAINS__/$EXTRA_DOMAINS/g")
     sed "${extra_sed[@]}" -e "s/__DOMAIN__/$DOMAIN/g" -e "s/__SITE__/$SITE/g" \
         "$DEPLOY_DIR/nginx/site.conf.template" >"$WORK/site.conf"
+    if [[ -n $API_PEER_IPS ]]; then
+        awk -v peers="$API_PEER_IPS" '
+            /^[ \t]*__API_ALLOW__$/ {
+                indent = $0; sub(/__API_ALLOW__$/, "", indent)
+                n = split(peers, list, " ")
+                for (i = 1; i <= n; i++) print indent "allow " list[i] ";"
+                next
+            }
+            { print }' "$WORK/site.conf" >"$WORK/site.conf.api"
+        mv "$WORK/site.conf.api" "$WORK/site.conf"
+    else
+        sed -i.bak '/^# __API_ALLOW_BEGIN__$/,/^# __API_ALLOW_END__$/d' "$WORK/site.conf"
+    fi
     if [[ $1 == 0 ]]; then
         sed -i.bak '/^# __HTTPS_BEGIN__$/,$d' "$WORK/site.conf"
     elif [[ -z $EXTRA_DOMAINS || -n $(cert_missing_names) ]]; then
@@ -696,6 +789,15 @@ render_nginx() {
 }
 
 step "Nginx ($SITE)"
+if [[ -z $API_PEER_IPS ]]; then
+    echo "  /api/ has no IP allowlist (API_PEER_IPS not set; production sets it)."
+    if sudo test -f "$NGINX_SITE" && sudo grep -qE '^# __API_ALLOW_BEGIN__$' "$NGINX_SITE"; then
+        {
+            echo "  WARNING: API_PEER_IPS is not set, but $NGINX_SITE limits /api/ to an"
+            echo "  allowlist; this run removes it. Give API_PEER_IPS on every run for this site."
+        } >&2
+    fi
+fi
 if [[ -z $EXTRA_DOMAINS ]] && sudo test -f "$NGINX_SITE" \
     && sudo grep -qE '^# __EXTRA_BEGIN__$|^[[:space:]]*server_name[[:space:]]+[^;[:space:]]+[[:space:]]+[^;[:space:]]' \
         "$NGINX_SITE"; then
