@@ -2,7 +2,8 @@
 the configuration snapshot, epic-admin-interface entry 4; the client record events,
 entry 8; the snapshot's catalogue section, epic-catalogue entry 2; remote reads, entry 5;
 the contact message events, entry 9; the snapshot's country map section,
-epic-catalogue entry 3; remote writes, entry 6; hub lookups, entry 7)."""
+epic-catalogue entry 3; remote writes, entry 6; hub lookups, entry 7; the snapshot's
+provider costs section, epic-catalogue entry 4)."""
 
 from decimal import Decimal
 
@@ -13,7 +14,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.18.0'
+    assert mytp_core.__version__ == '0.19.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -83,3 +84,20 @@ def test_vendored_mytp_core_has_hub_lookups():
     assert MAX_LOOKUP_BYTES == 64 * 1024
     assert errors.HUB_LOOKUP_STATUS == {'invalid_request': 400, 'region_mismatch': 403,
                                         'not_found': 404}
+
+
+def test_vendored_mytp_core_has_the_provider_costs_section():
+    from datetime import date
+
+    from mytp_core.contracts import ProviderCost, ProviderCostProduct, ProviderCostsSection
+    assert ConfigSnapshot.model_fields['provider_costs'].is_required() is False
+    assert ProviderCostsSection.model_fields.keys() == {'products'}
+    assert ProviderCostProduct.model_fields.keys() == {'id', 'code', 'currency', 'active',
+                                                       'costs'}
+    assert ProviderCost.model_fields.keys() == {'valid_from', 'valid_to', 'face',
+                                                'discounted'}
+    product = ProviderCostProduct.model_validate({
+        'id': '6f1c2a4e-8b3d-4c5e-9f7a-1b2c3d4e5f60', 'code': 'DM', 'currency': 'EUR',
+        'active': True, 'costs': [{'valid_from': '2026-07-01', 'valid_to': None,
+                                   'face': '100.00', 'discounted': '90.00'}]})
+    assert product.cost_at(date(2026, 7, 1)) == Decimal('90.00')
