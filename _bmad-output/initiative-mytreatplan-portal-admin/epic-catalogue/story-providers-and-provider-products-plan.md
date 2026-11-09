@@ -3,7 +3,7 @@ title: 'Providers and provider products'
 type: 'feature'
 ticket: '4'
 created: '2026-11-09'
-status: 'built'
+status: 'done'
 baseline_revision: 'portal 3726f5b, core 7cedb5e, admin 5763467'
 route: 'full'
 route_source: 'auto'
@@ -128,3 +128,13 @@ Opus review of core + admin (2026-11-09); the portal only vendors the core. No b
 
 **Manual checks (staging, admindev):**
 - Create a provider with fiscal details and a product priced 100 until 30 June, 90 from 1 July; cost lookups either side; an overlapping range refused; the raw database shows ciphertext for fiscal fields; deactivate the provider → hidden from the available list, history kept; dev's applied snapshot holds the costs section without provider details.
+
+## Staging
+
+2026-11-09, run by Claude with the user's delegation. mytp-core v0.19.0 (tag pushed); admin PR #25 and portal PR #83 merged after their checks passed, deploys green on admindev, dev and dev-ae. Local suites: core 1334 (+ 1338 on PostgreSQL); admin 1136 passed / 10 skipped (SQLite), 1146 on PostgreSQL 17; portal 2336 passed / 8 skipped + the 3 known PostgreSQL-only failures (one flaky Chromium test passed 3 reruns). On admindev, through the services as a Sysadmin:
+- a made-up provider STG54 with fiscal details and product STG54-P1 priced 100 until 30 June, 90 from 1 July: cost 30 June 100.00 EUR, 1 July 90.00 EUR, a date before the first range None;
+- an overlapping range refused;
+- the raw table holds no clear bank account; the value decrypts;
+- available for links before; after deactivating the provider not available, both prices kept;
+- snapshot v14 holds STG54-P1's costs and no provider name or fiscal detail; dev and dev-ae applied v14.
+The made-up provider STG54 stays (inactive) on admindev.
