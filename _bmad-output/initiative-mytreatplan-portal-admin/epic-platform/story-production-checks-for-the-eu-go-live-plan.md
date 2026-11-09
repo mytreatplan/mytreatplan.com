@@ -3,7 +3,7 @@ title: 'Production checks for the EU go-live (with the PostgreSQL 18 client)'
 type: 'chore'
 ticket: '14'
 created: '2026-11-09'
-status: 'built'
+status: 'done'
 baseline_revision: 'portal d796b10, admin 60a90f8'
 route: 'full'
 route_source: 'user'
@@ -122,3 +122,12 @@ Opus review, security and operations focus (2026-11-09); no blocker; the fingerp
 
 **Manual checks (staging):**
 - Re-provision the host; `pg_dump --version` 18; `backupdb` on dev, dev-ae and admindev all upload with 2 recipients; (after the user's 1.13 steps) `restoretest` on admindev against its scratch database on the 18 service.
+
+## Staging
+
+2026-11-09, run by Claude with the user's delegation. Portal PR #84 and admin PR #26 merged after their checks passed; deploys green. Portal suite 2353 passed / 8 skipped + the 3 known PostgreSQL-only failures. On the host:
+- both deploy copies refreshed (`PG_CLIENT_PACKAGES` present in each); dev re-provisioned: gpg installed, the PGDG key, sources and preferences written, `postgresql-client-18` installed (5 changes); dev-ae no change; admindev only its `jobs.conf` comment;
+- `pg_dump` 18.6; `apt-cache policy`: libpq5 and postgresql-client-18 from PGDG 18.6, postgresql-common not installed; the `postgresql-client` metapackage removed (`Installed: (none)`), `postgresql-client-17` kept;
+- the three sites restarted; each loads libpq 180006 (`psycopg.pq` python implementation), `check --database default` clean (a `verify-full` connection), `/healthz` ok;
+- `backupdb` on each site: dev 348722 bytes, dev-ae 225808 bytes and **admindev 304492 bytes** under `staging-admindev/`, each to 2 recipients — admindev's first successful backup since at least 2026-11-03.
+- Still with the user (1.13's steps): admindev's restore test once `admindev_restore_test` exists on its PostgreSQL 18 service.
