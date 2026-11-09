@@ -35,7 +35,7 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp-dev/shared/kms-client.*`; daily `kmscheck` job |
 | Signup and login codes | Twilio Verify (email via SendGrid, WhatsApp, SMS); credentials in `shared/settings.env` ("Twilio Verify") |
 | Geo-IP | DB-IP Lite country database `/srv/mytp-dev/shared/geoip/dbip-country-lite.mmdb` (CC BY 4.0), monthly `geoipupdate` job ("Geo-IP database") |
-| Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute; configuration snapshot pulled from it, `pullconfig` job every 5 minutes, `show_config`; the catalogue it carries, `price_catalogue`; the country map it carries ("Interface with the admin site", "Outbox", "Configuration snapshot", "Catalogue", "Country map") |
+| Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute; configuration snapshot pulled from it, `pullconfig` job every 5 minutes, `show_config`; `checkinterface` job every 5 minutes, one Sentry warning per outage of either; the catalogue it carries, `price_catalogue`; the country map it carries ("Interface with the admin site", "Interface alerts", "Outbox", "Configuration snapshot", "Catalogue", "Country map") |
 | Errors and job alerts | Sentry (EU region), one environment per site (`dev`, `dev-ae`, `admindev`), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -2126,6 +2126,11 @@ ACME challenge for every name; the HTTPS redirect block is installed only once t
 certificate covers them all. The value is not stored on the server: a run without it
 removes the redirect and says so with a WARNING.
 
+**`/api/` allowlist (production only).** `API_PEER_IPS` (space-separated IPv4 or IPv6
+addresses or CIDR ranges) limits `/api/` to the peer sites, on every run, like
+`EXTRA_DOMAINS`; no staging site sets it. See [IP allowlist on
+`/api/`](#ip-allowlist-on-api-production).
+
 What the shared tooling expects from any site repo (the portal, the admin site
 `mytreatplan/mytp-admin`):
 
@@ -2579,7 +2584,8 @@ The admin site (`admindev` on staging) and each portal site call each other on `
 caller's own Ed25519 key (mytp-core's `mytp_core.interface`: a JWT with the issuer, the
 audience, a 60-second life, a one-time id and the hash of the request) and checked
 against the caller's public key, so Nginx's `/api/` block has no team password (bodies up
-to 1 MB; production adds an IP allowlist, epic-eu-golive). A refused call is a 401 with
+to 1 MB; production also limits it to the peers' addresses, see [IP allowlist on
+`/api/`](#ip-allowlist-on-api-production)). A refused call is a 401 with
 only a code (`missing`, `signature`, `unknown_key`, `audience`, `expired`,
 `request_hash`, `replayed`); a site without a signing key answers 503 (`unavailable`).
 
@@ -2660,16 +2666,230 @@ server, once the release with the `integration` app is live on dev and the one w
 dev-ae: the same steps with `mytp-dev-ae`, its own key (`INTERFACE_PUBLIC_KEY=dev-ae:...`)
 and, on admindev, `add_peer_key ae <kid> <public key> --site dev-ae`.
 
+### IP allowlist on `/api/` (production)
+
+On production, Nginx lets only the peer sites' addresses reach `/api/` (epic-admin-interface
+entry 10, I2): `API_PEER_IPS` given to `provision.sh` (space-separated IPv4 or IPv6
+addresses or CIDR ranges) becomes one `allow` line each inside the `/api/` block, then
+`deny all;`, so any other address gets a 403 before Django; the rest of the site (`/`,
+`/healthz`, `/static/`, the ACME challenge) is unaffected. Each portal allows the admin
+site's egress addresses; the admin site allows the portals' (its README, "Interface with
+the portals"). The values are checked before any change (exit 2: `Invalid API_PEER_IPS`;
+no range wider than `/8` for IPv4 or `/16` for IPv6, no duplicates, all on one line).
+Not stored on the server: give it on every run, as
+`EXTRA_DOMAINS`:
+
+```sh
+API_PEER_IPS="<admin IPv4> <admin IPv6>" bash ~/deploy/provision.sh <site> <domain> <htpasswd-user>
+```
+
+Without it (staging) no allowlist is rendered and the run prints `/api/ has no IP
+allowlist (API_PEER_IPS not set; ...)`; a run without it on a site that has one removes it
+with a WARNING. Nginx checks the address that connects to it, so this holds only while
+nothing (a CDN, a load balancer) sits in front; list the IPv6 address too when the peer
+reaches the site over IPv6. Check after a run: from the peer, `ping_peer` passes; from
+anywhere else, `curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/api/v1/ping`
+prints `403` (and `/` still asks for the password, or answers, as before).
+
+Render check without touching a site (from a checkout, any machine with bash; a scratch
+directory, removed afterwards):
+
+```sh
+(set -e; d=$(mktemp -d "${TMPDIR:-/tmp}/apicheck.XXXXXX"); trap 'rm -rf "$d"' EXIT; cp -r deploy "$d/"; cd "$d"
+sed -n '/^# EXTRA_DOMAINS: each name/,/^if \[\[ \$EUID -eq 0 \]\]/p' deploy/provision.sh | sed '$d' > check.sh
+sed -n '/^render_nginx() {/,/^}/p' deploy/provision.sh >> check.sh
+API_PEER_IPS="203.0.113.7 2001:db8::1" bash -c 'set -euo pipefail; DOMAIN=example.com SITE=prod DEPLOY_DIR=deploy WORK=. NGINX_SITE=out.conf
+install_file() { cp "$1" "$2"; return 1; }; . ./check.sh; render_nginx 1'
+sed -n '/location \/api\//,/^    }/p' out.conf)
+```
+
+It prints the `/api/` block with `allow 203.0.113.7;`, `allow 2001:db8::1;` and
+`deny all;`; with `API_PEER_IPS="999.1.1.1"` it stops with `Invalid API_PEER_IPS`.
+
 ### Rotate the signing key
 
-1. Generate the new key as in step 1 but print it only (no `>>`); give its public key to
-   the admin site (`add_peer_key`), which then knows both kids.
-2. Replace the `INTERFACE_SIGNING_KMS_KEY` line with the new one and restart Gunicorn;
-   `ping_peer admindev` passes with the new kid.
-3. On admindev, `retire_peer_key eu <old kid>`.
+Each site signs with one key (`INTERFACE_SIGNING_KMS_KEY`, one kid) and accepts its peers'
+keys by kid: the admin site keeps the portals' in `PeerKey` rows (`add_peer_key`,
+`retire_peer_key`, read on every call, no restart), a portal keeps the admin site's in
+`INTERFACE_PEER_KEYS` (read at start: restart Gunicorn and the worker after a change; jobs
+read it at each run). A rotation first makes the peer accept the new key next to the old
+one, then switches the signer, verifies, and only then drops the old key, so no call fails
+during the switch. Use a kid never used before (`sig<date><time>`). Run each command
+yourself, in your own terminal on the server; the wrapped key goes from the command into
+a file only, never on the screen. After every edit of `settings.env`, run `manage.py
+check` first and restart only when it reports no issues (a typo found then costs nothing;
+found by a restart it stops the site).
 
-To rotate admindev's key, add its new public key to `INTERFACE_PEER_KEYS` (comma-separated,
-both kids), restart, let admindev switch, then remove the old entry and restart again.
+Note the rotation start before step 1 (`date -u +%Y-%m-%dT%H:%M:%SZ`, e.g.
+`2026-11-10T09:00:00Z`): the verify queries below count only the calls since then.
+
+**A portal's key** (dev; dev-ae the same with `mytp-dev-ae` and region `ae`):
+
+1. **dev: generate the new key** into a file next to `settings.env`, and print only its
+   public key:
+
+   ```sh
+   cd /srv/mytp-dev/current
+   sudo -u mytp-dev sh -ec 'umask 077
+   out=$(./venv/bin/python manage.py generate_interface_signing_key "sig$(date -u +%Y%m%d%H%M)")
+   printf "%s\n" "$out" | grep "^INTERFACE_SIGNING_KMS_KEY=" > /srv/mytp-dev/shared/signing-key.new
+   printf "%s\n" "$out" | grep "^INTERFACE_PUBLIC_KEY="'
+   ```
+
+   It prints `INTERFACE_PUBLIC_KEY=dev:<new kid>:<public key>`.
+2. **admindev: accept it** next to the old one:
+   `sudo -u mytp-admindev ./venv/bin/python manage.py add_peer_key eu <new kid> <public key>`.
+3. **dev: switch the signer** (the old line is kept in `signing-key.old` until step 5),
+   check, then restart Gunicorn and the worker:
+
+   ```sh
+   sudo -u mytp-dev sh -ec 'umask 077; cd /srv/mytp-dev/shared
+   grep "^INTERFACE_SIGNING_KMS_KEY=" settings.env > signing-key.old
+   { grep -v "^INTERFACE_SIGNING_KMS_KEY=" settings.env; cat signing-key.new; } > settings.env.tmp
+   mv settings.env.tmp settings.env; rm signing-key.new'
+   sudo grep -c '^INTERFACE_SIGNING_KMS_KEY=.' /srv/mytp-dev/shared/settings.env   # 1
+   sudo -u mytp-dev ./venv/bin/python manage.py check                            # no issues, then:
+   sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker
+   ```
+
+4. **Verify both ways**: dev's `ping_peer admindev` and admindev's `ping_peer dev` pass;
+   admindev's call log since the rotation start shows dev's calls with the new kid, and
+   none refused `unknown_key`:
+
+   ```sh
+   # on admindev; <rotation start> as noted, e.g. 2026-11-10T09:00:00Z
+   sudo -u mytp-admindev ./venv/bin/python manage.py shell -c "from interface.models import InterfaceCall as C; since = C.objects.filter(received_at__gte='<rotation start>'); print([(c.iss, c.kid, c.accepted, c.reason) for c in since.filter(iss='dev')[:3]]); print(since.filter(accepted=False, reason='unknown_key').count())"   # new kid; 0
+   ```
+
+   Something wrong: put `signing-key.old`'s line back the same way, `check`, restart (the
+   old kid is still accepted).
+5. **Retire the old key**: on admindev `retire_peer_key eu <old kid>`; dev's
+   `ping_peer admindev` still passes; then `sudo -u mytp-dev rm
+   /srv/mytp-dev/shared/signing-key.old`.
+
+**admindev's key** (its README, "Interface with the portals", has the admindev side).
+Each portal's `INTERFACE_PEER_KEYS` goes through three states (comma-separated, no
+spaces):
+
+| When | `INTERFACE_PEER_KEYS=` line |
+|------|-----------------------------|
+| Before | `INTERFACE_PEER_KEYS=admindev:<old kid>:<old public key>` |
+| After step 2 | `INTERFACE_PEER_KEYS=admindev:<old kid>:<old public key>,admindev:<new kid>:<new public key>` |
+| After step 5 | `INTERFACE_PEER_KEYS=admindev:<new kid>:<new public key>` |
+
+1. **admindev: generate the new key** into `/srv/mytp-admindev/shared/signing-key.new`
+   as in step 1 above (with `mytp-admindev`), which prints
+   `INTERFACE_PUBLIC_KEY=admindev:<new kid>:<public key>`.
+2. **Each portal (dev, dev-ae): accept it**: `sudoedit /srv/mytp-dev/shared/settings.env`
+   and make the line, both kids:
+
+   ```sh
+   INTERFACE_PEER_KEYS=admindev:<old kid>:<old public key>,admindev:<new kid>:<new public key>
+   ```
+
+   then `sudo -u mytp-dev ./venv/bin/python manage.py check` (no issues), and only then
+   `sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker`.
+3. **admindev: switch the signer** as in step 3 above (with `mytp-admindev` and
+   `/srv/mytp-admindev/shared`): `check` first, then restart `mytp-admindev-gunicorn
+   mytp-admindev-worker`.
+4. **Verify both ways**: admindev's `ping_peer dev` and `ping_peer dev-ae` pass; dev's
+   `ping_peer admindev` passes; dev's call log since the rotation start shows admindev's
+   calls with the new kid, none refused `unknown_key`; dev's `pull_config` prints
+   `unchanged` or `applied` (the snapshot is signed with the new key):
+
+   ```sh
+   # on dev; <rotation start> as noted
+   sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from integration.models import InterfaceCall as C; since = C.objects.filter(received_at__gte='<rotation start>'); print([(c.iss, c.kid, c.accepted, c.reason) for c in since.filter(iss='admindev')[:3]]); print(since.filter(accepted=False, reason='unknown_key').count())"   # new kid; 0
+   ```
+
+5. **Each portal: drop the old key**: `sudoedit` again and remove the
+   `admindev:<old kid>:<old public key>` entry and its comma, leaving
+
+   ```sh
+   INTERFACE_PEER_KEYS=admindev:<new kid>:<new public key>
+   ```
+
+   then `check` (no issues), restart Gunicorn and the worker, `ping_peer admindev` from
+   the portal and `ping_peer <portal>` from admindev; on admindev delete
+   `signing-key.old`.
+
+**A compromised key** (the wrapped key or the KMS service key leaked, or the server): stop
+trusting it first, then rotate; calls fail in between, and that is accepted.
+
+- A portal's key: on admindev at once `retire_peer_key <region> <kid>`. The portal's calls
+  are refused (`unknown_key`) until its new key is in: outbox events stay pending and
+  retry, config pulls fail (the last good snapshot stays), hub lookups fail. Then steps
+  1-4 of the portal rotation (step 5's retire is done; step 4's `unknown_key` count is
+  then not 0: only the calls after the switch must carry the new kid); the pending events
+  go at their next attempt (at most 60 minutes later), and the `checkinterface` warnings
+  may fire in between.
+- admindev's key: on each portal at once remove admindev's entry from
+  `INTERFACE_PEER_KEYS` (`sudoedit`; with no other entry the line becomes
+  `INTERFACE_PEER_KEYS=`), `check`, then restart Gunicorn and the worker (nudges, remote
+  reads and writes, and every snapshot are refused until the new key is in; the portals
+  keep their applied snapshot). Then steps 1-4 of admindev's rotation, where step 2 puts
+  in only the new entry:
+
+  ```sh
+  INTERFACE_PEER_KEYS=admindev:<new kid>:<new public key>
+  ```
+
+- Either way: delete `signing-key.old`, and when the KMS service key itself leaked, rotate
+  it too ([Rotate the service key](#rotate-the-service-key)).
+
+### Interface alerts
+
+Cron monitors are off on the current Sentry plan, so each portal checks the interface
+itself (epic-admin-interface entry 10, I4 and I5; `integration.alerts`): the
+`checkinterface` job every 5 minutes (at :02, :07, ... UTC; `manage.py
+check_interface`) sends one Sentry warning per outage per kind:
+
+| Kind | Warns when | Message |
+|------|-----------|---------|
+| `outbox` | the oldest pending outbox event was recorded more than `OUTBOX_ALERT_MINUTES` (15) ago: admindev not taking events, or the dispatcher stopped | `Interface outbox not delivering for over 15 minutes: <n> event(s) pending, the oldest for <m> minutes` |
+| `config` | the last good config pull is more than `CONFIG_ALERT_MINUTES` (60) old (before the first good one: the first attempt; before any attempt at all: the first check that found none): admindev not answering, or `pullconfig` stopped or never ran | `Configuration snapshot not pulled for over 60 minutes: last good pull <m> minutes ago` (or `no good pull yet, first attempt <m> minutes ago`, or `no pull tried yet, first seen <m> minutes ago`) |
+
+Counts and ages only: never a payload, an event or aggregate id, a URL or an error code
+(`show_config` and the outbox query above have the details). The warning is marked in
+`integration_interfacealert` (one row per kind, `warned_at`) before it is sent; later runs
+send nothing while the outage lasts; the first run that finds the kind healthy again clears
+it (`interface alert cleared: <kind>` in the job's journal), so the next outage warns again.
+The check only reads the outbox and the pull's state: it never sends, retries or changes
+an event, never pulls, and never writes `integration_configstate` (a site with no pull
+tried yet keeps the start of that outage in its own row, `since`). The outbox's warning
+per event failing 24 hours and the pull's own warning after an hour of failed pulls (with
+its error code) stay as they were. When the pull has already sent its warning for the
+current outage (`integration_configstate.warned_at` set), the check sends no `config`
+warning (`still_failing`); the other way round (the check warns first, the pull later in
+the same outage), both arrive.
+
+Thresholds: `OUTBOX_ALERT_MINUTES` and `CONFIG_ALERT_MINUTES` in `shared/settings.env`,
+whole minutes of at least 1 (`manage.py check`: `integration.E008` / `E009`); jobs read
+them at each run, no restart needed. The job prints one line per kind:
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py check_interface
+# check_interface: outbox ok (0 events pending; threshold 15 minutes)
+# check_interface: config ok (last good pull 2 minutes ago; threshold 60 minutes)
+```
+
+Outcomes: `ok`, `warned` (sent now), `still_failing` (already warned, here or by the
+pull), `recovered` (cleared now), `not_checked` (config: no pull tried yet, for less than
+the threshold). The timer reaches a site when
+`provision.sh` runs again after the merge's deploy (see [Sites on the staging
+host](#sites-on-the-staging-host)); disable its Sentry monitor after its first run as for
+the other jobs.
+
+Staging check (dev): set `OUTBOX_ALERT_MINUTES=2` and `CONFIG_ALERT_MINUTES=5` in dev's
+`settings.env`; stop admindev, its socket too, or the next call starts it again (`sudo
+systemctl stop mytp-admindev-gunicorn.socket mytp-admindev-gunicorn.service`); record an
+event (sign up, or change a client in the Django admin); after the next runs Sentry shows
+one `outbox` and one `config` warning for dev and no second one (`check_interface` prints
+`still_failing`); start admindev again (`sudo systemctl start
+mytp-admindev-gunicorn.socket mytp-admindev-gunicorn.service`); once the event is delivered
+(at its next attempt; the wait doubles with each failure, so after a 10-minute stop it
+may be up to 8 minutes) and a pull is good, the next run prints
+`recovered` for both. Then remove the two lines from `settings.env`.
 
 ### Outbox
 
@@ -2686,7 +2906,7 @@ its own transaction: the payload is checked against the type's closed model (myt
 | Sending | `dispatchoutbox` job every minute (`manage.py dispatch_outbox`), plus one short (10 s) task on the worker after each transaction that recorded events; one signed `POST <admin>/api/v1/events` per event, to the only `INTERFACE_PEERS` entry (or `INTERFACE_ADMIN_SITE`) |
 | Order | per aggregate, the lowest pending `sequence` only (numbered by the aggregate's counter row, `integration_outboxaggregate`): a failing event holds back its aggregate's later events, never other aggregates' |
 | Answers | `accepted`, `duplicate`, `stale` → `delivered`; `rejected` → `rejected` (final, listed on the admin site under "Interface events"); refused here before sending (over 256 KB, no longer valid) → `rejected` (final, `last_error` says why, not listed on the admin site, so a warning line and one Sentry warning "Outbox event rejected before sending" with the event id, type and reason, never the payload); anything else → retried. A run stops after 3 failures in a row that say the admin site is down (no answer, 5xx, 401); failures of single events don't stop it |
-| Retries | for ever, after min(2^(attempts-1), 60) minutes; `attempts`, `next_attempt_at` and `last_error` (a code and a short text, never the payload) on the row; one Sentry warning per event failing 24 hours (event id, type, error code) |
+| Retries | for ever, after min(2^(attempts-1), 60) minutes; `attempts`, `next_attempt_at` and `last_error` (a code and a short text, never the payload) on the row; one Sentry warning per event failing 24 hours (event id, type, error code); sooner, the `checkinterface` job's one warning per outage when the oldest pending event is 15 minutes old ([Interface alerts](#interface-alerts)) |
 | Retention | delivered rows deleted after 30 days by the daily `purgeoutbox` job (04:25 UTC), payload included; rejected and pending rows are kept |
 | Logs | `journalctl -u mytp-dev-worker` and the job's journal: one line per event recorded, delivered, rejected or not delivered (event id, type, error code) |
 
@@ -2814,7 +3034,7 @@ created here.
 | Check | the snapshot's signature (admindev's key from `INTERFACE_PEER_KEYS`, `typ: config`, this site as the audience, the SHA-256 of the snapshot and its version) and its shape (mytp-core's `verify_snapshot`) before anything is applied |
 | Apply | one transaction, the state row locked: a higher version replaces the directory (`integration_admindirectoryentry`) and every registered section (`register_section_applier`: the catalogue's `catalogue_*` tables, which a snapshot without the section empties; the country map's `regions_country` rows, which a snapshot without the section leaves as they are) and becomes the applied one (`integration_configstate`); the same version changes nothing; an older one is refused (`stale`) |
 | Refusals | the applied snapshot stays; `last_error` holds the code only: `network`, `http_<status>[_<code>]`, `bad_answer`, `bad_signature`, `audience`, `expired`, `invalid_body`, `newer_format` (the admin site needs a newer mytp-core: a warning line once per version), `stale`, `not_configured`, `signing_key` (the KMS could not unwrap the signing key), `apply_failed`; `pull_config` prints one line with the code and exits 0 (the outage warning below reports it once), except `not_configured` (no admin site, peer keys or signing key), which fails the job so its Sentry monitor shows it |
-| Outage | no good pull for an hour: one Sentry warning "Configuration snapshot not pulled for an hour (<code>)" per outage, never the contents; the next good pull resets it |
+| Outage | no good pull for an hour: one Sentry warning "Configuration snapshot not pulled for an hour (<code>)" per outage, never the contents; the next good pull resets it. A pull that stopped running altogether is caught by the `checkinterface` job ([Interface alerts](#interface-alerts)) |
 
 Look at it (names of admin users are not patient data):
 

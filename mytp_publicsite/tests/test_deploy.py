@@ -567,8 +567,9 @@ def _provision_slice(start, end):
 
 
 def _run_provision_steps(tmp_path, *blocks, extra='', sans=None, cert=False, ip_of=None,
-                         installed=None):
-    """Runs the EXTRA_DOMAINS validation and then the given provision.sh blocks for the
+                         installed=None, peers=''):
+    """Runs the EXTRA_DOMAINS and API_PEER_IPS (`peers`) validation and then the given
+    provision.sh blocks for the
     site prod on mytreatplan.com, with sudo as a plain call and nginx, systemctl, openssl,
     certbot, getent and ip as stubs that log to calls.log. Every path is in tmp_path.
     `sans`: the names the existing certificate covers; `ip_of`: name -> IPv4 (default
@@ -608,6 +609,7 @@ ip() {{ echo "2: eth0    inet 192.0.2.10/24 brd 192.0.2.255 scope global eth0"; 
 SITE=prod
 DOMAIN=mytreatplan.com
 EXTRA_DOMAINS={q(extra)}
+API_PEER_IPS={q(peers)}
 DEPLOY_DIR={q(str(DEPLOY))}
 WORK={q(str(work))}
 NGINX_SITE={q(str(site))}
@@ -648,6 +650,7 @@ def test_without_extra_domains_the_site_renders_as_before(tmp_path, full):
     conf, calls = _render_site(tmp_path, full, cert=bool(full))
     old = (DEPLOY / 'nginx' / 'site.conf.template').read_text()
     old = re.sub(r'\n# __EXTRA_BEGIN__\n.*?# __EXTRA_END__\n', '\n', old, flags=re.S)
+    old = re.sub(r'\n# __API_ALLOW_BEGIN__\n.*?# __API_ALLOW_END__\n', '\n', old, flags=re.S)
     old = old.replace(' __EXTRA_DOMAINS__', '').replace('__DOMAIN__', 'mytreatplan.com')
     old = old.replace('__SITE__', 'prod')
     if not full:
@@ -755,6 +758,126 @@ def test_provision_warns_when_a_run_without_extra_domains_drops_the_redirect(tmp
     result, _, _ = _run_provision_steps(plain, nginx_step, installed=plain_conf)
     assert result.returncode == 0, result.stderr
     assert 'WARNING' not in result.stderr
+
+
+# --- The /api/ peer-IP allowlist (epic-admin-interface entry 10, I2) ---------------------
+
+PEERS = '203.0.113.7 198.51.100.0/24 2001:db8::1 2001:db8:10::/48'
+
+
+def _location(conf, path):
+    match = re.search(r'^    location ' + re.escape(path) + r' \{\n(.*?)^    \}', conf, re.S | re.M)
+    return match.group(1) if match else None
+
+
+def _directives(conf):
+    """The config without its comments."""
+    return '\n'.join(line for line in conf.splitlines() if not line.lstrip().startswith('#'))
+
+
+@bash_only
+def test_the_api_allowlist_allows_each_peer_then_denies_all(tmp_path):
+    conf, _ = _render_site(tmp_path, 1, cert=True, peers=PEERS)
+    api = _location(conf, '/api/')
+    rules = [line.strip() for line in api.splitlines()
+             if line.strip().startswith(('allow ', 'deny '))]
+    assert rules == ['allow 203.0.113.7;', 'allow 198.51.100.0/24;', 'allow 2001:db8::1;',
+                     'allow 2001:db8:10::/48;', 'deny all;']
+    # Inside /api/ only: the public site, the probe, static files and port 80 unaffected.
+    outside = _directives(conf.replace(api, ''))
+    assert 'allow ' not in outside and 'deny ' not in outside
+    for path in ('/', '= /healthz', '/static/', '/.well-known/acme-challenge/'):
+        block = _location(conf, path)
+        assert block is not None and 'deny' not in block and 'allow' not in block
+    assert '__API_ALLOW__' not in conf
+    assert '__' not in '\n'.join(line for line in conf.splitlines() if not line.startswith('#'))
+
+
+@bash_only
+@pytest.mark.parametrize('full', [0, 1])
+def test_without_api_peer_ips_the_api_has_no_allowlist(tmp_path, full):
+    conf, _ = _render_site(tmp_path, full, cert=bool(full))
+    directives = _directives(conf)
+    assert 'deny all' not in directives and 'allow ' not in directives
+    assert '# __API_ALLOW_BEGIN__' not in conf and '__API_ALLOW__' not in conf
+    if full:
+        api = _location(conf, '/api/')
+        assert 'auth_basic off;' in api and 'proxy_pass http://mytp-prod-gunicorn;' in api
+
+
+@bash_only
+def test_api_peer_ips_are_normalised(tmp_path):
+    conf, _ = _render_site(tmp_path, 1, cert=True, peers='  2001:DB8::AB\t203.0.113.7  ')
+    api = _location(conf, '/api/')
+    assert 'allow 2001:db8::ab;\n        allow 203.0.113.7;\n        deny all;' in api
+
+
+@bash_only
+@pytest.mark.parametrize('peers', [
+    '999.1.1.1', '1.2.3', '1.2.3.4.5', '01.2.3.4', '1.2.3.4/33', '1.2.3.4/0', '1.2.3.4/',
+    '1.2.3.4/024', '/24', '::/0', '2001:db8::/129', '2001:db8::1::1', '2001:db8:::1',
+    '1:2:3:4:5:6:7:8:9', '1:2:3:4:5:6:7', ':1:2:3:4:5:6:7', '1:2:3:4:5:6:7:', 'gggg::1',
+    '12345::1', '::ffff:1.2.3.4', 'fe80::1%eth0', '1.2.3.4,5.6.7.8', 'all', 'unix:',
+    '1.2.3.4;', '1.2.3.4 $(id)', '203.0.113.7 203.0.113.7', '2001:db8::1 2001:DB8::1',
+    # Wider than /8 (IPv4) or /16 (IPv6): no allowlist at all.
+    '0.0.0.0/1', '::/1', '10.0.0.0/7', '128.0.0.0/1', '2000::/15', '/1', '1.2.3.4/1',
+    # Nginx syntax and line breaks.
+    '1.2.3.4{', '}', '{ allow all; }', '1.2.3.4}', '203.0.113.7\n198.51.100.7',
+    '203.0.113.7\r', '203.0.113.7\ndeny all;',
+])
+def test_provision_refuses_bad_api_peer_ips_before_any_change(peers, no_privileges):
+    result = subprocess.run(
+        ['bash', str(DEPLOY / 'provision.sh'), 'prod', 'mytreatplan.com', 'team'],
+        capture_output=True, text=True, env={**no_privileges, 'API_PEER_IPS': peers})
+    assert result.returncode == 2
+    assert 'Invalid API_PEER_IPS' in result.stderr
+    assert 'STUB' not in result.stderr
+
+
+@bash_only
+@pytest.mark.parametrize('peers', [
+    '203.0.113.7', '0.0.0.0', '255.255.255.255/32', '10.0.0.0/8', '::1', '::', 'fe80::',
+    '1:2:3:4:5:6:7:8', '1:2:3:4:5:6:7:8/128', '1::8', '2001:db8::/32', '::1:2:3:4:5:6:7',
+    '2001::/16',
+])
+def test_valid_api_peer_ips_pass_the_check(tmp_path, peers):
+    conf, _ = _render_site(tmp_path, 1, cert=True, peers=peers)
+    assert f'allow {peers};' in _location(conf, '/api/')
+
+
+@bash_only
+def test_provision_says_when_a_run_without_api_peer_ips_drops_the_allowlist(tmp_path):
+    with_list = tmp_path / 'with'
+    with_list.mkdir()
+    conf, _ = _render_site(with_list, 1, cert=True, peers=PEERS)
+    nginx_step = _provision_slice('step "Nginx ($SITE)"', 'if [[ -L /etc/nginx/sites-enabled/default ]]')
+    for peers, warned in (('', True), (PEERS, False)):
+        run = tmp_path / ('unset' if not peers else 'set')
+        run.mkdir()
+        result, _, _ = _run_provision_steps(run, nginx_step, peers=peers, installed=conf)
+        assert result.returncode == 0, result.stderr
+        assert ('WARNING' in result.stderr) is warned
+        assert ('/api/ has no IP allowlist' in result.stdout) is not bool(peers)
+        if warned:
+            assert 'API_PEER_IPS is not set' in result.stderr
+            assert 'this run removes it' in result.stderr
+    # A site that never had one (staging): the notice, no warning.
+    plain_render = tmp_path / 'plain-render'
+    plain_render.mkdir()
+    plain_conf, _ = _render_site(plain_render, 1, cert=True)
+    plain = tmp_path / 'plain'
+    plain.mkdir()
+    result, _, _ = _run_provision_steps(plain, nginx_step, installed=plain_conf)
+    assert result.returncode == 0, result.stderr
+    assert 'WARNING' not in result.stderr
+    assert '/api/ has no IP allowlist (API_PEER_IPS not set' in result.stdout
+    # Re-rendered without it, the allowlist is gone.
+    again = tmp_path / 'again'
+    again.mkdir()
+    block = _provision_slice(*NGINX_FUNCTIONS) + 'render_nginx 1\n'
+    result, rendered, _ = _run_provision_steps(again, block, cert=True, installed=conf)
+    assert result.returncode == 0, result.stderr
+    assert 'deny all' not in _directives(rendered) and 'allow ' not in _directives(rendered)
 
 
 TLS_STEP = ('# --- TLS certificate', '\necho\nif ((CHANGES)); then')

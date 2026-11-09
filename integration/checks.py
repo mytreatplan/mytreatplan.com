@@ -11,7 +11,9 @@ setting is an error naming it, so the runbook's `check` shows it before a call f
 - integration.E006: INTERFACE_SAMPLE_RECORDS on a public site (ROBOTS_NOINDEX off): the
   sample record is for staging only (entry 5);
 - integration.E007: HUB_LOOKUP_TIMEOUT not a number above 0 and at most the lookups'
-  overall cap (`hub.OVERALL_CAP`, 10 seconds; entry 7).
+  overall cap (`hub.OVERALL_CAP`, 10 seconds; entry 7);
+- integration.E008 / E009: OUTBOX_ALERT_MINUTES / CONFIG_ALERT_MINUTES not a whole number
+  of minutes of at least 1 (the `checkinterface` thresholds; entry 10).
 """
 import math
 
@@ -22,6 +24,8 @@ from mytp_core import interface
 ADMIN_SITE_NOT_A_PEER = 'integration.E005'
 SAMPLE_ON_PUBLIC_SITE = 'integration.E006'
 BAD_HUB_LOOKUP_TIMEOUT = 'integration.E007'
+BAD_ALERT_MINUTES = {'OUTBOX_ALERT_MINUTES': ('integration.E008', 15),
+                     'CONFIG_ALERT_MINUTES': ('integration.E009', 60)}
 
 
 @register()
@@ -74,4 +78,12 @@ def check_interface_settings(app_configs=None, **kwargs):
             f'{OVERALL_CAP} (the hub lookups\' overall cap).',
             hint='Remove HUB_LOOKUP_TIMEOUT from settings.env (default 3).',
             id=BAD_HUB_LOOKUP_TIMEOUT))
+    for name, (check_id, default) in BAD_ALERT_MINUTES.items():
+        minutes = getattr(settings, name, default)
+        if not isinstance(minutes, int) or isinstance(minutes, bool) or minutes < 1:
+            errors.append(Error(
+                f'{name} must be a whole number of minutes of at least 1 (the '
+                f'checkinterface alert threshold).',
+                hint=f'Remove {name} from settings.env (default {default}).',
+                id=check_id))
     return errors

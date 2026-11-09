@@ -27,6 +27,9 @@
   per admin user and key), with the request's hash and the answer given, so a retry gets
   the same answer and is applied once. Kept REMOTE_WRITE_RETENTION_DAYS, then deleted by
   the daily `purgeoutbox` job.
+- InterfaceAlert (entry 10, I4, I5): the state of the `checkinterface` job's warnings (one
+  row per kind, `outbox` and `config`): when the one Sentry warning of the current outage
+  was sent; cleared when that kind is healthy again (integration.alerts).
 """
 import uuid
 from decimal import Decimal
@@ -341,3 +344,25 @@ class RemoteWrite(models.Model):
 
     def __str__(self):
         return f'Remote write {self.idempotency_key} ({self.resource} {self.status})'
+
+
+# --- Interface health alerts (entry 10) --------------------------------------------------
+
+class InterfaceAlert(models.Model):
+    """The `checkinterface` job's state for one kind of outage (integration.alerts):
+    `warned_at` is when the one Sentry warning of the current outage was sent (saved
+    before sending; also set, without sending, when the pull had already warned), None
+    while that kind is healthy. No counts or ids are kept."""
+
+    OUTBOX = 'outbox'
+    CONFIG = 'config'
+    KINDS = [(OUTBOX, 'Outbox not delivering'), (CONFIG, 'Configuration snapshot stale')]
+
+    kind = models.CharField(max_length=16, choices=KINDS, primary_key=True)
+    warned_at = models.DateTimeField(null=True, blank=True)
+    # config only: when the check first found no pull tried at all (no ConfigState row),
+    # the start of that outage; cleared once a pull is good.
+    since = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f'{self.kind} alert ({"warned" if self.warned_at else "healthy"})'
