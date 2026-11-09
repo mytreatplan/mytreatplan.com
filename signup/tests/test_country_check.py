@@ -189,3 +189,52 @@ def test_banned_refusal_in_spanish(client, eu_site):
     assert response.status_code == 200
     assert BANNED_ES in response.content.decode()
     assert not PendingRegistration.objects.exists()
+
+
+# The country banned after step 1 (the map is edited on the admin site, epic-catalogue
+# entry 3): checked again before the account is created.
+
+def _ban(code, state='banned'):
+    from regions.models import Country
+    Country.objects.update_or_create(code=code, defaults={'state': state})
+
+
+def test_a_country_banned_before_the_last_step_creates_no_account(client, eu_site):
+    from integration.models import OutboxEvent
+    from .helpers import _mobile_code, _to_mobile_step
+    _to_mobile_step(client, country='ES')
+    _ban('ES')
+    response = _mobile_code(client)
+    assert response.status_code == 302 and response['Location'] == '/en/signup/'
+    assert not get_user_model().objects.exists()
+    assert not OutboxEvent.objects.exists()
+    pending = PendingRegistration.objects.get()
+    assert pending.step == 'account'
+    assert pending.phone_verified_at is not None
+    events = list(Attempt.objects.get().events.filter(event='rejected'))
+    assert [(e.field, e.reason, e.data['country']) for e in events] == [
+        ('country', 'country_banned', 'ES')]
+    html = client.get('/en/signup/').content.decode()
+    assert 'data-country-banned' in html and BANNED_EN_HTML in html
+
+
+def test_the_same_signup_ends_once_an_allowed_country_is_chosen(client, eu_site):
+    from .helpers import _mobile_code, _to_mobile_step
+    _to_mobile_step(client, country='ES')
+    _ban('ES')
+    _mobile_code(client)
+    response = _step1(client, country='PT')
+    assert response.status_code == 302 and response['Location'] == '/en/welcome/'
+    assert get_user_model().objects.get().country.code == 'PT'
+    assert not PendingRegistration.objects.exists()
+
+
+def test_a_lifted_ban_lets_the_signup_finish(client, eu_site):
+    from .helpers import _mobile_code, _to_mobile_step
+    _to_mobile_step(client, country='ES')
+    _ban('ES')
+    assert _mobile_code(client)['Location'] == '/en/signup/'
+    _ban('ES', 'eu')
+    response = _step1(client, country='ES')
+    assert response['Location'] == '/en/welcome/'
+    assert get_user_model().objects.get().country.code == 'ES'
