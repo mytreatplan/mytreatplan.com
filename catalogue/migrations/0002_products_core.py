@@ -8,15 +8,15 @@ mapping as the admin site's own migration and as catalogue.applier: `tps` become
 The next snapshot replaces every row anyway. The new columns have database defaults, so
 the previous release can still apply a snapshot while this one is being deployed.
 
-The applied snapshot version is cleared (`integration.ConfigState.version` to None), so
-the first pull after the deploy applies the admin site's current snapshot again, whatever
-its version. The admin site is deployed first: a catalogue write there between the two
-deploys publishes the new category codes, the previous release applies that snapshot and
-skips every product of a category it does not know, and without this the new release
-would answer "unchanged" for the same version and keep the products missing until the
-next admin write. Until that pull (at most 5 minutes: the `pullconfig` job) `show_config`
-shows no applied version; the stored directory, country map and catalogue rows stay.
-Nothing is done on the way back."""
+The applied snapshot version is cleared (`integration.ConfigState.version` to None): when
+this migration was written, that was how the first pull after the deploy applied the
+admin site's current snapshot again (the admin site is deployed first; a catalogue write
+there between the two deploys publishes the new category codes, and the previous release
+applies that snapshot and skips every product of a category it does not know). It is no
+longer the mechanism and no later migration does it: every release applies the current
+snapshot again at its first pull, because the state row records which release applied
+it (integration.config, `ConfigState.applied_release`). The step stays as it was applied;
+on a new database it clears nothing. Nothing is done on the way back."""
 from decimal import Decimal
 
 from django.db import migrations, models
@@ -31,7 +31,7 @@ def forwards(apps, schema_editor):
         products.filter(pk=product.pk).update(
             category=CATEGORIES.get(product.category, product.category),
             texts={'en': {'name': product.name, 'description': ''}})
-    # Apply the current snapshot again on the first pull (see the module docstring).
+    # Kept as applied; no longer the mechanism (see the module docstring).
     ConfigState = apps.get_model('integration', 'ConfigState')
     ConfigState.objects.using(schema_editor.connection.alias).update(version=None)
 
