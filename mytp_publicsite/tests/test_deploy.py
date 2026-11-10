@@ -846,36 +846,78 @@ def test_valid_api_peer_ips_pass_the_check(tmp_path, peers):
 
 
 @bash_only
-def test_provision_says_when_a_run_without_api_peer_ips_drops_the_allowlist(tmp_path):
+def test_provision_refuses_to_drop_an_installed_allowlist_unless_told_none(tmp_path):
     with_list = tmp_path / 'with'
     with_list.mkdir()
     conf, _ = _render_site(with_list, 1, cert=True, peers=PEERS)
+    guard = _provision_slice('# --- /api/ allowlist guard', '# install_packages PKG...')
     nginx_step = _provision_slice('step "Nginx ($SITE)"', 'if [[ -L /etc/nginx/sites-enabled/default ]]')
-    for peers, warned in (('', True), (PEERS, False)):
-        run = tmp_path / ('unset' if not peers else 'set')
+    # Left out on a site that has one: refused before the Nginx step, nothing changed.
+    refused = tmp_path / 'refused'
+    refused.mkdir()
+    result, after, calls = _run_provision_steps(refused, guard, nginx_step, installed=conf)
+    assert result.returncode == 2
+    assert 'API_PEER_IPS is not set' in result.stderr
+    assert 'API_PEER_IPS=none' in result.stderr and 'Nothing was changed' in result.stderr
+    assert 'Nginx' not in result.stdout
+    assert after == conf and calls == []
+    # In the script the guard runs before the first step that changes the host.
+    script = (DEPLOY / 'provision.sh').read_text()
+    assert script.index('# --- /api/ allowlist guard') < script.index('\nstep "')
+    # A site given an allowlist but still HTTP-only (no certificate yet, so no /api/
+    # block) is refused too, and gets the allowlist once the certificate exists.
+    http_only_render = tmp_path / 'http-only-render'
+    http_only_render.mkdir()
+    http_conf, _ = _render_site(http_only_render, 0, peers=PEERS)
+    assert 'location /api/' not in http_conf
+    http_only = tmp_path / 'http-only'
+    http_only.mkdir()
+    result, after, _ = _run_provision_steps(http_only, guard, nginx_step, installed=http_conf)
+    assert result.returncode == 2 and 'API_PEER_IPS is not set' in result.stderr
+    assert after == http_conf
+    plain_http = tmp_path / 'plain-http'
+    plain_http.mkdir()
+    plain_http_conf, _ = _render_site(plain_http, 0)
+    assert '__API_ALLOW' not in plain_http_conf
+    # "none" (any case, spaces around) removes it on purpose, with a warning; the
+    # addresses given again keep it, silently.
+    for peers, warned in (('none', True), (' NONE ', True), (PEERS, False)):
+        run = tmp_path / f'run-{peers.strip().lower()[:4]}-{len(peers)}'
         run.mkdir()
-        result, _, _ = _run_provision_steps(run, nginx_step, peers=peers, installed=conf)
+        result, _, _ = _run_provision_steps(run, guard, nginx_step, peers=peers, installed=conf)
         assert result.returncode == 0, result.stderr
         assert ('WARNING' in result.stderr) is warned
-        assert ('/api/ has no IP allowlist' in result.stdout) is not bool(peers)
+        assert ('/api/ has no IP allowlist (API_PEER_IPS=none)' in result.stdout) is warned
         if warned:
-            assert 'API_PEER_IPS is not set' in result.stderr
             assert 'this run removes it' in result.stderr
+    # "none" next to an address is no value.
+    mixed = tmp_path / 'mixed'
+    mixed.mkdir()
+    result, after, _ = _run_provision_steps(mixed, guard, peers=f'none {PEERS}', installed=conf)
+    assert result.returncode == 2
+    assert "Invalid API_PEER_IPS: 'none'" in result.stderr
+    assert after == conf
     # A site that never had one (staging): the notice, no warning.
     plain_render = tmp_path / 'plain-render'
     plain_render.mkdir()
     plain_conf, _ = _render_site(plain_render, 1, cert=True)
     plain = tmp_path / 'plain'
     plain.mkdir()
-    result, _, _ = _run_provision_steps(plain, nginx_step, installed=plain_conf)
+    result, _, _ = _run_provision_steps(plain, guard, nginx_step, installed=plain_conf)
     assert result.returncode == 0, result.stderr
     assert 'WARNING' not in result.stderr
     assert '/api/ has no IP allowlist (API_PEER_IPS not set' in result.stdout
-    # Re-rendered without it, the allowlist is gone.
+    # A site not provisioned yet: no file, no refusal.
+    new = tmp_path / 'new'
+    new.mkdir()
+    result, _, _ = _run_provision_steps(new, guard)
+    assert result.returncode == 0, result.stderr
+    # Re-rendered with "none", the allowlist is gone.
     again = tmp_path / 'again'
     again.mkdir()
     block = _provision_slice(*NGINX_FUNCTIONS) + 'render_nginx 1\n'
-    result, rendered, _ = _run_provision_steps(again, block, cert=True, installed=conf)
+    result, rendered, _ = _run_provision_steps(again, guard, block, cert=True, peers='none',
+                                               installed=conf)
     assert result.returncode == 0, result.stderr
     assert 'deny all' not in _directives(rendered) and 'allow ' not in _directives(rendered)
 

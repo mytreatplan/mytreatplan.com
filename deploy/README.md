@@ -2128,8 +2128,9 @@ removes the redirect and says so with a WARNING.
 
 **`/api/` allowlist (production only).** `API_PEER_IPS` (space-separated IPv4 or IPv6
 addresses or CIDR ranges) limits `/api/` to the peer sites, on every run, like
-`EXTRA_DOMAINS`; no staging site sets it. See [IP allowlist on
-`/api/`](#ip-allowlist-on-api-production).
+`EXTRA_DOMAINS`; no staging site sets it. Unlike `EXTRA_DOMAINS`, a run without it on a
+site that has an allowlist is refused (exit 2); `API_PEER_IPS=none` removes it on
+purpose. See [IP allowlist on `/api/`](#ip-allowlist-on-api-production).
 
 What the shared tooling expects from any site repo (the portal, the admin site
 `mytreatplan/mytp-admin`):
@@ -2684,10 +2685,14 @@ API_PEER_IPS="<admin IPv4> <admin IPv6>" bash ~/deploy/provision.sh <site> <doma
 ```
 
 Without it (staging) no allowlist is rendered and the run prints `/api/ has no IP
-allowlist (API_PEER_IPS not set; ...)`; a run without it on a site that has one removes it
-with a WARNING. Nginx checks the address that connects to it, so this holds only while
-nothing (a CDN, a load balancer) sits in front; list the IPv6 address too when the peer
-reaches the site over IPv6. Check after a run: from the peer, `ping_peer` passes; from
+allowlist (API_PEER_IPS not set; ...)`. A run without it on a site that has one is
+refused before any change (exit 2: `API_PEER_IPS is not set, but ... limits /api/ to an
+allowlist`), so a forgotten variable never opens `/api/`. To remove an installed allowlist
+on purpose, give `API_PEER_IPS=none`: the run removes it with a WARNING. A site still
+without its certificate (HTTP-only, no `/api/` block yet) remembers that it was given an
+allowlist, so the refusal holds there too. Nginx checks the address that connects to it,
+so this holds only while nothing (a CDN, a load balancer) sits in front; list the IPv6
+address too when the peer reaches the site over IPv6. Check after a run: from the peer, `ping_peer` passes; from
 anywhere else, `curl -s -o /dev/null -w '%{http_code}\n' https://<domain>/api/v1/ping`
 prints `403` (and `/` still asks for the password, or answers, as before).
 

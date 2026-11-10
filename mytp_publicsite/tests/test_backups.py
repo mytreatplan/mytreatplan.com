@@ -503,7 +503,7 @@ esac
 '''
 
 FAKE_PG_RESTORE = r'''#!/bin/sh
-if [ "$1" = "--version" ]; then echo "pg_restore (PostgreSQL) ${FAKE_PG_RESTORE_VERSION:-17.6}"; exit 0; fi
+if [ "$1" = "--version" ]; then echo "pg_restore (PostgreSQL) ${FAKE_PG_RESTORE_VERSION:-18.1}"; exit 0; fi
 printf '%s\n' "$@" > "$FAKE_LOG/pg_restore.args"
 cat > "$FAKE_LOG/pg_restore.stdin"
 '''
@@ -597,10 +597,10 @@ def test_restore_refuses_remote_host(restore_env):
 def test_restore_refuses_old_pg_restore(restore_env):
     run, log, identity, dump = restore_env
 
-    result = run('--file', str(dump), '--identity', str(identity), FAKE_PG_RESTORE_VERSION='16.3')
+    result = run('--file', str(dump), '--identity', str(identity), FAKE_PG_RESTORE_VERSION='17.6')
 
     assert result.returncode != 0
-    assert 'pg_restore 16 is older than 17' in result.stderr
+    assert 'pg_restore 17 is older than 18' in result.stderr
 
 
 @needs_sh
