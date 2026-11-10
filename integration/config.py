@@ -17,9 +17,10 @@ by the admin site's signed nudge, ``POST /api/v1/config/nudge``):
    ``sha`` and ``ver``, the contract's shape, the reader format);
 4. in one transaction with the state row locked: a version higher than the applied one
    replaces the admin directory and every registered section (`register_section_applier`:
-   the catalogue app's `catalogue`, the regions app's `country_map`; a section the
-   snapshot lacks is applied as None: the catalogue empties its tables, the country map
-   keeps its rows) and becomes the applied version; the same version changes nothing (a
+   the catalogue app's `catalogue` and, since epic-catalogue entry 6, `provider_costs`;
+   the regions app's `country_map`; a section the snapshot lacks is applied as None: the
+   catalogue and the provider costs empty their tables, the country map keeps its rows)
+   and becomes the applied version; the same version changes nothing (a
    good pull); a lower one is refused (`stale`).
 
 Every refusal or failure leaves the applied snapshot untouched and records its code only

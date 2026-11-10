@@ -11,6 +11,13 @@ internal code, its validity dates and one of the admin site's categories. A deac
 product, or one outside its validity dates, is kept: it is not offered for new orders
 (catalogue.resolver) but stays readable by id, for the orders that refer to it. The admin
 site's internal notes never arrive here.
+
+Add-ons, quantities, calls and costs (epic-catalogue entry 6, mytp-core 0.21.0): the
+add-ons a buyer may choose next to a product (`AddOn`); a product's size, per-unit
+quantity range, calls and cost links; and the snapshot's `provider_costs` section
+(`ProviderProduct`, `ProviderCost`: what each provider product costs over time, without
+any provider detail), from which `catalogue.resolver.cost` gives a product's cost at a
+date.
 """
 import uuid
 from decimal import Decimal
@@ -36,6 +43,21 @@ class ReadOnlyModel(models.Model):
 
     def delete(self, *args, **kwargs):
         raise TypeError(READ_ONLY_MESSAGE)
+
+
+ENGLISH = 'en'
+
+
+def _text_in(texts, language, field):
+    """The text `field` of a `texts` map in `language` ("es", "es-ES"), else in English,
+    else ''."""
+    language = (language or '').lower().split('-')[0]
+    for code in (language, ENGLISH):
+        text = texts.get(code)
+        value = text.get(field, '') if isinstance(text, dict) else ''
+        if value:
+            return value
+    return ''
 
 
 class CountryGroup(ReadOnlyModel):
@@ -68,7 +90,15 @@ class Product(ReadOnlyModel):
     `description`, in the current language), which fall back to English. `name` is the
     English public name. `code` is the admin site's internal code (None for a product
     that has none yet). `valid_from` / `valid_to` are optional, inclusive dates in Madrid
-    time: see `offered_on`."""
+    time: see `offered_on`.
+
+    Entry 6: `size` ('' for none; TPS products only) decides which add-ons are offered;
+    `min_quantity` / `max_quantity`, both or neither, make the product priced per unit
+    (`net_amount` is the price of one unit, sold in a whole quantity within the range);
+    `calls` / `call_minutes`, both or neither, are the calls the product grants and the
+    minutes of each; `cost_links` lists the provider products it is made of, each as
+    `{"provider_product": "<uuid>", "quantity": 2, "monthly": false}`
+    (catalogue.resolver.cost)."""
 
     TPS_BRANDED = 'tps_branded'
     TPS_IN_HOUSE = 'tps_in_house'
@@ -90,6 +120,14 @@ class Product(ReadOnlyModel):
     currency = models.CharField(max_length=3)
     valid_from = models.DateField(null=True)
     valid_to = models.DateField(null=True)
+    # Entry 6. Nullable or with database defaults, as above.
+    size = models.CharField(max_length=32, default='', db_default='')
+    min_quantity = models.PositiveIntegerField(null=True)
+    max_quantity = models.PositiveIntegerField(null=True)
+    calls = models.PositiveIntegerField(null=True)
+    call_minutes = models.PositiveIntegerField(null=True)
+    cost_links = models.JSONField(default=list,
+                                  db_default=models.Value([], models.JSONField()))
     active = models.BooleanField()
 
     class Meta:
@@ -102,14 +140,13 @@ class Product(ReadOnlyModel):
     def net_price(self):
         return Money(self.net_amount, self.currency)
 
+    @property
+    def per_unit(self):
+        """Whether the net price is the price of one unit (a quantity range is set)."""
+        return self.min_quantity is not None and self.max_quantity is not None
+
     def _text(self, language, field):
-        language = (language or '').lower().split('-')[0]
-        for code in (language, self.ENGLISH):
-            text = self.texts.get(code)
-            value = text.get(field, '') if isinstance(text, dict) else ''
-            if value:
-                return value
-        return ''
+        return _text_in(self.texts, language, field)
 
     def name_in(self, language):
         """The public name in `language` ("es", "es-ES"), else in English."""
@@ -159,3 +196,95 @@ class Subscription(ReadOnlyModel):
 
     def __str__(self):
         return f'{self.tier} ({self.country_group_id})'
+
+
+class AddOn(ReadOnlyModel):
+    """What a buyer may choose next to a product (epic-catalogue entry 6): either a fixed
+    net amount in one currency (`amount`, `currency`; 0.00 for an add-on that changes no
+    price) or a percentage of the product's net price (`percent`, signed: -25.00 takes a
+    quarter off), never both. `categories`: the product categories it is offered on;
+    `sizes`: the product sizes (None: the size does not matter). A fixed amount is
+    offered only on products of its currency. `catalogue.resolver` decides what is
+    offered and prices it. `texts` as a product's."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=64)
+    texts = models.JSONField(default=dict)
+    amount = models.DecimalField(max_digits=17, decimal_places=2, null=True)
+    currency = models.CharField(max_length=3, default='')
+    percent = models.DecimalField(max_digits=5, decimal_places=2, null=True)
+    categories = models.JSONField(default=list)
+    sizes = models.JSONField(null=True)
+    active = models.BooleanField()
+
+    class Meta:
+        ordering = ['code', 'id']
+
+    def __str__(self):
+        return self.code
+
+    def name_in(self, language):
+        """The public name in `language`, else in English."""
+        return _text_in(self.texts, language, 'name')
+
+    def description_in(self, language):
+        """The short description in `language`, else in English, else ''."""
+        return _text_in(self.texts, language, 'description')
+
+    @property
+    def public_name(self):
+        """The public name in the current language, else in English."""
+        return self.name_in(translation.get_language())
+
+    @property
+    def amount_money(self):
+        """The fixed amount as `Money`, or None for a percentage."""
+        return None if self.amount is None else Money(self.amount, self.currency)
+
+    @property
+    def value_text(self):
+        """"+120.00 EUR" or "-25.00 %": what the add-on does to a line."""
+        if self.amount is not None:
+            return f'+{self.amount_money}'
+        return f'{self.percent:+f} %'
+
+
+class ProviderProduct(ReadOnlyModel):
+    """A provider product of the snapshot's `provider_costs` section (epic-catalogue
+    entry 6): its provider's code for it (not unique: read it by id), its currency and
+    whether it is still active at the admin site, with its dated costs (`costs`). Nothing
+    of the provider itself ever arrives here."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=64)
+    currency = models.CharField(max_length=3)
+    active = models.BooleanField()
+
+    class Meta:
+        ordering = ['code', 'id']
+
+    def __str__(self):
+        return self.code
+
+
+class ProviderCost(ReadOnlyModel):
+    """What a provider product costs from `valid_from` to `valid_to` (inclusive; None:
+    open-ended): the face price and the discounted one, which is the cost, in the
+    provider product's currency. The ranges of one product never overlap; gaps are
+    allowed (no cost on those dates)."""
+
+    product = models.ForeignKey(ProviderProduct, on_delete=models.CASCADE,
+                                related_name='costs')
+    valid_from = models.DateField()
+    valid_to = models.DateField(null=True)
+    face = models.DecimalField(max_digits=17, decimal_places=2)
+    discounted = models.DecimalField(max_digits=17, decimal_places=2)
+
+    class Meta:
+        ordering = ['product', 'valid_from']
+
+    def __str__(self):
+        return f'{self.product_id} from {self.valid_from}'
+
+    def holds(self, day):
+        return self.valid_from <= day and (self.valid_to is None or day <= self.valid_to)

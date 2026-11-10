@@ -3037,7 +3037,7 @@ created here.
 |------|-------|
 | Pull | `pullconfig` job every 5 minutes (`manage.py pull_config`), plus a task on the worker after each signed `POST /api/v1/config/nudge` from the admin site (answered 202; nudges coalesce into one queued pull). A signed `GET <admin>/api/v1/config` to the only `INTERFACE_PEERS` entry (or `INTERFACE_ADMIN_SITE`) |
 | Check | the snapshot's signature (admindev's key from `INTERFACE_PEER_KEYS`, `typ: config`, this site as the audience, the SHA-256 of the snapshot and its version) and its shape (mytp-core's `verify_snapshot`) before anything is applied |
-| Apply | one transaction, the state row locked: a higher version replaces the directory (`integration_admindirectoryentry`) and every registered section (`register_section_applier`: the catalogue's `catalogue_*` tables, which a snapshot without the section empties; the country map's `regions_country` rows, which a snapshot without the section leaves as they are) and becomes the applied one (`integration_configstate`); the same version changes nothing; an older one is refused (`stale`) |
+| Apply | one transaction, the state row locked: a higher version replaces the directory (`integration_admindirectoryentry`) and every registered section (`register_section_applier`: the catalogue's `catalogue_*` tables, which a snapshot without the section empties; the provider costs' `catalogue_providerproduct` and `catalogue_providercost`, emptied the same way; the country map's `regions_country` rows, which a snapshot without the section leaves as they are) and becomes the applied one (`integration_configstate`); the same version changes nothing; an older one is refused (`stale`) |
 | Refusals | the applied snapshot stays; `last_error` holds the code only: `network`, `http_<status>[_<code>]`, `bad_answer`, `bad_signature`, `audience`, `expired`, `invalid_body`, `newer_format` (the admin site needs a newer mytp-core: a warning line once per version), `stale`, `not_configured`, `signing_key` (the KMS could not unwrap the signing key), `apply_failed`; `pull_config` prints one line with the code and exits 0 (the outage warning below reports it once), except `not_configured` (no admin site, peer keys or signing key), which fails the job so its Sentry monitor shows it |
 | Outage | no good pull for an hour: one Sentry warning "Configuration snapshot not pulled for an hour (<code>)" per outage, never the contents; the next good pull resets it. A pull that stopped running altogether is caught by the `checkinterface` job ([Interface alerts](#interface-alerts)) |
 
@@ -3127,6 +3127,112 @@ sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --product <id> --la
 #     offered for new orders: yes | no
 #     | the description, line by line
 ```
+
+Add-ons, quantities, calls and costs (epic-catalogue entry 6, mytp-core 0.21.0; user
+decisions 2026-11-10):
+
+- Add-ons (`catalogue_addon`, from the section's `add_ons`; inactive ones too): what a
+  buyer may choose next to a product. Each is a fixed net amount in one currency (Byte
+  Sync +120.00 EUR, ODB DigitalTwin +320.00 EUR, Junior I and II 0.00 EUR) or a signed
+  percentage of the product's net price (one arch −25 %), and lists the product
+  categories it is offered on and, optionally, the product sizes.
+  `catalogue.resolver.add_ons(product)` gives the active ones offered on a product: its
+  category is listed, its size is listed when the add-on lists sizes (Junior: medium
+  only), and a fixed amount is in the product's currency. An add-on whose amount is in
+  a currency this release does not know is skipped.
+- A product also has `size` (`short`, `medium`, `long`; TPS products; '' for none),
+  `min_quantity` / `max_quantity` (both or neither: with them the net price is per unit
+  and the product is sold in a whole quantity within the range, as Spark on Demand per
+  aligner), and `calls` / `call_minutes` (the calls it grants and the minutes of each;
+  epic-appointments reads them).
+- `catalogue.resolver.price(product, subscription, add_ons=(), quantity=1)` is the price
+  of a line, still the only code that prices: net price × quantity × (1 + percentage /
+  100) for each percentage add-on × (1 − subscription discount / 100), plus the fixed
+  amounts once per line, computed exactly and rounded half up to cents once, at the end
+  (mytp-core's `line_price`). A 100.00 TPS in-house at a 10 % discount with one arch is
+  67.50; Byte Sync makes a line 120.00 higher (the discount applies to the product
+  only). It raises `QuantityRefused` for a quantity outside a per-unit product's range,
+  or other than 1 on any other product, and `AddOnRefused` for an add-on that is
+  inactive, not offered on the product or chosen twice. `offers` lists a per-unit
+  product at the price of one unit.
+- Costs: the snapshot's `provider_costs` section (mytp-core 0.19.0; ignored until this
+  entry) is applied into `catalogue_providerproduct` and `catalogue_providercost`: each
+  provider product's id, code, currency and dated costs, never anything of the provider
+  (no name, no fiscal or payment detail: those never leave the admin site). A snapshot
+  without the section empties them. A product's `cost_links` name the provider products
+  it is made of, with a quantity and a "monthly" mark.
+  `catalogue.resolver.cost(product, day)` gives mytp-core's `ProductCost`: `total`, the
+  sum of the links that are not monthly (the provider product's cost on that date × the
+  quantity); `complete`; `missing`, the codes of the linked provider products without a
+  cost on that date (a gap, not sent, or another currency than the product's);
+  `monthly`, the monthly links with their monthly cost, never in the sum. When
+  `complete` is false, `total` is a partial sum: show it with `cost.warning`, never as
+  the product's cost. A product with no link to sum (none, or only monthly ones) is
+  `cost.empty`: it has no cost to show (`price_catalogue --cost` prints "no cost
+  links", never 0.00). The date applies to the provider costs only: the links are those
+  the admin site last sent, the ones in force now, so for a past date an ended link is
+  left out and a link added today counts; a later entry that needs a true past cost
+  reads the order line's own copy (AD-6). A link is named by its provider product's
+  code, with its id (`CODE (<uuid>)`) when two links of the product share a code. epic-payments (the cost at order time) and epic-sales-finance (the
+  margins) read it; nothing shows a cost to a doctor.
+- A snapshot of an admin site before entry 6 still applies: no add-ons, no size, one per
+  line, no calls, no links and no costs.
+- The deploy applies the current snapshot again, once, as entry 5's did and for the same
+  reason: migration 0003 clears the applied version, so the first pull after the deploy
+  stores the add-ons, the new product fields and the provider costs of the admin site's
+  current snapshot whatever its version (the previous release applied it without them).
+  The new columns are nullable or have database defaults, so the previous release keeps
+  applying snapshots while this one is being deployed.
+  Two exceptions, in which the previous release records the current version again
+  without the new parts and this release then answers `unchanged` for it: the previous
+  release pulls between `migrate` and the switch (the `pullconfig` timer and the worker
+  still run the previous release then); and a deploy that fails after `migrate`
+  switches back, the previous release pulls, and the deploy is retried (the migration
+  does not run again). So check after the deploy: `price_catalogue --country ES --tier
+  basic` must list the add-ons under the offers and `price_catalogue --product <id>
+  --cost` the cost of a linked product (or count the rows of `catalogue_addon` and
+  `catalogue_providerproduct`). If they are missing, make any write on the admin site
+  (an edit of a product's notes does not count; change a price and change it back): it
+  publishes a new version, which this release applies in full.
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --tier basic
+#   ES basic (Iberia): 3 offer(s)
+#     SPARK-1  Spark on Demand one arch  spark_on_demand  50.00 EUR  per unit, 4 to 9
+#     TPS-M  TPS in-house M  tps_in_house  90.00 EUR
+#         + BYTE-SYNC  Byte Sync  +120.00 EUR      (the add-ons offered on it)
+#         + JUNIOR-1  Junior I  +0.00 EUR
+#         + ONE-ARCH  One arch  -25.00 %
+#     ...
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --product <id> --country ES --tier basic \
+    --add-on ONE-ARCH --add-on BYTE-SYNC
+#   ES basic (Iberia): TPS-M  TPS in-house M  tps_in_house
+#     net price: 100.00 EUR
+#     quantity: 1
+#     subscription discount: 10.00 %
+#     add-on: ONE-ARCH  One arch  -25.00 %
+#     add-on: BYTE-SYNC  Byte Sync  +120.00 EUR
+#     line price: 187.50 EUR
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --product <spark id> --country ES --tier basic --quantity 6
+#     line price: 300.00 EUR          (--quantity 3 or 10: "Refused: the quantity is from 4 to 9.")
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --product <id> --cost [--on 2026-10-31]
+#     size, per unit, calls and the add-ons offered, then:
+#     cost on 2026-11-10: 25.00 EUR             ("no cost links" when there is none to sum)
+#   or, when a linked provider product has no cost on that date:
+#     warning: Incomplete cost: no cost on this date for PRINT.
+#     partial sum on 2026-11-10, not the cost: 10.00 EUR
+#   and, for each monthly link:
+#     monthly, not in the sum: DM x 2: 10.00 EUR a month
+```
+
+Staging check for entry 6 (after mytp-core 0.21.0, admindev, then dev): on admindev create
+Byte Sync, ODB DigitalTwin, one arch, Junior I and Junior II, a TPS in-house product of
+size medium, the two Spark on Demand products (per aligner, 4 to 9), calls on a product
+and, as the Financial Manager, links from a product to two provider products plus one
+monthly link. On dev, `price_catalogue` shows Byte Sync +120 on the case products, Junior
+only on the medium product, one arch only on TPS in-house, Spark on Demand priced for 4
+to 9 aligners (3 and 10 refused), `--cost` the sum of the product's links with the
+monthly one apart, and the incomplete warning once a provider cost is ended on admindev.
 
 Staging check for entry 5 (after mytp-core 0.20.0, admindev, then dev): on admindev create
 one product per category with English and Spanish texts and a price, one with English

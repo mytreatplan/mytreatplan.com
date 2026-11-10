@@ -17,10 +17,22 @@ its former category (`tps`, `other`) is read as the new one (`tps_branded`,
 The release before entry 5 skipped the products of the new categories, and a snapshot of
 the version already applied is never applied again (integration.config), so catalogue
 migration 0002 clears the applied version: the first pull of this release applies the
-admin site's current snapshot again and stores the products that release skipped."""
+admin site's current snapshot again and stores the products that release skipped.
+
+Add-ons, quantities, calls and costs (epic-catalogue entry 6, mytp-core 0.21.0): the
+section's add-ons replace the stored ones (none in a snapshot of an admin site before
+0.21.0; one whose fixed amount is in a currency `Money` does not take is skipped), and a
+product's size, per-unit quantity range, calls and cost links are stored as sent (absent:
+no size, one per line, no calls, no links). The snapshot's `provider_costs` section has
+its own applier, `apply_provider_costs`: the provider products and their dated costs
+replace the stored ones (a snapshot without the section empties them: no costs; a
+provider product in a currency `Money` does not take is skipped). The release before
+entry 6 stored none of this, so catalogue migration 0003 clears the applied version
+again, as 0002 did."""
 from mytp_core.money import CURRENCIES
 
-from .models import CountryGroup, Product, Subscription
+from .models import (AddOn, CountryGroup, Product, ProviderCost, ProviderProduct,
+                     Subscription)
 
 
 def _texts(product):
@@ -28,12 +40,21 @@ def _texts(product):
     English text (an admin site before mytp-core 0.20.0)."""
     if product.texts is None:
         return {Product.ENGLISH: {'name': product.name, 'description': ''}}
-    return {language: {'name': text.name, 'description': text.description}
-            for language, text in product.texts.items()}
+    return _texts_of(product.texts)
 
 
 def _category(product):
     return Product.LEGACY_CATEGORIES.get(product.category, product.category)
+
+
+def _texts_of(texts):
+    return {language: {'name': text.name, 'description': text.description}
+            for language, text in texts.items()}
+
+
+def _links(product):
+    return [{'provider_product': str(link.provider_product), 'quantity': link.quantity,
+             'monthly': link.monthly} for link in product.cost_links or ()]
 
 
 def apply(section):
@@ -42,6 +63,7 @@ def apply(section):
     Subscription.objects.all().delete()
     Product.objects.all().delete()
     CountryGroup.objects.all().delete()
+    AddOn.objects.all().delete()
     if section is None:
         return 'no catalogue section'
     CountryGroup.objects.bulk_create(
@@ -52,7 +74,12 @@ def apply(section):
         Product(id=product.id, name=product.name, texts=_texts(product), code=product.code,
                 category=_category(product), net_amount=product.net_price.amount,
                 currency=product.net_price.currency, valid_from=product.valid_from,
-                valid_to=product.valid_to, active=product.active)
+                valid_to=product.valid_to, size=product.size or '',
+                min_quantity=product.per_unit and product.per_unit.min_quantity,
+                max_quantity=product.per_unit and product.per_unit.max_quantity,
+                calls=product.calls and product.calls.count,
+                call_minutes=product.calls and product.calls.minutes,
+                cost_links=_links(product), active=product.active)
         for product in section.products
         if _category(product) in Product.CATEGORIES
         and product.net_price.currency in CURRENCIES)
@@ -63,5 +90,36 @@ def apply(section):
                      tps_in_house_discount_percent=subscription.in_house_discount_percent,
                      active=subscription.active)
         for subscription in section.subscriptions if subscription.tier in Subscription.TIERS)
+    AddOn.objects.bulk_create(
+        AddOn(id=add_on.id, code=add_on.code, texts=_texts_of(add_on.texts),
+              amount=add_on.amount and add_on.amount.amount,
+              currency=add_on.amount.currency if add_on.amount else '',
+              percent=add_on.percent, categories=list(add_on.categories),
+              sizes=None if add_on.sizes is None else list(add_on.sizes),
+              active=add_on.active)
+        for add_on in section.add_ons or ()
+        if add_on.amount is None or add_on.amount.currency in CURRENCIES)
     return (f'catalogue: {CountryGroup.objects.count()} country groups, '
-            f'{Product.objects.count()} products, {Subscription.objects.count()} subscriptions')
+            f'{Product.objects.count()} products, {Subscription.objects.count()} '
+            f'subscriptions, {AddOn.objects.count()} add-ons')
+
+
+def apply_provider_costs(section):
+    """Replace the provider products and their costs with `section` (mytp-core's
+    ProviderCostsSection, or None: an admin site before 0.19.0, so no costs). Returns
+    the log line's summary: counts only."""
+    ProviderCost.objects.all().delete()
+    ProviderProduct.objects.all().delete()
+    if section is None:
+        return 'no provider costs section'
+    known = [product for product in section.products if product.currency in CURRENCIES]
+    ProviderProduct.objects.bulk_create(
+        ProviderProduct(id=product.id, code=product.code, currency=product.currency,
+                        active=product.active)
+        for product in known)
+    ProviderCost.objects.bulk_create(
+        ProviderCost(product_id=product.id, valid_from=cost.valid_from,
+                     valid_to=cost.valid_to, face=cost.face, discounted=cost.discounted)
+        for product in known for cost in product.costs)
+    return (f'provider costs: {ProviderProduct.objects.count()} provider products, '
+            f'{ProviderCost.objects.count()} costs')
