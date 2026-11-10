@@ -40,8 +40,9 @@
 # (production only: on a portal the admin site's egress addresses, on the admin site the
 # portals'). Nginx then answers every other address on /api/ with 403; the rest of the
 # site is unaffected. Not stored on the server: give it on every run; a run without it
-# renders no allowlist (staging) and says so, and removes an installed one (with a
-# warning).
+# renders no allowlist (staging) and says so, but is refused (exit 2, before any change)
+# on a site that has an allowlist installed. API_PEER_IPS=none removes an installed
+# allowlist on purpose (with a warning).
 set -euo pipefail
 
 SITE_RE='^[a-z]([a-z0-9-]{0,18}[a-z0-9])?$'
@@ -139,6 +140,12 @@ if [[ ${API_PEER_IPS:-} == *[$'\n\r']* ]]; then
 fi
 peers_raw=$(printf '%s' "${API_PEER_IPS:-}" | tr '[:upper:]' '[:lower:]')
 API_PEER_IPS=""
+# "none" alone (any case): no allowlist, said on purpose (API_PEER_NONE=1).
+API_PEER_NONE=0
+if [[ $peers_raw =~ ^[[:space:]]*none[[:space:]]*$ ]]; then
+    API_PEER_NONE=1
+    peers_raw=""
+fi
 set -f
 for peer in $peers_raw; do
     if ! valid_peer_ip "$peer" || [[ " $API_PEER_IPS " == *" $peer "* ]]; then
@@ -245,6 +252,22 @@ ensure_dir() {
     sudo install -d -m "$mode" -o "${owner%%:*}" -g "${owner##*:}" "$path"
     changed "$path/"
 }
+
+# --- /api/ allowlist guard --------------------------------------------------
+# An installed /api/ allowlist is never dropped by leaving API_PEER_IPS out: the run
+# stops here, before any change. API_PEER_IPS=none removes it on purpose. Installed:
+# the allowlist section's marker, or, while the site is still HTTP-only (no
+# certificate yet, so no /api/ block), the line render_nginx leaves in its place.
+API_ALLOW_INSTALLED_RE='^# __API_ALLOW_(BEGIN|PENDING)__$'
+if [[ -z $API_PEER_IPS ]] && ((!API_PEER_NONE)) && sudo test -f "$NGINX_SITE" \
+    && sudo grep -qE "$API_ALLOW_INSTALLED_RE" "$NGINX_SITE"; then
+    {
+        echo "API_PEER_IPS is not set, but $NGINX_SITE limits /api/ to an allowlist."
+        echo "Give API_PEER_IPS on every run for this site, or API_PEER_IPS=none to remove"
+        echo "the allowlist on purpose. Nothing was changed."
+    } >&2
+    exit 2
+fi
 
 # install_packages PKG... -- installs those not installed yet, after one `apt-get update`
 # per run (APT_UPDATED; a step that changes the apt sources updates again itself).
@@ -757,7 +780,9 @@ cert_missing_names() {
 # render_nginx FULL(0|1): HTTP-only until the certificate exists. The EXTRA_DOMAINS
 # answer ACME and redirect on port 80 always; their HTTPS redirect block is installed
 # only once the certificate covers them all. API_PEER_IPS: one `allow` line each in
-# /api/, then `deny all;`; unset, no allowlist (the marker section is dropped).
+# /api/, then `deny all;`; unset, no allowlist (the marker section is dropped). The
+# HTTP-only site has no /api/ block: with API_PEER_IPS it ends with the line
+# `# __API_ALLOW_PENDING__`, so the allowlist guard still knows this site has one.
 render_nginx() {
     local extra_sed=(-e 's/ __EXTRA_DOMAINS__//g')
     [[ -n $EXTRA_DOMAINS ]] && extra_sed=(-e "s/__EXTRA_DOMAINS__/$EXTRA_DOMAINS/g")
@@ -778,6 +803,7 @@ render_nginx() {
     fi
     if [[ $1 == 0 ]]; then
         sed -i.bak '/^# __HTTPS_BEGIN__$/,$d' "$WORK/site.conf"
+        [[ -z $API_PEER_IPS ]] || echo '# __API_ALLOW_PENDING__' >>"$WORK/site.conf"
     elif [[ -z $EXTRA_DOMAINS || -n $(cert_missing_names) ]]; then
         sed -i.bak '/^# __EXTRA_BEGIN__$/,/^# __EXTRA_END__$/d' "$WORK/site.conf"
     fi
@@ -790,12 +816,17 @@ render_nginx() {
 
 step "Nginx ($SITE)"
 if [[ -z $API_PEER_IPS ]]; then
-    echo "  /api/ has no IP allowlist (API_PEER_IPS not set; production sets it)."
-    if sudo test -f "$NGINX_SITE" && sudo grep -qE '^# __API_ALLOW_BEGIN__$' "$NGINX_SITE"; then
-        {
-            echo "  WARNING: API_PEER_IPS is not set, but $NGINX_SITE limits /api/ to an"
-            echo "  allowlist; this run removes it. Give API_PEER_IPS on every run for this site."
-        } >&2
+    if ((API_PEER_NONE)); then
+        echo "  /api/ has no IP allowlist (API_PEER_IPS=none)."
+        if sudo test -f "$NGINX_SITE" \
+            && sudo grep -qE "$API_ALLOW_INSTALLED_RE" "$NGINX_SITE"; then
+            {
+                echo "  WARNING: API_PEER_IPS=none, and $NGINX_SITE limits /api/ to an"
+                echo "  allowlist; this run removes it."
+            } >&2
+        fi
+    else
+        echo "  /api/ has no IP allowlist (API_PEER_IPS not set; production sets it)."
     fi
 fi
 if [[ -z $EXTRA_DOMAINS ]] && sudo test -f "$NGINX_SITE" \
