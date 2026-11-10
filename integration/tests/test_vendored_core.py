@@ -3,7 +3,8 @@ the configuration snapshot, epic-admin-interface entry 4; the client record even
 entry 8; the snapshot's catalogue section, epic-catalogue entry 2; remote reads, entry 5;
 the contact message events, entry 9; the snapshot's country map section,
 epic-catalogue entry 3; remote writes, entry 6; hub lookups, entry 7; the snapshot's
-provider costs section, epic-catalogue entry 4)."""
+provider costs section, epic-catalogue entry 4; the products' texts, code and validity and
+the in-house TPS discount, epic-catalogue entry 5)."""
 
 from decimal import Decimal
 
@@ -14,7 +15,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.19.0'
+    assert mytp_core.__version__ == '0.20.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -101,3 +102,14 @@ def test_vendored_mytp_core_has_the_provider_costs_section():
         'active': True, 'costs': [{'valid_from': '2026-07-01', 'valid_to': None,
                                    'face': '100.00', 'discounted': '90.00'}]})
     assert product.cost_at(date(2026, 7, 1)) == Decimal('90.00')
+
+
+def test_vendored_mytp_core_has_the_products_core_fields():
+    from mytp_core.contracts import CatalogueProduct, CatalogueSubscription, ProductText
+    assert CatalogueProduct.model_fields.keys() == {
+        'id', 'name', 'category', 'net_price', 'active', 'texts', 'code', 'valid_from',
+        'valid_to'}
+    assert ProductText.model_fields.keys() == {'name', 'description'}
+    field = CatalogueSubscription.model_fields['tps_in_house_discount_percent']
+    assert field.is_required() is False
+    assert callable(CatalogueProduct.name_in) and callable(CatalogueProduct.offered_on)

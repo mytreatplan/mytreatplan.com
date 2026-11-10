@@ -3069,18 +3069,69 @@ before 0.12.0) empties them, so nothing is offered.
 
 `catalogue.resolver.offers(country, tier)` is the only code that prices: the active group
 that lists the country (else the active catch-all, "Rest of world"), its active
-subscription of that tier (none: no offers), then every active product at its net price,
-less the subscription's discount for plain TPS (`tps`), rounded half up to cents. VAT,
-vouchers, the billing company and checkout come with later entries; there is no portal
-page yet.
+subscription of that tier (none: no offers), then every active product that is within its
+validity dates today, at its net price less the subscription's discount, rounded half up
+to cents: its TPS branded discount for a `tps_branded` product, its TPS in-house discount
+for a `tps_in_house` one, none for any other category. VAT, vouchers, the billing company
+and checkout come with later entries; there is no portal page yet.
+
+Products in full (epic-catalogue entry 5, mytp-core 0.20.0; user decisions 2026-11-10):
+
+- Categories: `tps_branded`, `tps_in_house`, `initial_case_evaluation`,
+  `virtuaortho_one`, `virtuaortho_digitaltwin`, `odb`, `retainers`, `spark_on_demand`,
+  `subscription`, `education`, and `uncategorised` (a product the admin site has not
+  given a category yet; never discounted). A product of any other category is skipped.
+- Public texts per language (`Product.texts`: a name and a short description, plain text
+  with line breaks): English always; Spanish when the admin site has it. Read them with
+  `product.public_name` / `product.description` (the current language) or `name_in(lang)`
+  / `description_in(lang)`: a missing text falls back to English, each text on its own.
+- `code`: the admin site's internal code (shown by `price_catalogue`; a product is always
+  read by its id). The admin site's internal notes never arrive.
+- `valid_from` / `valid_to`: optional, inclusive dates in Madrid time, in every region
+  (`catalogue.resolver.today`). Outside them the product is not offered for new orders.
+- A deactivated product, or one outside its validity dates, stays in `catalogue_product`
+  and readable by its id (`catalogue.resolver.product(id)`), for the orders that refer to
+  it; it is never deleted.
+- A snapshot of an admin site before entry 5 still applies: `tps` is read as
+  `tps_branded`, `other` as `uncategorised`, the product's name is its English text, and
+  a subscription without an in-house discount has 0. Migration 0002 does the same to the
+  rows already stored.
+- The deploy applies the current snapshot again, once. The admin site is deployed first;
+  a catalogue write there before this release is live publishes the new category codes,
+  and the previous release applies that snapshot and skips every product of a category
+  it does not know. A snapshot of the version already applied is never applied again, so
+  migration 0002 clears the applied version (`integration_configstate.version`): the
+  first pull after the deploy (the `pullconfig` job, within 5 minutes, or `pull_config`
+  by hand) applies the admin site's current snapshot whatever its version and stores
+  those products. Until then `show_config` shows no applied version; the directory, the
+  country map and the catalogue rows stay as they were. Migrating back does not restore
+  the version: the next pull applies the current snapshot again there too.
 
 ```sh
 sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --tier basic
 #   ES basic (Iberia): 1 offer(s)
-#     TPS  tps  90.00 EUR
+#     TPS-BR-01  TPS  tps_branded  90.00 EUR        (code, name, category, price; "-": no code)
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --tier basic --language es
+#   the names in Spanish, the English one where there is none
 sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country US --tier basic
 #   no offers for US basic
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --product <id> --language es
+#   <id>  TPS-BR-01  TPS  tps_branded  100.00 EUR
+#     status: active | inactive
+#     valid: 2026-01-01 to - (today in Madrid: 2026-11-10)
+#     offered for new orders: yes | no
+#     | the description, line by line
 ```
+
+Staging check for entry 5 (after mytp-core 0.20.0, admindev, then dev): on admindev create
+one product per category with English and Spanish texts and a price, one with English
+only, try a second product with a taken code (refused), and deactivate one. On dev,
+`price_catalogue --country ES --tier basic --language es` lists the Spanish names (the
+English one for the English-only product) without the deactivated product; `--product
+<its id>` still prints it, `status: inactive`. Give a product a `valid_to` of yesterday:
+it leaves the offers and `--product` says `offered for new orders: no`. Set the
+subscription's in-house discount to 5 % on admindev: only the `tps_in_house` product is
+repriced; set it back to 0.
 
 Staging check (after both deploys): as a Commercial Manager on admindev, create a TPS
 product at 100.00 EUR and a basic Iberia subscription at 10 % (both in the audit log); on
