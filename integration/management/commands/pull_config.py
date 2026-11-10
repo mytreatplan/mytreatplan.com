@@ -3,8 +3,10 @@
     python manage.py pull_config
 
 Run every 5 minutes by the `pullconfig` job in deploy/jobs.conf (and, as a task, after
-each nudge from the admin site). Verifies the signed snapshot and applies it only when
-its version is higher than the applied one (integration.config). Prints the outcome and
+each nudge from the admin site). Verifies the signed snapshot and applies it when its
+version is higher than the applied one, or equal to it and applied by another release
+(the first pull of a release applies the current version again and prints `applied`;
+the same version applied by this release is `unchanged`; integration.config). Prints the outcome and
 version only, never the contents. A refusal or failure (the admin site unreachable, a bad
 signature, an older version, ...) keeps the applied snapshot, is recorded as
 `last_error` (`show_config`) and prints one line with its code, exiting 0: an outage

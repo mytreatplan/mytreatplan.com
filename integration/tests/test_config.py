@@ -349,7 +349,7 @@ def test_a_pull_failing_halfway_through_applying_keeps_the_previous_one(admin, m
     real = ConfigState.save
 
     def failing_save(self, *args, **kwargs):
-        if kwargs.get('update_fields') == ['version', 'applied_at']:
+        if kwargs.get('update_fields') == config.APPLIED_FIELDS:
             raise RuntimeError(f'database gone ({SECRET_NAME})')
         return real(self, *args, **kwargs)
     monkeypatch.setattr(ConfigState, 'save', failing_save)
@@ -403,6 +403,189 @@ def test_the_version_never_goes_down(admin):
         else:
             assert config.pull() == ('unchanged', 4)
         assert state().version == 4 and len(directory()) == 2
+
+
+# --- The release that applied the snapshot ----------------------------------------------
+
+RELEASE_A = '6b27169cc0f014905d7dbfe73335ef7aa2123d26'
+RELEASE_B = 'c0ffee69cc0f014905d7dbfe73335ef7aa2123d2'
+RENAMED = [{'id': ADA, 'display_name': 'Ada Renamed', 'title': 'Sysadmin', 'active': True,
+            'time_zone': 'Europe/Madrid'}]
+
+
+def previous_release_applies(version):
+    """What a release from before the mark writes when it applies a snapshot: the
+    version and the time (`save(update_fields=['version', 'applied_at'])`), never the
+    mark."""
+    ConfigState.objects.filter(pk=ConfigState.SINGLETON).update(
+        version=version, applied_at=timezone.now())
+
+
+def mark():
+    row = state()
+    return row.version, row.applied_release, row.applied_release_version
+
+
+@pytest.fixture
+def probe():
+    """A section applier that counts its calls: every section is applied again."""
+    calls = []
+    config._SECTION_APPLIERS['catalogue_probe'] = lambda value: calls.append(value)
+    yield calls
+    del config._SECTION_APPLIERS['catalogue_probe']
+
+
+@pytest.mark.django_db
+def test_the_same_release_and_version_rewrites_nothing(admin, settings, probe):
+    settings.SENTRY_RELEASE = RELEASE_A
+    applied(admin, 3)
+    assert mark() == (3, RELEASE_A, 3) and len(probe) == 1
+    before = state().applied_at
+    admin.snapshot = snapshot(version=3, admin_directory=[])
+    assert config.pull() == ('unchanged', 3)
+    assert len(directory()) == 2 and len(probe) == 1
+    assert state().applied_at == before and mark() == (3, RELEASE_A, 3)
+
+
+@pytest.mark.django_db
+def test_a_new_release_applies_the_same_version_again_once(admin, settings, probe, caplog):
+    """The acceptance criterion: version N applied by the previous release, this release
+    pulls N: the directory and every section are applied again; a second pull is
+    unchanged."""
+    caplog.set_level(logging.INFO)
+    settings.SENTRY_RELEASE = RELEASE_A
+    applied(admin, 3)
+    before = state().applied_at
+    settings.SENTRY_RELEASE = RELEASE_B
+    admin.snapshot = snapshot(version=3, admin_directory=RENAMED)
+    out = io.StringIO()
+    call_command('pull_config', stdout=out)
+    assert out.getvalue() == 'pull_config: v3 applied\n'
+    assert directory() == [(ADA, 'Ada Renamed', 'Sysadmin', True, 'Europe/Madrid')]
+    assert len(probe) == 2 and mark() == (3, RELEASE_B, 3)
+    assert state().applied_at > before and state().last_error == ''
+    assert caplog.text.count('config snapshot v3 applied') == 2
+    admin.snapshot = snapshot(version=3, admin_directory=[])
+    assert config.pull() == ('unchanged', 3)
+    assert len(directory()) == 1 and len(probe) == 2
+    # And back to the release before: it applies it again too.
+    settings.SENTRY_RELEASE = RELEASE_A
+    assert config.pull() == ('applied', 3)
+    assert directory() == [] and mark() == (3, RELEASE_A, 3)
+
+
+@pytest.mark.django_db
+def test_applying_again_that_fails_keeps_the_previous_rows(admin, settings, caplog):
+    settings.SENTRY_RELEASE = RELEASE_A
+    applied(admin, 3)
+    settings.SENTRY_RELEASE = RELEASE_B
+    admin.snapshot = snapshot(version=3, admin_directory=RENAMED)
+
+    def failing(value):
+        raise RuntimeError(f'applier broke ({SECRET_NAME})')
+    config._SECTION_APPLIERS['catalogue_probe'] = failing
+    try:
+        refused('apply_failed')
+    finally:
+        del config._SECTION_APPLIERS['catalogue_probe']
+    assert mark() == (3, RELEASE_A, 3) and state().last_error == 'apply_failed'
+    assert len(directory()) == 2 and SECRET_NAME not in caplog.text
+    # Still to do: the next pull applies it.
+    assert config.pull() == ('applied', 3)
+    assert mark() == (3, RELEASE_B, 3) and len(directory()) == 1
+
+
+@pytest.mark.django_db
+def test_a_version_the_previous_release_applied_in_between_is_applied_again(
+        admin, settings, probe):
+    """This release applied N; a release from before the mark (a rollback) applied N+1
+    and left the mark; this release pulls N+1."""
+    settings.SENTRY_RELEASE = RELEASE_A
+    applied(admin, 3)
+    previous_release_applies(4)
+    assert mark() == (4, RELEASE_A, 3)
+    admin.snapshot = snapshot(version=4, admin_directory=RENAMED)
+    assert config.pull() == ('applied', 4)
+    assert len(directory()) == 1 and len(probe) == 2 and mark() == (4, RELEASE_A, 4)
+    assert config.pull() == ('unchanged', 4)
+
+
+@pytest.mark.django_db
+def test_a_pull_of_the_previous_release_during_the_deploy_is_applied_again(
+        admin, settings, probe):
+    """After `migrate` and before the switch the previous release still pulls: it
+    creates the row without knowing the new columns (the database fills them) and
+    applies N. The new release applies N again at its first pull."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            'INSERT INTO integration_configstate (id, version, applied_at, last_pull_at, '
+            'last_success_at, last_error, warned_at, newer_format_version, created_at) '
+            "VALUES (1, NULL, NULL, NULL, NULL, '', NULL, NULL, %s)", [timezone.now()])
+    assert mark() == (None, '', None)
+    previous_release_applies(5)
+    settings.SENTRY_RELEASE = RELEASE_B
+    admin.snapshot = snapshot(version=5)
+    assert config.pull() == ('applied', 5)
+    assert len(directory()) == 2 and len(probe) == 1 and mark() == (5, RELEASE_B, 5)
+    assert config.pull() == ('unchanged', 5)
+    # Also when the site has no release identity: a version without a mark is not its own.
+    previous_release_applies(6)
+    settings.SENTRY_RELEASE = ''
+    admin.snapshot = snapshot(version=6)
+    assert config.pull() == ('applied', 6)
+    assert config.pull() == ('unchanged', 6)
+
+
+@pytest.mark.django_db
+def test_a_lower_version_is_stale_whatever_the_release(admin, settings, probe):
+    settings.SENTRY_RELEASE = RELEASE_A
+    applied(admin, 5)
+    settings.SENTRY_RELEASE = RELEASE_B
+    admin.snapshot = snapshot(version=4, admin_directory=[])
+    refused('stale')
+    assert mark() == (5, RELEASE_A, 5) and len(directory()) == 2 and len(probe) == 1
+
+
+@pytest.mark.django_db
+def test_without_a_release_identity_the_site_is_one_unnamed_release(admin, settings, probe):
+    settings.SENTRY_RELEASE = ''
+    assert config.current_release() == ''
+    applied(admin, 2)
+    assert mark() == (2, '', 2)
+    admin.snapshot = snapshot(version=2, admin_directory=[])
+    assert config.pull() == ('unchanged', 2)
+    assert len(directory()) == 2 and len(probe) == 1
+
+
+@pytest.mark.django_db  # the autouse fixture clears the database cache
+def test_the_release_is_the_deployed_sha(settings, tmp_path):
+    settings.BASE_DIR = tmp_path  # no REVISION file: Sentry's release (RELEASE_SHA)
+    settings.SENTRY_RELEASE = RELEASE_A
+    assert config.current_release() == RELEASE_A
+    settings.SENTRY_RELEASE = 'x' * 100  # a RELEASE_SHA that is not a SHA: cut to the column
+    assert config.current_release() == 'x' * 64
+    settings.SENTRY_RELEASE = ''
+    assert config.current_release() == ''
+
+
+@pytest.mark.django_db
+def test_the_revision_file_wins_over_a_release_sha_shared_by_every_deploy(
+        admin, settings, tmp_path, probe):
+    """RELEASE_SHA in the shared settings.env is the same for every release (and wins
+    for Sentry's release); each release directory has its own REVISION file."""
+    settings.SENTRY_RELEASE = RELEASE_A
+    first, second = tmp_path / 'first', tmp_path / 'second'
+    for folder, sha in ((first, RELEASE_A), (second, RELEASE_B)):
+        folder.mkdir()
+        (folder / 'REVISION').write_text(sha + '\n')
+    settings.BASE_DIR = first
+    applied(admin, 3)
+    assert mark() == (3, RELEASE_A, 3)
+    settings.BASE_DIR = second
+    assert config.current_release() == RELEASE_B
+    assert config.pull() == ('applied', 3)
+    assert mark() == (3, RELEASE_B, 3) and len(probe) == 2
+    assert config.pull() == ('unchanged', 3)
 
 
 # --- The outage warning -----------------------------------------------------------------
@@ -550,9 +733,27 @@ def test_show_config_prints_the_version_and_the_directory(admin):
     call_command('show_config', stdout=out)
     lines = out.getvalue().splitlines()
     assert lines[0] == 'version: 7' and lines[1].endswith('Z')
-    assert lines[4] == 'last error: -' and lines[5] == 'admin directory: 2'
-    assert lines[6] == f'  {ADA}  Ada Admin  Sysadmin  active  Europe/Madrid'
-    assert lines[7] == f'  {BOB}  Bob Gone  -  inactive  Asia/Dubai'
+    assert lines[2] == 'applied by release: unnamed (no REVISION file or RELEASE_SHA)'
+    assert lines[5] == 'last error: -' and lines[6] == 'admin directory: 2'
+    assert lines[7] == f'  {ADA}  Ada Admin  Sysadmin  active  Europe/Madrid'
+    assert lines[8] == f'  {BOB}  Bob Gone  -  inactive  Asia/Dubai'
+
+
+@pytest.mark.django_db
+def test_show_config_prints_the_release_that_applied_the_version(admin, settings):
+    def applied_by():
+        out = io.StringIO()
+        call_command('show_config', stdout=out)
+        return out.getvalue().splitlines()[2]
+
+    settings.SENTRY_RELEASE = RELEASE_A
+    applied(admin, 7)
+    assert applied_by() == f'applied by release: {RELEASE_A}'
+    previous_release_applies(8)
+    assert applied_by() == ('applied by release: another release (not recorded; the next '
+                            'pull applies it again)')
+    ConfigState.objects.update(version=None)
+    assert applied_by() == 'applied by release: -'
 
 
 @pytest.mark.django_db

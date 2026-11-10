@@ -8,33 +8,21 @@ can still apply a snapshot while this one is being deployed; it does not touch t
 tables.
 
 The applied snapshot version is cleared (`integration.ConfigState.version` to None), as
-migration 0002 did and for the same reason: the admin site is deployed first, so the
-previous release may already have applied the admin site's current version without the
-add-ons, the new product fields and the provider costs, and would answer "unchanged" for
-it. The first pull after the deploy (at most 5 minutes: the `pullconfig` job) applies
-that snapshot again, whatever its version; until then `show_config` shows no applied
-version and the stored rows stay. Nothing is done on the way back.
-
-Two exceptions, in which the previous release records the current version again without
-the new parts and this release then answers "unchanged" for it:
-
-- the previous release pulls between `migrate` and the switch to this release (the
-  `pullconfig` timer and the worker still run the previous release then);
-- a deploy that fails after `migrate` switches back to the previous release, which
-  pulls, and the deploy is retried: the migration is already applied and does not run
-  again.
-
-So check after the deploy: `price_catalogue` (or the row counts of `catalogue_addon` and
-`catalogue_providerproduct`) must show the add-ons and the provider costs. If it does
-not, any write on the admin site publishes a new version, which this release applies in
-full."""
+migration 0002 did: when this migration was written, that was how the first pull after
+the deploy stored the add-ons, the new product fields and the provider costs of the
+version the previous release had already applied without them. It missed two cases (the
+previous release pulling between `migrate` and the switch, and a failed deploy retried),
+and it is no longer the mechanism: every release applies the current snapshot again at
+its first pull, because the state row records which release applied it
+(integration.config, `ConfigState.applied_release`), which covers both cases. The step
+stays as it was applied. Nothing is done on the way back."""
 import django.db.models.deletion
 import uuid
 from django.db import migrations, models
 
 
 def forwards(apps, schema_editor):
-    # Apply the current snapshot again on the first pull (see the module docstring).
+    # Kept as applied; no longer the mechanism (see the module docstring).
     ConfigState = apps.get_model('integration', 'ConfigState')
     ConfigState.objects.using(schema_editor.connection.alias).update(version=None)
 

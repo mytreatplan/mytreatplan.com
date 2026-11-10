@@ -13,7 +13,8 @@
 - ConfigState and AdminDirectoryEntry (entry 4, AD-3 item 1, AD-22): the configuration
   snapshot pulled from the admin site (`integration.config.pull`): the applied version
   and the pull's state (one row), and the admin directory it carried (who an admin actor
-  UUID is). Replaced together, in one transaction, only by a higher version.
+  UUID is). Replaced together, in one transaction, by a higher version, or by the same
+  version at the first pull of another release (`applied_release`).
 - RemoteAccess (entry 5, AD-4, AD-22): this region's access log. Every remote read by an
   admin user (granted or refused) and every download of a stored file
   (storage.service), written before any data leaves (integration.access_log); every
@@ -149,8 +150,15 @@ class OutboxEvent(models.Model):
 class ConfigState(models.Model):
     """The applied configuration snapshot and the state of its pull (one row, pk 1).
 
-    `version` is the applied snapshot's version (None before the first one);
-    `last_error` the code of the last refused or failed pull (empty after a good one),
+    `version` is the applied snapshot's version (None before the first one).
+    `applied_release` and `applied_release_version` are the mark of who applied it: the
+    release (the deployed git SHA, `integration.config.current_release`; empty without
+    one) and the version it applied. A release from before the mark writes `version`
+    only, so the mark names the applied snapshot only while `applied_release_version`
+    equals `version`; a pull of the applied version is `unchanged` only when the mark
+    is this release's, and is applied again otherwise. Both columns have a database
+    default or are nullable: a release from before them still creates and saves the row.
+    `last_error` is the code of the last refused or failed pull (empty after a good one),
     never the snapshot. `warned_at`: when the one Sentry warning of the current outage (no
     good pull for an hour) was sent; saved before sending, cleared by the next good pull.
     `newer_format_version`: the last version kept out because its format is newer than
@@ -162,6 +170,9 @@ class ConfigState(models.Model):
                                           editable=False)
     version = models.PositiveBigIntegerField(null=True, blank=True)
     applied_at = models.DateTimeField(null=True, blank=True)
+    applied_release = models.CharField(max_length=64, blank=True, default='',
+                                       db_default='')
+    applied_release_version = models.PositiveBigIntegerField(null=True, blank=True)
     last_pull_at = models.DateTimeField(null=True, blank=True)
     last_success_at = models.DateTimeField(null=True, blank=True)
     last_error = models.CharField(max_length=64, blank=True)

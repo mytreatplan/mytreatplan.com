@@ -3037,16 +3037,47 @@ created here.
 |------|-------|
 | Pull | `pullconfig` job every 5 minutes (`manage.py pull_config`), plus a task on the worker after each signed `POST /api/v1/config/nudge` from the admin site (answered 202; nudges coalesce into one queued pull). A signed `GET <admin>/api/v1/config` to the only `INTERFACE_PEERS` entry (or `INTERFACE_ADMIN_SITE`) |
 | Check | the snapshot's signature (admindev's key from `INTERFACE_PEER_KEYS`, `typ: config`, this site as the audience, the SHA-256 of the snapshot and its version) and its shape (mytp-core's `verify_snapshot`) before anything is applied |
-| Apply | one transaction, the state row locked: a higher version replaces the directory (`integration_admindirectoryentry`) and every registered section (`register_section_applier`: the catalogue's `catalogue_*` tables, which a snapshot without the section empties; the provider costs' `catalogue_providerproduct` and `catalogue_providercost`, emptied the same way; the country map's `regions_country` rows, which a snapshot without the section leaves as they are) and becomes the applied one (`integration_configstate`); the same version changes nothing; an older one is refused (`stale`) |
+| Apply | one transaction, the state row locked: a higher version, or the applied version when another release applied it (below), replaces the directory (`integration_admindirectoryentry`) and every registered section (`register_section_applier`: the catalogue's `catalogue_*` tables, which a snapshot without the section empties; the provider costs' `catalogue_providerproduct` and `catalogue_providercost`, emptied the same way; the country map's `regions_country` rows, which a snapshot without the section leaves as they are) and becomes the applied one (`integration_configstate`, with the release that applied it); the same version applied by this release changes nothing; an older one is refused (`stale`) |
 | Refusals | the applied snapshot stays; `last_error` holds the code only: `network`, `http_<status>[_<code>]`, `bad_answer`, `bad_signature`, `audience`, `expired`, `invalid_body`, `newer_format` (the admin site needs a newer mytp-core: a warning line once per version), `stale`, `not_configured`, `signing_key` (the KMS could not unwrap the signing key), `apply_failed`; `pull_config` prints one line with the code and exits 0 (the outage warning below reports it once), except `not_configured` (no admin site, peer keys or signing key), which fails the job so its Sentry monitor shows it |
 | Outage | no good pull for an hour: one Sentry warning "Configuration snapshot not pulled for an hour (<code>)" per outage, never the contents; the next good pull resets it. A pull that stopped running altogether is caught by the `checkinterface` job ([Interface alerts](#interface-alerts)) |
 
 Look at it (names of admin users are not patient data):
 
 ```sh
-sudo -u mytp-dev ./venv/bin/python manage.py show_config    # version, applied at, last pull, last good pull, last error, the directory
+sudo -u mytp-dev ./venv/bin/python manage.py show_config    # version, applied at, applied by release, last pull, last good pull, last error, the directory
 sudo -u mytp-dev ./venv/bin/python manage.py pull_config    # pull_config: v<n> applied | unchanged, or pull_config: refused (<code>); ...
 ```
+
+The first pull of a release that has not applied the current version applies it again,
+once. A release that reads more of the snapshot (new catalogue parts, a new section)
+stores them only when a snapshot is applied, so the state row records which release
+applied the snapshot, next to its version (`integration_configstate.applied_release` and
+`applied_release_version`). The release is the git SHA in the release's own `REVISION`
+file; `RELEASE_SHA` counts only where there is no such file (unlike for Sentry's
+release, where it wins: a `RELEASE_SHA` line in `shared/settings.env` is the same for
+every deploy and would hide a new release). A pull of the applied version is `unchanged`
+only when this same release applied it; otherwise it is applied again in full, in the
+same transaction and with the same refusals. So after the deploy of a new SHA the first
+pull (the `pullconfig` job, within 5 minutes, or `pull_config` by hand) prints `applied`
+for the current version, the next one `unchanged`, and `show_config` shows the new
+release under `applied by release`. Until that pull the stored rows stay as they were.
+Two cases differ:
+
+- The same SHA again: a redeploy of the SHA already live ends early in `release.sh`
+  (health check only), and a retry of a SHA that already pulled finds its own mark: the
+  pull prints `unchanged`, and nothing needs applying (the same appliers already
+  stored that version).
+- A rollback to an earlier release that writes the mark is another release too: its
+  first pull applies the current version again, with its older appliers (what it does
+  not read is left as its appliers leave it), and the newer release applies it once
+  more when it is deployed again.
+
+A release from before the mark writes the version only, so a snapshot it applies
+between `migrate` and the switch, or after a failed deploy or a rollback to it, no
+longer matches the mark (`show_config` prints `another release`) and the next release
+that writes the mark applies it again. No migration clears the applied version any
+more, and nothing is done by hand. A site without a release identity (local
+development: no `REVISION` file, no `RELEASE_SHA`) behaves as one unnamed release.
 
 The `pullconfig` timer reaches a site only when `provision.sh` runs again after the
 merge's deploy (see [Sites on the staging host](#sites-on-the-staging-host)); keep its
@@ -3101,16 +3132,13 @@ Products in full (epic-catalogue entry 5, mytp-core 0.20.0; user decisions 2026-
   `tps_branded`, `other` as `uncategorised`, the product's name is its English text, and
   a subscription without an in-house discount has 0. Migration 0002 does the same to the
   rows already stored.
-- The deploy applies the current snapshot again, once. The admin site is deployed first;
-  a catalogue write there before this release is live publishes the new category codes,
-  and the previous release applies that snapshot and skips every product of a category
-  it does not know. A snapshot of the version already applied is never applied again, so
-  migration 0002 clears the applied version (`integration_configstate.version`): the
-  first pull after the deploy (the `pullconfig` job, within 5 minutes, or `pull_config`
-  by hand) applies the admin site's current snapshot whatever its version and stores
-  those products. Until then `show_config` shows no applied version; the directory, the
-  country map and the catalogue rows stay as they were. Migrating back does not restore
-  the version: the next pull applies the current snapshot again there too.
+- The first pull after the deploy stores the products the previous release skipped (the
+  admin site is deployed first; a catalogue write there before this release is live
+  publishes the new category codes, and the previous release skips every product of a
+  category it does not know): every deploy applies the current snapshot again
+  ([Configuration snapshot](#configuration-snapshot)). Migration 0002 also clears the
+  applied version, the mechanism of that time; it stays as applied and is no longer
+  needed.
 
 ```sh
 sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --tier basic
@@ -3177,23 +3205,13 @@ decisions 2026-11-10):
   margins) read it; nothing shows a cost to a doctor.
 - A snapshot of an admin site before entry 6 still applies: no add-ons, no size, one per
   line, no calls, no links and no costs.
-- The deploy applies the current snapshot again, once, as entry 5's did and for the same
-  reason: migration 0003 clears the applied version, so the first pull after the deploy
-  stores the add-ons, the new product fields and the provider costs of the admin site's
-  current snapshot whatever its version (the previous release applied it without them).
-  The new columns are nullable or have database defaults, so the previous release keeps
+- The first pull after the deploy stores the add-ons, the new product fields and the
+  provider costs of the admin site's current snapshot, whatever its version (the
+  previous release applied it without them): every deploy applies the current snapshot
+  again ([Configuration snapshot](#configuration-snapshot)), also when the previous
+  release pulled between `migrate` and the switch or a failed deploy was retried. The
+  new columns are nullable or have database defaults, so the previous release keeps
   applying snapshots while this one is being deployed.
-  Two exceptions, in which the previous release records the current version again
-  without the new parts and this release then answers `unchanged` for it: the previous
-  release pulls between `migrate` and the switch (the `pullconfig` timer and the worker
-  still run the previous release then); and a deploy that fails after `migrate`
-  switches back, the previous release pulls, and the deploy is retried (the migration
-  does not run again). So check after the deploy: `price_catalogue --country ES --tier
-  basic` must list the add-ons under the offers and `price_catalogue --product <id>
-  --cost` the cost of a linked product (or count the rows of `catalogue_addon` and
-  `catalogue_providerproduct`). If they are missing, make any write on the admin site
-  (an edit of a product's notes does not count; change a price and change it back): it
-  publishes a new version, which this release applies in full.
 
 ```sh
 sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --tier basic

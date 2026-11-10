@@ -14,10 +14,10 @@ language, code and validity dates are stored as sent. A snapshot of an admin sit
 its former category (`tps`, `other`) is read as the new one (`tps_branded`,
 `uncategorised`), and a subscription's absent in-house discount is 0.
 
-The release before entry 5 skipped the products of the new categories, and a snapshot of
-the version already applied is never applied again (integration.config), so catalogue
-migration 0002 clears the applied version: the first pull of this release applies the
-admin site's current snapshot again and stores the products that release skipped.
+The release before entry 5 skipped the products of the new categories. Every release
+applies the admin site's current snapshot again at its first pull, whatever its version
+(integration.config: the state row records which release applied it), so what a previous
+release skipped or did not store is stored then.
 
 Add-ons, quantities, calls and costs (epic-catalogue entry 6, mytp-core 0.21.0): the
 section's add-ons replace the stored ones (none in a snapshot of an admin site before
@@ -27,8 +27,7 @@ no size, one per line, no calls, no links). The snapshot's `provider_costs` sect
 its own applier, `apply_provider_costs`: the provider products and their dated costs
 replace the stored ones (a snapshot without the section empties them: no costs; a
 provider product in a currency `Money` does not take is skipped). The release before
-entry 6 stored none of this, so catalogue migration 0003 clears the applied version
-again, as 0002 did."""
+entry 6 stored none of this; the first pull of the next release does (as above)."""
 from mytp_core.money import CURRENCIES
 
 from .models import (AddOn, CountryGroup, Product, ProviderCost, ProviderProduct,

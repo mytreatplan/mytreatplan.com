@@ -20,8 +20,21 @@ by the admin site's signed nudge, ``POST /api/v1/config/nudge``):
    the catalogue app's `catalogue` and, since epic-catalogue entry 6, `provider_costs`;
    the regions app's `country_map`; a section the snapshot lacks is applied as None: the
    catalogue and the provider costs empty their tables, the country map keeps its rows)
-   and becomes the applied version; the same version changes nothing (a
-   good pull); a lower one is refused (`stale`).
+   and becomes the applied version, marked with the release that applied it
+   (`ConfigState.applied_release`, `applied_release_version`; `current_release`: the
+   release's REVISION file, the deployed git SHA); the same version changes nothing (a good pull) when this same
+   release applied it, and is applied again in full otherwise; a lower one is refused
+   (`stale`).
+
+Why the same version is applied again by another release: a release that reads more of
+the snapshot (new catalogue parts, a new section) stores them only when a snapshot is
+applied. So the first pull of a release that has not applied the current version (the
+`pullconfig` job, within 5 minutes of a deploy) applies it once more; a rollback to an
+earlier release that writes the mark does too, with its older appliers. A release from before the mark
+writes the version only: whatever it applies (during a deploy, between `migrate` and
+the switch; after a rollback) no longer matches the mark, and the next release that
+knows the mark applies it again. Without a release identity (local development, tests)
+the site behaves as one unnamed release.
 
 Every refusal or failure leaves the applied snapshot untouched and records its code only
 (`ConfigState.last_error`; never the snapshot): `network`, `peer_url`,
@@ -37,8 +50,10 @@ reset by the next good pull (decision 2026-11-05).
 import logging
 from datetime import timedelta
 from functools import partial
+from pathlib import Path
 
 import sentry_sdk
+from django.conf import settings
 from django.core.cache import cache
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -64,6 +79,9 @@ STALE = 'stale'
 NOT_CONFIGURED = 'not_configured'
 APPLY_FAILED = 'apply_failed'
 SIGNING_KEY = 'signing_key'
+# The columns an applied snapshot writes; the last two are the mark of the release.
+APPLIED_FIELDS = ['version', 'applied_at', 'applied_release', 'applied_release_version']
+RELEASE_LENGTH = ConfigState._meta.get_field('applied_release').max_length
 
 
 # Section name -> apply(value): called in _apply's transaction with the snapshot's field
@@ -76,7 +94,7 @@ HEADER_FIELDS = frozenset({'version', 'min_reader', 'generated_at', 'admin_direc
 
 def register_section_applier(name, apply):
     """Apply the snapshot's section `name` (a field of mytp-core's ConfigSnapshot) with
-    `apply(value)` whenever a new version is applied, inside its transaction: an error
+    `apply(value)` whenever a snapshot is applied, inside its transaction: an error
     rolls the whole snapshot back (`apply_failed`). `value` is None when the snapshot
     has no such section (an older admin site): the applier decides what that means (the
     catalogue empties its tables, the country map keeps its rows).
@@ -154,13 +172,38 @@ def _warn_newer_format(version):
                    snapshots.SNAPSHOT_READER)
 
 
+def current_release():
+    """This release's identity: the git SHA in the release's own REVISION file
+    (release.sh writes one into each release directory); without the file, Sentry's
+    release (RELEASE_SHA); or '' without either (local development, tests): one unnamed
+    release. The file comes first, unlike for Sentry's release: a RELEASE_SHA in the
+    site's shared settings.env is the same for every deploy, and no new release would
+    then apply the snapshot again."""
+    revision = Path(settings.BASE_DIR) / 'REVISION'
+    release = revision.read_text().strip() if revision.is_file() else ''
+    return (release or settings.SENTRY_RELEASE or '')[:RELEASE_LENGTH]
+
+
+def _applied_by(row, release):
+    """Whether `release` applied the row's version: the mark is its own and is of that
+    version (a release from before the mark moves the version and leaves the mark)."""
+    return (row.applied_release_version == row.version
+            and row.applied_release == release)
+
+
 def _apply(snapshot, now, summaries=None):
     """APPLIED, UNCHANGED or STALE, in one transaction with the state row locked. The
-    appliers' summaries are appended to `summaries` (a list) when given."""
+    applied version is UNCHANGED only when this release applied it; applied by another
+    one, it is applied again. The appliers' summaries are appended to `summaries` (a
+    list) when given."""
+    release = current_release()
     with transaction.atomic():
         row = _locked_state()
-        if row.version is not None and snapshot.version <= row.version:
-            return UNCHANGED if snapshot.version == row.version else STALE
+        if row.version is not None:
+            if snapshot.version < row.version:
+                return STALE
+            if snapshot.version == row.version and _applied_by(row, release):
+                return UNCHANGED
         AdminDirectoryEntry.objects.all().delete()
         AdminDirectoryEntry.objects.bulk_create(
             AdminDirectoryEntry(id=entry.id, display_name=entry.display_name,
@@ -173,7 +216,9 @@ def _apply(snapshot, now, summaries=None):
                 summaries.append(summary)
         row.version = snapshot.version
         row.applied_at = now
-        row.save(update_fields=['version', 'applied_at'])
+        row.applied_release = release
+        row.applied_release_version = snapshot.version
+        row.save(update_fields=APPLIED_FIELDS)
     return APPLIED
 
 

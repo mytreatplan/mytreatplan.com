@@ -537,6 +537,29 @@ def test_price_catalogue_shows_the_cost_and_the_incomplete_warning(
         '  monthly, not in the sum: DM x 2: no cost on this date\n')
 
 
+# --- Another release, the same version ------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_another_release_stores_the_add_ons_and_costs_of_the_version_already_applied(
+        admin, settings):  # noqa: F811
+    """One release applied version 5 without add-ons and provider costs; another one
+    pulls the same version carrying them: the real appliers store them, once."""
+    settings.SENTRY_RELEASE = '6b27169cc0f014905d7dbfe73335ef7aa2123d26'
+    assert pull(admin, 5, full(add_ons=None)) == ('applied', 5)
+    assert Product.objects.exists()
+    assert not AddOn.objects.exists() and not ProviderProduct.objects.exists()
+    # The same release: unchanged, nothing stored.
+    assert pull(admin, 5, full(), provider_costs=COSTS) == ('unchanged', 5)
+    assert not AddOn.objects.exists() and not ProviderProduct.objects.exists()
+    settings.SENTRY_RELEASE = 'c0ffee69cc0f014905d7dbfe73335ef7aa2123d2'
+    assert pull(admin, 5, full(), provider_costs=COSTS) == ('applied', 5)
+    assert state().version == 5 and AddOn.objects.count() == 5
+    assert ProviderProduct.objects.count() == 4 and ProviderCost.objects.exists()
+    assert line(TPS, 'ONE-ARCH') == Money('67.50', 'EUR')
+    assert pull(admin, 5, full(add_ons=[])) == ('unchanged', 5)
+    assert AddOn.objects.count() == 5 and ProviderProduct.objects.count() == 4
+
+
 # --- Migration 0003 ------------------------------------------------------------------------------
 
 @pytest.fixture
