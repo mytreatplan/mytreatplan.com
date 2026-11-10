@@ -4,7 +4,8 @@ entry 8; the snapshot's catalogue section, epic-catalogue entry 2; remote reads,
 the contact message events, entry 9; the snapshot's country map section,
 epic-catalogue entry 3; remote writes, entry 6; hub lookups, entry 7; the snapshot's
 provider costs section, epic-catalogue entry 4; the products' texts, code and validity and
-the in-house TPS discount, epic-catalogue entry 5)."""
+the in-house TPS discount, epic-catalogue entry 5; add-ons, sizes, per-unit quantities,
+calls and cost links, entry 6)."""
 
 from decimal import Decimal
 
@@ -15,7 +16,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.20.0'
+    assert mytp_core.__version__ == '0.21.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -39,7 +40,7 @@ def test_vendored_mytp_core_has_the_catalogue_section():
     from mytp_core.contracts import CatalogueSection
     assert ConfigSnapshot.model_fields['catalogue'].is_required() is False
     assert CatalogueSection.model_fields.keys() == {'country_groups', 'products',
-                                                    'subscriptions'}
+                                                    'subscriptions', 'add_ons'}
 
 
 def test_vendored_mytp_core_has_remote_reads():
@@ -106,10 +107,30 @@ def test_vendored_mytp_core_has_the_provider_costs_section():
 
 def test_vendored_mytp_core_has_the_products_core_fields():
     from mytp_core.contracts import CatalogueProduct, CatalogueSubscription, ProductText
-    assert CatalogueProduct.model_fields.keys() == {
+    assert CatalogueProduct.model_fields.keys() >= {
         'id', 'name', 'category', 'net_price', 'active', 'texts', 'code', 'valid_from',
         'valid_to'}
     assert ProductText.model_fields.keys() == {'name', 'description'}
     field = CatalogueSubscription.model_fields['tps_in_house_discount_percent']
     assert field.is_required() is False
     assert callable(CatalogueProduct.name_in) and callable(CatalogueProduct.offered_on)
+
+
+def test_vendored_mytp_core_has_add_ons_quantities_calls_and_costs():
+    from mytp_core.contracts import (CatalogueAddOn, CatalogueProduct, CatalogueSection,
+                                     CostLink, PerUnit, ProductCalls, line_price, sum_costs)
+    from mytp_core.money import Money
+    assert CatalogueSection.model_fields['add_ons'].is_required() is False
+    assert CatalogueProduct.model_fields.keys() == {
+        'id', 'name', 'category', 'net_price', 'active', 'texts', 'code', 'valid_from',
+        'valid_to', 'size', 'per_unit', 'calls', 'cost_links'}
+    assert CatalogueAddOn.model_fields.keys() == {
+        'id', 'code', 'texts', 'amount', 'percent', 'categories', 'sizes', 'active'}
+    assert PerUnit.model_fields.keys() == {'min_quantity', 'max_quantity'}
+    assert ProductCalls.model_fields.keys() == {'count', 'minutes'}
+    assert CostLink.model_fields.keys() == {'provider_product', 'quantity', 'monthly'}
+    assert line_price(Money('100.00', 'EUR'), percents=[Decimal('-25.00')],
+                      discount_percent=Decimal('10.00')) == Money('67.50', 'EUR')
+    cost = sum_costs([('A', 1, False, Money('10.00', 'EUR')), ('B', 2, False, None)], 'EUR')
+    assert cost.total == Money('10.00', 'EUR') and not cost.complete
+    assert cost.missing == ('B',)

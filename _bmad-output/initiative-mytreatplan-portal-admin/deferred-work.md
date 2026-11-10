@@ -36,3 +36,6 @@
 - source_plan: `epic-platform/story-regional-object-storage-service-plan.md`
   summary: `StoredObject.owner` uses PROTECT, so once a real purpose sets an owner, `accounts.erasure.purge_erased` must delete (or detach) that user's objects first, or one owner blocks its whole purge batch.
   evidence: 1.11 review (2026-11-06): `purge_erased` deletes users in batches of 500 and clears only `LegalChoice`; a ProtectedError rolls the batch back on every run.
+- source_plan: `epic-catalogue/story-products-add-ons-quantities-calls-and-costs-plan.md`
+  summary: Make the portal re-apply the current snapshot whenever its appliers change, without relying on a migration that clears the applied version.
+  evidence: Entries 5 and 6 clear `ConfigState.version` in a migration; the previous release can pull between `migrate` and the switch (the `pullconfig` timer runs the previous release), or after a failed deploy that is retried, and record the current version without the new parts, after which the new release answers `unchanged` until the next admin write (review finding 7 of entry 6). A stored applier revision next to the applied version would close it.

@@ -306,8 +306,12 @@ def test_the_catalogue_applier_is_registered_once():
     for name in ('vouchers', 'version', 'admin_directory'):
         with pytest.raises(ValueError):
             config.register_section_applier(name, lambda section: None)
-    # The regions app's country map (epic-catalogue entry 3) is the other section.
-    assert config.section_applier_names() == ('country_map', 'catalogue')
+    # The regions app's country map (epic-catalogue entry 3) is another section, and the
+    # provider costs (entry 6) are applied by this app too.
+    assert config.section_applier_names() == ('country_map', 'catalogue', 'provider_costs')
+    config.register_section_applier('provider_costs', applier.apply_provider_costs)
+    with pytest.raises(ValueError):
+        config.register_section_applier('provider_costs', lambda section: None)
 
 
 @pytest.mark.django_db
@@ -317,7 +321,8 @@ def test_the_applied_log_line_has_the_catalogue_counts_only(admin, caplog):  # n
     pull(admin, 1, catalogue(products=[
         product(TPS, 'Secret-Product-Name', 'tps_branded', '1.00')]))
     assert ('config snapshot v1 applied (2 admin directory entries); catalogue: '
-            '3 country groups, 1 products, 1 subscriptions') in caplog.text
+            '3 country groups, 1 products, 1 subscriptions, 0 add-ons; '
+            'no provider costs section') in caplog.text
     pull(admin, 2, None)
     assert ('config snapshot v2 applied (2 admin directory entries); no catalogue section'
             in caplog.text)
@@ -570,6 +575,13 @@ def _migrate(targets):
     return executor.loader.project_state(targets).apps
 
 
+def _migrate_to_latest():
+    """The latest schema again: the current models read columns of later migrations."""
+    from django.db import connection
+    from django.db.migrations.executor import MigrationExecutor
+    _migrate(MigrationExecutor(connection).loader.graph.leaf_nodes())
+
+
 @pytest.fixture
 def at_0001(transactional_db):
     """The schema at catalogue 0001 for the test, the latest again afterwards."""
@@ -595,6 +607,7 @@ def test_migration_0002_maps_the_former_categories(at_0001):
     OldSubscription.objects.create(id=BASIC, tier='basic', country_group=iberia,
                                    tps_discount_percent=Decimal('10.00'), active=True)
     _migrate([('catalogue', '0002_products_core')])
+    _migrate_to_latest()
     tps, other = Product.objects.get(pk=TPS), Product.objects.get(pk=OTHER)
     assert tps.category == 'tps_branded' and other.category == 'uncategorised'
     assert tps.texts == {'en': {'name': 'TPS', 'description': ''}}
@@ -620,7 +633,9 @@ def test_migration_0002_makes_the_first_pull_apply_the_current_version_again(
         product(IN_HOUSE, 'In-house', 'tps_in_house', '100.00', code='TPS-2')])
     ConfigState.objects.update_or_create(pk=ConfigState.SINGLETON, defaults={'version': 5})
     assert not at_0001.get_model('catalogue', 'Product').objects.exists()
-    _migrate([('catalogue', '0002_products_core')])
+    apps = _migrate([('catalogue', '0002_products_core')])
+    assert apps.get_model('integration', 'ConfigState').objects.get().version is None
+    _migrate_to_latest()
     assert state().version is None
     assert pull(admin, 5, section) == ('applied', 5)
     assert state().version == 5
