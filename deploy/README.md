@@ -3104,12 +3104,15 @@ a row's `save()` or `delete()` raises. A snapshot without the section (an admin 
 before 0.12.0) empties them, so nothing is offered.
 
 `catalogue.resolver.offers(country, tier)` is the only code that prices: the active group
-that lists the country (else the active catch-all, "Rest of world"), its active
-subscription of that tier (none: no offers), then every active product that is within its
-validity dates today, at its net price less the subscription's discount, rounded half up
-to cents: its TPS branded discount for a `tps_branded` product, its TPS in-house discount
-for a `tps_in_house` one, none for any other category. VAT, vouchers, the billing company
-and checkout come with later entries; there is no portal page yet.
+that lists the country (else the active catch-all, "Rest of world"), its active standard
+subscription of that tier (none: no offers), then the active products linked to that
+subscription that are within their validity dates today, each at its net price less the
+subscription's discount for the product's category, rounded half up to cents (since
+epic-catalogue entry 8, "Subscriptions in full" below; a snapshot of an admin site before
+it has no links and no discounts per category: every active product is then offered, at
+the subscription's TPS branded discount for a `tps_branded` product, its TPS in-house
+discount for a `tps_in_house` one, none for any other category). VAT, vouchers, the
+billing company and checkout come with later entries; there is no portal page yet.
 
 Products in full (epic-catalogue entry 5, mytp-core 0.20.0; user decisions 2026-11-10):
 
@@ -3143,6 +3146,7 @@ Products in full (epic-catalogue entry 5, mytp-core 0.20.0; user decisions 2026-
 ```sh
 sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --tier basic
 #   ES basic (Iberia): 1 offer(s)
+#     subscription: BAS-IB  Basic  free             (since entry 8: its code, name and own price)
 #     TPS-BR-01  TPS  tps_branded  90.00 EUR        (code, name, category, price; "-": no code)
 sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --tier basic --language es
 #   the names in Spanish, the English one where there is none
@@ -3216,6 +3220,7 @@ decisions 2026-11-10):
 ```sh
 sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --tier basic
 #   ES basic (Iberia): 3 offer(s)
+#     subscription: BAS-IB  Basic  free
 #     SPARK-1  Spark on Demand one arch  spark_on_demand  50.00 EUR  per unit, 4 to 9
 #     TPS-M  TPS in-house M  tps_in_house  90.00 EUR
 #         + BYTE-SYNC  Byte Sync  +120.00 EUR      (the add-ons offered on it)
@@ -3225,6 +3230,7 @@ sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --tier
 sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --product <id> --country ES --tier basic \
     --add-on ONE-ARCH --add-on BYTE-SYNC
 #   ES basic (Iberia): TPS-M  TPS in-house M  tps_in_house
+#     subscription: BAS-IB  Basic  free
 #     net price: 100.00 EUR
 #     quantity: 1
 #     subscription discount: 10.00 %
@@ -3242,6 +3248,81 @@ sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --product <id> --co
 #   and, for each monthly link:
 #     monthly, not in the sum: DM x 2: 10.00 EUR a month
 ```
+
+Subscriptions in full (epic-catalogue entry 8, mytp-core 0.22.0; user decisions
+2026-11-11):
+
+- A subscription is standard or manual (`Subscription.manual`). The standard one of a
+  tier and country group is their default: `catalogue.resolver.subscription(country,
+  tier)` returns it, never a manual one. A tier and group may have no active standard
+  subscription (the admin site allows deactivating it): there are then no offers. A
+  manual subscription is assigned to a doctor by an administrator (who has it comes with
+  epic-subscriptions); any number may be active for a tier and group; it is read by its
+  id, `resolver.subscription_by_id(id)` (or `subscription_by_code(code)`), whatever its
+  state, and priced with its own products and discounts (`resolver.offers_under`,
+  `resolver.price`). The admin site sends the standard ones in the section's
+  `subscriptions` and the manual ones in `manual_subscriptions`; both are stored in
+  `catalogue_subscription`.
+- A subscription gives access to its linked products only (`Subscription.products`, the
+  product ids; `resolver.linked(product, subscription)`). A product linked to no
+  subscription is offered to nobody. `resolver.price` refuses a line of a product the
+  subscription does not give access to (`ProductRefused`).
+- A discount per product category (`Subscription.discounts`, `{"tps_branded":
+  "12.00"}`; `resolver.discount_percent(product, subscription)`): a 100.00 TPS branded
+  product under 12 % is 88.00; a category that is not in the map is at its net price;
+  `uncategorised` is never discounted. `tps_discount_percent` and
+  `tps_in_house_discount_percent` are still stored: they equal the map's `tps_branded`
+  and `tps_in_house` values.
+- The subscription's own price (`price_currency`, `monthly_amount`, `upfront_amount`;
+  `Subscription.monthly_price`, `upfront_price` as `Money`, `free`): a monthly amount
+  and an upfront amount for a year, each optional; without either the subscription is
+  free. Stored and readable; charging it comes with epic-subscriptions. A subscription
+  whose price is in a currency this release does not know is skipped, never stored as
+  free.
+- Call extras per product category (`Subscription.call_extras`,
+  `{"virtuaortho_one": {"extra_calls": 1, "minutes": 35}}`; `resolver.calls(product,
+  subscription)` gives `(count, minutes)`): the product's calls plus the extra calls,
+  each of the subscription's length when it gives one (3 calls of 25 minutes are 4 of 35
+  under Premium), else of the product's; a product that grants no calls gets none.
+  Counting the calls comes with epic-appointments.
+- `code` and public texts (`Subscription.texts`; `name_in(lang)`, `description_in(lang)`,
+  `public_name`, `description`), as a product's: a missing text falls back to English.
+  The admin site's internal notes never arrive.
+- A snapshot of an admin site before entry 8 still applies: no manual subscriptions, no
+  links (`products` is NULL: every active product is offered under each subscription, as
+  before), no discounts map (`discounts` is NULL: the two TPS discounts apply), no code,
+  texts, price or call extras.
+- The first pull after the deploy stores the new parts of the admin site's current
+  snapshot, whatever its version (the previous release applied it without them): every
+  deploy applies the current snapshot again
+  ([Configuration snapshot](#configuration-snapshot)); migration 0004 clears nothing.
+  The new columns are nullable or have database defaults, so the previous release keeps
+  applying snapshots while this one is being deployed.
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --tier premium
+#   ES premium (Iberia): 4 offer(s)
+#     subscription: PRE-IB  Premium  120.00 EUR a month, 1200.00 EUR upfront for a year   (or "free")
+#     TPS-BR  TPS branded  tps_branded  88.00 EUR
+#     VO-ONE  VirtuaOrtho One  virtuaortho_one  250.00 EUR
+#         calls: 4 of 35 minutes                   (the product's 3 of 25, with Premium's extras)
+#     ...                                          (only the products linked to the subscription)
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --subscription <id or code>
+#   ORMCO-PREMIUM premium (Iberia), manual: 2 offer(s)        (a manual one: never listed for ES premium)
+#     subscription: ORMCO-PREMIUM  Ormco Premium  free
+#     ...
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --subscription <id or code> --product <id>
+#     the line under that subscription; "Refused: the product ... is not offered under the subscription ..."
+```
+
+Staging check for entry 8 (after mytp-core 0.22.0, admindev, then dev): on admindev a second
+standard Advanced · Iberia is refused; link Advanced Iberia to a VirtuaOrtho product and
+Advanced Rest of EU not; create a manual "Ormco Premium"; give Premium 12 % on TPS
+branded, +1 call and 35 minutes on the VirtuaOrtho categories, 120 a month or 1200
+upfront. On dev, after the deploy the first pull prints `applied`; `price_catalogue` for
+ES and DE on Advanced shows the VirtuaOrtho product only for ES; the manual one is not
+listed for ES premium and is priced by its id (`--subscription`); the call extras and the
+price are shown.
 
 Staging check for entry 6 (after mytp-core 0.21.0, admindev, then dev): on admindev create
 Byte Sync, ODB DigitalTwin, one arch, Junior I and Junior II, a TPS in-house product of

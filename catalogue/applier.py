@@ -27,7 +27,19 @@ no size, one per line, no calls, no links). The snapshot's `provider_costs` sect
 its own applier, `apply_provider_costs`: the provider products and their dated costs
 replace the stored ones (a snapshot without the section empties them: no costs; a
 provider product in a currency `Money` does not take is skipped). The release before
-entry 6 stored none of this; the first pull of the next release does (as above)."""
+entry 6 stored none of this; the first pull of the next release does (as above).
+
+Subscriptions in full (epic-catalogue entry 8, mytp-core 0.22.0): the section's
+`subscriptions` (the standard ones) and `manual_subscriptions` (none in a snapshot of an
+admin site before 0.22.0) are stored in one table, the manual ones marked. A
+subscription's code, texts, linked products, discounts per product category, own price
+and call extras are stored as sent. A snapshot of an admin site before 0.22.0 has none
+of them and still applies: the linked products and the discounts map are then None, so
+every product is offered under each subscription and the two TPS discounts apply, as
+before. A subscription whose own price is in a currency `Money` does not take is
+skipped (never stored as free). The release before entry 8 stored none of this; the
+first pull of the next release does (as above): no migration clears the applied
+version."""
 from mytp_core.money import CURRENCIES
 
 from .models import (AddOn, CountryGroup, Product, ProviderCost, ProviderProduct,
@@ -54,6 +66,37 @@ def _texts_of(texts):
 def _links(product):
     return [{'provider_product': str(link.provider_product), 'quantity': link.quantity,
              'monthly': link.monthly} for link in product.cost_links or ()]
+
+
+def _percent(value):
+    return format(value, 'f')
+
+
+def _subscription(subscription, manual):
+    """The row of a contract subscription, standard or `manual`: what it carries as
+    sent; what is absent (an admin site before mytp-core 0.22.0) as None for the linked
+    products and the discounts map (every product, the two former discounts), no code,
+    no texts, no price, no call extras."""
+    price = subscription.price
+    return Subscription(
+        id=subscription.id, tier=subscription.tier,
+        country_group_id=subscription.country_group,
+        tps_discount_percent=subscription.tps_discount_percent,
+        tps_in_house_discount_percent=subscription.in_house_discount_percent,
+        manual=manual, code=subscription.code,
+        texts={} if subscription.texts is None else _texts_of(subscription.texts),
+        products=(None if subscription.products is None
+                  else [str(product) for product in subscription.products]),
+        discounts=(None if subscription.discounts is None
+                   else {category: _percent(percent)
+                         for category, percent in subscription.discounts.items()}),
+        price_currency=price.currency if price else '',
+        monthly_amount=price and price.monthly, upfront_amount=price and price.upfront,
+        call_extras={
+            category: ({'extra_calls': extras.extra_calls} if extras.minutes is None
+                       else {'extra_calls': extras.extra_calls, 'minutes': extras.minutes})
+            for category, extras in (subscription.call_extras or {}).items()},
+        active=subscription.active)
 
 
 def apply(section):
@@ -83,12 +126,12 @@ def apply(section):
         if _category(product) in Product.CATEGORIES
         and product.net_price.currency in CURRENCIES)
     Subscription.objects.bulk_create(
-        Subscription(id=subscription.id, tier=subscription.tier,
-                     country_group_id=subscription.country_group,
-                     tps_discount_percent=subscription.tps_discount_percent,
-                     tps_in_house_discount_percent=subscription.in_house_discount_percent,
-                     active=subscription.active)
-        for subscription in section.subscriptions if subscription.tier in Subscription.TIERS)
+        _subscription(subscription, manual)
+        for manual, subscriptions in ((False, section.subscriptions),
+                                      (True, section.manual_subscriptions or ()))
+        for subscription in subscriptions
+        if subscription.tier in Subscription.TIERS
+        and (subscription.price is None or subscription.price.currency in CURRENCIES))
     AddOn.objects.bulk_create(
         AddOn(id=add_on.id, code=add_on.code, texts=_texts_of(add_on.texts),
               amount=add_on.amount and add_on.amount.amount,
