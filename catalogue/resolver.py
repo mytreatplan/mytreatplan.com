@@ -6,18 +6,38 @@ country is offered under a subscription tier, from the catalogue the admin site 
 
 1. the country's group: the active group that lists `country` (ISO 3166-1 alpha-2), else
    the active catch-all group ("Rest of world"); none: no offers;
-2. the active subscription of `tier` in that group; none: no offers;
-3. every active product that is within its validity dates today (`valid_from` /
-   `valid_to`, both optional and inclusive, in Madrid time whatever the region: `today`),
-   by name, with its price (`price`): for a TPS branded product (category `tps_branded`)
-   the net price less the subscription's TPS branded discount, for a TPS in-house one
-   (`tps_in_house`) the net price less its TPS in-house discount, each
-   ``net_price × (1 − discount / 100)`` rounded half up to cents (mytp-core's `Money`);
-   for any other category, `uncategorised` included, the net price (epic-catalogue
-   entry 5, user decision 2026-11-10).
+2. the active standard subscription of `tier` in that group, the default of that tier
+   and group (`subscription`); none: no offers;
+3. the products that subscription gives access to (`offers_under`): the active products
+   linked to it that are within their validity dates today (`valid_from` / `valid_to`,
+   both optional and inclusive, in Madrid time whatever the region: `today`), by name,
+   each with its price (`unit_price`): ``net_price × (1 − discount / 100)`` rounded half
+   up to cents (mytp-core's `Money`), the discount being the subscription's for the
+   product's category (`discount_percent`), 0 for a category it does not discount and
+   for `uncategorised`.
 
 A product that is inactive or outside its validity dates is not offered for new orders,
 but stays readable by its id (`product`), for the orders that refer to it.
+
+Subscriptions in full (epic-catalogue entry 8, user decisions 2026-11-11):
+
+- A subscription is standard or manual. `subscription(country, tier)` returns the
+  standard one only. A manual one (assigned to a doctor by an administrator:
+  epic-subscriptions) is never returned for a country and a tier: it is read by its id
+  (`subscription_by_id`, whatever its state) and priced with its own products and
+  discounts (`offers_under`, `price`).
+- A subscription gives access to its linked products only (`linked`). A product linked
+  to no subscription is offered to nobody. A subscription from a snapshot without links
+  (an admin site before mytp-core 0.22.0) gives access to every product, as before.
+- `discount_percent(product, subscription)`: the subscription's discount for the
+  product's category; from a snapshot without the map, its TPS branded discount on a
+  `tps_branded` product, its TPS in-house discount on a `tps_in_house` one, 0 otherwise.
+- `calls(product, subscription)`: the calls a product grants under a subscription: the
+  product's calls plus the subscription's extra calls for its category, each of the
+  subscription's length when it gives one (3 calls of 25 minutes are 4 of 35 under
+  "+1 call, 35 minutes"); None for a product that grants no calls.
+- A subscription's own price is on its row (`Subscription.monthly_price`,
+  `upfront_price`, `free`): stored and readable here; charging it is epic-subscriptions.
 
 Add-ons, quantities and costs (epic-catalogue entry 6, user decisions 2026-11-10):
 
@@ -35,7 +55,8 @@ Add-ons, quantities and costs (epic-catalogue entry 6, user decisions 2026-11-10
   product only. A fixed amount is added once per line, whatever the quantity. The
   quantity is within the product's range when it is priced per unit (Spark on Demand:
   4 to 9 aligners), and 1 otherwise: anything else is `QuantityRefused`. An add-on that
-  is inactive, not offered on the product or chosen twice is `AddOnRefused`. `offers`
+  is inactive, not offered on the product or chosen twice is `AddOnRefused`; a product
+  the subscription does not give access to is `ProductRefused` (entry 8). `offers`
   lists a per-unit product at the price of one unit (`unit_price`).
 - `cost(product, day)`: what the product costs the company on a date, from its cost
   links and the provider costs the admin site last sent: the sum of the links that are
@@ -60,14 +81,22 @@ from decimal import Decimal
 from django.utils import timezone
 
 from mytp_core.contracts import (AddOnRefused, QuantityRefused, add_on_applies,
-                                 check_quantity, line_price, link_labels, sum_costs)
+                                 calls_under, check_quantity, line_price, link_labels,
+                                 subscription_discount, subscription_offers, sum_costs)
 from mytp_core.money import Money
 
 from .models import AddOn, CountryGroup, Product, ProviderProduct, Subscription
 
-__all__ = ['AddOnRefused', 'QuantityRefused', 'add_on', 'add_ons', 'cost', 'country_group',
-           'discount_percent', 'normal_country', 'normal_tier', 'offers', 'price',
-           'product', 'subscription', 'today', 'unit_price']
+__all__ = ['AddOnRefused', 'ProductRefused', 'QuantityRefused', 'add_on', 'add_ons',
+           'calls', 'cost', 'country_group', 'discount_percent', 'linked',
+           'normal_country', 'normal_tier', 'offers', 'offers_under', 'price', 'product',
+           'subscription', 'subscription_by_code', 'subscription_by_id', 'today',
+           'unit_price']
+
+
+class ProductRefused(ValueError):
+    """A product the subscription does not give access to: it is not among the
+    subscription's linked products."""
 
 _COUNTRY_RE = re.compile(r'[A-Z]{2}')
 
@@ -104,23 +133,67 @@ def country_group(country):
 
 
 def subscription(country, tier):
-    """The active subscription of `tier` for `country`, or None."""
+    """The active standard subscription of `tier` for `country` (the default of that
+    tier and the country's group), or None. Never a manual one."""
     group = country_group(country)
     if group is None:
         return None
-    return Subscription.objects.filter(active=True, tier=normal_tier(tier),
+    return Subscription.objects.filter(active=True, manual=False, tier=normal_tier(tier),
                                        country_group=group).first()
 
 
+def subscription_by_id(subscription_id):
+    """The subscription of this id (a UUID or its string), standard or manual, whatever
+    its state, or None: how a manual subscription is read (who has it is
+    epic-subscriptions)."""
+    try:
+        subscription_id = uuid.UUID(str(subscription_id))
+    except ValueError:
+        return None
+    return Subscription.objects.filter(pk=subscription_id).first()
+
+
+def subscription_by_code(code):
+    """The subscription of this code ("adv-ib" is ADV-IB), standard or manual, whatever
+    its state, or None."""
+    code = (code or '').strip().upper()
+    return Subscription.objects.filter(code=code).first() if code else None
+
+
+def linked(product, subscription):
+    """Whether the subscription gives access to `product`: whether it is among its
+    linked products; every product for a subscription without links (a snapshot of an
+    admin site before mytp-core 0.22.0). It says nothing of either's state."""
+    return subscription_offers(product.pk, subscription.products)
+
+
 def discount_percent(product, subscription):
-    """The subscription's discount (a Decimal percentage) on `product`: its TPS branded
-    discount on a `tps_branded` product, its TPS in-house discount on a `tps_in_house`
-    one, 0 on any other category."""
-    if product.category == Product.TPS_BRANDED:
-        return subscription.tps_discount_percent
-    if product.category == Product.TPS_IN_HOUSE:
-        return subscription.tps_in_house_discount_percent
-    return Decimal(0)
+    """The subscription's discount (a Decimal percentage) on `product`: its discount for
+    the product's category (0 for a category it does not discount); for a subscription
+    without the map (a snapshot of an admin site before mytp-core 0.22.0), its TPS
+    branded discount on a `tps_branded` product, its TPS in-house discount on a
+    `tps_in_house` one, 0 on any other category. Always 0 on `uncategorised`."""
+    if product.category == Product.UNCATEGORISED:
+        return Decimal(0)
+    # The stored map holds texts ("12.00"); mytp-core's helper takes Decimals.
+    discounts = (None if subscription.discounts is None else
+                 {category: Decimal(percent)
+                  for category, percent in subscription.discounts.items()})
+    return subscription_discount(
+        product.category, discounts=discounts,
+        tps_branded=subscription.tps_discount_percent,
+        tps_in_house=subscription.tps_in_house_discount_percent)
+
+
+def calls(product, subscription):
+    """The calls `product` grants under the subscription, as ``(count, minutes)``: the
+    product's calls plus the subscription's extra calls for the product's category, each
+    of the subscription's length when it gives one, else of the product's; None for a
+    product that grants no calls (the extras add to a product's calls, they grant none
+    by themselves)."""
+    extras = (subscription.call_extras or {}).get(product.category) or {}
+    return calls_under(product.calls, product.call_minutes, extras.get('extra_calls', 0),
+                       extras.get('minutes'))
 
 
 def unit_price(product, subscription):
@@ -153,7 +226,12 @@ def price(product, subscription, add_ons=(), quantity=1):
     """The price (`Money`) of a line of `product` under a subscription, with the chosen
     `add_ons` (AddOn rows) and `quantity`: see the module docstring. `QuantityRefused`
     for a quantity the product is not sold in; `AddOnRefused` for an add-on that is
-    inactive, not offered on the product or chosen twice (both are ValueErrors)."""
+    inactive, not offered on the product or chosen twice; `ProductRefused` for a product
+    the subscription does not give access to (all are ValueErrors). As before, it does
+    not ask whether the product or the subscription is active."""
+    if not linked(product, subscription):
+        raise ProductRefused(f'the product {product.pk} is not offered under the '
+                             f'subscription {subscription.pk}')
     check_quantity(quantity, product.min_quantity, product.max_quantity)
     add_ons = list(add_ons)
     if len({add_on.pk for add_on in add_ons}) != len(add_ons):
@@ -205,15 +283,27 @@ def product(product_id):
     return Product.objects.filter(pk=product_id).first()
 
 
+def offers_under(subscription, day=None):
+    """[(product, Money)] a subscription (standard or manual) offers on `day` (a date in
+    Madrid time; today when None): the active products linked to it (every active
+    product when it has no links: a snapshot of an admin site before mytp-core 0.22.0)
+    that are within their validity dates, by name; [] for an inactive subscription. The
+    price is `unit_price`: of one unit for a product priced per unit, without add-ons."""
+    if not subscription.active:
+        return []
+    day = day or today()
+    products = Product.objects.filter(active=True).order_by('name', 'id')
+    if subscription.products is not None:
+        products = products.filter(pk__in=subscription.products)
+    return [(offered, unit_price(offered, subscription)) for offered in products
+            if offered.offered_on(day)]
+
+
 def offers(country, tier, day=None):
     """[(product, Money)] for a doctor of `country` under `tier` on `day` (a date in
-    Madrid time; today when None); [] when no active subscription of that tier applies to
-    the country. The price is `unit_price`: of one unit for a product priced per unit,
-    without add-ons."""
+    Madrid time; today when None): what the standard subscription of that tier and the
+    country's group offers (`offers_under`); [] when none applies to the country."""
     applies = subscription(country, tier)
     if applies is None:
         return []
-    day = day or today()
-    return [(offered, unit_price(offered, applies))
-            for offered in Product.objects.filter(active=True).order_by('name', 'id')
-            if offered.offered_on(day)]
+    return offers_under(applies, day)

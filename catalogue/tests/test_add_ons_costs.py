@@ -441,6 +441,7 @@ def test_price_catalogue_shows_add_ons_quantities_and_line_prices(
     pull(admin, 1, full(), provider_costs=COSTS)
     assert run('--country', 'ES', '--tier', 'basic') == (
         'ES basic (Iberia): 7 offer(s)\n'
+        '  subscription: -  basic  free\n'
         '  ODB-1  ODB  odb  500.00 EUR\n'
         '      + BYTE-SYNC  Byte Sync  +120.00 EUR\n'
         '      + ODB-TWIN  ODB DigitalTwin  +320.00 EUR\n'
@@ -450,6 +451,7 @@ def test_price_catalogue_shows_add_ons_quantities_and_line_prices(
         '  TPS-BR  TPS branded  tps_branded  90.00 EUR\n'
         '      + BYTE-SYNC  Byte Sync  +120.00 EUR\n'
         '  TPS-M  TPS in-house M  tps_in_house  90.00 EUR\n'
+        '      calls: 3 of 25 minutes\n'  # the product's: the subscription adds none
         '      + BYTE-SYNC  Byte Sync  +120.00 EUR\n'
         '      + JUNIOR-1  Junior I  +0.00 EUR\n'
         '      + JUNIOR-2  Junior II  +0.00 EUR\n'
@@ -473,15 +475,18 @@ def test_price_catalogue_shows_add_ons_quantities_and_line_prices(
     assert run('--product', TPS, '--country', 'es', '--tier', 'basic', '--add-on',
                'one-arch', '--add-on', 'BYTE-SYNC') == (
         'ES basic (Iberia): TPS-M  TPS in-house M  tps_in_house\n'
+        '  subscription: -  basic  free\n'
         '  net price: 100.00 EUR\n'
         '  quantity: 1\n'
         '  subscription discount: 10.00 %\n'
+        '  calls: 3 of 25 minutes\n'
         '  add-on: ONE-ARCH  One arch  -25.00 %\n'
         '  add-on: BYTE-SYNC  Byte Sync  +120.00 EUR\n'
         '  line price: 187.50 EUR\n')
     assert run('--product', SPARK, '--country', 'ES', '--tier', 'basic', '--quantity',
                '6') == (
         'ES basic (Iberia): SPARK-1  Spark on Demand one arch  spark_on_demand\n'
+        '  subscription: -  basic  free\n'
         '  net price: 50.00 EUR per unit\n'
         '  quantity: 6\n'
         '  subscription discount: 0.00 %\n'

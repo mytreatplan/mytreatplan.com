@@ -3,7 +3,13 @@ filled only by the snapshot apply (integration.config with catalogue.applier), t
 resolver that prices (catalogue.resolver) and `price_catalogue`; and products in full
 (entry 5): texts per language with the English fallback, code, validity dates in Madrid
 time, the ten categories and the two TPS discounts. The admin site is the fake of
-integration/tests/test_config.py (fixed, non-secret test seeds; no network)."""
+integration/tests/test_config.py (fixed, non-secret test seeds; no network).
+
+The subscriptions here are sent as an admin site before epic-catalogue entry 8 sends them
+(`subscription`: no linked products, no discounts map), so every active product is offered
+under each of them and the two TPS discounts apply: what these tests pin is what such a
+snapshot still gets. Subscriptions with their linked products, discounts per category,
+own price and call extras, and the manual ones, are in test_subscriptions.py."""
 import io
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -42,8 +48,9 @@ def product(id_, name, category, amount, currency='EUR', active=True, **more):
 
 
 def subscription(id_, tier, group_id, percent, active=True, in_house=None):
-    """A subscription as the admin site sends it; without `in_house`, as one before
-    mytp-core 0.20.0 did (no in-house discount)."""
+    """A subscription as an admin site before mytp-core 0.22.0 sends it (no linked
+    products: every product is offered under it; no discounts map: its two TPS discounts
+    apply); without `in_house`, as one before 0.20.0 did (no in-house discount)."""
     data = {'id': id_, 'tier': tier, 'country_group': group_id,
             'tps_discount_percent': percent, 'active': active}
     if in_house is not None:
@@ -52,8 +59,9 @@ def subscription(id_, tier, group_id, percent, active=True, in_house=None):
 
 
 def catalogue(products=None, subscriptions=None, groups=None):
-    """Iberia (ES, PT) with a basic subscription at 10 %, a TPS product at 100.00 EUR;
-    Rest of EU and the catch-all Rest of world without a subscription."""
+    """Iberia (ES, PT) with a basic subscription at 10 % (without linked products: it
+    offers every product), a TPS product at 100.00 EUR; Rest of EU and the catch-all Rest
+    of world without a subscription."""
     return {
         'country_groups': groups if groups is not None else [
             group(IBERIA, 'Iberia', ['ES', 'PT']),
@@ -336,7 +344,9 @@ def test_price_catalogue_prints_the_offers(admin):  # noqa: F811
     pull(admin, 1, catalogue())
     out = io.StringIO()
     call_command('price_catalogue', '--country', 'ES', '--tier', 'basic', stdout=out)
+    # The offers, after the subscription's line: no code, no name (the tier), no price.
     assert out.getvalue() == ('ES basic (Iberia): 1 offer(s)\n'
+                              '  subscription: -  basic  free\n'
                               '  -  TPS  tps_branded  90.00 EUR\n')
     out = io.StringIO()
     call_command('price_catalogue', '--country', 'US', '--tier', 'basic', stdout=out)
@@ -539,10 +549,12 @@ def test_price_catalogue_prints_codes_texts_and_one_product(admin, monkeypatch):
                 code='RET-1', valid_to='2026-11-09')]))
     assert run('--country', 'ES', '--tier', 'basic') == (
         'ES basic (Iberia): 2 offer(s)\n'
+        '  subscription: -  basic  free\n'
         '  TPS-2  In-house  tps_in_house  100.00 EUR\n'
         '  TPS-1  Plan  tps_branded  90.00 EUR\n')
     assert run('--country', 'ES', '--tier', 'basic', '--language', 'es') == (
         'ES basic (Iberia): 2 offer(s)\n'
+        '  subscription: -  basic  free\n'
         '  TPS-2  In-house  tps_in_house  100.00 EUR\n'  # no Spanish: the English name
         '  TPS-1  Plan (ES)  tps_branded  90.00 EUR\n')
     assert run('--product', OTHER, '--language', 'es') == (

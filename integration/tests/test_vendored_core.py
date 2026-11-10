@@ -5,7 +5,7 @@ the contact message events, entry 9; the snapshot's country map section,
 epic-catalogue entry 3; remote writes, entry 6; hub lookups, entry 7; the snapshot's
 provider costs section, epic-catalogue entry 4; the products' texts, code and validity and
 the in-house TPS discount, epic-catalogue entry 5; add-ons, sizes, per-unit quantities,
-calls and cost links, entry 6)."""
+calls and cost links, entry 6; subscriptions in full, entry 8)."""
 
 from decimal import Decimal
 
@@ -16,7 +16,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.21.0'
+    assert mytp_core.__version__ == '0.22.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -39,8 +39,8 @@ def test_vendored_mytp_core_has_the_client_events_and_no_sample():
 def test_vendored_mytp_core_has_the_catalogue_section():
     from mytp_core.contracts import CatalogueSection
     assert ConfigSnapshot.model_fields['catalogue'].is_required() is False
-    assert CatalogueSection.model_fields.keys() == {'country_groups', 'products',
-                                                    'subscriptions', 'add_ons'}
+    assert CatalogueSection.model_fields.keys() == {
+        'country_groups', 'products', 'subscriptions', 'add_ons', 'manual_subscriptions'}
 
 
 def test_vendored_mytp_core_has_remote_reads():
@@ -134,3 +134,19 @@ def test_vendored_mytp_core_has_add_ons_quantities_calls_and_costs():
     cost = sum_costs([('A', 1, False, Money('10.00', 'EUR')), ('B', 2, False, None)], 'EUR')
     assert cost.total == Money('10.00', 'EUR') and not cost.complete
     assert cost.missing == ('B',)
+
+
+def test_vendored_mytp_core_has_subscriptions_in_full():
+    from mytp_core.contracts import (CallExtras, CatalogueSection, CatalogueSubscription,
+                                     SubscriptionPrice, calls_under, subscription_discount,
+                                     subscription_offers)
+    assert CatalogueSection.model_fields['manual_subscriptions'].is_required() is False
+    assert CatalogueSubscription.model_fields.keys() == {
+        'id', 'tier', 'country_group', 'tps_discount_percent',
+        'tps_in_house_discount_percent', 'active', 'code', 'texts', 'products',
+        'discounts', 'price', 'call_extras'}
+    assert SubscriptionPrice.model_fields.keys() == {'currency', 'monthly', 'upfront'}
+    assert CallExtras.model_fields.keys() == {'extra_calls', 'minutes'}
+    assert subscription_discount('odb', discounts={'odb': Decimal('12.00')}) == Decimal('12.00')
+    assert subscription_offers('a', None) and not subscription_offers('a', [])
+    assert calls_under(3, 25, 1, 35) == (4, 35)

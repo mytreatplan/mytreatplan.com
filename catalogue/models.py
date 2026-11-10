@@ -18,6 +18,12 @@ quantity range, calls and cost links; and the snapshot's `provider_costs` sectio
 (`ProviderProduct`, `ProviderCost`: what each provider product costs over time, without
 any provider detail), from which `catalogue.resolver.cost` gives a product's cost at a
 date.
+
+Subscriptions in full (epic-catalogue entry 8, mytp-core 0.22.0): a subscription is
+standard (the default of its tier and country group) or manual (assigned by hand: read by
+its id, never the answer for a country and a tier), and has its code, public texts, the
+products it gives access to, a discount and call extras per product category and its own
+price. The admin site's internal notes of a subscription never arrive here.
 """
 import uuid
 from decimal import Decimal
@@ -176,9 +182,32 @@ class Product(ReadOnlyModel):
 
 
 class Subscription(ReadOnlyModel):
-    """A tier in one country group, with its two discounts (percent): on TPS branded
-    products and on TPS in-house ones (0 when the admin site sends none). No other
-    category is discounted."""
+    """A tier in one country group (epic-catalogue entry 8, user decisions 2026-11-11).
+
+    `manual`: False for a standard subscription, the default of its tier and country
+    group (at most one active: what `catalogue.resolver.subscription(country, tier)`
+    returns); True for one an administrator assigns to a doctor by hand (any number per
+    tier and group; read by its id, `catalogue.resolver.subscription_by_id`).
+
+    `code` (None for one that has none yet) and `texts` (as a product's; `{}` when the
+    admin site sent none: `name_in` is then '').
+
+    `products`: the ids (strings) of the products it gives access to; None when the
+    admin site sent no list (one before mytp-core 0.22.0): every product is then
+    offered, as before.
+
+    `discounts`: `{category: "12.00"}`, the discount per product category; None when
+    the admin site sent no map: the two former fields are then the discounts.
+    `tps_discount_percent` and `tps_in_house_discount_percent` always hold the discounts
+    on TPS branded and TPS in-house products. Read a discount with
+    `catalogue.resolver.discount_percent`.
+
+    Its own price: `price_currency` ('' for none) with `monthly_amount` and
+    `upfront_amount` (a year upfront), each optional; without either it is `free`.
+
+    `call_extras`: `{category: {"extra_calls": 1, "minutes": 35}}` (`minutes` optional):
+    what it adds to the calls of a product of that category
+    (`catalogue.resolver.calls`)."""
 
     TIERS = ('basic', 'advanced', 'premium')
 
@@ -189,13 +218,60 @@ class Subscription(ReadOnlyModel):
     tps_discount_percent = models.DecimalField(max_digits=5, decimal_places=2)
     tps_in_house_discount_percent = models.DecimalField(
         max_digits=5, decimal_places=2, default=Decimal('0.00'), db_default=Decimal('0.00'))
+    # Entry 8. Nullable or with database defaults, as on Product: the previous release,
+    # which does not know the columns, still applies a snapshot during a deploy.
+    manual = models.BooleanField(default=False, db_default=False)
+    code = models.CharField(max_length=64, null=True)
+    texts = models.JSONField(default=dict, db_default=models.Value({}, models.JSONField()))
+    products = models.JSONField(null=True)
+    discounts = models.JSONField(null=True)
+    price_currency = models.CharField(max_length=3, default='', db_default='')
+    monthly_amount = models.DecimalField(max_digits=17, decimal_places=2, null=True)
+    upfront_amount = models.DecimalField(max_digits=17, decimal_places=2, null=True)
+    call_extras = models.JSONField(default=dict,
+                                   db_default=models.Value({}, models.JSONField()))
     active = models.BooleanField()
 
     class Meta:
         ordering = ['tier', 'id']
 
     def __str__(self):
-        return f'{self.tier} ({self.country_group_id})'
+        return f'{self.code or self.tier} ({self.country_group_id})'
+
+    def name_in(self, language):
+        """The public name in `language` ("es", "es-ES"), else in English, else ''."""
+        return _text_in(self.texts, language, 'name')
+
+    def description_in(self, language):
+        """The short description in `language`, else in English, else ''."""
+        return _text_in(self.texts, language, 'description')
+
+    @property
+    def public_name(self):
+        """The public name in the current language, else in English."""
+        return self.name_in(translation.get_language())
+
+    @property
+    def description(self):
+        """The short description in the current language, else in English."""
+        return self.description_in(translation.get_language())
+
+    @property
+    def free(self):
+        """Whether it has no price of its own."""
+        return self.monthly_amount is None and self.upfront_amount is None
+
+    @property
+    def monthly_price(self):
+        """The monthly price as `Money`, or None."""
+        return (None if self.monthly_amount is None
+                else Money(self.monthly_amount, self.price_currency))
+
+    @property
+    def upfront_price(self):
+        """The upfront price of a year as `Money`, or None."""
+        return (None if self.upfront_amount is None
+                else Money(self.upfront_amount, self.price_currency))
 
 
 class AddOn(ReadOnlyModel):
