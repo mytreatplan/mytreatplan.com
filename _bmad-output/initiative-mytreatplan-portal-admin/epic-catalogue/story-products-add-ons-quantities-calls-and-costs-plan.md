@@ -3,7 +3,7 @@ title: 'Products: add-ons, quantities, calls and costs'
 type: 'feature'
 ticket: '6'
 created: '2026-11-10'
-status: 'built'
+status: 'done'
 baseline_revision: '515ad691b88bdf0d9b2176473c0788b07f147207'
 route: 'full'
 route_source: 'auto'
@@ -127,3 +127,13 @@ Pass 1 (quick lens, one reviewer per repository, 2026-11-10): 12 findings — 2 
 
 **Manual checks (staging):**
 - On admindev: Byte Sync, DigitalTwin, one arch, Junior I and II; a TPS in-house of size medium; the two Spark on Demand products; calls on a product; a product linked to two provider products and one monthly link. On dev: `price_catalogue` shows Byte Sync +120, Junior only on the medium product, one arch only on TPS in-house, Spark on Demand for 4 to 9 aligners (3 and 10 refused), the product's cost as the sum of its links, and the incomplete warning when a provider cost is ended.
+
+## Staging
+
+Done 2026-11-10 (the user delegated the merges and the staging checks). mytp-core v0.21.0 (8ec0e35, CI green on master and the tag); admin PR #30 (run 42844237507: test and deploy green), portal PR #88 (run 42845299068: test, dev and dev-ae deploys green). CI on PostgreSQL: all pass.
+
+- admindev (through the services, as the command actor `staging_check_5_6`): add-ons BYTE-SYNC (+120 EUR, the six case categories), ODB-DT (+320 EUR, `odb`), ONE-ARCH (−25 %, `tps_in_house`), JUNIOR-1 and JUNIOR-2 (0 EUR, TPS, size medium); products STG56-IH-M (TPS in-house, medium, 3 calls of 25 minutes), STG56-IH-S (short, 2 calls), STG56-SOD-1 (50.00 per aligner, 4 to 9) and STG56-SOD-2 (45.00); a made-up provider STG56 with three provider products; links from STG56-IH-M to STG56-SETUP (× 1), STG56-PRINT (× 2) and, monthly, STG56-SCAN. Its cost on admindev: 55.00 EUR, complete, the monthly 9.00 apart; the short product has no cost links.
+- dev after the deploy: the add-ons (5) and provider products (4) arrived (the post-deploy check); dev-ae has them too.
+- dev, `price_catalogue --country ES --tier basic --product <id>`: Byte Sync makes the medium line 220.00 and a TPS branded line 210.00 (90.00 + 120.00); ODB + DigitalTwin 420.00, refused on TPS; one arch with Junior I on the medium product 75.00, and 67.50 with the in-house discount at 10 % (set back to 0); Junior refused on the short product; one arch refused on TPS branded; Spark on Demand one arch 200.00, 300.00 and 450.00 for 4, 6 and 9 aligners, 3 and 10 refused; two arches × 9: 405.00.
+- Cost: `--cost` prints 55.00 EUR with the monthly link apart, and "no cost links" for the short product. With STG56-PRINT's cost ended yesterday, admindev and dev both show the partial sum 30.00 with the incomplete warning naming STG56-PRINT; restored afterwards (55.00, complete).
+- Not checked: the admin pages in a browser, so the Financial Manager and Sysadmin editing the links and the Commercial Manager only seeing them rest on the suite. The staging rows stay on admindev as staging data.
