@@ -3,7 +3,7 @@ title: 'Subscriptions in full'
 type: 'feature'
 ticket: '8'
 created: '2026-11-11'
-status: 'built'
+status: 'done'
 baseline_revision: 'f2cb66a3ebec3da5bfd4af183c160c58e834251e'
 route: 'full'
 route_source: 'auto'
@@ -138,3 +138,13 @@ Pass 1 (quick lens, one reviewer per repository, 2026-11-11): 11 findings — 11
 
 **Manual checks (staging):**
 - On admindev: a second standard Advanced · Iberia refused; Advanced Iberia linked to a VirtuaOrtho product, Advanced rest of EU not; a manual "Ormco Premium"; Premium with 12 % TPS branded, +1 call and 35 minutes on VirtuaOrtho, 120 a month or 1200 upfront. On dev: after the deploy the first pull prints `applied`; `price_catalogue` for ES and DE on Advanced shows VirtuaOrtho only for ES; the manual one is not listed for (ES, premium) and is priced by its id; the call extras and the price are shown.
+
+## Staging
+
+Done 2026-11-11 (the user delegated the merges and the staging checks). mytp-core v0.22.0 (997ec60, CI green on master and the tag); admin PR #32 (run 42910857612: test and deploy green), portal PR #90 (run 42911824164: test, dev and dev-ae deploys green). CI on PostgreSQL: all pass.
+
+- dev after its deploy, before any admin write: the first pull printed `v56 applied` (the snapshot of before this release, applied again by the new release) and ES basic kept its 18 offers: a snapshot without links offers every product.
+- admindev: migration 0006 made the existing Basic · Iberia standard, named "Basic", linked to all 20 products, with `tps_branded` 10.00. Through the service, as the command actor `staging_check_5_8`: STG58-ADV-IB (standard, Advanced · Iberia, TPS branded and VirtuaOrtho One linked, 6 %, 60 a month or 600 upfront); a second standard Advanced · Iberia refused; STG58-ADV-REU (Advanced · Rest of EU, TPS branded only); STG58-PREM-IB (Premium · Iberia, 12 %, +1 call and 35 minutes on `virtuaortho_one`, 120 or 1200, with internal notes); the manual STG58-ORMCO-PREM (Premium · Iberia, 20 %); STG58-BASIC-ZERO with a monthly amount of 0: saved free, without a currency.
+- dev and dev-ae with the new snapshot, `price_catalogue`: ES Advanced offers TPS branded at 94.00 and VirtuaOrtho One at 100.00 (3 calls of 25 minutes); DE Advanced offers TPS branded only, and pricing the VirtuaOrtho product under it is refused; ES Premium is the standard one (TPS branded 88.00, VirtuaOrtho One with 4 calls of 35 minutes, its price shown), never the manual one; the manual one is read by its code and by its id (TPS branded 80.00, Spanish texts with `--language es`); the zero-amount Basic reads "free".
+- Not checked: the admin pages in a browser (the long subscription form, the "no default" notice and the inactive marks rest on the suite). The staging rows stay on admindev as staging data.
+- For epic-appointments: Premium's "two one-to-one sessions a year" (requirements ¶156) is not modelled (user decision 2026-11-11).
