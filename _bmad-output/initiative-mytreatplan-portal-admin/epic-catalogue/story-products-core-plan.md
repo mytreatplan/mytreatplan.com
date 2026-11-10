@@ -3,7 +3,7 @@ title: 'Products: core'
 type: 'feature'
 ticket: '5'
 created: '2026-11-09'
-status: 'built'
+status: 'done'
 baseline_revision: '87cbc304078f0f07e662a46cfd295eaac57f876b'
 route: 'full'
 route_source: 'auto'
@@ -124,3 +124,12 @@ Pass 1 (quick lens, one reviewer per repository, 2026-11-10): 13 findings — 4 
 
 **Manual checks (staging):**
 - On admindev: one product per category with EN + ES texts and a price; one with EN only; a duplicate code refused; deactivate one; on dev `price_catalogue` and a shell read show texts (ES and fallback), the inactive product readable, validity respected; a subscription's in-house discount set to 5 % reprices only the in-house product, then set back to 0.
+
+## Staging
+
+Done 2026-11-10 (the user delegated the merges and the staging checks). mytp-core v0.20.0 (a8f0189, CI green on master and the tag); admin PR #28 (run 42798327161: test and deploy green), portal PR #87 (run 42799085781: test, dev and dev-ae deploys green). CI on PostgreSQL: all pass.
+
+- admindev (through the service, as the command actor `staging_check_5_5`): one product per category with English and Spanish texts at 100.00 EUR (codes STG55-01 to STG55-10), one English-only (STG55-EN), one whose validity ended yesterday (STG55-EXPIRED); a duplicate code, a Spanish-only product and the `uncategorised` category refused; STG55-10 (education) deactivated. The product of entry 2 ("Staging TPS 5.2") is `tps_branded` after the migration, with no code.
+- dev and dev-ae applied the snapshot: `price_catalogue --country ES --tier basic` lists the 11 offered products, in Spanish with `--language es` (the English-only one in English); TPS branded 90.00, TPS in-house 100.00, the others at their net price; the deactivated and the expired products are not offered and are readable with `--product <id>` (inactive; valid to 2026-11-09, "offered for new orders: no"); US has no offers.
+- In-house discount set to 5 %: dev prices STG55-02 at 95.00 and STG55-01 still at 90.00; back to 0: 100.00.
+- Not checked: the admin pages in a browser (the form and its field errors are covered by the suite). The staging products stay on admindev as staging data.

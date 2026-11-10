@@ -3,7 +3,7 @@ title: '/api/ allowlist fails closed; restore needs pg_restore 18'
 type: 'bugfix'
 ticket: ''
 created: '2026-11-10'
-status: 'built'
+status: 'done'
 baseline_revision: '87cbc304078f0f07e662a46cfd295eaac57f876b'
 route: 'oneshot'
 route_source: 'auto'
@@ -54,3 +54,7 @@ Quick lens, 2026-11-10: 1 medium, 5 low, 1 deferred to its own repository; all r
 
 **Manual checks (staging):**
 - No staging site has an allowlist, so a normal re-provision of dev still prints `/api/ has no IP allowlist (API_PEER_IPS not set; ...)`. The refusal is checked on production's first allowlist run (epic-eu-golive).
+
+## Staging
+
+Merged 2026-11-10 as PR #86 (run 42800275624: test, dev and dev-ae deploys green). No staging step: no staging site has an allowlist. The admin site's README still has the former sentence; its change follows in that repository.
