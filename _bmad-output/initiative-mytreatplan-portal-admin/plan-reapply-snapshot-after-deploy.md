@@ -3,7 +3,7 @@ title: 'Apply the current snapshot again after every portal deploy'
 type: 'bugfix'
 ticket: ''
 created: '2026-11-10'
-status: 'built'
+status: 'done'
 baseline_revision: '863d92cd6aee1feaa1d983f3a1742c5a903d06e9'
 route: 'full'
 route_source: 'auto'
@@ -101,3 +101,10 @@ Pass 1 (quick lens, 2026-11-10): 5 findings — 5 low, 0 false. No unmet accepta
 
 **Manual checks (staging):**
 - After the deploy, `pull_config` on dev prints `applied` for the current version once, then `unchanged`; `show_config` shows the release.
+
+## Staging
+
+Done 2026-11-10 (the user delegated the merge and the staging check). Portal PR #89 (1aa1cdf; run 42889815141: test, dev and dev-ae deploys green; CI on PostgreSQL passes, the concurrency test included).
+
+- dev and dev-ae, release df43f02: the first `pull_config` after the deploy printed `v56 applied` (the same version the previous release had applied; the log line lists the country map, 20 products, 5 add-ons, 4 provider products), the second `v56 unchanged`; the `pullconfig` job's later runs are `unchanged`.
+- `show_config` prints `applied by release: df43f021…`, the deployed SHA (the `REVISION` file).
