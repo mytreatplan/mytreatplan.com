@@ -3,7 +3,7 @@ title: 'Billing companies and billing rules'
 type: 'feature'
 ticket: '9'
 created: '2026-11-11'
-status: 'built'
+status: 'done'
 baseline_revision: '8dee5c4254baa12043c20816fc6c01979ac1c9a9'
 route: 'full'
 route_source: 'auto'
@@ -134,3 +134,16 @@ Quick lens, one reviewer per repository (2026-11-12). 17 findings: 9 patched, 8 
 
 **Manual checks (staging):**
 - On admindev: the three companies (ES with the Spanish company's data above; IE and AE with the region profiles' names and registrations, AE with its three identifiers as made-up staging values); rules for Iberia, Rest of EU, Rest of world and UAE on the TPS and VirtuaOrtho categories and `subscription`, with staging texts; a second rule for one pair refused. On dev: `price_catalogue` for ES, PT, IE, DE, US and AE shows the expected company, VAT or text and gateways; a category without a rule is no longer offered; an ES doctor is not offered the USD and AED clones; no profile mismatch warning for IE.
+
+## Staging
+
+Checked 2026-11-12 (merge and staging delegated by the user).
+
+- Release: mytp-core v0.23.0 (92ab671; CI green on master and the tag). Admin PR #33 (merge 56c6a6d; master run 43234116605, tests and deploy green). Portal PR #91 (merge dcc3334; master run 43235142960, tests and both deploys green). Suites against the tag's wheel: core 1501, admin 1458, portal 2540 plus the 3 known PostgreSQL-only failures. The first CI run of the admin PR failed on the two-writers test (it relied on rows the migrations seed); the test now creates its own country and group, and passed on PostgreSQL.
+- After the portal deploy, before any rule: the first `pull_config` on dev and dev-ae printed `applied` (v62), the second `unchanged`; ES basic listed 18 offers, as before.
+- admindev, as `staging_check_5_9` through the service, in one transaction: the companies ES (MyTPDSO Spain S.L., VAT registration B93858371, Europe/Madrid), IE (MyTPDSO Limited, company number 815526) and AE (MyTPDSO L.L.C-FZ, license 2542361.01, made-up VAT and TAX registrations), and 32 rules with staging texts: Iberia, Rest of EU, Rest of world and UAE × `tps_branded`, `tps_in_house`, `virtuaortho_one`, `virtuaortho_digitaltwin`, `odb`, `spark_on_demand`, `initial_case_evaluation`, `subscription` (Iberia: ES, 0 % with its text, `redsys` then `bank_transfer`, EUR; Rest of EU: IE, 23 % with a reverse-charge text, `revolut`, EUR; Rest of world: IE, 0 % with an export text, `revolut`, USD for `tps_branded` and EUR for the rest; UAE: AE, 5 %, no gateway, AED). Snapshot v62 → v97, 3 companies and 32 rules in it.
+- Refused on admindev: a taken company code, a company without any identifier, a second active rule of Iberia × `tps_branded`, a rate of 0 without its text, a repeated gateway, deactivating a company with active rules. The missing pairs: 8 (`retainers`, left without a rule on purpose, and `education`, in the four groups).
+- dev (v97): `price_catalogue --country <C> --category tps_branded` gave ES and PT the Spanish company at 0 % with its text, `redsys, bank_transfer`, EUR; IE and DE the Irish company at 23 % with the reverse-charge text, `revolut`, EUR; US the Irish company at 0 % with the export text, USD; AE the UAE company with its three identifiers, 5 %, no gateway, AED. ES basic: 15 offers, each with its billing line: the Retainers product and the USD and AED clones are gone. ES × `retainers`: "no billing rule". The subscription's own price shows the `subscription` rule; the manual subscription STG58-ORMCO-PREM shows its group's rule. No profile mismatch warning.
+- dev-ae (v97): AE × `tps_in_house` gave the UAE company, 5 %, no gateway, AED; no profile mismatch warning for the AE company.
+- Not checked: the admin pages in a browser (2FA); the same service calls and the page tests cover them.
+- Staging data left on admindev: the three companies and the 32 rules. `retainers` and `education` have no rule, so they are not offered on dev and dev-ae.
