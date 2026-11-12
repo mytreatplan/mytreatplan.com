@@ -71,7 +71,29 @@ Add-ons, quantities and costs (epic-catalogue entry 6, user decisions 2026-11-10
   and a link added today counts (a later entry that needs a true past cost reads the
   order line's own copy, AD-6).
 
-Prices are net: VAT, vouchers and the billing company come with later entries.
+Billing companies and billing rules (epic-catalogue entry 9, AD-6, AD-7, AD-16; user
+decisions 2026-11-11). This module is the only code that decides which company bills,
+with what VAT rate or exemption text and through which gateways:
+
+- `billing_rule(country, category)`: the active rule of the country's group and a
+  product category, or None: its `company` (a `BillingCompany`), `vat_percent`,
+  `exemption_text` (what is shown when the rate is 0), `reverse_charge_text`,
+  `known_gateways` (in order of preference; may be empty) and `currency`. ES and PT
+  resolve to the rule of Iberia, DE to the one of Rest of EU, US to the one of Rest of
+  world.
+- Once the catalogue has rules (`has_billing_rules`), `offers_under` and `offers` leave
+  out a product whose country group and category have no active rule, whose rule is
+  marked unavailable, or whose currency is not the rule's (an ES doctor is offered the
+  EUR product, not its USD or AED clone). While the catalogue has no rule at all (an
+  admin site before mytp-core 0.23.0, or no rule typed yet), every linked product is
+  offered, in every currency, as before, and there is no billing data.
+- `subscription_rule(subscription)`: the rule of a subscription's own price: the
+  `subscription` category rule of the subscription's country group, or None.
+- `price` is unchanged: it prices a line and does not ask whether the product is
+  offered. VAT amounts, the VIES decision and the cart come with entry 12, which reads
+  the rule from here.
+
+Prices are net: no VAT amount is computed here, and vouchers come with a later entry.
 """
 import re
 import uuid
@@ -81,17 +103,24 @@ from decimal import Decimal
 from django.utils import timezone
 
 from mytp_core.contracts import (AddOnRefused, QuantityRefused, add_on_applies,
-                                 calls_under, check_quantity, line_price, link_labels,
-                                 subscription_discount, subscription_offers, sum_costs)
+                                 billing_offers, calls_under, check_quantity, line_price,
+                                 link_labels, subscription_discount, subscription_offers,
+                                 sum_costs)
 from mytp_core.money import Money
 
-from .models import AddOn, CountryGroup, Product, ProviderProduct, Subscription
+from .models import (AddOn, BillingCompany, BillingRule, CountryGroup, Product,
+                     ProviderProduct, Subscription)
 
 __all__ = ['AddOnRefused', 'ProductRefused', 'QuantityRefused', 'add_on', 'add_ons',
-           'calls', 'cost', 'country_group', 'discount_percent', 'linked',
-           'normal_country', 'normal_tier', 'offers', 'offers_under', 'price', 'product',
-           'subscription', 'subscription_by_code', 'subscription_by_id', 'today',
-           'unit_price']
+           'billing_company', 'billing_rule', 'billing_rule_for', 'calls', 'cost',
+           'country_group', 'discount_percent', 'has_billing_rules', 'linked',
+           'normal_category', 'normal_country', 'normal_tier', 'offers', 'offers_under',
+           'price', 'product', 'subscription', 'subscription_by_code',
+           'subscription_by_id', 'subscription_rule', 'today', 'unit_price']
+
+# The product category whose rule bills a subscription's own price (user decision
+# 2026-11-11).
+SUBSCRIPTION_CATEGORY = 'subscription'
 
 
 class ProductRefused(ValueError):
@@ -130,6 +159,56 @@ def country_group(country):
         if not group.catch_all and country in group.countries:
             return group
     return next((group for group in groups if group.catch_all), None)
+
+
+def normal_category(category):
+    """`category` stripped and lowercased; a code of an admin site before entry 5 as its
+    new one (`tps` is tps_branded)."""
+    category = (category or '').strip().lower()
+    return Product.LEGACY_CATEGORIES.get(category, category)
+
+
+def has_billing_rules():
+    """Whether the catalogue has any billing rule, in any state: from then on only what
+    has an active, available rule is offered. False for a snapshot of an admin site
+    before mytp-core 0.23.0, or of one where no rule was typed yet."""
+    return BillingRule.objects.exists()
+
+
+def billing_rule_for(group, category):
+    """The active billing rule of a country group (a `CountryGroup` or its id) and a
+    product category, with its company loaded, or None."""
+    group_id = getattr(group, 'pk', group)
+    if group_id is None:
+        return None
+    return (BillingRule.objects.select_related('company')
+            .filter(active=True, country_group_id=group_id,
+                    category=normal_category(category)).first())
+
+
+def billing_rule(country, category):
+    """The billing rule for a doctor of `country` (an alpha-2 code) and a product
+    `category`: the active rule of the country's group and that category, or None (no
+    group for the country, or no rule for the pair). It gives the company that bills
+    (`company`), the VAT rate (`vat_percent`) or, for a rate of 0, the exemption text
+    (`exemption_text`), the reverse-charge text, the gateways in order
+    (`known_gateways`), the currency and whether the category is `available` there."""
+    group = country_group(country)
+    return None if group is None else billing_rule_for(group, category)
+
+
+def subscription_rule(subscription):
+    """The billing rule of a subscription's own price: the `subscription` category rule
+    of the subscription's country group, or None when that pair has no active rule."""
+    return billing_rule_for(subscription.country_group_id, SUBSCRIPTION_CATEGORY)
+
+
+def billing_company(code):
+    """The billing company of this code ("es" is ES) whatever its state, or None."""
+    code = (code or '').strip().upper()
+    if not code:
+        return None
+    return BillingCompany.objects.filter(code=code).order_by('-active', 'id').first()
 
 
 def subscription(country, tier):
@@ -283,20 +362,41 @@ def product(product_id):
     return Product.objects.filter(pk=product_id).first()
 
 
-def offers_under(subscription, day=None):
+def offers_under(subscription, day=None, country=None):
     """[(product, Money)] a subscription (standard or manual) offers on `day` (a date in
     Madrid time; today when None): the active products linked to it (every active
     product when it has no links: a snapshot of an admin site before mytp-core 0.22.0)
     that are within their validity dates, by name; [] for an inactive subscription. The
-    price is `unit_price`: of one unit for a product priced per unit, without add-ons."""
+    price is `unit_price`: of one unit for a product priced per unit, without add-ons.
+
+    Once the catalogue has billing rules (entry 9), a product is offered only when its
+    category has an active, available rule in the doctor's country group and the product
+    is in that rule's currency. The group is the one of `country` (the doctor's, an
+    alpha-2 code) when given, else the subscription's own (for a standard subscription
+    they are the same). Without any rule every product above is offered, as before."""
     if not subscription.active:
         return []
     day = day or today()
     products = Product.objects.filter(active=True).order_by('name', 'id')
     if subscription.products is not None:
         products = products.filter(pk__in=subscription.products)
-    return [(offered, unit_price(offered, subscription)) for offered in products
-            if offered.offered_on(day)]
+    products = [offered for offered in products if offered.offered_on(day)]
+    if has_billing_rules():
+        group = (subscription.country_group_id if country is None
+                 else getattr(country_group(country), 'pk', None))
+        rules = {rule.category: rule for rule in BillingRule.objects.filter(
+            active=True, country_group_id=group)} if group is not None else {}
+        products = [
+            offered for offered in products
+            if billing_offers(True, *_rule_values(rules.get(offered.category)),
+                              offered.currency)]
+    return [(offered, unit_price(offered, subscription)) for offered in products]
+
+
+def _rule_values(rule):
+    """(available, currency) of a rule, or (None, None) without one: what mytp-core's
+    `billing_offers` takes."""
+    return (None, None) if rule is None else (rule.available, rule.currency)
 
 
 def offers(country, tier, day=None):
@@ -306,4 +406,4 @@ def offers(country, tier, day=None):
     applies = subscription(country, tier)
     if applies is None:
         return []
-    return offers_under(applies, day)
+    return offers_under(applies, day, country=country)

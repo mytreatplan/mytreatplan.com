@@ -5,7 +5,8 @@ the contact message events, entry 9; the snapshot's country map section,
 epic-catalogue entry 3; remote writes, entry 6; hub lookups, entry 7; the snapshot's
 provider costs section, epic-catalogue entry 4; the products' texts, code and validity and
 the in-house TPS discount, epic-catalogue entry 5; add-ons, sizes, per-unit quantities,
-calls and cost links, entry 6; subscriptions in full, entry 8)."""
+calls and cost links, entry 6; subscriptions in full, entry 8; billing companies and
+billing rules, entry 9)."""
 
 from decimal import Decimal
 
@@ -16,7 +17,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.22.0'
+    assert mytp_core.__version__ == '0.23.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -40,7 +41,8 @@ def test_vendored_mytp_core_has_the_catalogue_section():
     from mytp_core.contracts import CatalogueSection
     assert ConfigSnapshot.model_fields['catalogue'].is_required() is False
     assert CatalogueSection.model_fields.keys() == {
-        'country_groups', 'products', 'subscriptions', 'add_ons', 'manual_subscriptions'}
+        'country_groups', 'products', 'subscriptions', 'add_ons', 'manual_subscriptions',
+        'billing_companies', 'billing_rules'}
 
 
 def test_vendored_mytp_core_has_remote_reads():
