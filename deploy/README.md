@@ -3315,6 +3315,69 @@ sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --subscription <id 
 #     the line under that subscription; "Refused: the product ... is not offered under the subscription ..."
 ```
 
+Billing companies and billing rules (epic-catalogue entry 9, mytp-core 0.23.0; AD-6,
+AD-7, AD-16; user decisions 2026-11-11):
+
+- The admin site's Financial Manager types the companies that bill (ES, IE, AE) and, per
+  country group and product category, a rule: the company, the VAT rate, the exemption
+  text shown when the rate is 0, an optional reverse-charge text, the payment gateways in
+  order of preference and the currency the pair is sold in. They arrive in the snapshot's
+  `catalogue` section and are stored read-only (`catalogue.BillingCompany`,
+  `catalogue.BillingRule`; migration `catalogue.0005`). Rates and texts are data: nothing
+  about a rate is in the code.
+- `catalogue.resolver` stays the only code that decides company, VAT and gateway:
+  `billing_rule(country, category)` gives the active rule of the country's group and a
+  product category (its `company`, `vat_percent`, `exemption_text`,
+  `reverse_charge_text`, `known_gateways`, `currency`, `available`), or None;
+  `subscription_rule(subscription)` the rule of a subscription's own price (the
+  `subscription` category rule of the subscription's country group, or None). ES and PT
+  resolve to the rule of Iberia; IE and DE to the one of Rest of EU (the rate, with the
+  reverse-charge text for entry 12); US to the one of Rest of world; AE to the UAE's
+  (possibly with no gateway at all).
+- Once the catalogue has any rule, `offers` and `offers_under` leave out a product whose
+  country group and category have no active rule, whose rule is marked unavailable, or
+  whose currency is not the rule's: an ES doctor is offered the EUR product, not its USD
+  or AED clone. While the snapshot has no rule (an admin site before 0.23.0, or no rule
+  typed yet) every linked product is offered, in every currency, with no billing data:
+  the first rule typed on the admin site is what switches a portal to "only what has a
+  rule", so type the rules of every pair that sells before (or right after) the first.
+  A deactivated rule counts as a rule: with every rule deactivated nothing is offered
+  (there is no way back to "offer everything"). An `uncategorised` product can have no
+  rule, so it is not offered from the first rule on.
+- A gateway this release does not know is skipped (`known_gateways`); a rule in a
+  currency or of a category it does not know is stored and offers nothing.
+- No VAT amount, no VIES decision, no cart and no invoice data here: entry 12 and
+  epic-payments read the rule from the resolver.
+- The region's company: when the snapshot's billing company of this region (code IE on
+  the EU instances, AE on the UAE ones) has another legal name, or another company number
+  or license, than the region profile's company (`regions/profiles.py`), the apply logs
+  a warning (`catalogue.applier`: "config snapshot: the billing company IE differs from
+  the eu region profile: ...") and `price_catalogue` starts with that warning. Nothing
+  is refused. The number matches when it is the profile's registration text or is found
+  in it ("815526" in "Company number 815526 (Ireland)").
+- The release before this entry keeps applying the snapshots and ignores the companies
+  and rules. The first pull of this release stores them (it applies the current version
+  again, as every release does).
+
+```
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --tier basic
+#   each offer is followed by its billing line, the subscription's line by the rule of its own price:
+#     subscription billing: ES  MyTPDSO Spain S.L.  VAT 21.00 %  gateways: redsys  EUR
+#     TPS-BR  TPS branded  tps_branded  100.00 EUR
+#         billing: ES  MyTPDSO Spain S.L.  VAT 0.00 %: <exemption text>  gateways: redsys, bank_transfer  EUR
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --category tps_branded
+#   one rule in full: company and identifiers, VAT, texts, gateways, currency, availability;
+#   or "no billing rule for ES tps_branded (Iberia)"
+```
+
+Staging check for entry 9 (after mytp-core 0.23.0, admindev, then dev): on admindev the
+three companies and the rules for Iberia, Rest of EU, Rest of world and UAE on the TPS and
+VirtuaOrtho categories and `subscription` (the admin site's README, "Billing"). On dev,
+after the deploy the first pull prints `applied`; `price_catalogue` for ES, PT, IE, DE,
+US and AE shows the expected company, VAT or text and gateways; a category without a
+rule is no longer offered; an ES doctor is not offered the USD and AED clones; no
+profile mismatch warning for IE.
+
 Staging check for entry 8 (after mytp-core 0.22.0, admindev, then dev): on admindev a second
 standard Advanced · Iberia is refused; link Advanced Iberia to a VirtuaOrtho product and
 Advanced Rest of EU not; create a manual "Ormco Premium"; give Premium 12 % on TPS

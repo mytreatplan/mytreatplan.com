@@ -42,13 +42,29 @@ is never the answer for a country and a tier: give its id or code instead,
 
 which read any subscription, standard or manual, whatever its state (an inactive one
 offers nothing). A product the subscription does not give access to is refused.
+
+Billing companies and billing rules (epic-catalogue entry 9): once the catalogue has
+rules, a product whose country group and category have no available rule, or that is in
+another currency than its rule's, is not offered, so not listed. Each offer is followed by
+its billing line (the company, the VAT rate or, for a rate of 0, the exemption text, the
+gateways in order of preference and the currency), and the subscription's line by the
+billing rule of its own price (the `subscription` category rule of its country group, or
+"no billing rule"). A line's price shows the product's billing rule too.
+
+    python manage.py price_catalogue --country ES --category tps_branded
+
+One billing rule: the rule of the country's group and that product category, in full
+(company with its identifiers, VAT rate, exemption and reverse-charge texts, gateways,
+currency, availability), or "no billing rule". When the billing company of this region
+has another legal name or registration than the region profile's, every output starts
+with a warning line saying so (nothing is refused).
 """
 from datetime import date
 
 from django.core.management.base import BaseCommand, CommandError
 
-from catalogue import resolver
-from catalogue.models import Subscription
+from catalogue import billing, resolver
+from catalogue.models import Product, Subscription
 
 
 def _date(text):
@@ -63,6 +79,11 @@ class Command(BaseCommand):
         parser.add_argument('--country', help='ISO 3166-1 alpha-2, e.g. ES.')
         parser.add_argument('--tier', choices=Subscription.TIERS,
                             type=resolver.normal_tier, help='basic, advanced or premium.')
+        parser.add_argument('--category', type=resolver.normal_category,
+                            choices=[code for code in Product.CATEGORIES
+                                     if code != Product.UNCATEGORISED],
+                            help='With --country alone: print the billing rule of the '
+                                 'country\'s group and this product category.')
         parser.add_argument('--subscription', metavar='ID_OR_CODE',
                             help='A subscription id (UUID) or code, standard or manual, '
                                  'in place of --country and --tier: what it offers, or '
@@ -87,9 +108,18 @@ class Command(BaseCommand):
                             help='With --cost: the date (default: today in Madrid).')
 
     def handle(self, *, country, tier, subscription, product, language, add_ons, quantity,
-               cost, on, **options):
+               cost, on, category=None, **options):
+        mismatch = billing.profile_mismatch()
+        if mismatch:
+            self.stdout.write(f'warning: {mismatch}')
+        if category:
+            if not country or tier or subscription or product or add_ons or cost or on \
+                    or quantity is not None:
+                raise CommandError('--category goes with --country alone.')
+            return self.print_rule(resolver.normal_country(country), category)
         if bool(country) != bool(tier):
-            raise CommandError('Give --country and --tier together.')
+            raise CommandError('Give --country and --tier together (or --country and '
+                               '--category for a billing rule).')
         if subscription and country:
             raise CommandError('Give --subscription, or --country and --tier.')
         line = bool(product and (country or subscription))
@@ -119,7 +149,9 @@ class Command(BaseCommand):
                 raise CommandError(f'No active {tier} subscription applies to {country}.')
             return self.print_line(found, applies, title, language, add_ons,
                                    1 if quantity is None else quantity)
-        offers = [] if applies is None else resolver.offers_under(applies)
+        offers = [] if applies is None else resolver.offers_under(
+            applies, country=country or None)
+        billed = resolver.has_billing_rules()
         if not offers:
             self.stdout.write(f'no offers for {title}')
             if applies is not None:
@@ -132,11 +164,68 @@ class Command(BaseCommand):
                         if offered.per_unit else '')
             self.stdout.write(f'  {offered.code or "-"}  {offered.name_in(language)}  '
                               f'{offered.category}  {price}{per_unit}')
+            if billed:
+                self.stdout.write('      billing: ' + self.rule_text(
+                    self.rule_of(offered, applies, country)))
             calls = resolver.calls(offered, applies)
             if calls is not None:
                 self.stdout.write(f'      calls: {calls[0]} of {calls[1]} minutes')
             for add_on in resolver.add_ons(offered):
                 self.stdout.write(f'      + {self.add_on_text(add_on, language)}')
+
+    @staticmethod
+    def rule_of(offered, applies, country):
+        """The billing rule of a product for the doctor's country group: the one of
+        `country` when the offers were asked for a country, else the subscription's."""
+        if country:
+            return resolver.billing_rule(country, offered.category)
+        return resolver.billing_rule_for(applies.country_group_id, offered.category)
+
+    @staticmethod
+    def one_line(text):
+        return ' / '.join(line.strip() for line in text.split('\n') if line.strip())
+
+    def rule_text(self, rule):
+        """A rule in one line: the company, the VAT rate (with the exemption text for a
+        rate of 0), the gateways in order and the currency; "no billing rule" for
+        None."""
+        if rule is None:
+            return 'no billing rule'
+        vat = f'VAT {rule.vat_percent} %'
+        if rule.exempt:
+            vat += f': {self.one_line(rule.exemption_text)}'
+        return (f'{rule.company.code}  {rule.company.legal_name}  {vat}  gateways: '
+                f'{", ".join(rule.known_gateways) or "none"}  {rule.currency}'
+                f'{"" if rule.available else "  not available"}')
+
+    def print_rule(self, country, category):
+        """The billing rule of the country's group and a product category, in full."""
+        group = resolver.country_group(country)
+        title = f'{country} {category}' + (f' ({group.name})' if group else '')
+        rule = resolver.billing_rule(country, category)
+        if rule is None:
+            self.stdout.write(f'no billing rule for {title}')
+            if not resolver.has_billing_rules():
+                self.stdout.write('  the catalogue has no billing rules: every linked '
+                                  'product is offered, in every currency')
+            return
+        company = rule.company
+        self.stdout.write(f'{title}: billing rule')
+        self.stdout.write(f'  company: {company.code}  {company.legal_name}'
+                          f'{"" if company.active else "  (inactive)"}')
+        self.stdout.write(f'  address: {self.one_line(company.address)}  ({company.country}, '
+                          f'{company.time_zone})')
+        for label, value in company.identifiers:
+            self.stdout.write(f'  {label}: {value}')
+        self.stdout.write(f'  VAT: {rule.vat_percent} %')
+        if rule.exemption_text:
+            self.stdout.write(f'  exemption text: {self.one_line(rule.exemption_text)}')
+        if rule.reverse_charge_text:
+            self.stdout.write('  reverse-charge text: '
+                              f'{self.one_line(rule.reverse_charge_text)}')
+        self.stdout.write(f'  gateways: {", ".join(rule.known_gateways) or "none"}')
+        self.stdout.write(f'  currency: {rule.currency}')
+        self.stdout.write(f'  available: {"yes" if rule.available else "no: not offered"}')
 
     @staticmethod
     def add_on_text(add_on, language):
@@ -169,6 +258,9 @@ class Command(BaseCommand):
         self.stdout.write(f'  subscription: {found.code or "-"}  '
                           f'{found.name_in(language) or found.tier}  '
                           f'{", ".join(parts) or "free"}')
+        if resolver.has_billing_rules():
+            self.stdout.write('  subscription billing: '
+                              + self.rule_text(resolver.subscription_rule(found)))
 
     def found(self, product_id):
         found = resolver.product(product_id)
@@ -242,4 +334,7 @@ class Command(BaseCommand):
             self.stdout.write(f'  calls: {calls[0]} of {calls[1]} minutes')
         for add_on in chosen:
             self.stdout.write(f'  add-on: {self.add_on_text(add_on, language)}')
+        if resolver.has_billing_rules():
+            self.stdout.write('  billing: ' + self.rule_text(
+                resolver.billing_rule_for(applies.country_group_id, found.category)))
         self.stdout.write(f'  line price: {price}')

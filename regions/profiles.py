@@ -101,6 +101,18 @@ DEFAULT_REGION = 'eu'
 # model using them has the same migration state whatever REGION is.
 REGION_CHOICES = tuple((code, code) for code in PROFILES)
 
+# The short code, in the admin site's billing companies (epic-catalogue entry 9), of the
+# company each region's profile names (`RegionProfile.company`): the snapshot's company of
+# that code is compared with the profile's name and registration when a snapshot is
+# applied (catalogue.billing: a warning when they differ, nothing refused).
+BILLING_COMPANY_CODES = {'eu': 'IE', 'ae': 'AE'}
+
+
+def billing_company_code(profile):
+    """The billing company code of `profile`'s company, or None for a region without
+    one."""
+    return BILLING_COMPANY_CODES.get(profile.code)
+
 
 def get_profile(code):
     """The profile of region `code`; UnknownRegion (naming the valid ones) otherwise."""

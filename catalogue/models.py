@@ -24,6 +24,13 @@ standard (the default of its tier and country group) or manual (assigned by hand
 its id, never the answer for a country and a tier), and has its code, public texts, the
 products it gives access to, a discount and call extras per product category and its own
 price. The admin site's internal notes of a subscription never arrive here.
+
+Billing companies and billing rules (epic-catalogue entry 9, mytp-core 0.23.0): the
+companies that bill (`BillingCompany`) and, per country group and product category, the
+rule (`BillingRule`): the company, the VAT rate or its exemption text, the payment
+gateways in order and the currency the pair is sold in. `catalogue.resolver` is the only
+code that reads them to decide company, VAT and gateway (AD-16); no VAT amount is
+computed here (entry 12 does).
 """
 import uuid
 from decimal import Decimal
@@ -364,3 +371,94 @@ class ProviderCost(ReadOnlyModel):
 
     def holds(self, day):
         return self.valid_from <= day and (self.valid_to is None or day <= self.valid_to)
+
+
+class BillingCompany(ReadOnlyModel):
+    """A company that bills (epic-catalogue entry 9): its short `code` (ES, IE, AE), legal
+    name, address (plain text, `\\n` line breaks), country (ISO 3166-1 alpha-2), legal
+    time zone (an IANA name) and its identifiers, each '' when it has none: the company
+    number or license, the VAT registration and the TAX registration. A deactivated
+    company stays, readable for what refers to it. No bank details and no invoice series
+    (epic-payments)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=16)
+    legal_name = models.CharField(max_length=200)
+    address = models.TextField()
+    country = models.CharField(max_length=2)
+    time_zone = models.CharField(max_length=64)
+    company_number = models.CharField(max_length=64, default='')
+    vat_number = models.CharField(max_length=64, default='')
+    tax_number = models.CharField(max_length=64, default='')
+    active = models.BooleanField()
+
+    class Meta:
+        ordering = ['code', 'id']
+
+    def __str__(self):
+        return self.code
+
+    @property
+    def identifiers(self):
+        """[(label, value)] of the identifiers the company has."""
+        return [(label, value) for label, value in (
+            ('company number', self.company_number), ('VAT', self.vat_number),
+            ('TAX', self.tax_number)) if value]
+
+
+class BillingRule(ReadOnlyModel):
+    """The billing rule of one country group and product category (epic-catalogue entry
+    9), as sent: the `company` that bills, the VAT rate (`vat_percent`), the
+    `exemption_text` of a rate of 0 ('' otherwise allowed), the `reverse_charge_text`
+    ('' for none: entry 12 uses it, at a rate of 0, for a doctor with a valid VIES number
+    in another country than the company's), the payment `gateways` in order of
+    preference (codes; read the ones this release knows with `known_gateways`), the
+    `currency` the pair is sold in and whether the category is `available` in the group.
+    At most one active rule per group and category (the snapshot's contract).
+
+    Every rule is stored, also one of a category or in a currency this release does not
+    know: such a rule offers nothing (no product has that category or currency), which
+    is what a rule this release cannot honour must do. Read rules through
+    `catalogue.resolver` (`billing_rule`, `subscription_rule`), never directly.
+
+    `country_group` has no database constraint: the release before this entry replaces
+    the country groups without knowing this table, and must still be able to apply a
+    snapshot during a deploy or after a rollback."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    country_group = models.ForeignKey(CountryGroup, on_delete=models.CASCADE,
+                                      related_name='billing_rules', db_constraint=False)
+    category = models.CharField(max_length=32)
+    company = models.ForeignKey(BillingCompany, on_delete=models.CASCADE,
+                                related_name='rules')
+    vat_percent = models.DecimalField(max_digits=5, decimal_places=2)
+    exemption_text = models.TextField(default='')
+    reverse_charge_text = models.TextField(default='')
+    gateways = models.JSONField(default=list)
+    currency = models.CharField(max_length=3)
+    available = models.BooleanField()
+    active = models.BooleanField()
+
+    class Meta:
+        ordering = ['category', 'id']
+
+    def __str__(self):
+        return f'{self.country_group_id} {self.category}'
+
+    @property
+    def exempt(self):
+        """Whether the rate is 0: the exemption text is then what an invoice shows."""
+        return self.vat_percent == 0
+
+    @property
+    def known_gateways(self):
+        """The gateways this release knows, in the rule's order of preference."""
+        from mytp_core.contracts import known_gateways
+        return known_gateways(self.gateways)
+
+    @property
+    def vat_text(self):
+        """"VAT 23.00 %", or "VAT 0.00 %: <the exemption text>" for a rate of 0."""
+        if self.exempt:
+            return f'VAT {self.vat_percent} %: {self.exemption_text}'
+        return f'VAT {self.vat_percent} %'

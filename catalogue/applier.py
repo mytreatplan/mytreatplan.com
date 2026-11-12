@@ -39,11 +39,26 @@ every product is offered under each subscription and the two TPS discounts apply
 before. A subscription whose own price is in a currency `Money` does not take is
 skipped (never stored as free). The release before entry 8 stored none of this; the
 first pull of the next release does (as above): no migration clears the applied
-version."""
+version.
+
+Billing companies and billing rules (epic-catalogue entry 9, mytp-core 0.23.0): the
+section's `billing_companies` and `billing_rules` replace the stored ones (none in a
+snapshot of an admin site before 0.23.0, or of one where none was typed yet: the resolver
+then offers every linked product, in every currency, as before). Every rule is stored as
+sent, also one of a category or in a currency this release does not know: it then offers
+nothing, which is the safe reading. After the rows are stored, the region's company is
+compared with the region profile's (catalogue.billing): a difference is a warning in the
+log, never a refusal. The release before entry 9 stored none of this; the first pull of
+the next release does (as above)."""
+import logging
+
 from mytp_core.money import CURRENCIES
 
-from .models import (AddOn, CountryGroup, Product, ProviderCost, ProviderProduct,
-                     Subscription)
+from . import billing
+from .models import (AddOn, BillingCompany, BillingRule, CountryGroup, Product,
+                     ProviderCost, ProviderProduct, Subscription)
+
+logger = logging.getLogger('catalogue.applier')
 
 
 def _texts(product):
@@ -56,6 +71,10 @@ def _texts(product):
 
 def _category(product):
     return Product.LEGACY_CATEGORIES.get(product.category, product.category)
+
+
+def _rule_category(rule):
+    return Product.LEGACY_CATEGORIES.get(rule.category, rule.category)
 
 
 def _texts_of(texts):
@@ -102,6 +121,9 @@ def _subscription(subscription, manual):
 def apply(section):
     """Replace the catalogue with `section` (mytp-core's CatalogueSection, or None).
     Returns the log line's summary: the stored row counts, never the contents."""
+    # The rows with a foreign key first.
+    BillingRule.objects.all().delete()
+    BillingCompany.objects.all().delete()
     Subscription.objects.all().delete()
     Product.objects.all().delete()
     CountryGroup.objects.all().delete()
@@ -141,9 +163,34 @@ def apply(section):
               active=add_on.active)
         for add_on in section.add_ons or ()
         if add_on.amount is None or add_on.amount.currency in CURRENCIES)
-    return (f'catalogue: {CountryGroup.objects.count()} country groups, '
-            f'{Product.objects.count()} products, {Subscription.objects.count()} '
-            f'subscriptions, {AddOn.objects.count()} add-ons')
+    BillingCompany.objects.bulk_create(
+        BillingCompany(id=company.id, code=company.code, legal_name=company.legal_name,
+                       address=company.address, country=company.country,
+                       time_zone=company.time_zone,
+                       company_number=company.company_number or '',
+                       vat_number=company.vat_number or '',
+                       tax_number=company.tax_number or '', active=company.active)
+        for company in section.billing_companies or ())
+    BillingRule.objects.bulk_create(
+        BillingRule(id=rule.id, country_group_id=rule.country_group,
+                    category=_rule_category(rule), company_id=rule.company,
+                    vat_percent=rule.vat_percent,
+                    exemption_text=rule.exemption_text or '',
+                    reverse_charge_text=rule.reverse_charge_text or '',
+                    gateways=list(rule.gateways), currency=rule.currency,
+                    available=rule.available, active=rule.active)
+        for rule in section.billing_rules or ())
+    mismatch = billing.profile_mismatch()
+    if mismatch:
+        logger.warning('config snapshot: %s', mismatch)
+    summary = (f'catalogue: {CountryGroup.objects.count()} country groups, '
+               f'{Product.objects.count()} products, {Subscription.objects.count()} '
+               f'subscriptions, {AddOn.objects.count()} add-ons')
+    companies, rules = BillingCompany.objects.count(), BillingRule.objects.count()
+    if companies or rules:
+        # Only once the admin site sends them: the line of before otherwise.
+        summary += f', {companies} billing companies, {rules} billing rules'
+    return summary
 
 
 def apply_provider_costs(section):
