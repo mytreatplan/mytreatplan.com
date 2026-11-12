@@ -3,7 +3,7 @@ title: 'Voucher definitions'
 type: 'feature'
 ticket: '10'
 created: '2026-11-12'
-status: 'built'
+status: 'done'
 baseline_revision: 'c942b2871873cfaea6cba40fb1aa70608bc41962'
 route: 'full'
 route_source: 'auto'
@@ -120,3 +120,19 @@ Quick lens, one reviewer per repository (2026-11-12). 7 findings: 1 medium, 6 lo
 
 **Manual checks (staging):**
 - On admindev, as `staging_check_5_10` through the service: a general try-me voucher (eu, EUR), a subscription voucher for the staging sample doctor (eu), a try-me voucher of region ae (AED); one deactivated then reactivated. On dev: the first `pull_config` after the deploy prints `applied`; `price_catalogue --voucher` reads the two eu vouchers and not the ae one; the stored snapshot body holds no ae voucher. On dev-ae: the ae voucher only.
+
+## Staging
+
+Checked 2026-11-12 (merge and staging delegated by the user).
+
+- Release: mytp-core v0.24.0 (4cc569c; CI green on master and the tag). Admin PR #34 (merge 53d93f3; master run 43266193811, tests and deploy green). Portal PR #92 (merge 75acfb8; master run 43267434385, tests and both deploys green). Suites against the tag's wheel: core 1527, admin 1505, portal 2564 plus the 3 known PostgreSQL-only failures.
+- After the portal deploy, before any voucher: the first `pull_config` on dev and dev-ae printed `applied` (v97, "no vouchers"), the second `unchanged`.
+- Staging has no doctor of region eu (dev holds no doctor account; admindev's only client record is one ae doctor), so the doctor-specific voucher was created for that ae doctor in region ae, and the two general ones in eu.
+- admindev, as `staging_check_5_10` through the service: a general try-me voucher (eu, 50.00 EUR), a general subscription voucher (eu, 120.00 EUR), a subscription voucher for the ae doctor (ae, 200.00 AED) and a try-me voucher (eu, 10.00 EUR) deactivated, then reactivated. Four different generated codes. Snapshot v97 → v103.
+- Refused on admindev: an amount of 0, an end date before the start, the ae doctor on an eu voucher, an unknown region, a change of the amount after creation.
+- The served body: 4 vouchers stored; 3 for eu, 1 for ae, none and no key for a peer without a region; the internal note is not in it.
+- dev: `price_catalogue --voucher` read the three eu vouchers (one typed in lower case without the hyphen), the deactivated one as "not usable: inactive" and as usable again after the reactivation (v103); the ae code gave "no voucher with this code"; 3 rows in the table.
+- dev-ae: the ae voucher only, with the doctor's UUID; the eu codes gave "no voucher with this code"; 1 row in the table.
+- The filter: no "voucher(s) of another region skipped" warning in the logs of dev and dev-ae; the applied lines say `vouchers: 3` (dev) and `vouchers: 1` (dev-ae).
+- Not checked: the admin pages in a browser (2FA), the doctor found by email on the form; the page tests cover them.
+- Staging data left on admindev: the four vouchers (notes "STAGING 5.10 …").
