@@ -3370,6 +3370,53 @@ sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --country ES --cate
 #   or "no billing rule for ES tps_branded (Iberia)"
 ```
 
+Vouchers (epic-catalogue entry 10, mytp-core 0.24.0; AD-20; user decisions 2026-11-12):
+
+- The admin site's staff create the vouchers (the admin site's README, "Vouchers"): a
+  generated code (10 characters without 0, O, 1, I, L; shown `XXXXX-XXXXX`), the type
+  (`subscription` or `try_me`), one region, a fixed amount in EUR, AED or USD, the client
+  UUID of one doctor or none, and the validity dates (both included, Madrid time; no end
+  when empty). The admin site sends a portal only its region's, in the snapshot's
+  top-level `vouchers` list; they are stored read-only (`catalogue.Voucher`; migration
+  `catalogue.0006`), inactive ones too, replaced at each apply. A voucher of another
+  region is skipped with a warning (`catalogue.applier`: "config snapshot: 1 voucher(s)
+  of another region skipped"); a snapshot without the list (an admin site before 0.24.0,
+  or a region without vouchers) empties the table. The applied log line ends with
+  `vouchers: <n>`.
+- `catalogue.resolver.voucher_by_code(code)` reads one as a doctor types it (with or
+  without the hyphen, any case); `voucher_state(voucher, day)` says whether it is usable
+  on a day (`usable`) or why not (`inactive`, `not_in_force`, `unknown_type`,
+  `unknown_currency`). Nothing redeems a voucher, counts its uses or applies it to a price
+  here: epic-subscriptions and entry 12 do.
+- The release before this entry keeps applying the snapshots and ignores the vouchers.
+  The first pull of this release stores them (it applies the current version again).
+
+```
+sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --voucher k7qm2-xh9tr [--on 2026-11-12]
+#   K7QM2-XH9TR  try_me  50.00 EUR
+#     doctor: any doctor                 (or the doctor's client UUID)
+#     valid: 2026-11-12 to no end
+#     active; on 2026-11-12: usable      (or "not usable: inactive" / "not usable: not in force")
+#   or "no voucher with this code" (also for another region's code)
+```
+
+Staging check for entry 10 (after mytp-core 0.24.0, admindev, then dev and dev-ae): on
+admindev, through the service, a general try-me voucher (eu, EUR), a subscription voucher
+for the staging sample doctor (eu) and a try-me voucher of region ae (AED); one
+deactivated then reactivated. On dev the first `pull_config` after the deploy prints
+`applied`; `price_catalogue --voucher` reads the two eu vouchers (the second with the
+doctor's UUID) and not the ae one; on dev-ae the ae voucher only. The portal stores no
+snapshot body, and its own skip of another region's vouchers would hide an unfiltered
+body from the table check, so check the log of that pull on dev too: no "config
+snapshot: ... voucher(s) of another region skipped" warning, and the applied line's
+count (`vouchers: <n>`) equals the number of eu vouchers on admindev (2).
+
+```
+# the pull's log lines: the pullconfig job, the worker's nudged pull, or pull_config by hand
+sudo journalctl -u mytp-dev-job@pullconfig -u mytp-dev-worker --since "-15 min" | grep 'config snapshot'
+#   config snapshot v<n> applied (...); vouchers: 2      and no "of another region skipped" line
+```
+
 Staging check for entry 9 (after mytp-core 0.23.0, admindev, then dev): on admindev the
 three companies and the rules for Iberia, Rest of EU, Rest of world and UAE on the TPS and
 VirtuaOrtho categories and `subscription` (the admin site's README, "Billing"). On dev,

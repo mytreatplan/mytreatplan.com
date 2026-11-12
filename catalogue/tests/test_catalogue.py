@@ -311,12 +311,13 @@ def test_the_catalogue_applier_is_registered_once():
     config.register_section_applier('catalogue', applier.apply)  # the same: a no-op
     with pytest.raises(ValueError):
         config.register_section_applier('catalogue', lambda section: None)
-    for name in ('vouchers', 'version', 'admin_directory'):
+    for name in ('coupons', 'version', 'admin_directory'):
         with pytest.raises(ValueError):
             config.register_section_applier(name, lambda section: None)
     # The regions app's country map (epic-catalogue entry 3) is another section, and the
-    # provider costs (entry 6) are applied by this app too.
-    assert config.section_applier_names() == ('country_map', 'catalogue', 'provider_costs')
+    # provider costs (entry 6) and the vouchers (entry 10) are applied by this app too.
+    assert config.section_applier_names() == ('country_map', 'catalogue', 'provider_costs',
+                                              'vouchers')
     config.register_section_applier('provider_costs', applier.apply_provider_costs)
     with pytest.raises(ValueError):
         config.register_section_applier('provider_costs', lambda section: None)

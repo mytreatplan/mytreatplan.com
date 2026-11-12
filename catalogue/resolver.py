@@ -93,7 +93,18 @@ with what VAT rate or exemption text and through which gateways:
   offered. VAT amounts, the VIES decision and the cart come with entry 12, which reads
   the rule from here.
 
-Prices are net: no VAT amount is computed here, and vouchers come with a later entry.
+Vouchers (epic-catalogue entry 10, AD-20; user decisions 2026-11-12):
+
+- `voucher_by_code(code)`: the voucher of this region with that code, typed with or
+  without the hyphen and in any case (``k7qm2-xh9tr``), whatever its state, or None.
+- `voucher_state(voucher, day)`: whether it is usable on a day (Madrid time; today when
+  None): `usable`, or why not: `inactive`, `not_in_force` (outside its dates, both
+  included), `unknown_type` or `unknown_currency` (what this release cannot honour).
+  `voucher_usable` says yes or no. Whether this doctor may use it (its `client`), and
+  whether it was used already, are epic-subscriptions'; applying it to a price is
+  entry 12's.
+
+Prices are net: no VAT amount is computed here, and no voucher is applied to a price.
 """
 import re
 import uuid
@@ -104,19 +115,20 @@ from django.utils import timezone
 
 from mytp_core.contracts import (AddOnRefused, QuantityRefused, add_on_applies,
                                  billing_offers, calls_under, check_quantity, line_price,
-                                 link_labels, subscription_discount, subscription_offers,
-                                 sum_costs)
+                                 link_labels, normalize_voucher_code,
+                                 subscription_discount, subscription_offers, sum_costs)
 from mytp_core.money import Money
 
 from .models import (AddOn, BillingCompany, BillingRule, CountryGroup, Product,
-                     ProviderProduct, Subscription)
+                     ProviderProduct, Subscription, Voucher)
 
 __all__ = ['AddOnRefused', 'ProductRefused', 'QuantityRefused', 'add_on', 'add_ons',
            'billing_company', 'billing_rule', 'billing_rule_for', 'calls', 'cost',
            'country_group', 'discount_percent', 'has_billing_rules', 'linked',
            'normal_category', 'normal_country', 'normal_tier', 'offers', 'offers_under',
            'price', 'product', 'subscription', 'subscription_by_code',
-           'subscription_by_id', 'subscription_rule', 'today', 'unit_price']
+           'subscription_by_id', 'subscription_rule', 'today', 'unit_price',
+           'voucher_by_code', 'voucher_state', 'voucher_usable', 'VOUCHER_STATES']
 
 # The product category whose rule bills a subscription's own price (user decision
 # 2026-11-11).
@@ -407,3 +419,38 @@ def offers(country, tier, day=None):
     if applies is None:
         return []
     return offers_under(applies, day, country=country)
+
+
+# --- Vouchers (epic-catalogue entry 10) ----------------------------------------------------
+
+USABLE, INACTIVE, NOT_IN_FORCE = 'usable', 'inactive', 'not_in_force'
+UNKNOWN_TYPE, UNKNOWN_CURRENCY = 'unknown_type', 'unknown_currency'
+VOUCHER_STATES = (USABLE, INACTIVE, NOT_IN_FORCE, UNKNOWN_TYPE, UNKNOWN_CURRENCY)
+
+
+def voucher_by_code(code):
+    """The voucher with this code (typed with or without the hyphen, in any case),
+    whatever its state, or None (also for text that is not a code's form)."""
+    code = normalize_voucher_code(code)
+    return Voucher.objects.filter(code=code).first() if code else None
+
+
+def voucher_state(voucher, day=None):
+    """`usable` when the voucher can be used on `day` (a date in Madrid time; today when
+    None), else why not: `unknown_type`, `unknown_currency`, `inactive` or
+    `not_in_force`, in that order."""
+    day = day or today()
+    if voucher.type not in Voucher.TYPES:
+        return UNKNOWN_TYPE
+    if voucher.money is None:
+        return UNKNOWN_CURRENCY
+    if not voucher.active:
+        return INACTIVE
+    if not voucher.in_force_on(day):
+        return NOT_IN_FORCE
+    return USABLE
+
+
+def voucher_usable(voucher, day=None):
+    """Whether the voucher can be used on `day` (`voucher_state` is `usable`)."""
+    return voucher_state(voucher, day) == USABLE
