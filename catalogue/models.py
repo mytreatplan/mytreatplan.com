@@ -31,6 +31,10 @@ rule (`BillingRule`): the company, the VAT rate or its exemption text, the payme
 gateways in order and the currency the pair is sold in. `catalogue.resolver` is the only
 code that reads them to decide company, VAT and gateway (AD-16); no VAT amount is
 computed here (entry 12 does).
+
+Vouchers (epic-catalogue entry 10, mytp-core 0.24.0): the voucher definitions of this
+region (`Voucher`), read by their code (`catalogue.resolver.voucher_by_code`). Nothing
+about redeeming them is here (epic-subscriptions).
 """
 import uuid
 from decimal import Decimal
@@ -462,3 +466,54 @@ class BillingRule(ReadOnlyModel):
         if self.exempt:
             return f'VAT {self.vat_percent} %: {self.exemption_text}'
         return f'VAT {self.vat_percent} %'
+
+
+class Voucher(ReadOnlyModel):
+    """A voucher definition of this region (epic-catalogue entry 10, mytp-core 0.24.0,
+    AD-20), as sent in the snapshot's top-level `vouchers` list: its generated `code`
+    (stored without the hyphen; shown `XXXXX-XXXXX`), its `type` (`subscription` or
+    `try_me`; one this release does not know is kept as text and is not usable), a fixed
+    `amount` in `currency`, the `client` UUID of the one doctor it is for (None: any
+    doctor), its validity dates (both included, Madrid time; `valid_to` None: no end) and
+    whether it is `active`. A deactivated voucher stays, readable for the orders that
+    refer to it, and is not usable.
+
+    No use count, reservation or "already used" state: redeeming is epic-subscriptions'
+    (AD-20). Read vouchers through `catalogue.resolver` (`voucher_by_code`,
+    `voucher_state`), never directly."""
+
+    SUBSCRIPTION, TRY_ME = 'subscription', 'try_me'
+    TYPES = (SUBSCRIPTION, TRY_ME)
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    code = models.CharField(max_length=32, unique=True)
+    type = models.CharField(max_length=32)
+    amount = models.DecimalField(max_digits=17, decimal_places=2)
+    currency = models.CharField(max_length=3)
+    client = models.UUIDField(null=True)
+    valid_from = models.DateField()
+    valid_to = models.DateField(null=True)
+    active = models.BooleanField()
+
+    class Meta:
+        ordering = ['code']
+
+    def __str__(self):
+        return self.display_code
+
+    @property
+    def display_code(self):
+        from mytp_core.contracts import display_voucher_code
+        return display_voucher_code(self.code)
+
+    def in_force_on(self, day):
+        """Whether `day` (a date) is inside the validity dates, both included."""
+        return self.valid_from <= day and (self.valid_to is None or day <= self.valid_to)
+
+    @property
+    def money(self):
+        """The amount as `Money`, or None for a currency this release does not take."""
+        try:
+            return Money(self.amount, self.currency)
+        except ValueError:
+            return None

@@ -49,14 +49,24 @@ sent, also one of a category or in a currency this release does not know: it the
 nothing, which is the safe reading. After the rows are stored, the region's company is
 compared with the region profile's (catalogue.billing): a difference is a warning in the
 log, never a refusal. The release before entry 9 stored none of this; the first pull of
-the next release does (as above)."""
+the next release does (as above).
+
+Vouchers (epic-catalogue entry 10, mytp-core 0.24.0): the snapshot's top-level `vouchers`
+list has its own applier, `apply_vouchers`: the vouchers replace the stored ones, inactive
+ones too. The admin site sends a portal only its region's; one of another region is
+skipped all the same (a warning with the count, never a code). A snapshot without the
+list (an admin site before 0.24.0, or a region without vouchers) empties the table. A
+voucher of a type or a currency this release does not know is stored as sent, and is not
+usable (catalogue.resolver.voucher_state)."""
 import logging
+
+from django.conf import settings
 
 from mytp_core.money import CURRENCIES
 
 from . import billing
 from .models import (AddOn, BillingCompany, BillingRule, CountryGroup, Product,
-                     ProviderCost, ProviderProduct, Subscription)
+                     ProviderCost, ProviderProduct, Subscription, Voucher)
 
 logger = logging.getLogger('catalogue.applier')
 
@@ -212,3 +222,24 @@ def apply_provider_costs(section):
         for product in known for cost in product.costs)
     return (f'provider costs: {ProviderProduct.objects.count()} provider products, '
             f'{ProviderCost.objects.count()} costs')
+
+
+def apply_vouchers(vouchers):
+    """Replace the vouchers with `vouchers` (mytp-core's list of `Voucher`, or None: no
+    voucher for this region, or an admin site before 0.24.0). A voucher of another region
+    than this deployment's (settings.REGION) is skipped with a warning. Returns the log
+    line's summary: counts only."""
+    Voucher.objects.all().delete()
+    if vouchers is None:
+        return 'no vouchers'
+    mine = [voucher for voucher in vouchers if voucher.region == settings.REGION]
+    skipped = len(vouchers) - len(mine)
+    if skipped:
+        logger.warning('config snapshot: %s voucher(s) of another region skipped', skipped)
+    Voucher.objects.bulk_create(
+        Voucher(id=voucher.id, code=voucher.code, type=voucher.type,
+                amount=voucher.amount.amount, currency=voucher.amount.currency,
+                client=voucher.client, valid_from=voucher.valid_from,
+                valid_to=voucher.valid_to, active=voucher.active)
+        for voucher in mine)
+    return f'vouchers: {Voucher.objects.count()}'

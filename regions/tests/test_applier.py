@@ -182,5 +182,6 @@ def test_the_applied_log_line_has_counts_only(admin, eu_site, caplog):  # noqa: 
     caplog.clear()
     pull(admin, 2, None)
     assert caplog.messages == ['config snapshot v2 applied (2 admin directory entries); '
-                               'no catalogue section; no provider costs section']
+                               'no catalogue section; no provider costs section; '
+                               'no vouchers']
     assert 'quarantined' not in caplog.text and 'XK' not in caplog.text

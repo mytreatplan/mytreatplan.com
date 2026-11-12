@@ -58,6 +58,14 @@ One billing rule: the rule of the country's group and that product category, in 
 currency, availability), or "no billing rule". When the billing company of this region
 has another legal name or registration than the region profile's, every output starts
 with a warning line saying so (nothing is refused).
+
+    python manage.py price_catalogue --voucher CODE [--on YYYY-MM-DD]
+
+One voucher of this region (epic-catalogue entry 10) by its code, typed with or without
+the hyphen and in any case, whatever its state: its code, type, amount, the doctor's
+client UUID (or "any doctor"), its validity and whether it is usable today in Madrid time
+(or `--on`), else why not (inactive, not in force, or a type or currency this release
+does not know); "no voucher" when this region has none with that code. Reads only.
 """
 from datetime import date
 
@@ -105,13 +113,22 @@ class Command(BaseCommand):
         parser.add_argument('--cost', action='store_true',
                             help='With --product alone: its cost at a date.')
         parser.add_argument('--on', type=_date, metavar='YYYY-MM-DD',
-                            help='With --cost: the date (default: today in Madrid).')
+                            help='With --cost or --voucher: the date (default: today in '
+                                 'Madrid).')
+        parser.add_argument('--voucher', metavar='CODE',
+                            help='A voucher code of this region (with or without the '
+                                 'hyphen): print that voucher and whether it is usable.')
 
     def handle(self, *, country, tier, subscription, product, language, add_ons, quantity,
-               cost, on, category=None, **options):
+               cost, on, category=None, voucher=None, **options):
         mismatch = billing.profile_mismatch()
         if mismatch:
             self.stdout.write(f'warning: {mismatch}')
+        if voucher is not None:
+            if country or tier or subscription or product or add_ons or cost or category \
+                    or quantity is not None or language != 'en':
+                raise CommandError('--voucher goes alone (or with --on).')
+            return self.print_voucher(voucher, on)
         if category:
             if not country or tier or subscription or product or add_ons or cost or on \
                     or quantity is not None:
@@ -129,7 +146,7 @@ class Command(BaseCommand):
         if cost and (not product or line):
             raise CommandError('--cost goes with --product alone.')
         if on and not cost:
-            raise CommandError('--on goes with --cost.')
+            raise CommandError('--on goes with --cost or --voucher.')
         if product and not line:
             return self.print_product(product, language, cost, on)
         if subscription:
@@ -172,6 +189,28 @@ class Command(BaseCommand):
                 self.stdout.write(f'      calls: {calls[0]} of {calls[1]} minutes')
             for add_on in resolver.add_ons(offered):
                 self.stdout.write(f'      + {self.add_on_text(add_on, language)}')
+
+    STATE_TEXTS = {resolver.USABLE: 'usable', resolver.INACTIVE: 'not usable: inactive',
+                   resolver.NOT_IN_FORCE: 'not usable: not in force',
+                   resolver.UNKNOWN_TYPE: 'not usable: a type this release does not know',
+                   resolver.UNKNOWN_CURRENCY: 'not usable: a currency this release does '
+                                              'not know'}
+
+    def print_voucher(self, code, on):
+        """One voucher by its code: its fields and whether it is usable on the day."""
+        found = resolver.voucher_by_code(code)
+        if found is None:
+            self.stdout.write('no voucher with this code')
+            return
+        day = on or resolver.today()
+        end = found.valid_to.isoformat() if found.valid_to else 'no end'
+        self.stdout.write(f'{found.display_code}  {found.type}  {found.amount} '
+                          f'{found.currency}')
+        self.stdout.write(f'  doctor: {found.client or "any doctor"}')
+        self.stdout.write(f'  valid: {found.valid_from.isoformat()} to {end}')
+        self.stdout.write(f'  {"active" if found.active else "inactive"}; on '
+                          f'{day.isoformat()}: '
+                          f'{self.STATE_TEXTS[resolver.voucher_state(found, day)]}')
 
     @staticmethod
     def rule_of(offered, applies, country):
