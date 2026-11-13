@@ -37,6 +37,13 @@ computed here (entry 12 does).
 Vouchers (epic-catalogue entry 10, mytp-core 0.24.0): the voucher definitions of this
 region (`Voucher`), read by their code (`catalogue.resolver.voucher_by_code`). Nothing
 about redeeming them is here (epic-subscriptions).
+
+Per region (epic-catalogue entry 16, mytp-core 0.25.0): the admin site sends this region
+only its own country groups, billing companies and products, with the subscriptions and
+rules of its groups (add-ons and provider costs are shared); the applier skips anything
+of another region all the same. No region is stored: every row here is this region's.
+`CatalogueState` keeps what the section said beyond its rows: whether it had a billing
+rules list (an empty one too: rules exist on the admin site, none of them this region's).
 """
 import uuid
 from decimal import Decimal
@@ -461,6 +468,27 @@ class BillingRule(SnapshotFedModel):
         if self.exempt:
             return f'VAT {self.vat_percent} %: {self.exemption_text}'
         return f'VAT {self.vat_percent} %'
+
+
+class CatalogueState(SnapshotFedModel):
+    """What the applied catalogue section said beyond its rows (epic-catalogue entry 16,
+    mytp-core 0.25.0): one row per applied section, none without a section (written by
+    catalogue.applier; read through `catalogue.resolver.has_billing_rules`).
+
+    `billing_rules_listed`: whether the section had a `billing_rules` list, an empty one
+    too. The admin site leaves the list out while no rule exists anywhere (every pair is
+    offered, as before rules) and sends it, empty, to a region whose rules are all another
+    region's: rules exist, so nothing without a rule is offered. A table with no rule rows
+    cannot tell the two apart; this row does."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    billing_rules_listed = models.BooleanField(default=False)
+
+    class Meta:
+        base_manager_name = 'objects'  # guarded too (integration.snapshot_tables)
+
+    def __str__(self):
+        return f'billing rules listed: {self.billing_rules_listed}'
 
 
 class Voucher(SnapshotFedModel):

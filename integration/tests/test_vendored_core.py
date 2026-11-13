@@ -17,7 +17,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.24.0'
+    assert mytp_core.__version__ == '0.25.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -125,7 +125,7 @@ def test_vendored_mytp_core_has_add_ons_quantities_calls_and_costs():
     assert CatalogueSection.model_fields['add_ons'].is_required() is False
     assert CatalogueProduct.model_fields.keys() == {
         'id', 'name', 'category', 'net_price', 'active', 'texts', 'code', 'valid_from',
-        'valid_to', 'size', 'per_unit', 'calls', 'cost_links'}
+        'valid_to', 'size', 'per_unit', 'calls', 'cost_links', 'region'}
     assert CatalogueAddOn.model_fields.keys() == {
         'id', 'code', 'texts', 'amount', 'percent', 'categories', 'sizes', 'active'}
     assert PerUnit.model_fields.keys() == {'min_quantity', 'max_quantity'}
@@ -152,3 +152,16 @@ def test_vendored_mytp_core_has_subscriptions_in_full():
     assert subscription_discount('odb', discounts={'odb': Decimal('12.00')}) == Decimal('12.00')
     assert subscription_offers('a', None) and not subscription_offers('a', [])
     assert calls_under(3, 25, 1, 35) == (4, 35)
+
+
+def test_vendored_mytp_core_has_the_catalogue_per_region():
+    """Epic-catalogue entry 16 (0.25.0): the optional region of a group, a product and a
+    company, and an empty rules list read as "rules exist"."""
+    from mytp_core.contracts import (CatalogueBillingCompany, CatalogueCountryGroup,
+                                     CatalogueSection, snapshot_for_region)
+    for model in (CatalogueCountryGroup, CatalogueBillingCompany):
+        assert model.model_fields['region'].is_required() is False
+    section = CatalogueSection.model_validate({'country_groups': [], 'products': [],
+                                               'subscriptions': [], 'billing_rules': []})
+    assert not section.billing_offered('a', 'tps_branded')
+    assert callable(snapshot_for_region)

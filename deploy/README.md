@@ -3417,6 +3417,53 @@ sudo journalctl -u mytp-dev-job@pullconfig -u mytp-dev-worker --since "-15 min" 
 #   config snapshot v<n> applied (...); vouchers: 2      and no "of another region skipped" line
 ```
 
+The catalogue per region (epic-catalogue entry 16, mytp-core 0.25.0; AD-3, AD-14; user
+decisions 2026-11-13):
+
+- The admin site sends each portal only its region's country groups, billing companies
+  and products, with the subscriptions and billing rules of those groups (add-ons and
+  provider costs are shared). A record of another region in a body is skipped all the
+  same, with what hangs from a skipped group, a rule naming a skipped company and a
+  skipped product's id in a subscription's links: one warning with the counts
+  (`catalogue.applier`: "config snapshot: records of another region skipped: 2 country
+  groups, 1 products, ..."), never a name. A record without a region (an admin site
+  before 0.25.0) is this region's, as before.
+- A doctor of a country this region does not serve (another region's, or banned, in the
+  country map: `regions.countries.lookup_country`) has no country group here, so no
+  subscription, no billing rule and no offers (`catalogue.resolver.country_group`);
+  each region's catch-all ("Rest of world" on dev, "Rest of Middle East" on dev-ae)
+  covers only its own countries.
+- A `billing_rules` list that is present but empty (rules exist on the admin site, none
+  of them this region's) offers nothing: whether the section had the list is kept in
+  `catalogue.CatalogueState` (migration `catalogue.0008`), read by
+  `resolver.has_billing_rules`. An absent list still means "no rule typed yet": every
+  linked product, as before.
+
+Deploy order for entry 16: mytp-core 0.25.0, then the portals (dev and dev-ae; a 0.25.0
+portal reads the 0.24.0 admin site's body as before: no region, so every record is its
+own, and never an empty rules list), then the admin site, then `manage.py nudge_config
+--rebuild` on admindev, then `pull_config` on dev and dev-ae straight away: until a
+portal applies the filtered body it keeps the other region's rows it stored before. The
+other way round (the admin site first), a portal still on 0.24.0 reads the empty rules
+list sent to a region without rules of its own as "no rules" and offers every pair until
+it is deployed. After a rollback and a new deploy, `catalogue.CatalogueState` holds what
+the last apply of this release wrote (the release before does not write it) until the
+next pull: run `pull_config` then too.
+
+```
+sudo -u mytp-dev ./venv/bin/python manage.py pull_config        # and as mytp-dev-ae on dev-ae
+```
+
+Staging check for entry 16 (after that order): on dev the first `pull_config` prints
+`applied` and no "records of another region skipped" line; `price_catalogue
+--country-group <UAE id>` finds nothing on dev, `--country US --tier basic` names Rest of
+world, `--country SA --tier basic` says no offers, with the line "SA is not served by this
+region (the country map): no country group here". On dev-ae, Rest of Middle East is
+created empty (no subscription, no rule), so `--country SA --tier basic` prints only "no
+offers for SA basic"; `--country SA --category tps_branded` prints "no billing rule for SA
+tps_branded (Rest of Middle East)", which names the group; and `--country ES --tier basic`
+says no offers, with the "not served by this region" line.
+
 Staging check for entry 9 (after mytp-core 0.23.0, admindev, then dev): on admindev the
 three companies and the rules for Iberia, Rest of EU, Rest of world and UAE on the TPS and
 VirtuaOrtho categories and `subscription` (the admin site's README, "Billing"). On dev,

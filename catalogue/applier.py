@@ -61,7 +61,18 @@ usable (catalogue.resolver.voucher_state).
 
 Snapshot rules (epic-catalogue entry 11): these appliers write only while
 integration.config applies a snapshot (integration.snapshot_tables); called anywhere
-else, their first write raises ReadOnlyTable."""
+else, their first write raises ReadOnlyTable.
+
+Per region (epic-catalogue entry 16, mytp-core 0.25.0): a country group, a billing
+company and a product carry the region they belong to. The admin site sends this region
+only its own; a record of another region (`region` other than settings.REGION) is skipped
+all the same, with what hangs from a skipped group (its subscriptions, of both lists, and
+its rules), a rule naming a skipped company, and a skipped product's id in a
+subscription's linked products: one warning with the counts, never a name. A record
+without a region (an admin site before 0.25.0) is this region's, as before. Whether the
+section had a billing rules list, an empty one too (rules exist, none of them this
+region's: nothing is offered), is stored in `CatalogueState` (read by
+catalogue.resolver.has_billing_rules)."""
 import logging
 
 from django.conf import settings
@@ -69,8 +80,8 @@ from django.conf import settings
 from mytp_core.money import CURRENCIES
 
 from . import billing
-from .models import (AddOn, BillingCompany, BillingRule, CountryGroup, Product,
-                     ProviderCost, ProviderProduct, Subscription, Voucher)
+from .models import (AddOn, BillingCompany, BillingRule, CatalogueState, CountryGroup,
+                     Product, ProviderCost, ProviderProduct, Subscription, Voucher)
 
 logger = logging.getLogger('catalogue.applier')
 
@@ -105,9 +116,10 @@ def _percent(value):
     return format(value, 'f')
 
 
-def _subscription(subscription, manual):
+def _subscription(subscription, manual, foreign=frozenset()):
     """The row of a contract subscription, standard or `manual`: what it carries as
-    sent; what is absent (an admin site before mytp-core 0.22.0) as None for the linked
+    sent, but the ids of `foreign` (products of another region) in its linked products;
+    what is absent (an admin site before mytp-core 0.22.0) as None for the linked
     products and the discounts map (every product, the two former discounts), no code,
     no texts, no price, no call extras."""
     price = subscription.price
@@ -119,7 +131,8 @@ def _subscription(subscription, manual):
         manual=manual, code=subscription.code,
         texts={} if subscription.texts is None else _texts_of(subscription.texts),
         products=(None if subscription.products is None
-                  else [str(product) for product in subscription.products]),
+                  else [str(product) for product in subscription.products
+                        if product not in foreign]),
         discounts=(None if subscription.discounts is None
                    else {category: _percent(percent)
                          for category, percent in subscription.discounts.items()}),
@@ -132,6 +145,38 @@ def _subscription(subscription, manual):
         active=subscription.active)
 
 
+def _mine(record):
+    """Whether a contract group, company or product is this region's: its region is
+    settings.REGION, or it has none (an admin site before mytp-core 0.25.0)."""
+    return record.region is None or record.region == settings.REGION
+
+
+def _of_this_region(section):
+    """`section` with only this region's records (`_mine`) and what hangs from them, and
+    the counts of what was left out: {what: count}, the zero counts left out."""
+    groups = [group for group in section.country_groups if _mine(group)]
+    products = [product for product in section.products if _mine(product)]
+    companies = [company for company in section.billing_companies or () if _mine(company)]
+    kept_groups = {group.id for group in groups}
+    kept_companies = {company.id for company in companies}
+    subscriptions = {
+        name: [subscription for subscription in getattr(section, name) or ()
+               if subscription.country_group in kept_groups]
+        for name in ('subscriptions', 'manual_subscriptions')}
+    rules = [rule for rule in section.billing_rules or ()
+             if rule.country_group in kept_groups and rule.company in kept_companies]
+    skipped = {
+        'country groups': len(section.country_groups) - len(groups),
+        'products': len(section.products) - len(products),
+        'billing companies': len(section.billing_companies or ()) - len(companies),
+        'subscriptions': sum(len(getattr(section, name) or ()) - len(kept)
+                             for name, kept in subscriptions.items()),
+        'billing rules': len(section.billing_rules or ()) - len(rules)}
+    foreign = {product.id for product in section.products if not _mine(product)}
+    return (groups, products, companies, subscriptions, rules, foreign,
+            {what: count for what, count in skipped.items() if count})
+
+
 def apply(section):
     """Replace the catalogue with `section` (mytp-core's CatalogueSection, or None).
     Returns the log line's summary: the stored row counts, never the contents."""
@@ -142,12 +187,19 @@ def apply(section):
     Product.objects.all().delete()
     CountryGroup.objects.all().delete()
     AddOn.objects.all().delete()
+    CatalogueState.objects.all().delete()
     if section is None:
         return 'no catalogue section'
+    groups, products, companies, subscriptions, rules, foreign, skipped = (
+        _of_this_region(section))
+    if skipped:
+        logger.warning('config snapshot: records of another region skipped: %s',
+                       ', '.join(f'{count} {what}' for what, count in skipped.items()))
+    CatalogueState.objects.create(billing_rules_listed=section.billing_rules is not None)
     CountryGroup.objects.bulk_create(
         CountryGroup(id=group.id, name=group.name, countries=sorted(group.countries),
                      catch_all=group.catch_all, active=group.active)
-        for group in section.country_groups)
+        for group in groups)
     Product.objects.bulk_create(
         Product(id=product.id, name=product.name, texts=_texts(product), code=product.code,
                 category=_category(product), net_amount=product.net_price.amount,
@@ -158,14 +210,14 @@ def apply(section):
                 calls=product.calls and product.calls.count,
                 call_minutes=product.calls and product.calls.minutes,
                 cost_links=_links(product), active=product.active)
-        for product in section.products
+        for product in products
         if _category(product) in Product.CATEGORIES
         and product.net_price.currency in CURRENCIES)
     Subscription.objects.bulk_create(
-        _subscription(subscription, manual)
-        for manual, subscriptions in ((False, section.subscriptions),
-                                      (True, section.manual_subscriptions or ()))
-        for subscription in subscriptions
+        _subscription(subscription, manual, foreign)
+        for manual, kept in ((False, subscriptions['subscriptions']),
+                             (True, subscriptions['manual_subscriptions']))
+        for subscription in kept
         if subscription.tier in Subscription.TIERS
         and (subscription.price is None or subscription.price.currency in CURRENCIES))
     AddOn.objects.bulk_create(
@@ -184,7 +236,7 @@ def apply(section):
                        company_number=company.company_number or '',
                        vat_number=company.vat_number or '',
                        tax_number=company.tax_number or '', active=company.active)
-        for company in section.billing_companies or ())
+        for company in companies)
     BillingRule.objects.bulk_create(
         BillingRule(id=rule.id, country_group_id=rule.country_group,
                     category=_rule_category(rule), company_id=rule.company,
@@ -193,7 +245,7 @@ def apply(section):
                     reverse_charge_text=rule.reverse_charge_text or '',
                     gateways=list(rule.gateways), currency=rule.currency,
                     available=rule.available, active=rule.active)
-        for rule in section.billing_rules or ())
+        for rule in rules)
     mismatch = billing.profile_mismatch()
     if mismatch:
         logger.warning('config snapshot: %s', mismatch)

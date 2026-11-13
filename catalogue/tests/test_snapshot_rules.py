@@ -104,7 +104,10 @@ def test_a_deactivated_country_group_is_read_by_id_and_never_chosen(admin):  # n
     assert CountryGroup.objects.filter(active=False).count() == 1
 
 
-def test_a_deactivated_billing_company_is_read_by_code(admin):  # noqa: F811
+def test_a_deactivated_billing_company_is_read_by_code(admin, settings):  # noqa: F811
+    # The UAE company and group are the ae region's: on its portal (entry 16).
+    from regions.profiles import get_profile
+    settings.REGION, settings.REGION_PROFILE = 'ae', get_profile('ae')
     sections = everything()
     deactivate(sections['catalogue']['billing_companies'], EMIRATES)
     for found in sections['catalogue']['billing_rules']:

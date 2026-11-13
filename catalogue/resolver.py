@@ -5,7 +5,9 @@ country is offered under a subscription tier, from the catalogue the admin site 
 `offers(country, tier)`:
 
 1. the country's group: the active group that lists `country` (ISO 3166-1 alpha-2), else
-   the active catch-all group ("Rest of world"); none: no offers;
+   the active catch-all group ("Rest of world"); none: no offers. Since epic-catalogue
+   entry 16 only for a country this region serves in the country map: a doctor of
+   another region's country, or of a banned one, has no group here;
 2. the active standard subscription of `tier` in that group, the default of that tier
    and group (`subscription`); none: no offers;
 3. the products that subscription gives access to (`offers_under`): the active products
@@ -126,9 +128,10 @@ from mytp_core.contracts import (AddOnRefused, QuantityRefused, add_on_applies,
                                  link_labels, normalize_voucher_code,
                                  subscription_discount, subscription_offers, sum_costs)
 from mytp_core.money import Money
+from regions.countries import lookup_country
 
-from .models import (AddOn, BillingCompany, BillingRule, CountryGroup, Product,
-                     ProviderProduct, Subscription, Voucher)
+from .models import (AddOn, BillingCompany, BillingRule, CatalogueState, CountryGroup,
+                     Product, ProviderProduct, Subscription, Voucher)
 
 __all__ = ['AddOnRefused', 'ProductRefused', 'QuantityRefused', 'add_on', 'add_ons',
            'billing_company', 'billing_rule', 'billing_rule_by_id', 'billing_rule_for',
@@ -171,9 +174,13 @@ def normal_tier(tier):
 
 
 def country_group(country):
-    """The active country group of `country` (an alpha-2 code), or None."""
+    """The active country group of `country` (an alpha-2 code), or None. None too for a
+    country this region does not serve (another region's, or banned, in the country map:
+    `regions.countries.lookup_country`; epic-catalogue entry 16): a region's catch-all
+    covers only the countries it serves, so such a doctor has no group, no subscription
+    and no offers here."""
     country = normal_country(country)
-    if not _COUNTRY_RE.fullmatch(country):
+    if not _COUNTRY_RE.fullmatch(country) or not lookup_country(country).own_region:
         return None
     groups = list(CountryGroup.objects.filter(active=True))
     for group in groups:
@@ -208,8 +215,12 @@ def normal_category(category):
 def has_billing_rules():
     """Whether the catalogue has any billing rule, in any state: from then on only what
     has an active, available rule is offered. False for a snapshot of an admin site
-    before mytp-core 0.23.0, or of one where no rule was typed yet."""
-    return BillingRule.objects.exists()
+    before mytp-core 0.23.0, or of one where no rule was typed yet. True too when the
+    section had an empty rules list (mytp-core 0.25.0, epic-catalogue entry 16: rules
+    exist on the admin site, none of them this region's), so such a region is never
+    switched back to "offer everything"."""
+    return (BillingRule.objects.exists()
+            or CatalogueState.objects.filter(billing_rules_listed=True).exists())
 
 
 def billing_rule_for(group, category):
