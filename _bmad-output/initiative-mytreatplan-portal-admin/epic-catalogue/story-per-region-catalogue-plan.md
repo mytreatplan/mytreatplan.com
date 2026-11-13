@@ -3,7 +3,7 @@ title: 'Per-region catalogue'
 type: 'feature'
 ticket: '16'
 created: '2026-11-13'
-status: 'built'
+status: 'done'
 baseline_revision: 'd04c49ec14ed7fefa130c1b9cafa5e118da17e19'
 route: 'full'
 route_source: 'auto'
@@ -152,3 +152,19 @@ Quick lens, one reviewer per repository (2026-11-13). 15 findings: 4 medium, 11 
 
 **Manual checks (staging):**
 - The UAE group, the AE company and the AED products are not on dev; eu's are not on dev-ae; each region has its own Rest of world; an ae-country doctor on dev per question 7.
+
+## Staging
+
+Checked 2026-11-13 (merge and staging delegated by the user).
+
+- Release: mytp-core v0.25.0 (e3d95ef; CI green on master and the tag). Portal PR #94 merged first (merge ca847ec; master run 43380310284, tests and both deploys green), then admin PR #36 (merge 6430d06; master run 43381218726, tests and deploy green). Suites against the tag's wheel: core 1567, admin 1566, portal 2848 plus the 3 known PostgreSQL-only failures on SQLite.
+- Before the admin deploy (portals on 0.25.0, the admin site on the old release, snapshot v109): the first `pull_config` on dev and dev-ae printed `applied`, the second `unchanged`; ES, DE and US priced on dev as before; AE and SA on dev "not served by this region", no offers.
+- The migration on admindev: UAE to ae; Iberia, Rest of EU and Rest of world to eu; Rest of Middle East created for ae (active, catch-all, empty); ES and IE to eu, AE to ae; 19 products to eu, 1 (AED) to ae; one link removed (the legacy Basic · Iberia subscription and STG57-AED); no rule names a company of another region.
+- `nudge_config --rebuild` built v110. The served bodies: eu has 3 groups, companies ES and IE, 19 products, 6 subscriptions, 24 rules; ae has 2 groups, the AE company, 1 product, no subscription, 8 rules; both have the 5 add-ons and the 4 provider products.
+- Refused on admindev through the services, nothing saved: a second catch-all in eu; an ae group listing ES; moving ES to ae in the country map; an eu subscription linking an AED product; an eu subscription moved to UAE; an eu rule naming the AE company; a change of a product's region.
+- A clone of STG55-01 into AED with region ae (STG516-AED, inactive, v111): served to ae only.
+- dev (v111): groups Iberia, Rest of EU, Rest of world; companies ES, IE; 18 EUR and 1 USD products, no AED; 24 rules. US falls into Rest of world (billed by IE); AE and SA have no group and no offers.
+- dev-ae (v111): groups UAE and Rest of Middle East; the AE company; the two AED products; 8 rules. AE is billed by the AE company; SA prints "no billing rule for SA tps_branded (Rest of Middle East)"; ES and US have no group.
+- No "of another region" warning in the host's log after the filtered pull.
+- Not checked on staging: a portal on mytp-core 0.24.0 applying a filtered body (tests, and the reviewer's run with the 0.24.0 wheel); the admin pages in a browser (2FA).
+- Staging data: the product STG516-AED (ae, inactive) is new. dev-ae has no subscription and Rest of Middle East has no rule: entry 13 seeds them.
