@@ -17,8 +17,9 @@ from django.contrib import admin as django_admin
 from django.db import connection, models, transaction
 from django.db.migrations.executor import MigrationExecutor
 
-from catalogue.models import (AddOn, BillingCompany, BillingRule, CountryGroup, Product,
-                              ProviderCost, ProviderProduct, Subscription, Voucher)
+from catalogue.models import (AddOn, BillingCompany, BillingRule, CatalogueState,
+                              CountryGroup, Product, ProviderCost, ProviderProduct,
+                              Subscription, Voucher)
 from catalogue.tests.test_add_ons_costs import ADD_ONS, COSTS
 from catalogue.tests.test_billing import billed
 from catalogue.tests.test_vouchers import GENERAL
@@ -35,9 +36,10 @@ from regions.models import Country
 # test_config's interface settings (autouse here, as imported) clear the database cache.
 pytestmark = pytest.mark.django_db
 # Decision (user, 2026-11-12): the nine catalogue tables, the country map and the admin
-# directory.
+# directory; and (epic-catalogue entry 16) the catalogue's state row.
 SNAPSHOT_FED = [CountryGroup, Product, Subscription, AddOn, ProviderProduct, ProviderCost,
-                BillingCompany, BillingRule, Voucher, Country, AdminDirectoryEntry]
+                BillingCompany, BillingRule, Voucher, CatalogueState, Country,
+                AdminDirectoryEntry]
 PATHS = ['save', 'delete', 'create', 'get_or_create', 'update_or_create',
          'queryset_update', 'queryset_delete', 'bulk_create', 'bulk_update']
 

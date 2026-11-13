@@ -131,6 +131,15 @@ def billed(rules_=None, companies=COMPANIES, products=PRODUCTS, manual=True):
     return section
 
 
+@pytest.fixture
+def ae_portal(settings):
+    """This portal is the ae region's (dev-ae): the country map's ae countries are its
+    own (epic-catalogue entry 16: a portal answers only for the countries it serves)."""
+    settings.REGION = 'ae'
+    settings.REGION_PROFILE = get_profile('ae')
+    return settings
+
+
 def offered(country):
     return [found.name for found, _price in resolver.offers(country, 'basic')]
 
@@ -204,9 +213,8 @@ def test_each_country_resolves_to_its_company_vat_and_gateways(admin):  # noqa: 
         # Export: the rest of the world, rate 0 with its export text.
         assert resolved('US', category) == ('IE', Decimal('0.00'), EXPORT, ['revolut'])
         assert resolver.billing_rule('US', category).exempt
-        # The UAE: 5 %, an empty gateway list, AED.
-        assert resolved('AE', category) == ('AE', Decimal('5.00'), '', [])
-        assert resolver.billing_rule('AE', category).currency == 'AED'
+        # The UAE is the ae region's (entry 16): no rule for it on this (eu) portal.
+        assert resolver.billing_rule('AE', category) is None
     spain = resolver.billing_rule('ES', 'tps_branded').company
     assert (spain.legal_name, spain.vat_number) == ('MyTPDSO Spain S.L.', 'B93858371')
     assert resolver.billing_rule('ES', 'tps_branded').vat_text == f'VAT 0.00 %: {EXEMPT}'
@@ -218,6 +226,18 @@ def test_each_country_resolves_to_its_company_vat_and_gateways(admin):  # noqa: 
     assert resolver.billing_rule('ESP', 'tps_branded') is None
     assert resolver.billing_rule(None, 'tps_branded') is None
     assert resolver.billing_company('XX') is None and resolver.billing_company('') is None
+
+
+@pytest.mark.django_db
+def test_the_uae_resolves_on_the_ae_portal(admin, ae_portal):  # noqa: F811
+    pull(admin, 1, billed())
+    for category in CATEGORIES:
+        # The UAE: 5 %, an empty gateway list, AED.
+        assert resolved('AE', category) == ('AE', Decimal('5.00'), '', [])
+        assert resolver.billing_rule('AE', category).currency == 'AED'
+        # A country of the eu region has no rule here.
+        assert resolver.billing_rule('ES', category) is None
+        assert resolver.billing_rule('US', category) is None
 
 
 @pytest.mark.django_db
@@ -251,14 +271,22 @@ def test_only_what_has_an_available_rule_in_its_currency_is_offered(admin):  # n
     assert offered('ES') == offered('PT') == ['TPS branded', 'VirtuaOrtho One']
     assert offered('DE') == offered('IE') == ['TPS branded', 'VirtuaOrtho One']
     assert offered('US') == ['TPS branded', 'VirtuaOrtho One']
-    # The UAE: sold in AED; an empty gateway list does not stop the offer.
-    assert offered('AE') == ['TPS branded AED', 'VirtuaOrtho One AED']
+    # The UAE is the ae region's: nothing for it here (entry 16).
+    assert offered('AE') == []
     assert resolver.offers('ES', 'basic')[0][1] == Money('100.00', 'EUR')
     assert resolver.has_billing_rules()
     # The products stay readable, and a line is still priced (entry 12 applies the rule).
     retainers = resolver.product(RETAINERS)
     basic = resolver.subscription('ES', 'basic')
     assert retainers.active and resolver.price(retainers, basic) == Money('50.00', 'EUR')
+
+
+@pytest.mark.django_db
+def test_the_uae_is_offered_in_aed_on_the_ae_portal(admin, ae_portal):  # noqa: F811
+    pull(admin, 1, billed())
+    # The UAE: sold in AED; an empty gateway list does not stop the offer.
+    assert offered('AE') == ['TPS branded AED', 'VirtuaOrtho One AED']
+    assert offered('ES') == offered('US') == []
 
 
 @pytest.mark.django_db
@@ -326,15 +354,18 @@ def test_an_old_snapshot_keeps_every_offer_in_every_currency(admin):  # noqa: F8
     # An admin site before this release: no lists at all.
     pull(admin, 1, billed(rules_=False, companies=None))
     assert not resolver.has_billing_rules()
-    assert offered('ES') == offered('AE') == offered('US') == everything
+    assert offered('ES') == offered('US') == everything
+    assert offered('AE') == []                    # another region's country (entry 16)
     assert resolver.billing_rule('ES', 'tps_branded') is None
     assert resolver.subscription_rule(resolver.subscription('ES', 'basic')) is None
-    # Companies typed, no rule yet (the admin site then sends no rules list), or an
-    # empty list: the same.
+    # Companies typed, no rule yet (the admin site then sends no rules list): the same.
     pull(admin, 2, billed(rules_=False))
     assert BillingCompany.objects.count() == 3 and offered('ES') == everything
+    # An empty list (mytp-core 0.25.0, entry 16): rules exist on the admin site, none of
+    # them this region's: nothing is offered, never "everything" again.
     pull(admin, 3, billed(rules_=[]))
-    assert offered('ES') == everything
+    assert resolver.has_billing_rules() and not BillingRule.objects.exists()
+    assert offered('ES') == offered('US') == []
     # The first rule switches to "only what has a rule".
     pull(admin, 4, billed(rules_=rules()[:1]))
     assert offered('ES') == ['TPS branded'] and offered('DE') == []
@@ -487,17 +518,32 @@ def test_price_catalogue_prints_each_offers_company_vat_and_gateways(admin):  # 
     out = run('--country', 'US', '--tier', 'basic')
     assert out.count(f'      billing: IE  MyTPDSO Limited  VAT 0.00 %: {EXPORT}  gateways: '
                      'revolut  EUR\n') == 2
-    out = run('--country', 'AE', '--tier', 'basic')
-    assert out.startswith('AE basic (UAE): 2 offer(s)\n')
-    assert out.count('      billing: AE  MyTPDSO L.L.C-FZ  VAT 5.00 %  gateways: none  '
-                     'AED\n') == 2
-    assert 'TPS-BR-AED' in out and 'TPS-BR-USD' not in out and 'RET-1' not in out
+    # The UAE is the ae region's (entry 16): nothing for it on this portal.
+    assert run('--country', 'AE', '--tier', 'basic') == (
+        'no offers for AE basic\n'
+        '  AE is not served by this region (the country map): no country group here\n')
     # A subscription read by its code, and one line of a product.
     out = run('--subscription', 'ORMCO')
     assert 'ORMCO premium (Iberia), manual: 1 offer(s)\n' in out and 'bank_transfer' in out
     out = run('--product', TPS, '--country', 'ES', '--tier', 'basic')
     assert (f'  billing: ES  MyTPDSO Spain S.L.  VAT 0.00 %: {EXEMPT}  gateways: redsys, '
             'bank_transfer  EUR\n  line price: 100.00 EUR\n') in out
+
+
+@pytest.mark.django_db
+def test_price_catalogue_on_the_ae_portal(admin, ae_portal):  # noqa: F811
+    pull(admin, 1, billed())
+    out = run('--country', 'AE', '--tier', 'basic')
+    assert out.startswith('AE basic (UAE): 2 offer(s)\n')
+    assert out.count('      billing: AE  MyTPDSO L.L.C-FZ  VAT 5.00 %  gateways: none  '
+                     'AED\n') == 2
+    assert 'TPS-BR-AED' in out and 'TPS-BR-USD' not in out and 'RET-1' not in out
+    out = run('--country', 'AE', '--category', 'tps_branded')
+    assert ('  company number: License 2542361.01 (Dubai)\n  VAT: VAT-100\n  TAX: TAX-100\n'
+            in out and '  gateways: none\n  currency: AED\n' in out)
+    assert run('--country', 'ES', '--tier', 'basic') == (
+        'no offers for ES basic\n'
+        '  ES is not served by this region (the country map): no country group here\n')
 
 
 @pytest.mark.django_db
@@ -519,9 +565,6 @@ def test_price_catalogue_prints_one_rule(admin):  # noqa: F811
     assert 'DE virtuaortho_one (Rest of EU): billing rule\n' in out
     assert ('  VAT: 23.00 %\n' in out and f'  reverse-charge text: {REVERSE}\n' in out
             and 'exemption text' not in out)
-    out = run('--country', 'AE', '--category', 'tps_branded')
-    assert ('  company number: License 2542361.01 (Dubai)\n  VAT: VAT-100\n  TAX: TAX-100\n'
-            in out and '  gateways: none\n  currency: AED\n' in out)
     assert '  available: no: not offered\n' in run('--country', 'ES', '--category', 'odb')
     assert run('--country', 'ES', '--category', 'retainers') == (
         'no billing rule for ES retainers (Iberia)\n')

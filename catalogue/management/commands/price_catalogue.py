@@ -81,6 +81,7 @@ from django.core.management.base import BaseCommand, CommandError
 
 from catalogue import billing, resolver
 from catalogue.models import Product, Subscription
+from regions.countries import lookup_country
 
 
 def _date(text):
@@ -195,6 +196,7 @@ class Command(BaseCommand):
         billed = resolver.has_billing_rules()
         if not offers:
             self.stdout.write(f'no offers for {title}')
+            self.print_not_served(country)
             if applies is not None:
                 self.print_subscription(applies, language)
             return
@@ -261,6 +263,13 @@ class Command(BaseCommand):
                 f'{", ".join(rule.known_gateways) or "none"}  {rule.currency}'
                 f'{"" if rule.available else "  not available"}')
 
+    def print_not_served(self, country):
+        """The line saying a country is not this region's (epic-catalogue entry 16): another
+        region serves it, or it is banned, so it has no country group here."""
+        if country and not lookup_country(country).own_region:
+            self.stdout.write(f'  {country} is not served by this region (the country '
+                              'map): no country group here')
+
     def print_rule(self, country, category):
         """The billing rule of the country's group and a product category, in full."""
         group = resolver.country_group(country)
@@ -268,6 +277,7 @@ class Command(BaseCommand):
         rule = resolver.billing_rule(country, category)
         if rule is None:
             self.stdout.write(f'no billing rule for {title}')
+            self.print_not_served(country)
             if not resolver.has_billing_rules():
                 self.stdout.write('  the catalogue has no billing rules: every linked '
                                   'product is offered, in every currency')
