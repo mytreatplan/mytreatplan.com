@@ -3,12 +3,14 @@
 One row per ISO 3166-1 alpha-2 code with its state: a region code (`eu`, `ae`) or
 `banned`. Read-only on the portal (no admin, no edit UI): seeded by migration 0002, then
 the admin site's configuration snapshot (its `country_map` section, epic-catalogue entry 3)
-replaces the rows by code (regions.applier).
+replaces the rows by code (regions.applier). Since epic-catalogue entry 11 every ORM write
+path refuses outside the snapshot apply (integration.snapshot_tables).
 Not marked CROSSES_SITES: the code is the key on every site. Read it through
 regions.countries.lookup_country, never by comparing with a region name elsewhere.
 """
 from django.db import models
 
+from integration.snapshot_tables import SnapshotFedModel
 from regions.profiles import PROFILES
 
 BANNED = 'banned'
@@ -16,11 +18,12 @@ BANNED = 'banned'
 STATE_CHOICES = [(code, code) for code in PROFILES] + [(BANNED, BANNED)]
 
 
-class Country(models.Model):
+class Country(SnapshotFedModel):
     code = models.CharField(max_length=2, primary_key=True)
     state = models.CharField(max_length=16, choices=STATE_CHOICES)
 
     class Meta:
+        base_manager_name = 'objects'  # guarded too (integration.snapshot_tables)
         verbose_name = 'country'
         verbose_name_plural = 'country map'
         ordering = ['code']

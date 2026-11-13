@@ -8,9 +8,9 @@ pytest.importorskip('pytest_playwright')
 
 from playwright.sync_api import expect  # noqa: E402
 
+from integration.tests.snapshot_rows import put_country  # noqa: E402
 from regions import geoip  # noqa: E402
 from regions.countries import seed_state  # noqa: E402
-from regions.models import Country  # noqa: E402
 from regions.profiles import get_profile  # noqa: E402
 
 pytestmark = [pytest.mark.browser, pytest.mark.django_db(transaction=True)]
@@ -22,7 +22,7 @@ DESKTOP_UA = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 '
 @pytest.fixture(autouse=True)
 def saudi_visitor(settings, tmp_path, transactional_db):
     # The map's SA row: an earlier transactional test may have flushed the seeded map.
-    Country.objects.update_or_create(code='SA', defaults={'state': seed_state('SA')})
+    put_country('SA', seed_state('SA'))
     settings.REGION = 'eu'
     settings.REGION_PROFILE = get_profile('eu')
     settings.REGION_SITE_URLS = {'eu': 'https://eu.example.test', 'ae': 'https://ae.example.test'}

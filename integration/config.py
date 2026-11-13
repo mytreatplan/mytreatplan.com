@@ -36,6 +36,11 @@ the switch; after a rollback) no longer matches the mark, and the next release t
 knows the mark applies it again. Without a release identity (local development, tests)
 the site behaves as one unnamed release.
 
+The tables a snapshot feeds (the admin directory, the catalogue, the provider costs, the
+vouchers, the country map) are written only here: `_apply` marks the snapshot apply as
+running around those writes (integration.snapshot_tables, epic-catalogue entry 11), and
+every other ORM write to them is refused.
+
 Every refusal or failure leaves the applied snapshot untouched and records its code only
 (`ConfigState.last_error`; never the snapshot): `network`, `peer_url`,
 `http_<status>[_<code>]`, `bad_answer`, `bad_signature`, `audience`, `expired`,
@@ -63,6 +68,7 @@ from mytp_core.contracts import ConfigSnapshot
 
 from .models import AdminDirectoryEntry, ConfigState
 from .outbox import _error_code, admin_site_url
+from .snapshot_tables import _snapshot_apply
 
 logger = logging.getLogger('integration.config')
 
@@ -204,16 +210,19 @@ def _apply(snapshot, now, summaries=None):
                 return STALE
             if snapshot.version == row.version and _applied_by(row, release):
                 return UNCHANGED
-        AdminDirectoryEntry.objects.all().delete()
-        AdminDirectoryEntry.objects.bulk_create(
-            AdminDirectoryEntry(id=entry.id, display_name=entry.display_name,
-                                title=entry.title, active=entry.active,
-                                time_zone=entry.time_zone)
-            for entry in snapshot.admin_directory)
-        for name, apply in _SECTION_APPLIERS.items():
-            summary = apply(getattr(snapshot, name, None))
-            if summary and summaries is not None:
-                summaries.append(summary)
+        # The only place the snapshot-fed tables are written (integration.snapshot_tables):
+        # the marker is set for these writes only and reset however they end.
+        with _snapshot_apply():
+            AdminDirectoryEntry.objects.all().delete()
+            AdminDirectoryEntry.objects.bulk_create(
+                AdminDirectoryEntry(id=entry.id, display_name=entry.display_name,
+                                    title=entry.title, active=entry.active,
+                                    time_zone=entry.time_zone)
+                for entry in snapshot.admin_directory)
+            for name, apply in _SECTION_APPLIERS.items():
+                summary = apply(getattr(snapshot, name, None))
+                if summary and summaries is not None:
+                    summaries.append(summary)
         row.version = snapshot.version
         row.applied_at = now
         row.applied_release = release

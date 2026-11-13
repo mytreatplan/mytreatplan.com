@@ -10,8 +10,8 @@ pytest.importorskip('pytest_playwright')
 
 from playwright.sync_api import expect  # noqa: E402
 
+from integration.tests.snapshot_rows import ensure_country  # noqa: E402
 from regions.countries import seed_state  # noqa: E402
-from regions.models import Country  # noqa: E402
 from regions.profiles import get_profile  # noqa: E402
 from signup.models import PendingRegistration  # noqa: E402
 
@@ -35,7 +35,7 @@ def country_map():
     restores nothing when the test database was not serialized (as conftest.py's
     legal_documents)."""
     for code in ('ES', 'SA', 'IR'):
-        Country.objects.get_or_create(code=code, defaults={'state': seed_state(code)})
+        ensure_country(code, seed_state(code))
 
 
 def _choose(page, country):

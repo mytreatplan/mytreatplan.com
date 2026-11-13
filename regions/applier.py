@@ -13,6 +13,9 @@ run inside the snapshot apply's transaction, so a failure keeps the previous map
 
 The summary for the applied log line holds counts only, never codes or states (none for
 an absent section).
+
+It writes only while integration.config applies a snapshot (integration.snapshot_tables,
+epic-catalogue entry 11); called anywhere else, its writes raise ReadOnlyTable.
 """
 from .models import STATE_CHOICES, Country
 

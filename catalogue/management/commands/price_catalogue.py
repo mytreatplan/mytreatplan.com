@@ -66,6 +66,14 @@ the hyphen and in any case, whatever its state: its code, type, amount, the doct
 client UUID (or "any doctor"), its validity and whether it is usable today in Madrid time
 (or `--on`), else why not (inactive, not in force, or a type or currency this release
 does not know); "no voucher" when this region has none with that code. Reads only.
+
+    python manage.py price_catalogue --country-group <id>
+    python manage.py price_catalogue --billing-rule <id>
+
+One country group, or one billing rule in full, by its id whatever its state
+(epic-catalogue entry 11: a deactivated one stays readable for the orders that refer to
+it): its status and whether it is still chosen for new doctors or bills new orders; an
+unknown id is an error. Each goes alone. Reads only.
 """
 from datetime import date
 
@@ -118,12 +126,28 @@ class Command(BaseCommand):
         parser.add_argument('--voucher', metavar='CODE',
                             help='A voucher code of this region (with or without the '
                                  'hyphen): print that voucher and whether it is usable.')
+        parser.add_argument('--country-group', metavar='ID', dest='country_group',
+                            help='A country group id (UUID): print that group, whatever '
+                                 'its state.')
+        parser.add_argument('--billing-rule', metavar='ID', dest='billing_rule',
+                            help='A billing rule id (UUID): print that rule, whatever its '
+                                 'state.')
 
     def handle(self, *, country, tier, subscription, product, language, add_ons, quantity,
-               cost, on, category=None, voucher=None, **options):
+               cost, on, category=None, voucher=None, country_group=None, billing_rule=None,
+               **options):
         mismatch = billing.profile_mismatch()
         if mismatch:
             self.stdout.write(f'warning: {mismatch}')
+        if country_group is not None or billing_rule is not None:
+            if (country or tier or subscription or product or add_ons or cost or category
+                    or voucher is not None or on or quantity is not None
+                    or language != 'en'
+                    or (country_group is not None and billing_rule is not None)):
+                raise CommandError('--country-group and --billing-rule each go alone.')
+            if country_group is not None:
+                return self.print_country_group(country_group)
+            return self.print_billing_rule(billing_rule)
         if voucher is not None:
             if country or tier or subscription or product or add_ons or cost or category \
                     or quantity is not None or language != 'en':
@@ -248,8 +272,12 @@ class Command(BaseCommand):
                 self.stdout.write('  the catalogue has no billing rules: every linked '
                                   'product is offered, in every currency')
             return
-        company = rule.company
         self.stdout.write(f'{title}: billing rule')
+        self.print_rule_details(rule)
+
+    def print_rule_details(self, rule):
+        """A billing rule's company, VAT, texts, gateways, currency and availability."""
+        company = rule.company
         self.stdout.write(f'  company: {company.code}  {company.legal_name}'
                           f'{"" if company.active else "  (inactive)"}')
         self.stdout.write(f'  address: {self.one_line(company.address)}  ({company.country}, '
@@ -265,6 +293,30 @@ class Command(BaseCommand):
         self.stdout.write(f'  gateways: {", ".join(rule.known_gateways) or "none"}')
         self.stdout.write(f'  currency: {rule.currency}')
         self.stdout.write(f'  available: {"yes" if rule.available else "no: not offered"}')
+
+    def print_country_group(self, group_id):
+        """One country group by its id, whatever its state (epic-catalogue entry 11)."""
+        group = resolver.country_group_by_id(group_id)
+        if group is None:
+            raise CommandError(f'No country group {group_id}.')
+        self.stdout.write(f'{group.pk}  {group.name}')
+        self.stdout.write(f'  status: {"active" if group.active else "inactive"}')
+        self.stdout.write('  countries: ' + ('every country in no other active group'
+                                             if group.catch_all
+                                             else ', '.join(group.countries) or 'none'))
+        self.stdout.write(f'  chosen for new doctors: {"yes" if group.active else "no"}')
+
+    def print_billing_rule(self, rule_id):
+        """One billing rule by its id, whatever its state (epic-catalogue entry 11)."""
+        rule = resolver.billing_rule_by_id(rule_id)
+        if rule is None:
+            raise CommandError(f'No billing rule {rule_id}.')
+        group = resolver.country_group_by_id(rule.country_group_id)
+        self.stdout.write(f'{rule.pk}  {group.name if group else rule.country_group_id} '
+                          f'{rule.category}: billing rule')
+        self.stdout.write(f'  status: {"active" if rule.active else "inactive"}')
+        self.print_rule_details(rule)
+        self.stdout.write(f'  bills new orders: {"yes" if rule.active else "no"}')
 
     @staticmethod
     def add_on_text(add_on, language):

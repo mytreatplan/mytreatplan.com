@@ -1,8 +1,10 @@
 """The catalogue as the admin site last sent it (epic-catalogue entry 2, AD-3, AD-6, AD-16):
 country groups, products and subscriptions, read-only copies of the configuration
 snapshot's `catalogue` section. Filled only by the snapshot apply (catalogue.applier,
-through integration.config); there is no other write path: `save()` and `delete()` raise,
-and the Django admin does not list them. Prices are net (VAT comes at checkout, a later
+through integration.config); there is no other write path: since epic-catalogue entry 11
+every ORM write (an instance's `save()` and `delete()`, a queryset's `update()`,
+`delete()`, `bulk_create()` and `bulk_update()`) raises outside the snapshot apply
+(integration.snapshot_tables), and the Django admin does not list them. Prices are net (VAT comes at checkout, a later
 entry); `catalogue.resolver` is the only code that prices.
 
 Products in full (epic-catalogue entry 5, mytp-core 0.20.0): a product also has its
@@ -42,24 +44,9 @@ from decimal import Decimal
 from django.db import models
 from django.utils import translation
 
+from integration.snapshot_tables import READ_ONLY_MESSAGE  # noqa: F401  (re-exported)
+from integration.snapshot_tables import SnapshotFedModel
 from mytp_core.money import Money
-
-READ_ONLY_MESSAGE = ('The catalogue is read-only here: it changes only when a '
-                     'configuration snapshot is applied (catalogue.applier).')
-
-
-class ReadOnlyModel(models.Model):
-    """Never saved or deleted one by one: the applier writes with bulk_create and
-    queryset deletes."""
-
-    class Meta:
-        abstract = True
-
-    def save(self, *args, **kwargs):
-        raise TypeError(READ_ONLY_MESSAGE)
-
-    def delete(self, *args, **kwargs):
-        raise TypeError(READ_ONLY_MESSAGE)
 
 
 ENGLISH = 'en'
@@ -77,7 +64,7 @@ def _text_in(texts, language, field):
     return ''
 
 
-class CountryGroup(ReadOnlyModel):
+class CountryGroup(SnapshotFedModel):
     """Countries (ISO 3166-1 alpha-2) a subscription applies to; `catch_all`: every country
     in no other active group ("Rest of world")."""
 
@@ -88,13 +75,14 @@ class CountryGroup(ReadOnlyModel):
     active = models.BooleanField()
 
     class Meta:
+        base_manager_name = 'objects'  # guarded too (integration.snapshot_tables)
         ordering = ['name', 'id']
 
     def __str__(self):
         return self.name
 
 
-class Product(ReadOnlyModel):
+class Product(SnapshotFedModel):
     """A product at its net price, in one currency.
 
     `category` is one of CATEGORIES (the admin site's fixed list, epic-catalogue entry 5;
@@ -148,6 +136,7 @@ class Product(ReadOnlyModel):
     active = models.BooleanField()
 
     class Meta:
+        base_manager_name = 'objects'  # guarded too (integration.snapshot_tables)
         ordering = ['name', 'id']
 
     def __str__(self):
@@ -192,7 +181,7 @@ class Product(ReadOnlyModel):
                 and (self.valid_to is None or day <= self.valid_to))
 
 
-class Subscription(ReadOnlyModel):
+class Subscription(SnapshotFedModel):
     """A tier in one country group (epic-catalogue entry 8, user decisions 2026-11-11).
 
     `manual`: False for a standard subscription, the default of its tier and country
@@ -244,6 +233,7 @@ class Subscription(ReadOnlyModel):
     active = models.BooleanField()
 
     class Meta:
+        base_manager_name = 'objects'  # guarded too (integration.snapshot_tables)
         ordering = ['tier', 'id']
 
     def __str__(self):
@@ -285,7 +275,7 @@ class Subscription(ReadOnlyModel):
                 else Money(self.upfront_amount, self.price_currency))
 
 
-class AddOn(ReadOnlyModel):
+class AddOn(SnapshotFedModel):
     """What a buyer may choose next to a product (epic-catalogue entry 6): either a fixed
     net amount in one currency (`amount`, `currency`; 0.00 for an add-on that changes no
     price) or a percentage of the product's net price (`percent`, signed: -25.00 takes a
@@ -305,6 +295,7 @@ class AddOn(ReadOnlyModel):
     active = models.BooleanField()
 
     class Meta:
+        base_manager_name = 'objects'  # guarded too (integration.snapshot_tables)
         ordering = ['code', 'id']
 
     def __str__(self):
@@ -336,7 +327,7 @@ class AddOn(ReadOnlyModel):
         return f'{self.percent:+f} %'
 
 
-class ProviderProduct(ReadOnlyModel):
+class ProviderProduct(SnapshotFedModel):
     """A provider product of the snapshot's `provider_costs` section (epic-catalogue
     entry 6): its provider's code for it (not unique: read it by id), its currency and
     whether it is still active at the admin site, with its dated costs (`costs`). Nothing
@@ -348,13 +339,14 @@ class ProviderProduct(ReadOnlyModel):
     active = models.BooleanField()
 
     class Meta:
+        base_manager_name = 'objects'  # guarded too (integration.snapshot_tables)
         ordering = ['code', 'id']
 
     def __str__(self):
         return self.code
 
 
-class ProviderCost(ReadOnlyModel):
+class ProviderCost(SnapshotFedModel):
     """What a provider product costs from `valid_from` to `valid_to` (inclusive; None:
     open-ended): the face price and the discounted one, which is the cost, in the
     provider product's currency. The ranges of one product never overlap; gaps are
@@ -368,6 +360,7 @@ class ProviderCost(ReadOnlyModel):
     discounted = models.DecimalField(max_digits=17, decimal_places=2)
 
     class Meta:
+        base_manager_name = 'objects'  # guarded too (integration.snapshot_tables)
         ordering = ['product', 'valid_from']
 
     def __str__(self):
@@ -377,7 +370,7 @@ class ProviderCost(ReadOnlyModel):
         return self.valid_from <= day and (self.valid_to is None or day <= self.valid_to)
 
 
-class BillingCompany(ReadOnlyModel):
+class BillingCompany(SnapshotFedModel):
     """A company that bills (epic-catalogue entry 9): its short `code` (ES, IE, AE), legal
     name, address (plain text, `\\n` line breaks), country (ISO 3166-1 alpha-2), legal
     time zone (an IANA name) and its identifiers, each '' when it has none: the company
@@ -397,6 +390,7 @@ class BillingCompany(ReadOnlyModel):
     active = models.BooleanField()
 
     class Meta:
+        base_manager_name = 'objects'  # guarded too (integration.snapshot_tables)
         ordering = ['code', 'id']
 
     def __str__(self):
@@ -410,7 +404,7 @@ class BillingCompany(ReadOnlyModel):
             ('TAX', self.tax_number)) if value]
 
 
-class BillingRule(ReadOnlyModel):
+class BillingRule(SnapshotFedModel):
     """The billing rule of one country group and product category (epic-catalogue entry
     9), as sent: the `company` that bills, the VAT rate (`vat_percent`), the
     `exemption_text` of a rate of 0 ('' otherwise allowed), the `reverse_charge_text`
@@ -444,6 +438,7 @@ class BillingRule(ReadOnlyModel):
     active = models.BooleanField()
 
     class Meta:
+        base_manager_name = 'objects'  # guarded too (integration.snapshot_tables)
         ordering = ['category', 'id']
 
     def __str__(self):
@@ -468,7 +463,7 @@ class BillingRule(ReadOnlyModel):
         return f'VAT {self.vat_percent} %'
 
 
-class Voucher(ReadOnlyModel):
+class Voucher(SnapshotFedModel):
     """A voucher definition of this region (epic-catalogue entry 10, mytp-core 0.24.0,
     AD-20), as sent in the snapshot's top-level `vouchers` list: its generated `code`
     (stored without the hyphen; shown `XXXXX-XXXXX`), its `type` (`subscription` or
@@ -496,6 +491,7 @@ class Voucher(ReadOnlyModel):
     active = models.BooleanField()
 
     class Meta:
+        base_manager_name = 'objects'  # guarded too (integration.snapshot_tables)
         ordering = ['code']
 
     def __str__(self):

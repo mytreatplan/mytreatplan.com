@@ -17,6 +17,7 @@ from catalogue.models import BillingCompany, BillingRule, CountryGroup
 from catalogue.tests.test_catalogue import IBERIA, WORLD, group, product, pull, run
 from catalogue.tests.test_subscriptions import full_subscription
 from integration import config
+from integration.tests.snapshot_rows import snapshot_writes
 from integration.tests.test_config import (ADMIN, admin,  # noqa: F401
                                            interface_settings, snapshot, state)
 from mytp_core import snapshots
@@ -345,8 +346,10 @@ def test_the_first_pull_of_this_release_stores_the_rules_of_the_applied_version(
     # The release before applied version 1 without knowing companies and rules.
     monkeypatch.setattr(config, 'current_release', lambda: 'release-before')
     pull(admin, 1, billed())
-    BillingRule.objects.all().delete()
-    BillingCompany.objects.all().delete()
+    # What that release's apply left: no companies, no rules (written as an apply does).
+    with snapshot_writes():
+        BillingRule.objects.all().delete()
+        BillingCompany.objects.all().delete()
     monkeypatch.setattr(config, 'current_release', lambda: 'this-release')
     assert pull(admin, 1, billed()) == ('applied', 1)
     assert BillingRule.objects.count() == 10 and offered('ES') == [
@@ -362,7 +365,8 @@ def test_the_release_before_can_still_replace_the_country_groups(admin):  # noqa
     field = BillingRule._meta.get_field('country_group')
     assert field.db_constraint is False
     # What the release before does: a raw replace of the groups, the rules untouched.
-    CountryGroup.objects.all()._raw_delete(CountryGroup.objects.db)
+    with snapshot_writes():
+        CountryGroup.objects.all()._raw_delete(CountryGroup.objects.db)
     assert BillingRule.objects.count() == 10 and not CountryGroup.objects.exists()
     assert resolver.billing_rule('ES', 'tps_branded') is None       # no group, no rule
     assert pull(admin, 2, billed()) == ('applied', 2)
