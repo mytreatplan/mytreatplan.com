@@ -29,3 +29,55 @@ in the signed configuration snapshot (`integration.config`). On this portal:
   the sites its regions name (any other gets 401 `unknown_key`); a region that loses its
   site between the key check and the snapshot answer gets 403. Either way that portal
   keeps its last snapshot.
+
+## Pricing an order (epic-catalogue entry 12)
+
+One function prices an order (AD-7, AD-16): `catalogue.pricing`, exposed by
+`catalogue.resolver`, which is the only module a caller imports. Ordering, subscriptions
+and payments never compute a price, a VAT amount or a voucher share of their own. It reads
+the snapshot tables only: it writes and reserves nothing.
+
+- `price_order(billing_country, subscription, lines, *, vies, voucher=None, doctor=None,
+  day=None)`: a service order. `lines` are `OrderLine(product, quantity=1, add_ons=(),
+  ice=None)`; the ICE credit (`Money`) goes on the one line that takes it.
+- `price_subscription(billing_country, subscription, period, *, vies, voucher=None,
+  doctor=None, day=None)`: buying a subscription, `monthly` or `upfront`, billed by the
+  `subscription` category rule of the billing country's group.
+- `billing_country`: the fiscal entity's country once it exists, the profile's country
+  until then; it decides the country group, the rules and the reverse charge. `vies`: one
+  of `valid`, `invalid`, `pending`, `not_applicable`. `voucher`: a `Voucher` row (`try_me`
+  for an order, `subscription` for a subscription purchase). `doctor`: the doctor's
+  client UUID. `day`: Madrid time, today by default.
+- Each line: net price (quantity, add-ons) → subscription discount → ICE credit (planning
+  lines only, in the order's currency; what exceeds the line is lost) → voucher (spread in
+  proportion to each line's amount after discount and ICE, rounded down to the cent, the
+  remaining cents to the lines in order; what exceeds the order is lost) → floor at 0 →
+  VAT. VAT is computed per order, on the sum of the lines at each rate, rounded half up.
+  The reverse charge (rate 0 with the rule's reverse-charge text) applies when VIES is
+  `valid`, the billing country is another than the company's and the rule has that text.
+- The result (`PricedOrder`): the company, the currency, each `PricedLine` (list amount,
+  discount percent and amount, ICE, voucher share, net, VAT percent and text), the
+  `VatGroup`s, the totals (net + VAT = total), the gateways every line's rule allows and
+  the region profile has (in the first line's rule order; none for a 0.00 order),
+  `needs_payment` and `no_payment_method` (above 0 with no common gateway: priced and
+  flagged).
+- `OrderRefused.reason` (the object it names in `subject`): `no_lines`,
+  `country_not_served`, `no_billing_rules` (no rule typed at all: no company bills),
+  `product_not_offered` (unlinked, no available rule, another currency, outside its
+  validity, inactive), `quantity_refused`, `add_on_refused`, `two_companies`,
+  `two_currencies`, `ice_twice`, `ice_not_planning`, `ice_currency`, `voucher_not_usable`
+  (its state in `detail`), `voucher_type`, `voucher_currency`, `voucher_doctor`,
+  `subscription_not_offered` (inactive, no available `subscription` rule, or priced in
+  another currency than the rule's), `period_not_offered`.
+
+The staging check runs through `price_catalogue` (reads only; a refusal is an error naming
+its reason):
+
+    python manage.py price_catalogue --order --country ES --tier advanced \
+        --product <id> --ice 80.00 --product <id> --quantity 2 --add-on CODE \
+        [--vies valid] [--voucher CODE] [--doctor UUID] [--on YYYY-MM-DD]
+    python manage.py price_catalogue --buy upfront --country ES --tier advanced \
+        [--voucher CODE] [--vies valid] [--doctor UUID] [--on YYYY-MM-DD]
+
+Each `--product` starts a line; the `--quantity`, `--add-on` and `--ice` after it belong
+to that line. `--subscription <id or code>` replaces `--tier` for a manual subscription.
