@@ -122,13 +122,24 @@ hitl = false
 risk = "high"
 
 [[entry]]
+id = 16
+type = "story"
+title = "Per-region catalogue"
+description = "Gives each country group one region: subscriptions and billing rules follow their group, billing companies their rules, products and add-ons the subscriptions that link them; Rest of world becomes one catch-all group per region; the admin site serves each portal only its own region's catalogue through entry 11's per-region filter (mytp-core 0.25.0), and a portal skips an object of another region (AD-3, AD-14)."
+verify = "The UAE group, the AE company and the AED products never appear on dev; each region has its own Rest of world group; a doctor of an ae country on dev is offered nothing from the ae catalogue."
+covers = ["C10", "C3", "C7", "C8"]
+after = [11]
+hitl = false
+risk = "high"
+
+[[entry]]
 id = 12
 type = "story"
 title = "Full pricing function on the portal"
 description = "Completes the resolver: given a doctor's country, home region and subscription, the fiscal entity's VIES status (an input; epic-doctor-profile checks VIES), an ICE amount and a voucher (inputs from epic-ordering and epic-subscriptions; voucher currency must match), it returns offered products with net price, subscription discount, billing company, VAT rate or exemption text and gateway, applying net → subscription discount → ICE → voucher → floor 0 → VAT; one order has one company, currency and gateway (AD-16)."
 verify = "For seed doctors the resolver returns the documented prices; a DE doctor with valid VIES billed by the Irish company gets the reverse-charge text; VirtuaOrtho lines carry no subscription discount; a voucher in another currency is refused."
 covers = ["C11"]
-after = [11]
+after = [16]
 hitl = false
 risk = "high"
 
@@ -161,6 +172,6 @@ title = "Refactor sweep"
 description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
 verify = "The portal's, the admin repo's and mytp-core's test suites pass; deferred review findings are closed or recorded."
 covers = []
-after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 12, 13, 14]
 hitl = false
 risk = "low"

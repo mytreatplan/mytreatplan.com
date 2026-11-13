@@ -64,6 +64,7 @@ Definitions and the resolver. Not buying (epic-subscriptions, epic-ordering), no
 - Handoff: the resolver takes the fiscal entity's VIES status as an input; epic-doctor-profile checks VIES.
 - Decision (2026-10-29, epic-platform inception): this epic builds the Money type in mytp-core (AD-6, AD-10).
 - Handoff: epic-subscriptions and epic-ordering use the resolver and must not compute prices themselves.
+- Decision (user, 2026-11-12): every region has its own country groups, companies, products and subscriptions as well as its vouchers, and each portal receives only its own; entry 16 builds it (user, 2026-11-13: before entry 12).
 - Assumption: prices are fixed per currency, converted once on clone.
 - Waits on epic 2 because: it needs country map model.
 - Waits on epic 3 because: it needs admin roles and list conventions.
