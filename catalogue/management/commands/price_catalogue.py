@@ -74,18 +74,56 @@ One country group, or one billing rule in full, by its id whatever its state
 (epic-catalogue entry 11: a deactivated one stays readable for the orders that refer to
 it): its status and whether it is still chosen for new doctors or bills new orders; an
 unknown id is an error. Each goes alone. Reads only.
+
+Pricing an order (epic-catalogue entry 12, `catalogue.resolver.price_order`):
+
+    python manage.py price_catalogue --order --country ES (--tier basic | \\
+        --subscription <id or code>) --product <id> [--quantity N] [--add-on CODE ...] \\
+        [--ice AMOUNT] [--product <id> ...] [--vies valid|invalid|pending|not_applicable] \\
+        [--voucher CODE] [--doctor UUID] [--on YYYY-MM-DD] [--language es]
+
+`--country` is the billing country. Each `--product` starts a line; the `--quantity`,
+`--add-on` and `--ice` after it belong to that line (`--ice 80.00`, in the line's
+currency, or `--ice "80.00 AED"`). `--vies` is `not_applicable` by default. It prints the
+company and currency, each line (list amount, discount, ICE credit, voucher share, net,
+VAT rate or text), the VAT per rate, the totals and the gateways, "no payment method"
+when the order needs one and none is common, or "nothing to pay". A refused order is an
+error naming the reason (a non-zero exit).
+
+    python manage.py price_catalogue --buy monthly|upfront --country ES \\
+        (--tier advanced | --subscription <id or code>) [--vies ...] [--voucher CODE] \\
+        [--doctor UUID] [--on YYYY-MM-DD]
+
+The same for buying the subscription (`catalogue.resolver.price_subscription`). Reads only.
 """
+import argparse
 from datetime import date
 
 from django.core.management.base import BaseCommand, CommandError
 
 from catalogue import billing, resolver
 from catalogue.models import Product, Subscription
+from mytp_core.money import Money
 from regions.countries import lookup_country
 
 
 def _date(text):
     return date.fromisoformat(text)
+
+
+class _InOrder(argparse.Action):
+    """Stores the option as before (appending for --product and --add-on) and records it
+    in `sequence`, in command-line order: which line of an --order it belongs to."""
+
+    APPENDED = ('product', 'add_ons')
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        if self.dest in self.APPENDED:
+            setattr(namespace, self.dest, [*(getattr(namespace, self.dest) or []), values])
+        else:
+            setattr(namespace, self.dest, values)
+        namespace.sequence = [*(getattr(namespace, 'sequence', None) or []),
+                              (self.dest, values)]
 
 
 class Command(BaseCommand):
@@ -105,18 +143,19 @@ class Command(BaseCommand):
                             help='A subscription id (UUID) or code, standard or manual, '
                                  'in place of --country and --tier: what it offers, or '
                                  'with --product the price of one line under it.')
-        parser.add_argument('--product', help='A product id (UUID): print that product, '
-                                              'offered or not; with --country and --tier, '
-                                              'or --subscription, the price of one line '
-                                              'of it.')
+        parser.add_argument('--product', action=_InOrder,
+                            help='A product id (UUID): print that product, offered or not; '
+                                 'with --country and --tier, or --subscription, the price '
+                                 'of one line of it; with --order, a line (repeat for '
+                                 'several).')
         parser.add_argument('--language', default='en',
                             help='The language of the texts, e.g. es (default: en; a '
                                  'missing text falls back to English).')
-        parser.add_argument('--add-on', action='append', default=[], dest='add_ons',
+        parser.add_argument('--add-on', action=_InOrder, default=[], dest='add_ons',
                             metavar='CODE', help='With --product, --country and --tier: an '
                                                  'add-on of the line, by its code '
                                                  '(repeat for several).')
-        parser.add_argument('--quantity', type=int,
+        parser.add_argument('--quantity', type=int, action=_InOrder,
                             help='With --product, --country and --tier: the quantity of '
                                  'the line (default 1).')
         parser.add_argument('--cost', action='store_true',
@@ -133,13 +172,48 @@ class Command(BaseCommand):
         parser.add_argument('--billing-rule', metavar='ID', dest='billing_rule',
                             help='A billing rule id (UUID): print that rule, whatever its '
                                  'state.')
+        parser.add_argument('--order', action='store_true',
+                            help='Price an order: --country (the billing country), --tier '
+                                 'or --subscription, and its --product lines.')
+        parser.add_argument('--buy', choices=resolver.SUBSCRIPTION_PERIODS,
+                            help='Price buying the subscription, monthly or upfront.')
+        parser.add_argument('--vies', choices=resolver.VIES_STATUSES,
+                            help='With --order or --buy: the VIES status (default: '
+                                 'not_applicable).')
+        parser.add_argument('--ice', action=_InOrder, metavar='AMOUNT',
+                            help='With --order, after a --product: the ICE credit that line '
+                                 'takes ("80.00", or "80.00 AED").')
+        parser.add_argument('--doctor', metavar='UUID',
+                            help='With --order or --buy: the doctor\'s client UUID (for a '
+                                 'voucher that names one).')
+        parser.set_defaults(sequence=None)
 
     def handle(self, *, country, tier, subscription, product, language, add_ons, quantity,
                cost, on, category=None, voucher=None, country_group=None, billing_rule=None,
+               order=False, buy=None, vies=None, ice=None, doctor=None, sequence=None,
                **options):
         mismatch = billing.profile_mismatch()
         if mismatch:
             self.stdout.write(f'warning: {mismatch}')
+        if order or buy:
+            if (order and buy) or cost or category or country_group or billing_rule:
+                raise CommandError('--order and --buy each go with --country, --tier or '
+                                   '--subscription and their own options.')
+            if buy and (product or add_ons or quantity is not None or ice is not None):
+                raise CommandError('--buy takes no --product, --add-on, --quantity or '
+                                   '--ice.')
+            if not country or bool(tier) == bool(subscription):
+                raise CommandError('Give --country (the billing country) with --tier or '
+                                   '--subscription.')
+            return self.print_order(country, tier, subscription, buy, sequence or [],
+                                    vies or resolver.VIES_NOT_APPLICABLE, voucher, doctor,
+                                    on, language)
+        if vies is not None or ice is not None or doctor is not None:
+            raise CommandError('--vies, --ice and --doctor go with --order or --buy.')
+        if product is not None:
+            if len(product) > 1:
+                raise CommandError('Give one --product (several go with --order).')
+            product = product[0]
         if country_group is not None or billing_rule is not None:
             if (country or tier or subscription or product or add_ons or cost or category
                     or voucher is not None or on or quantity is not None
@@ -439,3 +513,115 @@ class Command(BaseCommand):
             self.stdout.write('  billing: ' + self.rule_text(
                 resolver.billing_rule_for(applies.country_group_id, found.category)))
         self.stdout.write(f'  line price: {price}')
+
+    # --- Pricing an order (epic-catalogue entry 12) ----------------------------------------
+
+    def order_lines(self, sequence):
+        """The `OrderLine`s of the --product, --quantity, --add-on and --ice options, in
+        command-line order: each option after a --product belongs to its line."""
+        lines = []
+        for dest, value in sequence:
+            if dest == 'product':
+                lines.append({'product': self.found(value), 'quantity': 1, 'add_ons': [],
+                              'ice': None})
+                continue
+            if not lines:
+                raise CommandError('--quantity, --add-on and --ice follow a --product.')
+            line = lines[-1]
+            if dest == 'quantity':
+                line['quantity'] = value
+            elif dest == 'add_ons':
+                add_on = resolver.add_on(value)
+                if add_on is None:
+                    raise CommandError(f'No add-on {value}.')
+                line['add_ons'].append(add_on)
+            else:
+                line['ice'] = self.ice(value, line['product'].currency)
+        return [resolver.OrderLine(line['product'], line['quantity'],
+                                   tuple(line['add_ons']), line['ice']) for line in lines]
+
+    @staticmethod
+    def ice(text, currency):
+        """An ICE credit typed as "80.00" (in `currency`) or "80.00 AED"."""
+        parts = text.split()
+        credit = None
+        try:
+            if len(parts) == 1:
+                credit = Money(parts[0], currency)
+            elif len(parts) == 2:
+                credit = Money(parts[0], parts[1].upper())
+        except ValueError:
+            pass
+        if credit is not None and credit.amount < 0:
+            raise CommandError(f'An ICE credit is never negative: {text!r}.')
+        if credit is not None:
+            return credit
+        raise CommandError(f'Not an ICE credit: {text!r} (e.g. 80.00 or "80.00 AED").')
+
+    def print_order(self, country, tier, subscription, buy, sequence, vies, code, doctor,
+                    on, language):
+        """An order or a subscription purchase, priced, or its refusal."""
+        country = resolver.normal_country(country)
+        if subscription:
+            applies = self.found_subscription(subscription)
+            title = self.subscription_title(applies)
+        else:
+            applies = resolver.subscription(country, tier)
+            if applies is None:
+                raise CommandError(f'No active {tier} subscription applies to {country}.')
+            title = f'{country} {tier} ({resolver.country_group(country).name})'
+        found_voucher = None
+        if code is not None:
+            found_voucher = resolver.voucher_by_code(code)
+            if found_voucher is None:
+                raise CommandError(f'No voucher {code}.')
+        day = on or resolver.today()
+        try:
+            if buy:
+                priced = resolver.price_subscription(
+                    country, applies, buy, vies=vies, voucher=found_voucher, doctor=doctor,
+                    day=day)
+            else:
+                priced = resolver.price_order(
+                    country, applies, self.order_lines(sequence), vies=vies,
+                    voucher=found_voucher, doctor=doctor, day=day)
+        except resolver.OrderRefused as refusal:
+            raise CommandError(f'Refused ({refusal.reason}): {refusal}.') from None
+        kind = f'buying {buy}' if buy else 'order'
+        self.stdout.write(f'{kind} for {title}: billing country {country}, VIES {vies}, '
+                          f'on {day.isoformat()}')
+        self.stdout.write(f'  company: {priced.company.code}  {priced.company.legal_name}')
+        self.stdout.write(f'  currency: {priced.currency}')
+        for number, line in enumerate(priced.lines, 1):
+            if line.product is None:
+                self.stdout.write(f'  {number}. subscription {applies.code or "-"}  '
+                                  f'{applies.name_in(language) or applies.tier}  '
+                                  f'{line.period}')
+            else:
+                self.stdout.write(f'  {number}. {line.product.code or "-"}  '
+                                  f'{line.product.name_in(language)}  '
+                                  f'{line.product.category}  x {line.quantity}')
+            self.stdout.write(f'      list {line.list_amount}  discount '
+                              f'{line.discount_percent:.2f} % -{line.discount}  ICE '
+                              f'-{line.ice}  voucher -{line.voucher}  net {line.net}')
+            self.stdout.write(f'      {self.vat_text(line.vat_percent, line.vat_text)}')
+        for group in priced.vat_groups:
+            self.stdout.write(f'  {self.vat_text(group.percent, group.text)}: on '
+                              f'{group.base}: {group.vat}')
+        self.stdout.write(f'  net total: {priced.net_total}')
+        self.stdout.write(f'  discount: {priced.discount_total}')
+        self.stdout.write(f'  ICE credit: {priced.ice_total}')
+        voucher_text = f' ({found_voucher.display_code})' if found_voucher else ''
+        self.stdout.write(f'  voucher: {priced.voucher_taken}{voucher_text}')
+        self.stdout.write(f'  VAT total: {priced.vat_total}')
+        self.stdout.write(f'  total: {priced.total}')
+        if not priced.needs_payment:
+            self.stdout.write('  gateways: nothing to pay')
+        elif priced.no_payment_method:
+            self.stdout.write('  gateways: none: no payment method')
+        else:
+            self.stdout.write(f'  gateways: {", ".join(priced.gateways)}')
+
+    def vat_text(self, percent, text):
+        """"VAT 23.00 %", or "VAT 0.00 %: <text>"."""
+        return f'VAT {percent:.2f} %' + (f': {self.one_line(text)}' if text else '')

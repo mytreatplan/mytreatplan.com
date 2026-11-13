@@ -92,8 +92,8 @@ with what VAT rate or exemption text and through which gateways:
 - `subscription_rule(subscription)`: the rule of a subscription's own price: the
   `subscription` category rule of the subscription's country group, or None.
 - `price` is unchanged: it prices a line and does not ask whether the product is
-  offered. VAT amounts, the VIES decision and the cart come with entry 12, which reads
-  the rule from here.
+  offered. VAT amounts and the VIES decision are entry 12's order pricing (below), which
+  reads the rule from here.
 
 Vouchers (epic-catalogue entry 10, AD-20; user decisions 2026-11-12):
 
@@ -114,7 +114,19 @@ while only the active ones are offered: `product`, `subscription_by_id` /
 (code), `billing_rule_by_id`, `provider_product_by_id` and `voucher_by_code`. An unknown
 or malformed id gives None.
 
-Prices are net: no VAT amount is computed here, and no voucher is applied to a price.
+The functions above give net prices: none of them computes a VAT amount or applies a
+voucher.
+
+Pricing an order (epic-catalogue entry 12, AD-7, AD-16; user decisions 2026-11-13): the
+one function that prices an order lives in `catalogue.pricing` and is exposed here, so a
+caller imports this module only: `price_order(billing_country, subscription, lines, *,
+vies, voucher=None, doctor=None, day=None)` for a service order of `OrderLine`s,
+`price_subscription(billing_country, subscription, period, *, vies, ...)` for buying a
+subscription (`monthly` or `upfront`). Each returns a `PricedOrder` (company, currency,
+`PricedLine`s, `VatGroup`s, totals, gateways) or raises `OrderRefused` with a stable
+`reason` (`REFUSALS`); `VIES_STATUSES` are the VIES statuses it takes. Line order: net
+price (quantity, add-ons) → subscription discount → ICE credit → voucher → floor at 0 →
+VAT per order and rate, rounded half up. See catalogue.pricing.
 """
 import re
 import uuid
@@ -140,7 +152,28 @@ __all__ = ['AddOnRefused', 'ProductRefused', 'QuantityRefused', 'add_on', 'add_o
            'normal_tier', 'offers', 'offers_under', 'price', 'product',
            'provider_product_by_id', 'subscription', 'subscription_by_code',
            'subscription_by_id', 'subscription_rule', 'today', 'unit_price',
-           'voucher_by_code', 'voucher_state', 'voucher_usable', 'VOUCHER_STATES']
+           'voucher_by_code', 'voucher_state', 'voucher_usable', 'VOUCHER_STATES',
+           # Order pricing (entry 12), from catalogue.pricing: see `__getattr__`.
+           'OrderLine', 'OrderRefused', 'PLANNING_CATEGORIES', 'PricedLine',
+           'PricedOrder', 'REFUSALS', 'SUBSCRIPTION_PERIODS', 'VatGroup', 'VIES_INVALID',
+           'VIES_NOT_APPLICABLE', 'VIES_PENDING', 'VIES_STATUSES', 'VIES_VALID',
+           'price_order', 'price_subscription', 'MONTHLY', 'UPFRONT',
+           'NO_LINES', 'COUNTRY_NOT_SERVED', 'NO_BILLING_RULES', 'PRODUCT_NOT_OFFERED',
+           'QUANTITY_REFUSED', 'ADD_ON_REFUSED', 'TWO_COMPANIES', 'TWO_CURRENCIES',
+           'ICE_TWICE', 'ICE_NOT_PLANNING', 'ICE_CURRENCY', 'VOUCHER_NOT_USABLE',
+           'VOUCHER_TYPE', 'VOUCHER_CURRENCY', 'VOUCHER_DOCTOR', 'SUBSCRIPTION_NOT_OFFERED',
+           'PERIOD_NOT_OFFERED']
+
+# The names catalogue.pricing gives through this module (entry 12, AD-16: callers import
+# one resolver). Read lazily (PEP 562): catalogue.pricing imports this module.
+_PRICING_NAMES = frozenset(__all__[__all__.index('OrderLine'):])
+
+
+def __getattr__(name):
+    if name in _PRICING_NAMES:
+        from . import pricing
+        return getattr(pricing, name)
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
 
 # The product category whose rule bills a subscription's own price (user decision
 # 2026-11-11).
