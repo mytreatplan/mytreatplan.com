@@ -153,3 +153,5 @@ Merged 2026-11-13: PR #95, merge e71b47d. CI: the PR's test checks passed; maste
 6. dev, try-me voucher of 10.00 EUR on lines of 90.00 and 100.00: 4.74 and 5.26 taken; on a USD order (billing country US, STG57-USD) refused (`voucher_currency`). Passed.
 7. dev, `--buy upfront` for Advanced Iberia with the subscription voucher of 120.00: 600.00 less 120.00 = 480.00, Spanish company; a try-me voucher there refused (`voucher_type`). Passed.
 8. dev-ae: not run. The ae region has no subscription on staging, so no order can be priced there until entry 13's seed; "no payment method" is proven by the tests only (`test_a_uae_order_today_has_no_payment_method`).
+
+Check 8, run 2026-11-13 after entry 13's seed: on dev-ae an AE Basic order of TPS branded Medium is priced at 1045.00 AED with 5 % VAT (52.25) by the UAE company and flagged "no payment method". Passed.
