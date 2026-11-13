@@ -3,7 +3,7 @@ title: 'Snapshot rules for the catalogue'
 type: 'feature'
 ticket: '11'
 created: '2026-11-12'
-status: 'built'
+status: 'done'
 baseline_revision: '2e3041e404c37ed1f635eb1e432b60baaac53877'
 route: 'full'
 route_source: 'auto'
@@ -129,3 +129,18 @@ Quick lens, one reviewer per repository (2026-11-12). 7 findings: 1 medium, 6 lo
 
 **Manual checks (staging):**
 - A voucher of ae never appears on dev (table and log); an object deactivated on admindev is read on dev by id or code and no longer offered; a write through `manage.py shell` on dev to a catalogue table is refused.
+
+## Staging
+
+Checked 2026-11-13 (merge and staging delegated by the user).
+
+- Release: no mytp-core release (v0.24.0 stays). Admin PR #35 (merge e77d45b; master run 43340101847, tests and deploy green). Portal PR #93 (merge c18e566; master run 43340877098, tests and both deploys green). Suites: admin 1529, portal 2815 plus the 3 known PostgreSQL-only failures on SQLite.
+- After the portal deploy: the first `pull_config` on dev and dev-ae printed `applied` (v103), the second `unchanged`; no migration left to apply.
+- admindev, in `manage.py shell`: deleting a voucher, a product, a billing rule and a country group, by row or by queryset, was refused (`PublishedDeleteRefused`); the counts did not change.
+- admindev, as `staging_check_5_11` through the service: the product STG55-EN, the rule Rest of world × odb and the group Rest of EU deactivated (v104 to v106); each stayed in the snapshot body as inactive.
+- dev (v106): `price_catalogue --product`, `--billing-rule` and `--country-group` read each by its id with "status: inactive"; STG55-EN was not among the ES basic offers, US odb had no billing rule and DE basic had no offers.
+- dev, in `manage.py shell`: `save`, `delete`, queryset `update` and `delete`, `bulk_create`, the base manager's `update` and a related manager's `add()` on catalogue tables, the country map and the admin directory were each refused (`ReadOnlyTable`); the row counts did not change.
+- The voucher of ae: not in dev's table (3 rows, the three eu codes), "no voucher with this code" for the resolver, and no "voucher(s) of another region skipped" line in the host's log; dev-ae has it, with the doctor's UUID, and no eu code.
+- Reactivated on admindev (v107 to v109): dev shows the three as active, DE basic offers again and STG55-EN is back among the ES basic offers.
+- Not checked on staging: the 403 for a region that loses its site during a request and the 401 for a site outside the keyring (tests only); the admin pages in a browser (2FA).
+- Staging data: nothing new left; the three objects are as before.
