@@ -42,6 +42,8 @@ from django.utils import timezone
 from accounts.crypto import EncryptedCharField, EncryptedJSONField
 from mytp_core.money import Money
 
+from .snapshot_tables import SnapshotFedModel
+
 # Decision (user, 2026-11-05): call logs are kept 90 days.
 RETENTION_DAYS = 90
 # Delivered outbox rows are kept 30 days (entry 3).
@@ -190,10 +192,11 @@ class ConfigState(models.Model):
         return f'Configuration snapshot v{self.version or "-"}'
 
 
-class AdminDirectoryEntry(models.Model):
+class AdminDirectoryEntry(SnapshotFedModel):
     """An admin user, from the applied configuration snapshot: the name an admin actor
     UUID shows in this region's logs (AD-22). Never created here otherwise: admin users
-    exist only on the admin site."""
+    exist only on the admin site. Written only by the snapshot apply (epic-catalogue entry
+    11, integration.snapshot_tables)."""
 
     id = models.UUIDField(primary_key=True)
     display_name = models.CharField(max_length=150)
@@ -202,6 +205,7 @@ class AdminDirectoryEntry(models.Model):
     time_zone = models.CharField(max_length=64)
 
     class Meta:
+        base_manager_name = 'objects'  # guarded too (integration.snapshot_tables)
         ordering = ['display_name', 'id']
         verbose_name_plural = 'admin directory entries'
 

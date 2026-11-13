@@ -57,7 +57,11 @@ ones too. The admin site sends a portal only its region's; one of another region
 skipped all the same (a warning with the count, never a code). A snapshot without the
 list (an admin site before 0.24.0, or a region without vouchers) empties the table. A
 voucher of a type or a currency this release does not know is stored as sent, and is not
-usable (catalogue.resolver.voucher_state)."""
+usable (catalogue.resolver.voucher_state).
+
+Snapshot rules (epic-catalogue entry 11): these appliers write only while
+integration.config applies a snapshot (integration.snapshot_tables); called anywhere
+else, their first write raises ReadOnlyTable."""
 import logging
 
 from django.conf import settings

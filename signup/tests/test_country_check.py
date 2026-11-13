@@ -195,8 +195,9 @@ def test_banned_refusal_in_spanish(client, eu_site):
 # entry 3): checked again before the account is created.
 
 def _ban(code, state='banned'):
-    from regions.models import Country
-    Country.objects.update_or_create(code=code, defaults={'state': state})
+    # The map is snapshot-fed (epic-catalogue entry 11): written as the apply does.
+    from integration.tests.snapshot_rows import put_country
+    put_country(code, state)
 
 
 def test_a_country_banned_before_the_last_step_creates_no_account(client, eu_site):

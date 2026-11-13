@@ -104,6 +104,14 @@ Vouchers (epic-catalogue entry 10, AD-20; user decisions 2026-11-12):
   whether it was used already, are epic-subscriptions'; applying it to a price is
   entry 12's.
 
+Read whatever its state (epic-catalogue entry 11, user decisions 2026-11-12): a
+published object is deactivated on the admin site, never deleted, and still sent, so
+every object type is readable here by its id or code for the orders that refer to it,
+while only the active ones are offered: `product`, `subscription_by_id` /
+`subscription_by_code`, `add_on` (code), `country_group_by_id`, `billing_company`
+(code), `billing_rule_by_id`, `provider_product_by_id` and `voucher_by_code`. An unknown
+or malformed id gives None.
+
 Prices are net: no VAT amount is computed here, and no voucher is applied to a price.
 """
 import re
@@ -123,10 +131,11 @@ from .models import (AddOn, BillingCompany, BillingRule, CountryGroup, Product,
                      ProviderProduct, Subscription, Voucher)
 
 __all__ = ['AddOnRefused', 'ProductRefused', 'QuantityRefused', 'add_on', 'add_ons',
-           'billing_company', 'billing_rule', 'billing_rule_for', 'calls', 'cost',
-           'country_group', 'discount_percent', 'has_billing_rules', 'linked',
-           'normal_category', 'normal_country', 'normal_tier', 'offers', 'offers_under',
-           'price', 'product', 'subscription', 'subscription_by_code',
+           'billing_company', 'billing_rule', 'billing_rule_by_id', 'billing_rule_for',
+           'calls', 'cost', 'country_group', 'country_group_by_id', 'discount_percent',
+           'has_billing_rules', 'linked', 'normal_category', 'normal_country',
+           'normal_tier', 'offers', 'offers_under', 'price', 'product',
+           'provider_product_by_id', 'subscription', 'subscription_by_code',
            'subscription_by_id', 'subscription_rule', 'today', 'unit_price',
            'voucher_by_code', 'voucher_state', 'voucher_usable', 'VOUCHER_STATES']
 
@@ -173,6 +182,22 @@ def country_group(country):
     return next((group for group in groups if group.catch_all), None)
 
 
+def _uuid(value):
+    """`value` (a UUID or its string) as a UUID, or None when it is not one."""
+    try:
+        return uuid.UUID(str(value))
+    except ValueError:
+        return None
+
+
+def country_group_by_id(group_id):
+    """The country group of this id (a UUID or its string) whatever its state, or None:
+    for reading the group of a past order, never for choosing a doctor's group
+    (`country_group`, active groups only)."""
+    group_id = _uuid(group_id)
+    return None if group_id is None else CountryGroup.objects.filter(pk=group_id).first()
+
+
 def normal_category(category):
     """`category` stripped and lowercased; a code of an admin site before entry 5 as its
     new one (`tps` is tps_branded)."""
@@ -196,6 +221,16 @@ def billing_rule_for(group, category):
     return (BillingRule.objects.select_related('company')
             .filter(active=True, country_group_id=group_id,
                     category=normal_category(category)).first())
+
+
+def billing_rule_by_id(rule_id):
+    """The billing rule of this id (a UUID or its string) whatever its state, with its
+    company loaded, or None: for reading the rule of a past order, never for billing a new
+    one (`billing_rule`, `billing_rule_for`: active rules only)."""
+    rule_id = _uuid(rule_id)
+    if rule_id is None:
+        return None
+    return BillingRule.objects.select_related('company').filter(pk=rule_id).first()
 
 
 def billing_rule(country, category):
@@ -361,6 +396,16 @@ def cost(product, day=None):
             label, link['quantity'], link['monthly'],
             None if held is None else Money(held.discounted, item.currency)))
     return sum_costs(entries, product.currency)
+
+
+def provider_product_by_id(provider_product_id):
+    """The provider product of this id (a UUID or its string) whatever its state, with
+    its costs, or None."""
+    provider_product_id = _uuid(provider_product_id)
+    if provider_product_id is None:
+        return None
+    return ProviderProduct.objects.filter(pk=provider_product_id).prefetch_related(
+        'costs').first()
 
 
 def product(product_id):

@@ -10,7 +10,7 @@ from django.db import IntegrityError, connection
 from django.db.migrations.executor import MigrationExecutor
 from django.forms import modelform_factory
 
-from regions.models import Country
+from integration.tests.snapshot_rows import put_country
 from regions.profiles import PROFILES, REGION_CHOICES, get_profile
 
 User = get_user_model()
@@ -244,7 +244,7 @@ def test_home_region_is_never_recomputed(settings):
     user = User.objects.create_user('ana@example.com', PASSWORD, country='AE')
     # The country's state on the map changes, and the account is saved on another
     # instance region: the home region stays.
-    Country.objects.update_or_create(code='AE', defaults={'state': 'banned'})
+    put_country('AE', 'banned')
     settings.REGION_PROFILE = get_profile('ae')
     user.first_name = 'Ana'
     user.save()
