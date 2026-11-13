@@ -3,7 +3,7 @@ title: 'Full pricing function on the portal'
 type: 'feature'
 ticket: '12'
 created: '2026-11-13'
-status: 'built'
+status: 'done'
 baseline_revision: '130468417022d43bc50b910c3dad57c05dd24c51'
 route: 'full'
 route_source: 'auto'
@@ -140,3 +140,16 @@ Quick lens, one reviewer (2026-11-13). 5 findings: 1 medium, 3 low, 1 false; 4 p
 **Commands:**
 - the repo's full suite command (SQLite, `../.venv`) -- expected: all passing except the 3 known PostgreSQL-only tests in `accounts/tests/test_crypto.py`
 - `../.venv/bin/python manage.py makemigrations --check --dry-run` -- expected: no changes
+
+## Staging
+
+Merged 2026-11-13: PR #95, merge e71b47d. CI: the PR's test checks passed; master run 43455098939 passed (tests, deploy to dev and dev-ae). Local suite: 2894 passed, 8 skipped, 3 known PostgreSQL-only failures. Merge and staging delegated by the user. All checks ran through `price_catalogue` (read only) on snapshot v111.
+
+1. `pull_config` after the deploy printed `v111 applied` on dev and dev-ae. Passed.
+2. dev, ES Basic, STG57 (249.00 EUR): discount 10 % (the staging Basic's), net 224.10, Spanish company, 0 % with the exemption text, gateways redsys and bank_transfer. Passed.
+3. dev, ES Basic, a TPS branded line and a VirtuaOrtho One line: 10 % on the TPS line, 0 % on the VirtuaOrtho line. Passed.
+4. dev, billing country DE: Irish company; with `--vies valid` rate 0 with the reverse-charge text; without it 23 % (20.70 on 90.00, total 110.70). Passed.
+5. dev, ICE credit 80 on STG57: net 144.10; on an ODB line refused (`ice_not_planning`). Passed.
+6. dev, try-me voucher of 10.00 EUR on lines of 90.00 and 100.00: 4.74 and 5.26 taken; on a USD order (billing country US, STG57-USD) refused (`voucher_currency`). Passed.
+7. dev, `--buy upfront` for Advanced Iberia with the subscription voucher of 120.00: 600.00 less 120.00 = 480.00, Spanish company; a try-me voucher there refused (`voucher_type`). Passed.
+8. dev-ae: not run. The ae region has no subscription on staging, so no order can be priced there until entry 13's seed; "no payment method" is proven by the tests only (`test_a_uae_order_today_has_no_payment_method`).
