@@ -10,6 +10,7 @@
 @source "../../accounts/templates";
 @source "../../signup/templates";
 @source "../../regions/templates";
+@source "../../subscriptions/templates";
 /* Field classes are set on the form widgets. */
 @source "../../signup/forms.py";
 /* Only the scripts that build markup; htmx.min.js is deliberately not scanned. */

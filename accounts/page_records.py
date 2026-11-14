@@ -3,7 +3,7 @@ shown to a logged-in user is an event-log record of kind `page`
 (eventlog.service.record_activity), tied to the account's pk.
 
 Recorded: a GET by an authenticated user of a portal page (`is_portal_path`: the routes of
-signup.urls and accounts.urls, under a language prefix, and the admin, QA A4) answered
+signup.urls, accounts.urls and subscriptions.urls, under a language prefix, and the admin, QA A4) answered
 with a `text/html` page, status 200 or an error status (4xx/5xx, decision 3), admin pages
 included (decision 1). The public site (mytp_publicsite) is never recorded; a path that
 resolves to no view (a 404) is recorded only under a portal prefix. htmx full-page loads
@@ -35,9 +35,10 @@ PAGE_VIEW = 'page_view'
 STEP_MAX_LENGTH = 50
 
 # The portal's paths (QA A4, decision 1), after the language prefix: the first segments of
-# signup.urls and accounts.urls (a new portal route needs its prefix here; a test checks
+# signup.urls, accounts.urls and subscriptions.urls (a new portal route needs its prefix here; a test checks
 # they match). The admin sits at the root, outside the language prefixes.
-PORTAL_PREFIXES = ('signup/', 'login', 'logout/', 'welcome/', 'password-reset/', 'reset/')
+PORTAL_PREFIXES = ('signup/', 'login', 'logout/', 'welcome/', 'password-reset/', 'reset/',
+                   'upgrade/')
 ADMIN_PREFIX = '/admin/'
 
 

@@ -70,7 +70,7 @@ from .models import Product, Voucher
 __all__ = ['OrderLine', 'OrderRefused', 'PLANNING_CATEGORIES', 'PricedLine', 'PricedOrder',
            'REFUSALS', 'SUBSCRIPTION_PERIODS', 'VatGroup', 'VIES_INVALID',
            'VIES_NOT_APPLICABLE', 'VIES_PENDING', 'VIES_STATUSES', 'VIES_VALID',
-           'price_order', 'price_subscription', 'MONTHLY', 'UPFRONT',
+           'price_order', 'price_subscription', 'subscription_sold', 'MONTHLY', 'UPFRONT',
            # The refusal codes (`OrderRefused.reason`).
            'NO_LINES', 'COUNTRY_NOT_SERVED', 'NO_BILLING_RULES', 'PRODUCT_NOT_OFFERED',
            'QUANTITY_REFUSED', 'ADD_ON_REFUSED', 'TWO_COMPANIES', 'TWO_CURRENCIES',
@@ -251,6 +251,17 @@ def price_order(billing_country, subscription, lines, *, vies, voucher=None, doc
     return _price(billing_country, priced, vies, voucher, Voucher.TRY_ME, doctor, day)
 
 
+def subscription_sold(subscription, rule):
+    """Whether `subscription` can be bought under `rule` (its group's `subscription`
+    category rule, or None): the row is active, the rule exists, is available and is in
+    a known currency, and a priced row is in the rule's currency. `price_subscription`
+    refuses anything else (`subscription_not_offered`); the upgrade screen lists only
+    these (epic-subscriptions entry 2)."""
+    return bool(subscription.active and rule is not None and rule.available
+                and rule.currency in CURRENCIES
+                and (subscription.free or subscription.price_currency == rule.currency))
+
+
 def price_subscription(billing_country, subscription, period, *, vies, voucher=None,
                        doctor=None, day=None):
     """The `PricedOrder` of buying a subscription for a `period` (`monthly` or
@@ -266,9 +277,7 @@ def price_subscription(billing_country, subscription, period, *, vies, voucher=N
     group = _group(billing_country)
     rule = resolver.billing_rule_for(group, resolver.SUBSCRIPTION_CATEGORY)
     name = subscription.code or subscription.pk
-    if (not subscription.active or rule is None or not rule.available
-            or rule.currency not in CURRENCIES
-            or (not subscription.free and subscription.price_currency != rule.currency)):
+    if not subscription_sold(subscription, rule):
         raise OrderRefused(SUBSCRIPTION_NOT_OFFERED,
                            f'the subscription {name} is not offered to this doctor',
                            subject=subscription)

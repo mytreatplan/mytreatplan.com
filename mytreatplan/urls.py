@@ -51,6 +51,8 @@ urlpatterns = [
 portal_patterns = [
     path('', include('signup.urls')),
     path('', include('accounts.urls')),
+    # The upgrade screen (epic-subscriptions entry 2).
+    path('', include('subscriptions.urls')),
 ]
 
 

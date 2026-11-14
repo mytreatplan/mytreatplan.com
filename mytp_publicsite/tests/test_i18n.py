@@ -17,7 +17,8 @@ CATALOGUE = settings.BASE_DIR / 'locale' / 'es' / 'LC_MESSAGES' / 'django.po'
 MAKEMESSAGES_IGNORE = ['node_modules', 'static_root', '_bmad*']
 
 # Only these folders hold translatable strings; the catalogue test copies just these.
-TRANSLATABLE_FOLDERS = ['templates', 'mytp_publicsite', 'accounts', 'signup', 'mytreatplan', 'locale']
+TRANSLATABLE_FOLDERS = ['templates', 'mytp_publicsite', 'accounts', 'signup', 'subscriptions',
+                        'mytreatplan', 'locale']
 
 
 # --- Pages and redirects ---------------------------------------------------------------

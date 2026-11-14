@@ -1469,3 +1469,81 @@ msgstr "Cerrar"
 #: templates/base.html
 msgid "IP geolocation by DB-IP"
 msgstr "Geolocalización por IP de DB-IP"
+
+# --- The upgrade screen (epic-subscriptions entry 2) ---
+#: subscriptions/templates/subscriptions/upgrade.html
+msgid "Subscription levels"
+msgstr "Niveles de suscripción"
+
+#: subscriptions/templates/subscriptions/upgrade.html
+#, python-format
+msgid "Your current level is <strong class=\"text-ink\">%(name)s</strong>."
+msgstr "Su nivel actual es <strong class=\"text-ink\">%(name)s</strong>."
+
+#: subscriptions/templates/subscriptions/upgrade.html
+msgid ""
+"Your subscription was arranged with our team, who make any change to it. The "
+"standard levels are shown for information."
+msgstr ""
+"Su suscripción se acordó con nuestro equipo, que realiza cualquier cambio en "
+"ella. Los niveles estándar se muestran a título informativo."
+
+#: subscriptions/templates/subscriptions/upgrade.html
+msgid "Your current level"
+msgstr "Su nivel actual"
+
+#: subscriptions/templates/subscriptions/upgrade.html
+msgid "Free"
+msgstr "Gratis"
+
+#: subscriptions/templates/subscriptions/upgrade.html
+#, python-format
+msgid "%(price)s per month"
+msgstr "%(price)s al mes"
+
+#: subscriptions/templates/subscriptions/upgrade.html
+msgid "12-month commitment"
+msgstr "Compromiso de 12 meses"
+
+#: subscriptions/templates/subscriptions/upgrade.html
+#, python-format
+msgid "%(price)s for a year, paid upfront"
+msgstr "%(price)s por un año, pago por adelantado"
+
+#: subscriptions/templates/subscriptions/upgrade.html
+msgid "+ VAT where applicable"
+msgstr "+ IVA cuando corresponda"
+
+#: subscriptions/templates/subscriptions/upgrade.html
+#: subscriptions/templates/subscriptions/upgrade_purchase.html
+#, python-format
+msgid "Upgrade to %(name)s"
+msgstr "Pasar a %(name)s"
+
+#: subscriptions/templates/subscriptions/upgrade.html
+msgid "Not now"
+msgstr "Ahora no"
+
+#: subscriptions/templates/subscriptions/upgrade_purchase.html
+#, python-format
+msgid "Online purchase of %(name)s is coming soon."
+msgstr "La compra en línea de %(name)s estará disponible próximamente."
+
+#: subscriptions/templates/subscriptions/upgrade_purchase.html
+msgid "Back to the subscription levels"
+msgstr "Volver a los niveles de suscripción"
+
+#: subscriptions/views.py
+msgctxt "subscription level"
+msgid "Basic"
+msgstr "Básica"
+
+#: subscriptions/views.py
+msgctxt "subscription level"
+msgid "Advanced"
+msgstr "Avanzada"
+
+#: subscriptions/views.py
+msgctxt "subscription level"
+msgid "Premium"
+msgstr "Premium"

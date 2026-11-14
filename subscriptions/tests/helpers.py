@@ -1,7 +1,9 @@
 """The subscriptions tests' catalogue and doctors: billing's catalogue
 (integration/tests/snapshot_rows.py: a Basic per country group, the manual Ormco premium
 of Iberia, the companies and the rules), with an Advanced of Iberia at 6 % on TPS
-branded and a group (Nordics) that has no Basic."""
+branded (60.00 EUR a month, 600.00 EUR a year upfront), a Premium of Iberia (120.00 and
+1200.00 EUR) and a group (Nordics) that has no Basic. Only Iberia has a `subscription`
+billing rule."""
 import copy
 from datetime import date
 
@@ -16,18 +18,24 @@ User = get_user_model()
 PASSWORD = 'violet-orbit-canyon-42'
 
 ADVANCED = 'e0000010-0000-4000-8000-000000000010'
+PREMIUM = 'e0000012-0000-4000-8000-000000000012'
 NEW_BASIC = 'e0000011-0000-4000-8000-000000000011'
 NORDICS = 'a3333333-3333-4333-8333-333333333333'
 BASIC_IB = SUBSCRIPTIONS[IBERIA]
 DAY = date(2026, 11, 14)
 
-__all__ = ['ADVANCED', 'BASIC_IB', 'DAY', 'MANUAL', 'NEW_BASIC', 'NORDICS', 'TPS',
-           'catalogue', 'doctor', 'load', 'priced']
+__all__ = ['ADVANCED', 'ADVANCED_PRICE', 'BASIC_IB', 'DAY', 'MANUAL', 'NEW_BASIC', 'NORDICS',
+           'PREMIUM', 'PREMIUM_PRICE', 'TPS', 'catalogue', 'doctor', 'load', 'priced']
+
+ADVANCED_PRICE = {'currency': 'EUR', 'monthly': '60.00', 'upfront': '600.00'}
+PREMIUM_PRICE = {'currency': 'EUR', 'monthly': '120.00', 'upfront': '1200.00'}
 
 
-def catalogue(advanced_active=True, advanced=True, basic_ib=BASIC_IB):
-    """Billing's catalogue with Iberia's Advanced (`advanced_active`; left out without
-    `advanced`), Iberia's Basic under the id `basic_ib`, and the Nordics without a
+def catalogue(advanced_active=True, advanced=True, basic_ib=BASIC_IB, premium=True,
+              advanced_price=ADVANCED_PRICE, premium_active=True):
+    """Billing's catalogue with Iberia's Advanced (`advanced_active`, `advanced_price`;
+    left out without `advanced`), Iberia's Premium (`premium_active`; left out without
+    `premium`), Iberia's Basic under the id `basic_ib`, and the Nordics without a
     Basic."""
     section = billed()
     section['country_groups'].append(group(NORDICS, 'Nordics', ['SE']))
@@ -37,8 +45,11 @@ def catalogue(advanced_active=True, advanced=True, basic_ib=BASIC_IB):
     if advanced:
         section['subscriptions'].append(full_subscription(
             ADVANCED, 'advanced', IBERIA, 'ADV-IB', 'Advanced', ALL,
-            {'tps_branded': '6.00'}, active=advanced_active,
-            price={'currency': 'EUR', 'monthly': '60.00'}))
+            {'tps_branded': '6.00'}, active=advanced_active, price=dict(advanced_price)))
+    if premium:
+        section['subscriptions'].append(full_subscription(
+            PREMIUM, 'premium', IBERIA, 'PRE-IB', 'Premium', ALL,
+            {'tps_branded': '12.00'}, active=premium_active, price=dict(PREMIUM_PRICE)))
     return copy.deepcopy(section)
 
 

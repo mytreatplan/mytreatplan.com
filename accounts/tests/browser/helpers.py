@@ -57,13 +57,14 @@ def status(page, text):
     return page.get_by_role('status').filter(has_text=text)
 
 
-def sign_up(page, live_server, lang='en', phone=MOBILE_E164):
+def sign_up(page, live_server, lang='en', phone=MOBILE_E164, landing='welcome/'):
     """A whole signup through the pages: the Doctor (mobile `phone`, E.164 in Spain)
-    lands logged in on welcome."""
+    lands logged in on `landing`: welcome, or the upgrade screen (`upgrade/`) when a
+    catalogue whose group sells a paid level is loaded (epic-subscriptions entry 2)."""
     step1 = {} if phone == MOBILE_E164 else {'phone': phone.removeprefix('+34')}
     to_mobile_step(page, live_server, lang=lang, **step1)
     enter_code(page, mobile_code(phone), TEXTS[lang]['create'])
-    at(page, live_server, lang, 'welcome/')
+    at(page, live_server, lang, landing)
 
 
 def log_out(page, live_server, lang='en'):
