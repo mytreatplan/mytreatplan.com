@@ -36,7 +36,7 @@ an object back (`/en/upload-spike/object/`), and the command
 1. Create a bucket in **GRA**, e.g. `mytp-dev-files` (Object Storage, S3 API, standard
    class). Do **not** reuse or touch the backup bucket or its user.
 2. Create an S3 user for it and give it access to this bucket only. If the panel accepts
-   a JSON policy, use one like this (same shape as `s3-bckp-server_Policy.json`):
+   a JSON policy, use one like this (same shape as the backup user's policy, `deploy/README.md` step 10.4):
 
    ```json
    {

@@ -272,7 +272,7 @@ The admin site keeps no patient data anywhere (AD-23). **[ADOPTED]**
 | django-filter (admin) | 26.2 |
 | django.tasks database backend | chosen at epic-platform inception: django-tasks-db 0.13.0 or django-ox 1.9.1 |
 | Uppy (`@uppy/aws-s3`) | 6.x, exact pin at epic-platform inception |
-| ClamAV | 1.4.6 or later (1.4 LTS) |
+| ClamAV | 1.4.6 or later (1.4 LTS); decision 2026-11-07: Debian 13's package (1.4.3 today) until Debian ships 1.4.6 (`epic-platform/story-virus-scanning-of-uploads-plan.md`) |
 | DB-IP Lite country (MMDB) | monthly release |
 | sentry-sdk | 2.71.0 |
 

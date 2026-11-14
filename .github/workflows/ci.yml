@@ -98,8 +98,7 @@ jobs:
   # still the tip of master and runs the host-wide release command for its site. The legs
   # are independent: one failing never cancels, blocks or rolls back the other. Each leg
   # checks the tip on its own, so if master moves between the two checks one site may
-  # skip a commit the other released; the next push brings both to the same commit. The
-  # dev-ae leg fails until deploy/README.md "Add dev-ae" is done (dev deploys either way).
+  # skip a commit the other released; the next push brings both to the same commit.
   # Server setup and the secrets are described in deploy/README.md.
   deploy-staging:
     needs: test

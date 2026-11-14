@@ -3,8 +3,7 @@
 Every push to `master` that passes CI is deployed to **https://dev.mytpdso.com**, the
 staging host's `dev` site, and to **https://dev-ae.mytpdso.com**, the `dev-ae` site (the
 same build with `REGION=ae`), by the `deploy-staging` job in `.github/workflows/ci.yml`
-(one matrix leg per site). The dev-ae leg fails until the [Add dev-ae](#add-dev-ae)
-runbook is done; dev deploys either way. The sites sit behind a team password (basic auth) and send `X-Robots-Tag: noindex, nofollow`.
+(one matrix leg per site). The sites sit behind a team password (basic auth) and send `X-Robots-Tag: noindex, nofollow`.
 
 The staging host runs several **sites** side by side (`dev`, `dev-ae` and `admindev`,
 the admin repo's site; architecture AD-12), each with its own user, home, units, timers,
@@ -737,9 +736,8 @@ certificate.
 
 Deploys of a site run one at a time (concurrency group `deploy-staging-<site>`, one per
 matrix leg; the release command also holds a lock per site). dev and dev-ae deploy in
-parallel, each from its own leg: one failing never cancels or rolls back the other. The
-dev-ae leg fails until the [Add dev-ae](#add-dev-ae) runbook is done. If several pushes
-queue up, GitHub keeps only the newest pending one, and a job whose commit is no longer
+parallel, each from its own leg: one failing never cancels or rolls back the other. If
+several pushes queue up, GitHub keeps only the newest pending one, and a job whose commit is no longer
 the tip of `master` skips the deploy, so the latest commit is what goes live even when an
 older push's tests finish last. Each leg checks the tip on its own: if `master` moves
 between the two checks, one site may skip a commit the other released; the next push
@@ -791,25 +789,6 @@ To add a job:
 To remove a job: delete its line, merge, re-run `provision.sh` (it stops and removes the
 timer), then in Sentry → Crons delete (or disable) the monitor `mytp-<site>-<name>`;
 otherwise it keeps raising missed check-in alerts.
-
-**One-off, after the merge of epic-platform entry 5 (mytp-core 0.2.0).** The monitors were
-named after the Sentry environment (`mytp-staging-<name>`); they are now named after the
-site. Nothing needs re-provisioning (`release.sh` is unchanged):
-
-1. After the deploy, run one job by hand and check its check-in lands on the new monitor,
-   and that `/healthz` names the site:
-
-   ```sh
-   sudo systemctl start mytp-dev-job@clearsessions   # Sentry Crons: mytp-dev-clearsessions ok
-   curl -s https://dev.mytpdso.com/healthz           # ok / site: dev / region: eu
-   ```
-
-2. Each new `mytp-dev-<name>` monitor appears at its job's first run; set its **Notify**
-   to devops@mytreatplan.com (step 8.5).
-3. In Sentry → Crons, delete the six old monitors `mytp-staging-clearsessions`,
-   `mytp-staging-purgepending`, `mytp-staging-eventlogretention`, `mytp-staging-backupdb`,
-   `mytp-staging-kmscheck` and `mytp-staging-purgeerased`; otherwise they raise missed
-   check-in alerts.
 
 Run a job by hand / read its logs:
 
@@ -941,25 +920,6 @@ sleep 7; systemctl is-active mytp-dev-worker     # active (systemd restarted it)
 sudo systemctl kill -s KILL mytp-dev-worker      # killed outright, mid-task if busy
 sleep 7; sudo journalctl -u mytp-dev-worker -n 20   # "requeued N interrupted task(s)"
 ```
-
-**One-off, after the merge of epic-platform entry 9 (mytp-core 0.3.0).** The release
-command, the sudoers rule, the worker unit and two job timers are new, so `provision.sh`
-must run again, **after** the merge's deploy has gone live: the worker unit is installed
-only once the live release ships the worker. Run before it, provision installs the rest
-but no worker (and the two new jobs fail until the release is live), so run it again
-after the deploy. On the server as `debian`, from a copy of the merged `deploy/`:
-
-1. `bash ~/deploy/provision.sh dev dev.mytpdso.com <htpasswd-user>`: it reports the new
-   sudoers file, `mytp-dev-worker.service` installed, enabled and started, the
-   `workerheartbeat` and `prunetasks` timers and `/usr/local/bin/mytp-release`.
-2. `systemctl status mytp-dev-worker` is active; run the sample task check above.
-3. Within 10 minutes, Sentry → Crons shows `mytp-dev-worker` and
-   `mytp-dev-workerheartbeat` (and `mytp-dev-prunetasks` after its first run, or
-   `sudo systemctl start mytp-dev-job@prunetasks`); set each one's **Notify** to
-   devops@mytreatplan.com (step 8.5).
-4. Check the alert: `sudo systemctl stop mytp-dev-worker`, wait about 10 minutes for the
-   missed check-in alert on `mytp-dev-worker`, then `sudo systemctl start mytp-dev-worker`
-   (the next heartbeat turns the monitor ok again).
 
 ## Twilio Verify
 
@@ -1705,33 +1665,6 @@ OVHcloud applies a new policy gradually: for several minutes after an import, re
 get `403 AccessDenied` (the widget retries a refused part once, then the upload fails).
 Wait about ten minutes before testing.
 
-### Settings (rename of dev's spike keys)
-
-dev's `settings.env` still has the spike's `UPLOAD_SPIKE_*` lines, which the code no longer
-reads. Rename them in place without printing any value, then check the names only:
-
-```sh
-sudo -u mytp-dev sed -i \
-  -e 's/^UPLOAD_SPIKE_S3_ENDPOINT=/STORAGE_ENDPOINT=/' \
-  -e 's/^UPLOAD_SPIKE_S3_REGION=/STORAGE_REGION=/' \
-  -e 's/^UPLOAD_SPIKE_S3_BUCKET=/STORAGE_BUCKET=/' \
-  -e 's/^UPLOAD_SPIKE_S3_ACCESS_KEY=/STORAGE_ACCESS_KEY=/' \
-  -e 's/^UPLOAD_SPIKE_S3_SECRET_KEY=/STORAGE_SECRET_KEY=/' \
-  -e 's/^UPLOAD_SPIKE_CORS_ORIGINS=/STORAGE_CORS_ORIGINS=/' \
-  -e 's/^UPLOAD_SPIKE_ENABLED=True$/STORAGE_SAMPLE_UPLOADS=True/' \
-  /srv/mytp-dev/shared/settings.env
-sudo ls -l /srv/mytp-dev/shared/settings.env        # still mytp-dev, -rw-------
-sudo grep -oE '^(STORAGE|UPLOAD_SPIKE)_[A-Z_]*=' /srv/mytp-dev/shared/settings.env
-#   STORAGE_ENDPOINT= STORAGE_REGION= STORAGE_BUCKET= STORAGE_ACCESS_KEY=
-#   STORAGE_SECRET_KEY= STORAGE_CORS_ORIGINS= STORAGE_SAMPLE_UPLOADS=; no UPLOAD_SPIKE_
-sudo -u mytp-dev-ae sed -i '/^UPLOAD_SPIKE_/d' /srv/mytp-dev-ae/shared/settings.env   # dev-ae's leftover
-cd /srv/mytp-dev/current && sudo -u mytp-dev ./venv/bin/python manage.py check   # no storage.E00x
-sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker
-```
-
-`STORAGE_ABORT_INCOMPLETE_DAYS` defaults to 7; set it only to change the lifecycle period
-(then run `--apply` again).
-
 ### CORS, lifecycle and encryption
 
 `manage.py storage_bucket --apply` sets, one at a time, the CORS rule (the origins in
@@ -1741,6 +1674,8 @@ sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker
 this replaces the spike's 1-day rule) and default encryption SSE-S3, then reads each back.
 A refusal prints `set <name>: REFUSED <code> (HTTP <status>): <message>` and the command
 exits naming it. Its output never contains the keys.
+`STORAGE_ABORT_INCOMPLETE_DAYS` defaults to 7; set it only to change the lifecycle period
+(then run `--apply` again).
 
 It needs the bucket owner's keys, passed in the environment for that one command (the
 environment overrides `settings.env`). Typed at a prompt (not echoed, not in the shell
@@ -2151,16 +2086,6 @@ The admin site's repo carries only its `jobs.conf`, `run-job.sh` and
 `deploy/` with the admin's `jobs.conf` and `staging.env.example` in it (the admin repo's
 README has the commands), never from the copy used for `dev`.
 
-**One-off, after the merge of epic-platform entry 10 (generic release check).** The
-release command changed. Once the merge's deploy is green, run `provision.sh` for `dev`
-again from a copy of the merged `deploy/` (no `WSGI_MODULE`: dev keeps
-`mytreatplan.wsgi`, so its unit is unchanged): it reports `/usr/local/bin/mytp-release`
-changed. The next deploy goes through the new release check. From then on, a release
-built before the `deploy/release-ready` marker (any commit before this merge) cannot be
-redeployed by re-running its old `deploy-staging` job: the release command refuses its
-tarball. Go back to such a release with "Rollback" (it is still in `releases/`), or
-deploy a new commit.
-
 **Remove a site** (e.g. a throwaway one), as `debian`. Replace `<site>` with the name; it
 must never be `dev` unless dev is meant to go:
 
@@ -2423,161 +2348,6 @@ sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker mytp-dev-ae-gunicorn my
 To rotate dev-ae's deploy key, repeat step 8 and replace the old line in
 `/srv/mytp-dev-ae/.ssh/authorized_keys`. To remove dev-ae, see "Remove a site" above,
 then drop the `dev-ae` leg from the `deploy-staging` matrix.
-
-## Move dev to the per-site layout
-
-One-off, for the change that made the tooling site-aware (epic-platform entry 1). Before
-it, dev ran as user `mytp` from `/srv/mytp`, with `mytp-gunicorn`, `mytp-job@*` timers,
-Nginx site `mytp.conf`, `/etc/nginx/mytp.htpasswd` and `/etc/sudoers.d/mytp-deploy`. The
-move is in place on the same host and database (the database and its contents do not
-change). dev is down for about 5 minutes, from step 3 until the deploy in step 7 is
-green. `/srv/mytp` stays one day as a fallback; step 10 deletes it.
-
-Run every command yourself, as `debian` on the server unless it says otherwise. No
-secret is printed: settings files are copied and edited in place, and only counts or the
-`SITE` line are shown.
-
-1. **Merge the pull request.** Its `deploy-staging` job fails at "Upload release"
-   (`mytp-dev` does not exist yet, so SSH is refused) and changes nothing: dev keeps
-   serving from `/srv/mytp`. Merge nothing else until step 7, and tell the team about the
-   short downtime.
-2. **Copy the merged `deploy/` to the server** (from your machine, in an up-to-date
-   `master` checkout):
-
-   ```sh
-   ssh debian@<instance-ip> 'rm -rf ~/deploy'
-   scp -r deploy debian@<instance-ip>:~/
-   ```
-
-3. **Stop the old site** (downtime starts):
-
-   ```sh
-   for f in /etc/systemd/system/mytp-job@*.timer; do sudo systemctl disable --now "$(basename "$f")"; done
-   sudo systemctl disable --now mytp-gunicorn.socket
-   sudo systemctl stop mytp-gunicorn.service
-   sudo rm /etc/nginx/sites-enabled/mytp.conf        # the file stays in sites-available
-   sudo nginx -t && sudo systemctl reload nginx
-   ```
-
-4. **Carry the password file over and provision `dev`.** With the copied password file
-   `provision.sh` asks for no password; the certificate for `dev.mytpdso.com` already
-   exists, so the Nginx site gets HTTPS at once.
-
-   ```sh
-   sudo install -m 640 -o root -g www-data /etc/nginx/mytp.htpasswd /etc/nginx/mytp-dev.htpasswd
-   bash ~/deploy/provision.sh dev dev.mytpdso.com <htpasswd-user>
-   ```
-
-   It reports changes (release command, user `mytp-dev`, folders, sudoers, units,
-   timers, Nginx site) and asks for `settings.env`.
-5. **Carry the shared files over** (`settings.env`, `db-ca.pem`, `kms-client.crt`,
-   `kms-client.key`; not `jobs.conf`, which provision wrote), then point the paths in
-   `settings.env` at the new home and add `SITE=dev`:
-
-   ```sh
-   sudo find /srv/mytp/shared -maxdepth 1 -type f ! -name jobs.conf -printf '%f\n'   # names only
-   for f in $(sudo find /srv/mytp/shared -maxdepth 1 -type f ! -name jobs.conf -printf '%f\n'); do
-       sudo install -m "$(sudo stat -c %a "/srv/mytp/shared/$f")" -o mytp-dev -g mytp-dev \
-           "/srv/mytp/shared/$f" "/srv/mytp-dev/shared/$f"
-   done
-   sudo sed -i 's#/srv/mytp/#/srv/mytp-dev/#g' /srv/mytp-dev/shared/settings.env
-   sudo grep -q '^SITE=' /srv/mytp-dev/shared/settings.env \
-       || printf '\nSITE=dev\n' | sudo tee -a /srv/mytp-dev/shared/settings.env >/dev/null
-   sudo chown mytp-dev:mytp-dev /srv/mytp-dev/shared/settings.env
-   sudo chmod 600 /srv/mytp-dev/shared/settings.env
-   sudo grep -c '/srv/mytp/' /srv/mytp-dev/shared/settings.env    # 0
-   sudo grep -x 'SITE=dev' /srv/mytp-dev/shared/settings.env       # SITE=dev
-   sudo ls -l /srv/mytp-dev/shared/                                # all mytp-dev mytp-dev
-   ```
-
-6. **Deploy key.** The same key (GitHub's `STAGING_SSH_KEY` does not change) now logs in
-   as `mytp-dev`:
-
-   ```sh
-   sudo install -m 600 -o mytp-dev -g mytp-dev /srv/mytp/.ssh/authorized_keys /srv/mytp-dev/.ssh/authorized_keys
-   ```
-
-7. **Deploy.** GitHub → Actions → the merge commit's CI run → **Re-run failed jobs**.
-   When `deploy-staging` is green, dev serves from `/srv/mytp-dev` (downtime ends).
-8. **Checks.**
-
-   ```sh
-   readlink /srv/mytp-dev/current                  # /srv/mytp-dev/releases/<merge sha>
-   systemctl is-active mytp-dev-gunicorn.socket    # active
-   systemctl list-timers 'mytp-dev-job@*'          # one per line of jobs.conf
-   systemctl list-timers 'mytp-job@*'              # 0 timers listed
-   sudo systemctl start mytp-dev-job@clearsessions # Sentry Crons: mytp-dev-clearsessions ok
-   bash ~/deploy/provision.sh dev dev.mytpdso.com <htpasswd-user>   # No changes.
-   ```
-
-   From your machine: `curl -s -o /dev/null -w '%{http_code}\n' https://dev.mytpdso.com/healthz`
-   prints `200`, and the checks of step 7 under "First-time setup" pass.
-
-   Then a **throwaway second site** proves sites stay apart (no DNS: it skips the
-   certificate with a warning; type any password, the site is removed right after):
-
-   ```sh
-   sudo find /etc/systemd/system /etc/nginx /etc/sudoers.d -name '*mytp-dev*' -exec md5sum {} + | sort > ~/dev-before.txt
-   bash ~/deploy/provision.sh tmpcheck tmpcheck.invalid team
-   id mytp-tmpcheck && ls /srv/mytp-tmpcheck                 # its own user and home
-   systemctl list-timers 'mytp-tmpcheck-job@*'              # its own timers
-   ls /etc/nginx/sites-enabled/                              # mytp-dev.conf and mytp-tmpcheck.conf
-   bash ~/deploy/provision.sh dev dev.mytpdso.com <htpasswd-user>   # No changes.
-   sudo find /etc/systemd/system /etc/nginx /etc/sudoers.d -name '*mytp-dev*' -exec md5sum {} + | sort | diff ~/dev-before.txt - && echo "dev unchanged"
-   ```
-
-   Remove it with "Remove a site" above (`site=tmpcheck`), then `rm ~/dev-before.txt`.
-   Its timers fire only on schedule, and with no release they would just fail, so remove
-   it the same day.
-9. **Fallback, while `/srv/mytp` exists** (only if dev does not work on the new layout).
-   Do not merge to `master` while in fallback. The first command blocks deploys: without
-   it, the next deploy would still log in as `mytp-dev`, migrate the shared dev database
-   and bring `mytp-dev-gunicorn` back up.
-
-   ```sh
-   sudo mv /srv/mytp-dev/.ssh/authorized_keys /srv/mytp-dev/.ssh/authorized_keys.disabled
-   for f in /etc/systemd/system/mytp-dev-job@*.timer; do sudo systemctl disable --now "$(basename "$f")"; done
-   sudo systemctl disable --now mytp-dev-gunicorn.socket
-   sudo systemctl stop mytp-dev-gunicorn.service
-   sudo rm /etc/nginx/sites-enabled/mytp-dev.conf
-   sudo ln -s /etc/nginx/sites-available/mytp.conf /etc/nginx/sites-enabled/mytp.conf
-   sudo nginx -t && sudo systemctl reload nginx
-   sudo systemctl enable --now mytp-gunicorn.socket
-   for f in /etc/systemd/system/mytp-job@*.timer; do sudo systemctl enable --now "$(basename "$f")"; done
-   ```
-
-   dev then serves the release it had before the merge, and deploys are blocked (CI can
-   no longer log in as `mytp-dev`). To retry once the new layout is fixed, put the key
-   back with `sudo mv /srv/mytp-dev/.ssh/authorized_keys.disabled
-   /srv/mytp-dev/.ssh/authorized_keys`, then repeat step 3, the `provision.sh` command of
-   step 4 (it re-enables dev's units, timers and Nginx site), and step 7.
-10. **One day later: delete the old layout.**
-
-    ```sh
-    for f in /etc/systemd/system/mytp-job@*.timer; do sudo systemctl disable --now "$(basename "$f")"; done
-    sudo systemctl disable --now mytp-gunicorn.socket
-    sudo systemctl stop mytp-gunicorn.service
-    sudo rm -f /etc/systemd/system/mytp-job@*.timer /etc/systemd/system/mytp-job@.service \
-        /etc/systemd/system/mytp-gunicorn.socket /etc/systemd/system/mytp-gunicorn.service
-    sudo systemctl daemon-reload
-    sudo systemctl reset-failed
-    sudo rm -f /etc/nginx/sites-enabled/mytp.conf /etc/nginx/sites-available/mytp.conf /etc/nginx/mytp.htpasswd
-    sudo nginx -t && sudo systemctl reload nginx
-    sudo rm -f /etc/sudoers.d/mytp-deploy && sudo visudo -c
-    sudo userdel mytp                 # its group goes with it
-    sudo rm -rf /srv/mytp             # exactly this path: /srv/mytp-dev is the live site
-    ```
-
-    The `mytp-job@*` globs never match `mytp-dev-job@*`. Check:
-
-    ```sh
-    systemctl list-units --all 'mytp-gunicorn*' 'mytp-job@*'   # 0 loaded units listed
-    ls /etc/nginx/sites-enabled/ /etc/sudoers.d/               # mytp-dev.conf, mytp-dev-deploy; no mytp.conf, no mytp-deploy
-    id mytp                                                    # no such user
-    ```
-
-    and `https://dev.mytpdso.com/healthz` still answers `200`. Record the move in the pull
-    request ("dev moved to the per-site layout <date>, /srv/mytp deleted <date>, <who>").
 
 ## Interface with the admin site
 
@@ -3770,6 +3540,11 @@ still answers 200; with the setting removed on admindev (restart), it prints `re
 (http_404_not_found)`.
 
 ## Rollback
+
+A release built before the `deploy/release-ready` marker (epic-platform entry 10) cannot
+be redeployed by re-running its old `deploy-staging` job: the release command refuses
+its tarball. Go back to it as below while it is still in `releases/`, or deploy a new
+commit.
 
 On the server as `debian`:
 

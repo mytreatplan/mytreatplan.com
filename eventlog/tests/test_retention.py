@@ -12,11 +12,10 @@ from dateutil.relativedelta import relativedelta
 from django.core.management import call_command
 from django.utils import timezone
 
-from conftest import _runjob_with
+from conftest import _FakeSentry, _runjob_with
 from eventlog import retention, service
 from eventlog.models import Attempt, Event
 from mytp_core import jobs
-from mytp_publicsite.tests.test_monitoring import _FakeSentry
 
 pytestmark = pytest.mark.django_db
 
