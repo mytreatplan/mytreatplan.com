@@ -3,7 +3,7 @@ title: 'Refactor sweep (epic-catalogue)'
 type: 'refactor'
 ticket: '15'
 created: '2026-11-13'
-status: 'built'
+status: 'done'
 baseline_revision: '442f745ff5c3868024613c7eeb2a0941d7b39f5a'
 route: 'full'
 route_source: 'auto'
@@ -115,6 +115,16 @@ Quick lens, one reviewer per repository, one pass (2026-11-14): 2 findings (port
 | 2 | portal | `catalogue/tests/test_vouchers.py:8`: `from functools import partial` out of alphabetical order | low | patched |
 
 Full suites after the patch (SQLite): portal 2894 passed, 8 skipped, 3 failed (the known PostgreSQL-only ones in `accounts/tests/test_crypto.py`); mytp-admin 1582 passed, 12 skipped; `makemigrations --check --dry-run`: no changes. Same counts as the baselines.
+
+## Staging
+
+Merged 2026-11-14 (merge and staging delegated by the user): portal PR #96 (merge bbecc9e), mytp-admin PR #38 (merge e1ed6a2); no mytp-core release. PR checks: `test` passed on both (deploy skipped on a PR). Master runs: portal 43564735905 (test, deploy dev, deploy dev-ae: success), mytp-admin 43564740243 (test, deploy: success). Local suites: portal 2894 passed, 8 skipped, 3 known PostgreSQL-only failures; mytp-admin 1582 passed, 12 skipped.
+
+1. Deploys green; dev and dev-ae run bbecc9e, admindev e1ed6a2 (`/healthz`: `site: admindev`): passed.
+2. `pull_config`: dev-ae printed `v204 applied`, then `unchanged`; dev printed `unchanged` twice (its scheduled pull had already applied v204 under the new release): passed.
+3. dev `price_catalogue --country ES --tier basic`: 7 offers under SEED-BASIC-IBERIA, billed by the ES company, EUR; `--country ES --category tps_branded`: the Iberia rule (company, 0 % with its text, `redsys, bank_transfer`, EUR, available). dev-ae `--country AE --tier basic`: 7 offers under SEED-BASIC-UAE, AED, 5 %, no gateway; `--country AE --category tps_branded`: the UAE rule. Same as after entry 13: passed.
+4. dev `price_catalogue --order --country ES --tier basic --product <SEED-TPSB-MEDIUM-EUR> --add-on BYTE-SYNC`: one line, 369.00 EUR (249 + 120), VAT 0, gateways `redsys, bank_transfer`: passed.
+5. admindev `seed_staging_catalogue --dry-run`: "nothing to change", snapshot v204: passed.
 
 ## Verification
 
