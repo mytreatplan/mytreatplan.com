@@ -43,6 +43,16 @@ it is the only writer of `subscriptions.models` (with the backfill migration 000
   standard.
 - `record_of(user)` (the record, or None) and `doctors_without_a_record()` (for
   `assign_basic`): reads.
+- `upgrade_options(user, day=None)` (epic-subscriptions entry 2, user decisions
+  2026-11-14): what the upgrade screen shows (`UpgradeOptions`): the doctor's current
+  level and the levels of their country group in tier order, each the group's active
+  standard row (`catalogue.resolver.subscription`) listed only when it can be bought
+  (`resolver.subscription_sold` under the group's `subscription` billing rule: active,
+  available, in the row's currency) and, for a paid level, has a price; with its net
+  monthly and upfront prices as typed on the row (Basic is free); a button on a higher level only
+  while the doctor may switch on their own (never on a manual subscription that counts).
+  Nothing is on offer (`on_offer` False: the screen is skipped) for a staff account, a
+  doctor without a country group, or a group that sells neither Advanced nor Premium.
 
 Actors (AD-22): `doctor_actor(user)` (the user's uid), `admin_actor(uuid)` (an admin
 user of the admin site), `SYSTEM_ACTOR` (no UUID).
@@ -64,12 +74,17 @@ from .models import (ADMIN, DOCTOR, SYSTEM, DoctorSubscription, SubscriptionChan
 
 logger = logging.getLogger(__name__)
 
-__all__ = ['Actor', 'ChangeRefused', 'Effective', 'ManualLocked', 'RecordGone',
-           'StaleVersion', 'SYSTEM_ACTOR', 'admin_actor', 'assign_manual', 'change',
-           'doctor_actor', 'doctors_without_a_record', 'effective', 'ensure_basic',
-           'offers_for', 'price_order_for', 'record_of']
+__all__ = ['Actor', 'ChangeRefused', 'Effective', 'Level', 'ManualLocked', 'RecordGone',
+           'StaleVersion', 'SYSTEM_ACTOR', 'TIERS', 'UpgradeOptions', 'admin_actor',
+           'assign_manual', 'change', 'doctor_actor', 'doctors_without_a_record',
+           'effective', 'ensure_basic', 'offers_for', 'price_order_for', 'record_of',
+           'upgrade_options']
 
 BASIC = DoctorSubscription.BASIC
+# The levels in order, lowest first (the catalogue's tiers).
+TIERS = DoctorSubscription.TIERS
+# The levels a doctor can buy: the upgrade screen is shown only when the group sells one.
+PAID_TIERS = TIERS[1:]
 
 # The reasons this entry writes (a change row's `reason`; later entries add theirs).
 SIGNUP = 'signup'
@@ -238,6 +253,87 @@ def price_order_for(user, lines, *, vies, voucher=None, day=None):
             subject=product)
     return resolver.price_order(country, held.subscription, lines, vies=vies,
                                 voucher=voucher, doctor=user.uid, day=day, held=held.held)
+
+
+@dataclass(frozen=True)
+class Level:
+    """A level of the upgrade screen: its `tier`, the catalogue `subscription` row its
+    name and description come from (`name_in`, `description_in`), whether it is `free`
+    (Basic only), its net `monthly` price (with a 12-month commitment) and `upfront`
+    price for a year (`Money`, or None when the row has none), whether it is the
+    doctor's `current` level and whether the doctor `can_upgrade` to it."""
+    tier: str
+    subscription: object
+    free: bool
+    monthly: object
+    upfront: object
+    current: bool
+    can_upgrade: bool
+
+
+@dataclass(frozen=True)
+class UpgradeOptions:
+    """What the upgrade screen shows a doctor: their current `tier`, the catalogue row of
+    it (`subscription`: the manual one for a manual record, else the standard row; None
+    without one), whether that is a `manual` subscription that counts (then `can_switch`
+    is False: no buttons), the listed `levels` in tier order and whether anything is
+    `on_offer` (else the screen is skipped)."""
+    tier: str
+    subscription: object
+    manual: bool
+    can_switch: bool
+    levels: tuple
+    on_offer: bool
+
+    def level(self, tier):
+        """The listed level of `tier`, or None."""
+        return next((level for level in self.levels if level.tier == tier), None)
+
+
+_NOTHING = UpgradeOptions(tier=BASIC, subscription=None, manual=False, can_switch=False,
+                          levels=(), on_offer=False)
+
+
+def upgrade_options(user, day=None):
+    """The doctor's `UpgradeOptions` on `day` (today when None): see the module
+    docstring. Nothing on offer for a user who is not a client (staff, a superuser).
+    Reads only; no arithmetic (AD-16): the prices are the row's own."""
+    if not is_client(user):
+        return _NOTHING
+    day = day or resolver.today()
+    country = _country(user)
+    if resolver.country_group(country) is None:
+        return _NOTHING
+    held = effective(user, day)
+    manual = held.manual and not held.can_self_switch
+    rank = TIERS.index(held.tier)
+    levels = []
+    for index, tier in enumerate(TIERS):
+        row = resolver.subscription(country, tier)
+        # Listed only when it can be bought (catalogue.pricing's own condition), and a
+        # paid level only with a price (`period_not_offered` otherwise).
+        if (row is None or (tier != BASIC and row.free)
+                or not resolver.subscription_sold(row, resolver.subscription_rule(row))):
+            continue
+        levels.append(Level(
+            tier=tier, subscription=row, free=tier == BASIC,
+            monthly=None if tier == BASIC else row.monthly_price,
+            upfront=None if tier == BASIC else row.upfront_price,
+            current=not manual and index == rank,
+            can_upgrade=held.can_self_switch and index > rank))
+    on_offer = any(level.tier in PAID_TIERS for level in levels)
+    if not on_offer:
+        return _NOTHING
+    if held.held:
+        current = held.subscription
+    elif manual:  # its row is gone or changed (logged by `effective`): named by its tier
+        current = None
+    else:
+        current = next((level.subscription for level in levels
+                        if level.tier == held.tier), None)
+    return UpgradeOptions(tier=held.tier, subscription=current, manual=manual,
+                          can_switch=held.can_self_switch, levels=tuple(levels),
+                          on_offer=True)
 
 
 # --- Writes -------------------------------------------------------------------------------

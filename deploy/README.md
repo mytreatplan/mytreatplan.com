@@ -3287,7 +3287,8 @@ change (`subscriptions_subscriptionchange`), written only by `subscriptions.serv
 Signup gives the doctor Basic in its transaction (it never fails because of the
 catalogue); staff and superusers have none. A record names its catalogue subscription by
 UUID only: `pull_config` never touches it. The rows go with the user at the purge of
-erased accounts. There is no portal page and no Django admin page for them yet. The
+erased accounts. There is no Django admin page for them yet; the portal shows them on the
+upgrade screen (entry 2, below). The
 previous release does not know these tables: before rolling back past this release, run
 `manage.py migrate subscriptions zero` (otherwise deleting a user, the purge job
 included, fails on the foreign key).
@@ -3330,6 +3331,56 @@ can switch, version 1; `--offers` lists Iberia's Basic offers and `--order --pro
 SEED-TPSB-MEDIUM-EUR` is billed by the Spanish company; in `manage.py shell`, a doctor's
 change of a manual record is refused with `ManualLocked` (inside a rolled-back
 transaction); `pull_config` afterwards is `applied` or `unchanged`, the records intact.
+
+**The upgrade screen** (entry 2; `subscriptions.views`, the rules in
+`subscriptions.service.upgrade_options`): `/<lang>/upgrade/` lists the levels of the
+doctor's country group in order (Basic, Advanced, Premium), each the group's active
+standard subscription, listed only while the group has an active `subscription` billing
+rule. A level shows its catalogue name and description, its net monthly price ("12-month
+commitment") and its net price for a year upfront, each only when typed on the admin
+site, and "+ VAT where applicable" (Basic: "Free"); no VAT amount. The doctor's current
+level is marked; each higher level has an upgrade button, and "Not now" opens the welcome
+page. Signup sends a new doctor there once, when the group sells Advanced or Premium
+(otherwise, and on every login, the welcome page); any signed-in doctor can open it again.
+Nothing to offer (no country group, a group selling neither paid level, or a staff
+account): `/upgrade/` redirects to the welcome page. A doctor on a manual subscription
+sees its name as the current level, the standard levels for information, no buttons and
+"Continue". Each button leads to `/<lang>/upgrade/<level>/`, a placeholder ("Online
+purchase ... is coming soon") until entry 5's purchase page replaces it: 404 for the
+current level, a lower one or an unknown one; a manual doctor is sent back to
+`/upgrade/`. Both pages are signed-in only and recorded as portal pages.
+
+**Assign a manual subscription from the shell** (until the admin site's assignment
+exists; the subscription is created on admindev first, as a manual row of the group, and
+pulled): by its code, by the system actor, with an optional end date:
+
+```sh
+cd /srv/mytp-dev/current
+sudo -u mytp-dev ./venv/bin/python manage.py shell -c "
+from datetime import date
+from django.contrib.auth import get_user_model
+from catalogue import resolver
+from subscriptions import service
+user = get_user_model().objects.by_email('<email>').get()
+row = resolver.subscription_by_code('<code>')  # manual and active
+record = service.assign_manual(user, row, expected_version=service.record_of(user).version,
+                               actor=service.SYSTEM_ACTOR,
+                               ends_on=None)  # or an end date: date(2027, 12, 31)
+print(record.tier, record.manual, record.version)"   # premium True <n>
+```
+
+Then `doctor_subscription <uid>` shows `manual yes, can switch no`.
+
+Staging checks (entry 2): build the CSS (`npm run build:css`, part of the deploy) so the
+wider column and the side-by-side levels show. Sign up one new doctor on dev with country
+ES: signup ends on `/en/upgrade/` with Iberia's levels and their prices from the
+catalogue, Basic marked current and buttons on the paid levels; a button opens the
+placeholder; "Not now" opens the welcome page; logging in again lands on the welcome page
+and `/en/upgrade/` still opens; `/es/upgrade/` shows the Spanish texts and "60,00 EUR"
+style prices. On admindev create a manual "Ormco Premium" for Iberia and, after the pull,
+assign it to that doctor (above): the screen shows "Ormco Premium" as the current level,
+no buttons and "Continue", and `/en/upgrade/advanced/` redirects to `/en/upgrade/`. Keep
+that doctor as the manual fixture for entries 3 and 10.
 
 ### Country map
 

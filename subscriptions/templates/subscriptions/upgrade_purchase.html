@@ -1,0 +1,16 @@
+{% extends "portal_base.html" %}
+{% load i18n %}
+{% comment %}
+Placeholder of a level's purchase page (subscriptions.views.upgrade_purchase), until
+epic-subscriptions entry 5 builds it.
+{% endcomment %}
+
+{% block title %}{% blocktranslate with name=level.name %}Upgrade to {{ name }}{% endblocktranslate %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% blocktranslate with name=level.name %}Upgrade to {{ name }}{% endblocktranslate %}</h1>
+<p class="mt-3 text-copy text-ink-muted">{% blocktranslate with name=level.name %}Online purchase of {{ name }} is coming soon.{% endblocktranslate %}</p>
+<p class="mt-8">
+  <a href="{% url 'upgrade' %}" class="text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Back to the subscription levels" %}</a>
+</p>
+{% endblock %}

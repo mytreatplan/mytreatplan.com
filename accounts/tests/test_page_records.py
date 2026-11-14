@@ -209,11 +209,14 @@ def test_admin_404_is_recorded(staff):
 
 
 def test_portal_prefixes_cover_every_portal_route():
-    """Each route of signup.urls and accounts.urls is under one of PORTAL_PREFIXES."""
+    """Each route of signup.urls, accounts.urls and subscriptions.urls is under one of
+    PORTAL_PREFIXES."""
     from accounts.urls import urlpatterns as accounts_routes
     from signup.urls import urlpatterns as signup_routes
+    from subscriptions.urls import urlpatterns as subscriptions_routes
 
-    routes = [str(pattern.pattern) for pattern in [*signup_routes, *accounts_routes]]
+    routes = [str(pattern.pattern)
+              for pattern in [*signup_routes, *accounts_routes, *subscriptions_routes]]
     assert routes and all(route.startswith(page_records.PORTAL_PREFIXES) for route in routes)
 
 

@@ -158,7 +158,7 @@ __all__ = ['AddOnRefused', 'ProductRefused', 'QuantityRefused', 'add_on', 'add_o
            'OrderLine', 'OrderRefused', 'PLANNING_CATEGORIES', 'PricedLine',
            'PricedOrder', 'REFUSALS', 'SUBSCRIPTION_PERIODS', 'VatGroup', 'VIES_INVALID',
            'VIES_NOT_APPLICABLE', 'VIES_PENDING', 'VIES_STATUSES', 'VIES_VALID',
-           'price_order', 'price_subscription', 'MONTHLY', 'UPFRONT',
+           'price_order', 'price_subscription', 'subscription_sold', 'MONTHLY', 'UPFRONT',
            'NO_LINES', 'COUNTRY_NOT_SERVED', 'NO_BILLING_RULES', 'PRODUCT_NOT_OFFERED',
            'QUANTITY_REFUSED', 'ADD_ON_REFUSED', 'TWO_COMPANIES', 'TWO_CURRENCIES',
            'ICE_TWICE', 'ICE_NOT_PLANNING', 'ICE_CURRENCY', 'VOUCHER_NOT_USABLE',

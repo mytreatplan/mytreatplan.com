@@ -24,6 +24,7 @@ with a country: a country of the other region gets a note linking to that region
 signup (a warning only), a banned one the refusal (AccountForm.clean_country refuses it).
 """
 import functools
+import logging
 import time
 from urllib.parse import urlsplit
 
@@ -57,6 +58,8 @@ from .retention import remove_pending
 from .steps import (CODE_STATE_SESSION_KEY, SENT, STEPS, CodeStep, MobileCodeStep,
                     code_help_context, get_step, log_ip_blocked, send_code)
 from .verification import EMAIL, PURPOSE_RESUME, SMS
+
+logger = logging.getLogger(__name__)
 
 # The session holds only the pending registration's id, and the event log attempt's id.
 SESSION_KEY = 'signup_pending_id'
@@ -482,7 +485,15 @@ def _create_account(request, index, step, form, pending, attempt):
     eventlog.record(attempt, 'completed', request=request, step=step.slug)
     eventlog.end_attempt(attempt, 'completed')
     _abandon_attempts(other_attempt_ids, keep=attempt)
-    return redirect('welcome')
+    # The upgrade screen, once (epic-subscriptions entry 2), when the doctor's group sells
+    # a paid level; else, and on every later login, the welcome page. The account exists
+    # by now: a catalogue error never fails signup, the doctor lands on welcome.
+    try:
+        on_offer = subscriptions.upgrade_options(user).on_offer
+    except Exception:
+        logger.exception('signup: the upgrade options could not be read; sent to welcome')
+        on_offer = False
+    return redirect('upgrade' if on_offer else 'welcome')
 
 
 def _abandon_attempts(attempt_ids, keep=None):

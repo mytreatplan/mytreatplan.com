@@ -120,3 +120,38 @@ def test_success_signal(live_server, page, lang):
                for choice in LegalChoice.objects.filter(user=user)}
     assert choices == {'terms': True, 'conditions': True, 'ormco_tps': False,
                        'commercial_consent': False}
+
+
+def test_signup_in_a_group_that_sells_lands_on_the_upgrade_screen(live_server, page, admin,
+                                                                   interface_settings):
+    """epic-subscriptions entry 2: with a catalogue whose group sells Advanced and
+    Premium, signup ends on the upgrade screen: the levels side by side on a desktop and
+    stacked on a phone, Basic marked current, the net prices; "Not now" opens the welcome
+    page and the screen can be opened again."""
+    from accounts.tests.browser.helpers import sign_up
+    from subscriptions.tests.helpers import load
+
+    load(admin)
+    sign_up(page, live_server, landing='upgrade/')
+    expect(page.locator('h1')).to_have_text('Subscription levels')
+    _assert_real_assets(page)
+    cards = page.locator('[data-level]')
+    expect(cards).to_have_count(3)
+    expect(page.locator('[data-level="basic"]')).to_contain_text('Your current level')
+    expect(page.locator('[data-level="advanced"]')).to_contain_text('60.00 EUR per month')
+    expect(page.locator('[data-level="premium"]')).to_contain_text('+ VAT where applicable')
+    boxes = [cards.nth(index).bounding_box() for index in range(3)]
+    assert boxes[0]['y'] == boxes[1]['y'] == boxes[2]['y']  # side by side
+    page.set_viewport_size({'width': 390, 'height': 844})
+    boxes = [cards.nth(index).bounding_box() for index in range(3)]
+    assert boxes[0]['y'] < boxes[1]['y'] < boxes[2]['y']  # stacked
+    assert page.evaluate('() => document.documentElement.scrollWidth') <= 390
+
+    page.get_by_role('link', name='Upgrade to Advanced').click()
+    expect(page).to_have_url(re.compile(r'/en/upgrade/advanced/$'))
+    expect(page.locator('body')).to_contain_text('Online purchase of Advanced is coming soon.')
+    page.get_by_role('link', name='Back to the subscription levels').click()
+    expect(page).to_have_url(re.compile(r'/en/upgrade/$'))
+    page.get_by_role('link', name='Not now').click()
+    expect(page).to_have_url(re.compile(r'/en/welcome/$'))
+    expect(page.locator('h1')).to_have_text(TEXTS['en']['welcome'])

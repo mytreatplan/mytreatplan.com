@@ -1,0 +1,49 @@
+{% extends "portal_base.html" %}
+{% load i18n money %}
+{% comment %}
+The upgrade screen (subscriptions.views.upgrade): the levels of the doctor's country group,
+side by side from the tablet breakpoint and stacked on a phone, the current one marked in
+words. Prices are the catalogue's net prices (the `money` filter); no VAT amount.
+{% endcomment %}
+
+{% block title %}{% translate "Subscription levels" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_width %}max-w-[1040px]{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Subscription levels" %}</h1>
+<p class="mt-3 text-copy text-ink-muted" data-current-level>{% blocktranslate with name=current_name %}Your current level is <strong class="text-ink">{{ name }}</strong>.{% endblocktranslate %}</p>
+{% if manual %}
+<p class="mt-2 text-copy text-ink-muted" data-manual-note>{% translate "Your subscription was arranged with our team, who make any change to it. The standard levels are shown for information." %}</p>
+{% endif %}
+
+<ul class="mt-8 flex flex-col gap-5 tablet:flex-row">
+  {% for level in levels %}
+  <li class="flex flex-col rounded-12 border {% if level.current %}border-2 border-green-deep{% else %}border-line{% endif %} bg-surface p-6 tablet:flex-1" data-level="{{ level.tier }}"{% if level.current %} aria-current="true"{% endif %}>
+    {% if level.current %}<p class="mb-2 text-[13px] font-black uppercase tracking-[0.06em] text-green-deep" data-current>{% translate "Your current level" %}</p>{% endif %}
+    <h2 class="text-h3 font-black">{{ level.name }}</h2>
+    {% if level.description %}<p class="mt-2 text-copy text-ink-muted">{{ level.description|linebreaksbr }}</p>{% endif %}
+    <div class="mt-4 flex-1 space-y-2 text-copy" data-prices>
+      {% if level.free %}
+      <p class="text-[22px] font-black">{% translate "Free" %}</p>
+      {% else %}
+      {% if level.monthly %}
+      <p><span class="text-[22px] font-black">{% blocktranslate with price=level.monthly|money %}{{ price }} per month{% endblocktranslate %}</span><br><span class="text-ink-muted">{% translate "12-month commitment" %}</span></p>
+      {% endif %}
+      {% if level.upfront %}
+      <p><span class="font-black">{% blocktranslate with price=level.upfront|money %}{{ price }} for a year, paid upfront{% endblocktranslate %}</span></p>
+      {% endif %}
+      <p class="text-[14px] text-ink-muted">{% translate "+ VAT where applicable" %}</p>
+      {% endif %}
+    </div>
+    {% if level.can_upgrade %}
+    <a href="{% url 'upgrade_purchase' level.tier %}" class="mt-6 inline-flex min-h-[52px] items-center justify-center rounded-pill bg-ink px-8 text-[16px] font-black leading-none tracking-[-0.01em] text-white transition hover:-translate-y-[2px] hover:bg-green hover:text-ink hover:shadow-lift focus-visible:shadow-focus-pill focus-visible:outline-none">{% blocktranslate with name=level.name %}Upgrade to {{ name }}{% endblocktranslate %}</a>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+
+<p class="mt-8 text-center">
+  <a href="{% url 'welcome' %}" class="text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink" data-leave>{% if manual %}{% translate "Continue" %}{% else %}{% translate "Not now" %}{% endif %}</a>
+</p>
+{% endblock %}

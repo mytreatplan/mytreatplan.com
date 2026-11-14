@@ -2,7 +2,8 @@
 {% load i18n static %}
 {% comment %}
 Layout for portal pages (signup, login, welcome, ...): a light header with the logo, the
-logged-in user's portal links and the language switcher, a narrow column for the page, and the shared footer.
+logged-in user's portal links and the language switcher, a narrow column for the page
+(480 px; a page may widen it in `portal_width`), and the shared footer.
 Portal pages are not for search engines.
 {% endcomment %}
 
@@ -25,7 +26,7 @@ Portal pages are not for search engines.
 {% endblock %}
 
 {% block content %}
-<div class="mx-auto max-w-[480px] px-gutter pt-[clamp(32px,6vw,64px)] pb-[clamp(48px,8vw,90px)]">
+<div class="mx-auto {% block portal_width %}max-w-[480px]{% endblock %} px-gutter pt-[clamp(32px,6vw,64px)] pb-[clamp(48px,8vw,90px)]">
   {% if messages %}
   <ul class="mb-6 space-y-2">
     {% for message in messages %}

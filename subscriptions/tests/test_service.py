@@ -56,16 +56,16 @@ def held(user, day=DAY):
 
 @pytest.fixture
 def signup(client, capture_codes, clear_cache, portal_urls):
-    def run(**fields):
+    def run(landing='/en/welcome/', **fields):
         response = _complete(client, **fields)
-        assert response['Location'] == '/en/welcome/'
+        assert response['Location'] == landing
         return User.objects.by_email(NORMALIZED).get()
     return run
 
 
 def test_signup_of_an_es_doctor_gives_basic_priced_under_iberias(admin, signup):
     load(admin)
-    user = signup()
+    user = signup(landing='/en/upgrade/')  # the group sells Advanced and Premium
     found = record(user)
     assert (found.tier, found.subscription_id, found.ends_on, found.billing_period,
             found.auto_renew, found.status, found.manual, found.version) == (
@@ -434,8 +434,9 @@ def test_two_changes_from_the_same_version_one_wins(monkeypatch):
 # --- Review patches (2026-11-14) -------------------------------------------------------------
 
 def _edited(edit):
-    """The catalogue with `edit(section, row)` applied to Iberia's Advanced row."""
-    section = catalogue()
+    """The catalogue, without Iberia's Premium, with `edit(section, row)` applied to
+    Iberia's Advanced row."""
+    section = catalogue(premium=False)
     row = next(found for found in section['subscriptions'] if found['id'] == ADVANCED)
     edit(section, row)
     return section
@@ -471,7 +472,7 @@ def test_a_manual_row_made_standard_is_priced_with_basic(admin, caplog):
     user = doctor()
     service.assign_manual(user, resolver.subscription_by_id(MANUAL), expected_version=1,
                           actor=ADMIN)
-    section = catalogue()
+    section = catalogue(premium=False)
     row = section.pop('manual_subscriptions')[0]
     section['subscriptions'].append(row)
     assert pull(admin, 2, section) == ('applied', 2)
