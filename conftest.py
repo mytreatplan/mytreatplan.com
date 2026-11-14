@@ -232,6 +232,28 @@ def admin(monkeypatch):
     return fake
 
 
+class _FakeSentry:
+    """sentry_sdk for runjob in tests (`_runjob_with`): active or not, counting the
+    captured exceptions and recording the flush."""
+
+    def __init__(self, active):
+        self.active = active
+        self.exceptions = 0
+        self.flushed = False
+
+    def get_client(self):
+        return self
+
+    def is_active(self):
+        return self.active
+
+    def capture_exception(self):
+        self.exceptions += 1
+
+    def flush(self, timeout=None):
+        self.flushed = True
+
+
 def _runjob_with(monkeypatch, sentry):
     """runjob (mytp-core) with `sentry` as its sentry_sdk, the release's jobs.conf, and its
     check-ins recorded; returns the list they are recorded in."""

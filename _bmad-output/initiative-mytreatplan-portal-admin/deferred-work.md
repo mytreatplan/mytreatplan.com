@@ -54,3 +54,39 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-catalogue/story-refactor-sweep-plan.md`
   summary: Recorded and left: the portal's `catalogue/management/commands/price_catalogue.py` is 627 lines; split it (by mode) when an entry next extends it.
   evidence: 5.15 plan's Never list (no split in the sweep).
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
+  summary: Status (1.15, 2026-11-14) of the admin README's `/api/` allowlist sentence (deferred to mytp-admin by `plan-allowlist-fail-closed-and-restore-pg18.md`): closed by mytp-admin commit b453016; its `README.md:943-946` says a run without `API_PEER_IPS` is refused (exit 2) on a site that already has an allowlist and `API_PEER_IPS=none` removes the allowlist on purpose.
+  evidence: read in mytp-admin during the epic-platform refactor sweep.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
+  summary: Status (1.15, 2026-11-14) of raising `MIN_PG_MAJOR` in `deploy/restore-db.sh` (left to the user by entry 14's review, patch 7): closed by portal commit e0b6f81 (`plan-allowlist-fail-closed-and-restore-pg18.md`); `deploy/restore-db.sh:39` is `MIN_PG_MAJOR=18`.
+  evidence: read in the portal during the epic-platform refactor sweep.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
+  summary: Status (1.15, 2026-11-14) of the flaky browser test `signup/tests/browser/test_failure_policies.py::test_row5_email_in_a_pending_registration` (entry 1): still open.
+  evidence: no fix since PR #49; a test fix is outside a cleanup sweep.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
+  summary: Status (1.15, 2026-11-14) of the CI fail-fast when the host's `/usr/local/bin/mytp-release` differs from the repo's `deploy/release.sh` (entry 4): still open.
+  evidence: `deploy-staging` has no such check; adding one is a CI step change, excluded by the sweep.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
+  summary: Status (1.15, 2026-11-14) of `StoredObject.owner` PROTECT against `accounts.erasure.purge_erased` (entry 11, review finding 5): still open; due with the first purpose that sets an owner.
+  evidence: no purpose sets `owner` yet; a behaviour change, outside the sweep.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
+  summary: Recorded and left (2026-11-14): run the portal's CI test job in the Playwright container image instead of `python -m playwright install --with-deps chromium` on every run (that step sometimes takes 8-15 minutes on a slow Ubuntu mirror); the database service host changes, Python stays 3.13.
+  evidence: portal `.github/workflows/ci.yml:58-59`; a CI infrastructure change, excluded by the sweep.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
+  summary: Recorded and left (2026-11-14): `provision.sh` installs `postgresql-client-18` from the PostgreSQL apt repository (PGDG, entry 14) because admindev's database is PostgreSQL 18 and Debian 13 ships only the 17 client; drop PGDG (the three files the runbook names) once Debian ships the 18 client. mytp-core's CI also installs `postgresql-client-17` from PGDG for its restore e2e tests. mytp-admin's CI runs PostgreSQL 17 while admindev runs 18 (its `ci.yml` comment now says so; the image is unchanged).
+  evidence: `deploy/README.md` "PostgreSQL client tools"; `epic-platform/epic-platform.md` entry 14 note; mytp-admin `.github/workflows/ci.yml:16-17`.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
+  summary: Recorded and left (2026-11-14): mytp-admin's `deploy/run-job.sh` is a byte-for-byte copy of the portal's, and admindev is provisioned from a separate copy of the portal's `deploy/` on the host (`~/deploy-admindev`, with the admin's `jobs.conf` and `staging.env.example`); both copies must be refreshed by hand when the portal's change.
+  evidence: entry 10's plan (2026-10-31 note); `diff deploy/run-job.sh ../mytp-admin/deploy/run-job.sh` is empty on 2026-11-14; a shared home is a server or mytp-core change, excluded by the sweep.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
+  summary: Recorded and left (2026-11-14): ClamAV on the hosts is Debian 13's 1.4.3 (decision 2026-11-07, entry 12), not the architecture's "1.4.6 or later"; upgrade when Debian ships 1.4.6 (`apt-cache policy clamav`). The architecture and the epic now point to that decision.
+  evidence: `epic-platform/story-virus-scanning-of-uploads-plan.md` Decisions; `deploy/README.md` "Scanning" checks print `ClamAV 1.4.3`.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
+  summary: Recorded and left (2026-11-14): the backup bucket's old `staging/` lifecycle rule (`expire-dumps-30d`) may be dropped by the bucket owner after 2026-12-09, 30 days after dev moved to `staging-dev/` (entry 13); keep the per-site rules.
+  evidence: `epic-platform/story-backups-and-monitoring-per-site-plan.md` staging step 13.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
+  summary: Recorded and left (2026-11-14): the `mytp-{site}-*` Sentry cron monitors (dev, dev-ae, admindev, the restoretest ones included) exist but are disabled on the Sentry Developer plan, so failed jobs and a stopped worker do not alert; on the upgrade, enable them all and set Notify to devops@ before production go-live.
+  evidence: `epic-platform/epic-platform.md` Decision 2026-11-01; entries 9, 7 and 13's plans.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
+  summary: Recorded and left, one entry, no ticket (user decision 2026-11-14): code copied between the two sites that only mytp-core could share: the sample task (portal `mytp_publicsite/tasks.py` and `manage.py enqueue_sample_task`, admin `layout/tasks.py` and its `enqueue_sample_task`); the SQLite JSON-feature test patch (`supports_json_field`, both `conftest.py`) and the restore settings block (`BACKUP_AGE_RESTORE_RECIPIENT`, `RESTORE_AGE_IDENTITY_FILE`, `RESTORE_TEST_DATABASE_URL`, both `settings.py`); the site-name pattern `[a-z]([a-z0-9-]{0,18}[a-z0-9])?` in 7 places besides core's `jobs.SITE_RE` and `interface.SITE_RE` (both `settings.py`, portal `deploy/provision.sh` twice, `deploy/release.sh`, both `deploy/run-job.sh`); and the S3 address in Sentry breadcrumbs: core's `backupdb` boto3 calls leave `aws.request.url` (bucket host and object key), which `mytp_core/sentry.py:193-204` keeps (it strips only query strings and fragments); the portal's storage calls avoid it with `storage.s3.out_of_sentry()`.
+  evidence: read in both repos and mytp-core on 2026-11-14; each needs a mytp-core release and re-vendoring, excluded by the sweep.

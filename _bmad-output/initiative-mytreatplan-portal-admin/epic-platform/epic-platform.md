@@ -27,7 +27,7 @@ Source: the initiative's P14 and P1 and the architecture spine (architecture-por
 - E3 (P1): Global ids: an immutable uid UUID on part-1 tables that cross sites; new crossing tables use a UUID primary key (AD-5).
 - E4 (P14): Background work: django.tasks with a PostgreSQL-backed worker per site; on_commit enqueue; idempotency convention; monitors named by site (AD-8).
 - E5 (P14): Regional object storage: private encrypted bucket per region, presigned multipart browser upload, quarantine and clean prefixes, presigned GET of at most 5 minutes with a logging hook, delete keeping only the trace, CORS exposing ETag, lifecycle abort after 7 days (AD-9).
-- E6 (P14): Virus scanning: ClamAV 1.4.6 or later; files the scanner cannot fully scan are rejected (AD-9).
+- E6 (P14): Virus scanning: ClamAV 1.4.6 or later (decision 2026-11-07: Debian 13's 1.4.3 until Debian ships 1.4.6; entry 12's plan); files the scanner cannot fully scan are rejected (AD-9).
 - E7 (P14): mytp-core repo: tests, CI, semver tags, wheel vendored into release tarballs; field crypto, KMS and shared operations code (Sentry and scrubber, runjob, healthz, backupdb) moved in (AD-10, AD-23).
 - E8 (P14): Admin repo skeleton deployed to admindev with CI, noindex and disallow-all robots, AdminLTE static layout, mytp-core installed (AD-11, AD-12).
 - E9 (P14): Operations per site on staging: backups per site database, Sentry environment and slugs per site, restore test on a server (AD-24).
