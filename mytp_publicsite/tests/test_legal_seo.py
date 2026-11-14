@@ -50,7 +50,7 @@ def test_spanish_legal_pages_show_english_text_with_a_note(client, url):
 
     assert SPANISH_NOTE in html
     assert '<div class="legal-prose" lang="en">' in html
-    assert '1. ' in html and 'MyTPDSO L.L.C-FZ' in html  # the English draft body
+    assert '1. ' in html and 'MyTPDSO Limited' in html  # the English draft body
 
 
 @pytest.mark.parametrize('page', ['privacy', 'terms'])
@@ -66,7 +66,8 @@ def test_spanish_body_is_used_once_it_exists(client, tmp_path, settings, page):
     html = _html(client, f'/es/{page}/')
     assert '<div class="legal-prose" lang="es">' in html
     assert 'Texto final en español' in html
-    assert 'MyTPDSO L.L.C-FZ' not in html
+    assert 'This Privacy Policy explains' not in html
+    assert 'This website is operated by' not in html
     assert SPANISH_NOTE not in html
     # English is unaffected.
     english = _html(client, f'/en/{page}/')
@@ -81,28 +82,34 @@ def test_terms_link_to_privacy_in_the_current_language(client):
 
 # --- Footer ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize('url, lang', [('/en/', 'en'), ('/es/', 'es'), ('/en/privacy/', 'en'),
-                                       ('/es/terms/', 'es')])
-def test_footer_has_legal_links_and_irish_company(client, url, lang):
+@pytest.mark.parametrize('url, lang, registration', [
+    ('/en/', 'en', 'Company number 815526 (Ireland)'),
+    ('/es/', 'es', 'Número de registro mercantil 815526 (Irlanda)'),
+    ('/en/privacy/', 'en', 'Company number 815526 (Ireland)'),
+    ('/es/terms/', 'es', 'Número de registro mercantil 815526 (Irlanda)'),
+])
+def test_footer_has_legal_links_and_the_region_company(client, url, lang, registration):
     html = _html(client, url)
     footer = re.search(r'<footer.*?</footer>', html, re.S).group(0)
 
     assert f'href="/{lang}/privacy/"' in footer
     assert f'href="/{lang}/terms/"' in footer
     assert 'MyTPDSO Limited' in footer
-    assert '815526' in footer
+    assert registration in footer
     assert '19 Baggot Street Lower, Dublin 2, D02 X658' in footer
     assert '<strong>MyTreatPlan</strong>' in footer
     assert 'MytreatPlan' not in html
-    assert 'L.L.C.-FZ' not in footer and 'Meydan' not in footer
+    assert 'L.L.C-FZ' not in footer and 'Meydan' not in footer and '2542361' not in footer
 
 
 def test_spanish_footer_is_translated(client):
     footer = re.search(r'<footer.*?</footer>', _html(client, '/es/'), re.S).group(0)
 
     for text in ['Política de privacidad', 'Términos y condiciones', 'Irlanda',
-                 'Número de registro mercantil']:
+                 'Domicilio social', 'Número de registro mercantil 815526 (Irlanda)']:
         assert text in footer, text
+    for text in ['Company number', 'Ireland', 'Registered office']:
+        assert text not in footer, text
 
 
 # --- robots.txt and sitemap.xml -------------------------------------------------------

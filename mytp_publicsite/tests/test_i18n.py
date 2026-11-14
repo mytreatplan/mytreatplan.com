@@ -42,7 +42,7 @@ def test_spanish_page(client):
     # One string from every section, plus header and footer.
     for text in ['Ortodoncia Digital', 'qué hacemos', 'Qué hacemos', 'Sobre nosotros',
                  'Quiénes<br>somos', 'Dónde estamos', 'Contacto', 'Contáctenos',
-                 'Número de registro mercantil', 'Todos los derechos reservados']:
+                 'Domicilio social', 'Número de registro mercantil 815526 (Irlanda)', 'Todos los derechos reservados']:
         assert text in html, text
     assert 'font-black">Dubái</h3>' in html
     assert 'What we do' not in html

@@ -3,6 +3,7 @@ epic-regions 2.2), whatever the country given at step 1."""
 import pytest
 from django.contrib.auth import get_user_model
 
+from conftest import publish_site_documents
 from regions.profiles import get_profile
 
 from .helpers import _complete
@@ -16,6 +17,7 @@ User = get_user_model()
 def test_signup_records_the_instance_region(client, settings, region):
     settings.REGION = region
     settings.REGION_PROFILE = get_profile(region)
+    publish_site_documents()  # each site offers only its own region's documents
 
     response = _complete(client, country='ES')
 

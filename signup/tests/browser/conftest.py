@@ -47,19 +47,12 @@ def plain_http(settings):
 
 @pytest.fixture(autouse=True)
 def legal_documents():
-    """A published version of each legal document. The migration's drafts may be gone:
-    an earlier transactional test flushes the tables, and serialized_rollback restores
-    nothing when the test database was not serialized."""
-    from django.utils import timezone
+    """A published version of each legal document in this instance's region. The
+    migration's drafts may be gone: an earlier transactional test flushes the tables, and
+    serialized_rollback restores nothing when the test database was not serialized."""
+    from conftest import publish_site_documents
 
-    from legal.models import LegalDocument
-
-    now = timezone.now()
-    for kind in LegalDocument.Kind.values:
-        if not LegalDocument.objects.filter(kind=kind, published_at__lte=now).exists():
-            LegalDocument.objects.create(
-                kind=kind, title_en=f'{kind} (test)', title_es=f'{kind} (prueba)',
-                body_en='Test text.', body_es='Texto de prueba.', published_at=now)
+    publish_site_documents()
 
 
 @pytest.fixture(autouse=True)

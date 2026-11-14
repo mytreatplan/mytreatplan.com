@@ -335,6 +335,64 @@ def test_no_published_required_document_in_spanish(at_legal):
             in response.content.decode())
 
 
+# --- Regions and provisional texts (epic-regions 2.6) -----------------------------------
+
+PROVISIONAL = {
+    'en': 'Provisional text: this document is pending legal review',
+    'es': 'Texto provisional: este documento está pendiente de revisión legal',
+}
+
+
+def _notices(html):
+    return html.count('data-legal-provisional')
+
+
+@pytest.mark.parametrize('lang', ['en', 'es'])
+def test_a_provisional_document_shows_the_notice(client, lang):
+    """The migration's drafts are provisional: one notice per document."""
+    _step1(client, lang=lang)
+    html = client.get(f'/{lang}/signup/legal/').content.decode()
+    assert PROVISIONAL[lang] in html
+    assert _notices(html) == len(KINDS)
+
+
+@pytest.mark.parametrize('lang', ['en', 'es'])
+def test_a_final_document_shows_no_notice(client, lang):
+    LegalDocument.objects.update(provisional=False)
+    _step1(client, lang=lang)
+    html = client.get(f'/{lang}/signup/legal/').content.decode()
+    assert PROVISIONAL[lang] not in html
+    assert _notices(html) == 0
+
+
+def test_the_notice_follows_each_document(at_legal):
+    LegalDocument.objects.exclude(kind='terms').update(provisional=False)
+    html = at_legal.get(LEGAL_URL).content.decode()
+    assert _notices(html) == 1
+
+
+def test_another_regions_documents_are_never_offered(at_legal):
+    other = _new_version('terms')
+    LegalDocument.objects.filter(pk=other.pk).update(region='ae', title_en='Other region')
+    html = at_legal.get(LEGAL_URL).content.decode()
+    assert 'Other region' not in html
+    assert at_legal.get(LEGAL_URL).context['form'].documents['terms'].region == 'eu'
+
+
+def test_signup_with_only_another_regions_documents_is_refused(at_legal, ae_portal, caplog):
+    """The ae site has no documents of its own here (the drafts are eu's)."""
+    caplog.clear()
+    response = _legal(at_legal, terms=None, conditions=None)
+
+    assert response.status_code == 200
+    message = 'Signup is not available right now. Please try again later.'
+    assert response.context['form'].errors == {'__all__': [message]}
+    assert not LegalChoice.objects.exists()
+    rejected = [(e.step, e.field, e.reason)
+                for e in Attempt.objects.get().events.filter(event='rejected')]
+    assert rejected == [('legal', '', 'documents_missing')]
+
+
 @pytest.mark.parametrize('kinds', [['terms'], ['conditions'], KINDS])
 def test_no_account_without_accepted_terms_and_conditions(at_legal, kinds):
     _legal(at_legal)

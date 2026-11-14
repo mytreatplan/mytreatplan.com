@@ -1109,6 +1109,31 @@ it is **erased**, for example when the user asks (GDPR art. 17).
 - **Backups:** the nightly dumps still hold an erased (or purged) account until they
   expire, 30 days later (see [Backups and restore](#backups-and-restore)).
 
+## Legal texts: from provisional to final (epic-regions 2.6)
+
+Each site shows its own region's company (`company` in `regions/profiles.py`: name,
+registration line, registered office) in the footer, the home page's structured data and
+the public Privacy and Terms pages. Until the lawyer's texts arrive, every legal text is
+**provisional** and says so:
+
+- **Signup documents** (Terms, Conditions, Ormco TPS contract, commercial consent) belong
+  to a region: each site lists, numbers and offers only its own (dev: `eu`, dev-ae: `ae`;
+  the rows that existed before took the site's region at the migration, unchanged, and
+  are provisional). A final text lands as a **new version** in Admin → Legal documents →
+  Add: the kind, both titles and bodies, `published_at`, and **Provisional unticked**. It
+  applies at once (no deploy); earlier acceptances keep pointing at the version they
+  accepted. A version with "provisional" ticked shows a "Provisional text" notice beside
+  it on the signup legal step. A document with an empty region (inserted by the previous
+  release during a deploy) is read as the site's own.
+- **The public Privacy and website Terms pages** are templates
+  (`mytp_publicsite/templates/publicsite/legal/_privacy_body.html`, `_terms_body.html`,
+  one text for both regions; the company, registration and office come from the profile).
+  They show a "Provisional text" notice, and `check --deploy` fails
+  (`mytp_publicsite.E001`), while `LEGAL_TEXTS_FINAL` is `False` in
+  `mytreatplan/settings.py`. The final texts land as a code change: replace the bodies
+  (and add `_privacy_body_es.html` and `_terms_body_es.html` for Spanish), set
+  `LEGAL_TEXTS_FINAL = True`, and deploy.
+
 ## Backups and restore
 
 | Layer | Where | Retention | Who restores |

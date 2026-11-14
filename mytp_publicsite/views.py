@@ -7,12 +7,14 @@ from django.templatetags.static import static
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext
 from django.template.loader import select_template
+from django.utils import translation
 from django.utils.translation import get_language
 from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_POST, require_safe
 from django.views.generic import TemplateView
 
+from regions.context_processors import company_address, company_registration
 from signup.forms import refuse
 
 from . import contact as contact_form
@@ -23,13 +25,21 @@ _JSON_SCRIPT_ESCAPES = {ord('>'): '\\u003E', ord('<'): '\\u003C', ord('&'): '\\u
 
 
 def organization_json_ld():
-    """schema.org Organization for the home page: the Irish company and the three offices."""
+    """schema.org Organization for the home page: the region's company (its legal name,
+    registration and registered office, from the region profile) and the three offices."""
     site_url = settings.SITE_URL
+    company = settings.REGION_PROFILE.company
+    office = company.office
+    address = {'@type': 'PostalAddress', 'streetAddress': office.street,
+               'addressLocality': office.locality}
+    if office.postal_code:
+        address['postalCode'] = office.postal_code
+    address['addressCountry'] = office.country_code
     data = {
         '@context': 'https://schema.org',
         '@type': 'Organization',
         'name': 'MyTreatPlan',
-        'legalName': 'MyTPDSO Limited',
+        'legalName': company.name,
         'url': f'{site_url}/',
         'logo': f"{site_url}{static('img/Logo_MyTreatPlan.webp')}",
         'description': gettext(
@@ -37,16 +47,10 @@ def organization_json_ld():
             'for orthodontic practices. Offices in Dublin, Dubai and Madrid.'),
         'identifier': {
             '@type': 'PropertyValue',
-            'name': 'Company number',
-            'value': '815526',
+            'name': 'Company registration number',
+            'value': company.registration_number,
         },
-        'address': {
-            '@type': 'PostalAddress',
-            'streetAddress': '19 Baggot Street Lower',
-            'addressLocality': 'Dublin 2',
-            'postalCode': 'D02 X658',
-            'addressCountry': 'IE',
-        },
+        'address': address,
         'location': [
             {'@type': 'Place', 'name': 'Dublin & Cork Offices — European HQ',
              'address': {'@type': 'PostalAddress', 'addressLocality': 'Dublin',
@@ -126,6 +130,14 @@ class LegalPageView(TemplateView):
         context['legal_body_template'] = template.template.name
         context['legal_body_lang'] = body_lang
         context['legal_body_is_fallback'] = body_lang != lang
+        # The company's registration and office in the body's language (an English body
+        # on /es/ says "Ireland", not "Irlanda").
+        company = settings.REGION_PROFILE.company
+        with translation.override(body_lang):
+            context['legal_company_registration'] = company_registration(company)
+            context['legal_company_address'] = company_address(company)
+        # Off until the lawyer's final texts replace the drafts: the page says so.
+        context['legal_texts_final'] = getattr(settings, 'LEGAL_TEXTS_FINAL', False)
         return context
 
 
