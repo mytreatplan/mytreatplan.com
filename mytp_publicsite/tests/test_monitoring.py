@@ -17,6 +17,8 @@ from django.test import override_settings
 from django.urls import path
 from django.views.decorators.csrf import csrf_exempt
 
+from conftest import _FakeSentry
+
 # The shared operations code lives in mytp-core (epic-platform entry 5); these tests
 # check the portal's wiring of it and keep the story 1.9 cases.
 import mytp_core.views
@@ -214,7 +216,7 @@ urlpatterns = [path('boom/', _boom)]
 def test_request_error_reaches_sentry_scrubbed(sentry_capture):
     """Through the real WSGI application, as Gunicorn calls it, so Sentry attaches
     everything it normally would (URL, query string, headers, cookies, client IP)."""
-    body = b'email=ana%40example.com&message=private'
+    body = b'email=ana%40example.com&message=body-marker-q7x2'
     environ = {
         'REQUEST_METHOD': 'POST',
         'PATH_INFO': '/boom/',
@@ -256,7 +258,7 @@ def test_request_error_reaches_sentry_scrubbed(sentry_capture):
     assert event['release'] == 'abc123'
     assert event['request'] == {'method': 'POST', 'url': 'https://dev.mytpdso.com/boom/'}
     text = json.dumps(event)
-    for secret in ('ana@example.com', 'ana%40example.com', 'private', 'cookie-value-123',
+    for secret in ('ana@example.com', 'ana%40example.com', 'body-marker-q7x2', 'cookie-value-123',
                    '203.0.113.9', '198.51.100.7'):
         assert secret not in text
 
@@ -482,25 +484,6 @@ def test_parse_jobs_splits_arguments_and_skips_comments():
     parsed = jobs.parse_jobs('# comment\n\nx | cmd --flag "a b" | *-*-* 01:00 UTC\n')
     assert parsed['x'].command == 'cmd'
     assert parsed['x'].args == ('--flag', 'a b')
-
-
-class _FakeSentry:
-    def __init__(self, active):
-        self.active = active
-        self.exceptions = 0
-        self.flushed = False
-
-    def get_client(self):
-        return self
-
-    def is_active(self):
-        return self.active
-
-    def capture_exception(self):
-        self.exceptions += 1
-
-    def flush(self, timeout=None):
-        self.flushed = True
 
 
 @pytest.fixture

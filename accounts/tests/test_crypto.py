@@ -37,6 +37,12 @@ KEY_MATERIAL = [TEST_FIELD_ENCRYPTION_KEYS.split(':', 1)[1], TEST_BLIND_INDEX_KE
                 'test-only-rotated-key']
 ENC_RE = re.compile(r'^enc:v1:(?P<key_id>[\w-]+):[A-Za-z0-9+/=]+$')
 
+# Raw SQL written for PostgreSQL (now(), UUID parameters): skipped on a local SQLite
+# database; CI runs these tests on PostgreSQL.
+POSTGRESQL_ONLY = pytest.mark.skipif(
+    connection.vendor != 'postgresql',
+    reason='raw SQL for PostgreSQL (now(), UUID parameters); CI runs it, skipped on SQLite')
+
 
 def raw_row(table, pk, *columns):
     quote = connection.ops.quote_name
@@ -100,6 +106,7 @@ def test_isnull_lookup_is_allowed():
     assert User.objects.filter(email__isnull=False).count() == 1
 
 
+@POSTGRESQL_ONLY
 @pytest.mark.django_db
 def test_pending_registration_row():
     pending = PendingRegistration.objects.create(
@@ -213,6 +220,7 @@ def test_argon2_is_the_default_hasher(settings):
 
 # --- Rotation -------------------------------------------------------------------------------
 
+@POSTGRESQL_ONLY
 @pytest.mark.django_db
 def test_rotation_with_reencrypt_fields(settings):
     """Matrix: a new key first; old values readable before, all on the new key after."""
@@ -278,6 +286,7 @@ def test_missing_keys_keep_their_messages_under_the_package_ids(settings):
 
 # --- Data migration -------------------------------------------------------------------------
 
+@POSTGRESQL_ONLY
 @pytest.mark.django_db(transaction=True)
 def test_data_migration_encrypts_existing_rows_and_reverses():
     """Matrix: a plaintext user (and pending registration) before migrating; encrypted and

@@ -17,11 +17,10 @@ from django.core.checks import run_checks
 from django.core.management import call_command
 
 import mytp_core.crypto
-import mytp_core.kms
 from accounts import crypto
 from accounts.management.commands.reencrypt_fields import values_not_on_key
 from conftest import TEST_BLIND_INDEX_KEY, TEST_FIELD_ENCRYPTION_KEYS, _env_values
-from mytp_publicsite import kms
+from mytp_core import kms
 from mytp_publicsite.checks import check_field_key_provider
 
 User = get_user_model()
@@ -209,7 +208,6 @@ def test_migrations_import_the_package_classes():
     for name in ('EncryptedCharField', 'EncryptedEmailField', 'EncryptedJSONField',
                  'encrypt_existing_rows'):
         assert getattr(crypto, name) is getattr(mytp_core.crypto, name)
-    assert kms.KMSClient is mytp_core.kms.KMSClient
 
 
 # --- Settings and examples -----------------------------------------------------------------

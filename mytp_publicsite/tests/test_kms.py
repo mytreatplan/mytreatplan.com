@@ -15,11 +15,10 @@ import sentry_sdk
 from django.conf import settings as django_settings
 from django.core.management import CommandError, call_command
 
-from conftest import _assert_no_secrets, _runjob_with
+from conftest import _FakeSentry, _assert_no_secrets, _runjob_with
 # The package's module: kmscheck calls its functions, so the fixture patches them there.
 from mytp_core import kms
 from mytp_core import jobs
-from mytp_publicsite.tests.test_monitoring import _FakeSentry
 
 REPO = Path(django_settings.BASE_DIR)
 DEPLOY = REPO / 'deploy'
@@ -271,9 +270,3 @@ def test_kms_provider_without_field_keys_fails_under_either_path(kms_env, field_
     out, error = _run(capsys)
 
     assert 'step settings failed' in str(error) and 'BLIND_INDEX_KMS_KEY' in str(error)
-
-
-def test_kms_reexport_is_the_package_module():
-    from mytp_publicsite import kms as portal_kms
-    assert portal_kms.KMSClient is kms.KMSClient
-    assert portal_kms.REQUIRED_SETTINGS == kms.REQUIRED_SETTINGS
