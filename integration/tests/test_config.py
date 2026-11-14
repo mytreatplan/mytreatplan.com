@@ -3,120 +3,32 @@ and task), the signed nudge endpoint, `show_config` and the outage warning. The 
 is a fake at mytp_core.interface._open that checks the portal's signature and answers
 with a snapshot signed by the admin's key (fixed, non-secret test seeds). No test reaches
 the network or a KMS."""
-import base64
-import copy
 import io
 import json
 import logging
 import threading
-import urllib.error
 from datetime import timedelta
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import pytest
 from django.conf import settings as django_settings
-from django.core.cache import cache
 from django.core.management import CommandError, call_command
 from django.db import connection
 from django.utils import timezone
 
 from integration import config
 from integration.models import AdminDirectoryEntry, ConfigState
+from integration.tests.snapshot_rows import (ADA, ADMIN, ADMIN_SEED, BOB, snapshot,
+                                             state)
 from mytp_core import interface, snapshots
 
+# The root conftest's `interface_settings`, module-wide; its `admin` is the fake admin site.
+pytestmark = pytest.mark.usefixtures('interface_settings')
+
 DEPLOY = Path(django_settings.BASE_DIR) / 'deploy'
-ADMIN_SEED = b'test-only-interface-seed-admin!!'
-PORTAL_SEED = b'test-only-interface-seed-portal!'
 OTHER_SEED = b'test-only-interface-seed-other!!'
-ADMIN = interface.SigningKey('a1', ADMIN_SEED)
-PORTAL = interface.SigningKey('p1', PORTAL_SEED)
-CONFIG_URL = 'https://admindev.example.test/api/v1/config'
 NUDGE = '/api/v1/config/nudge'
-ADA = '0b6f3d1e-5a7c-4f2e-9b1a-2c3d4e5f6a7b'
-BOB = '8f14e45f-ceea-4e7a-9f1d-5b6c7d8e9f01'
 SECRET_NAME = 'Admin-Name-That-Must-Not-Leak'
-
-
-def snapshot(version=1, min_reader=1, **changes):
-    data = {
-        'version': version, 'min_reader': min_reader,
-        'generated_at': '2026-11-05T10:00:00Z',
-        'admin_directory': [
-            {'id': ADA, 'display_name': 'Ada Admin', 'title': 'Sysadmin', 'active': True,
-             'time_zone': 'Europe/Madrid'},
-            {'id': BOB, 'display_name': 'Bob Gone', 'title': '', 'active': False,
-             'time_zone': 'Asia/Dubai'},
-        ],
-    }
-    data.update(changes)
-    return data
-
-
-@pytest.fixture(autouse=True)
-def interface_settings(settings):
-    settings.SITE = 'dev'
-    settings.REGION = 'eu'
-    settings.INTERFACE_SIGNING_KEY = f'p1:{base64.b64encode(PORTAL_SEED).decode()}'
-    settings.INTERFACE_PEERS = 'admindev=https://admindev.example.test'
-    settings.INTERFACE_PEER_KEYS = f'admindev:a1:{ADMIN.public_text}'
-    settings.INTERFACE_ADMIN_SITE = ''
-    interface.reset_signing_key()
-    cache.clear()
-    yield settings
-    interface.reset_signing_key()
-    cache.clear()
-
-
-class FakeAdmin:
-    """The admin's GET /api/v1/config: verifies the portal's signature, then answers the
-    current `snapshot` signed for dev by the admin's key. `down` makes it unreachable,
-    `status` answers that HTTP error, `tamper(answer)` changes the answer after signing,
-    `key` signs with another key."""
-
-    def __init__(self):
-        self.ring = interface.Keyring.from_entries([('dev', 'p1', PORTAL.public_text)])
-        self.snapshot = snapshot(version=1)
-        self.down = False
-        self.status = None
-        self.tamper = None
-        self.key = ADMIN
-        self.calls = 0
-        self.lock = threading.Lock()
-
-    def __call__(self, request, timeout):
-        with self.lock:
-            self.calls += 1
-        if self.down:
-            raise urllib.error.URLError(ConnectionRefusedError(61, 'refused'))
-        parts = urlsplit(request.full_url)
-        assert request.full_url == CONFIG_URL and request.method == 'GET'
-        claims = interface.verify_request(
-            request.get_header('Authorization'), 'GET',
-            interface.request_target(parts.path, parts.query), b'',
-            keyring=self.ring, audience='admindev')
-        if self.status:
-            raise urllib.error.HTTPError(request.full_url, self.status, 'x', {},
-                                         io.BytesIO(b'<html>bad gateway</html>'))
-        answer = snapshots.sign_snapshot(copy.deepcopy(self.snapshot),
-                                         audience=claims['iss'], issuer='admindev',
-                                         signing_key=self.key)
-        if self.tamper:
-            self.tamper(answer)
-        response = io.BytesIO(json.dumps(answer).encode())
-        response.status = 200
-        return response
-
-
-@pytest.fixture
-def admin(monkeypatch):
-    fake = FakeAdmin()
-    monkeypatch.setattr(interface, '_open', fake)
-    return fake
-
-
-def state():
-    return ConfigState.objects.get()
 
 
 def directory():
@@ -557,7 +469,7 @@ def test_without_a_release_identity_the_site_is_one_unnamed_release(admin, setti
     assert len(directory()) == 2 and len(probe) == 1
 
 
-@pytest.mark.django_db  # the autouse fixture clears the database cache
+@pytest.mark.django_db  # `interface_settings` clears the database cache
 def test_the_release_is_the_deployed_sha(settings, tmp_path):
     settings.BASE_DIR = tmp_path  # no REVISION file: Sentry's release (RELEASE_SHA)
     settings.SENTRY_RELEASE = RELEASE_A

@@ -193,6 +193,45 @@ def release_jobs(settings, tmp_path):
     settings.MYTP_INSTALLED_JOBS_FILE = tmp_path / 'missing.conf'
 
 
+@pytest.fixture
+def interface_settings(settings):
+    """dev (region eu) with its plain test key and admindev as its peer, for the
+    configuration snapshot's pull (integration/tests/snapshot_rows.py). Not autouse here:
+    catalogue/tests/conftest.py makes it autouse for the catalogue tests, and
+    integration's test_config and test_snapshot_tables and regions' test_applier use it
+    module-wide (`pytest.mark.usefixtures`). Other modules define their own."""
+    import base64
+
+    from django.core.cache import cache
+
+    from integration.tests.snapshot_rows import ADMIN, PORTAL_SEED
+    from mytp_core import interface
+
+    settings.SITE = 'dev'
+    settings.REGION = 'eu'
+    settings.INTERFACE_SIGNING_KEY = f'p1:{base64.b64encode(PORTAL_SEED).decode()}'
+    settings.INTERFACE_PEERS = 'admindev=https://admindev.example.test'
+    settings.INTERFACE_PEER_KEYS = f'admindev:a1:{ADMIN.public_text}'
+    settings.INTERFACE_ADMIN_SITE = ''
+    interface.reset_signing_key()
+    cache.clear()
+    yield settings
+    interface.reset_signing_key()
+    cache.clear()
+
+
+@pytest.fixture
+def admin(monkeypatch):
+    """The fake admin site answering the configuration snapshot
+    (integration/tests/snapshot_rows.py: `FakeAdmin`)."""
+    from integration.tests.snapshot_rows import FakeAdmin
+    from mytp_core import interface
+
+    fake = FakeAdmin()
+    monkeypatch.setattr(interface, '_open', fake)
+    return fake
+
+
 def _runjob_with(monkeypatch, sentry):
     """runjob (mytp-core) with `sentry` as its sentry_sdk, the release's jobs.conf, and its
     check-ins recorded; returns the list they are recorded in."""

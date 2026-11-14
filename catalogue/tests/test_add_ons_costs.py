@@ -3,7 +3,7 @@ add-ons, the new product fields, the cost links and the provider costs stored by
 snapshot apply (catalogue.applier), and the resolver: the add-ons offered on a product,
 the price of a line with add-ons and a quantity, and a product's cost at a date; with
 `price_catalogue` and migration 0003. One test (or more) per row of the plan's matrix.
-The admin site is the fake of integration/tests/test_config.py (no network)."""
+The admin site is the fake of integration/tests/snapshot_rows.py (no network)."""
 import logging
 from datetime import date
 from decimal import Decimal
@@ -13,12 +13,13 @@ from django.core.management import CommandError
 
 from catalogue import applier, resolver
 from catalogue.models import AddOn, Product, ProviderCost, ProviderProduct
-from catalogue.tests.test_catalogue import (BASIC, IBERIA, TPS, _migrate,
-                                            _migrate_to_latest, catalogue, product, pull,
-                                            run, subscription)
+from catalogue.tests.test_catalogue import (BASIC, TPS, _migrate, _migrate_to_latest,
+                                            catalogue, run, subscription)
 from integration import config
-from integration.tests.test_config import (ADMIN, admin,  # noqa: F401
-                                           interface_settings, snapshot, state)
+from integration.tests.snapshot_rows import (ADD_ONS, ADMIN, BYTE_SYNC, CASE_CATEGORIES,
+                                             COSTS, DM, IBERIA, PRINT, SCAN, USD_SCAN, add_on,
+                                             cost, product, provider_product, pull,
+                                             snapshot, state)
 from mytp_core import snapshots
 from mytp_core.money import Money
 
@@ -28,38 +29,7 @@ BRANDED = '88888888-8888-4888-8888-888888888888'
 SHORT = '99999999-9999-4999-8999-999999999999'
 RETAINERS = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 DOLLARS = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
-BYTE_SYNC = 'a1111111-1111-4111-8111-111111111111'
-ONE_ARCH = 'a2222222-2222-4222-8222-222222222222'
-JUNIOR_1 = 'a3333333-3333-4333-8333-333333333333'
-JUNIOR_2 = 'a4444444-4444-4444-8444-444444444444'
-TWIN = 'a5555555-5555-4555-8555-555555555555'
-SCAN = 'c1111111-1111-4111-8111-111111111111'
-PRINT = 'c2222222-2222-4222-8222-222222222222'
-DM = 'c3333333-3333-4333-8333-333333333333'
-USD_SCAN = 'c4444444-4444-4444-8444-444444444444'
-CASE_CATEGORIES = ['tps_branded', 'tps_in_house', 'initial_case_evaluation',
-                   'virtuaortho_one', 'virtuaortho_digitaltwin', 'odb']
 DAY = date(2026, 11, 10)
-
-
-def add_on(id_, code, name, categories, active=True, **more):
-    return {'id': id_, 'code': code, 'texts': {'en': {'name': name, 'description': ''}},
-            'categories': categories, 'active': active, **more}
-
-
-def eur(amount):
-    return {'amount': amount, 'currency': 'EUR'}
-
-
-ADD_ONS = [
-    add_on(BYTE_SYNC, 'BYTE-SYNC', 'Byte Sync', CASE_CATEGORIES, amount=eur('120.00')),
-    add_on(TWIN, 'ODB-TWIN', 'ODB DigitalTwin', ['odb'], amount=eur('320.00')),
-    add_on(ONE_ARCH, 'ONE-ARCH', 'One arch', ['tps_in_house'], percent='-25.00'),
-    add_on(JUNIOR_1, 'JUNIOR-1', 'Junior I', ['tps_branded', 'tps_in_house'],
-           amount=eur('0.00'), sizes=['medium']),
-    add_on(JUNIOR_2, 'JUNIOR-2', 'Junior II', ['tps_branded', 'tps_in_house'],
-           amount=eur('0.00'), sizes=['medium']),
-]
 # Iberia's basic subscription: 10 % on TPS branded and on TPS in-house.
 SUBSCRIPTIONS = [subscription(BASIC, 'basic', IBERIA, '10.00', in_house='10.00')]
 PRODUCTS = [
@@ -73,25 +43,6 @@ PRODUCTS = [
     product(SPARK, 'Spark on Demand one arch', 'spark_on_demand', '50.00', code='SPARK-1',
             per_unit={'min_quantity': 4, 'max_quantity': 9}),
 ]
-
-
-def cost(valid_from, amount, valid_to=None, face=None):
-    return {'valid_from': valid_from, 'valid_to': valid_to, 'face': face or amount,
-            'discounted': amount}
-
-
-def provider_product(id_, code, costs, currency='EUR', active=True):
-    return {'id': id_, 'code': code, 'currency': currency, 'active': active, 'costs': costs}
-
-
-COSTS = {'products': [
-    provider_product(SCAN, 'SCAN', [cost('2026-01-01', '10.00')]),
-    # 8.00 until June, then discounted to 7.50; ended on 31 October.
-    provider_product(PRINT, 'PRINT', [cost('2026-01-01', '8.00', '2026-06-30'),
-                                      cost('2026-07-01', '7.50', '2026-10-31', '8.00')]),
-    provider_product(DM, 'DM', [cost('2026-01-01', '5.00')]),
-    provider_product(USD_SCAN, 'USD-SCAN', [cost('2026-01-01', '11.00')], currency='USD'),
-]}
 
 
 def link(provider_product_id, quantity=1, monthly=False):
@@ -131,7 +82,7 @@ def line(product_id, *codes, quantity=1):
 # --- The matrix: add-ons ------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_byte_sync_makes_any_case_line_120_higher(admin):  # noqa: F811
+def test_byte_sync_makes_any_case_line_120_higher(admin):
     pull(admin, 1, full())
     for product_id in (TPS, BRANDED, SHORT, ODB):
         assert 'BYTE-SYNC' in offered_on(product_id)
@@ -148,7 +99,7 @@ def test_byte_sync_makes_any_case_line_120_higher(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_odb_digitaltwin_is_320_on_odb_and_offered_nowhere_else(admin):  # noqa: F811
+def test_odb_digitaltwin_is_320_on_odb_and_offered_nowhere_else(admin):
     pull(admin, 1, full())
     assert offered_on(ODB) == ['BYTE-SYNC', 'ODB-TWIN']
     assert line(ODB) == Money('500.00', 'EUR')
@@ -161,7 +112,7 @@ def test_odb_digitaltwin_is_320_on_odb_and_offered_nowhere_else(admin):  # noqa:
 
 
 @pytest.mark.django_db
-def test_one_arch_and_the_discount_are_applied_together_and_rounded_once(admin):  # noqa: F811
+def test_one_arch_and_the_discount_are_applied_together_and_rounded_once(admin):
     pull(admin, 1, full())
     assert line(TPS, 'ONE-ARCH') == Money('67.50', 'EUR')  # 100 × 0.75 × 0.90
     assert line(TPS, 'ONE-ARCH', 'BYTE-SYNC') == Money('187.50', 'EUR')
@@ -181,7 +132,7 @@ def test_one_arch_and_the_discount_are_applied_together_and_rounded_once(admin):
 
 
 @pytest.mark.django_db
-def test_junior_is_offered_on_size_medium_only_and_changes_no_price(admin):  # noqa: F811
+def test_junior_is_offered_on_size_medium_only_and_changes_no_price(admin):
     pull(admin, 1, full())
     assert offered_on(TPS) == ['BYTE-SYNC', 'JUNIOR-1', 'JUNIOR-2', 'ONE-ARCH']
     assert line(TPS, 'JUNIOR-1') == line(TPS, 'JUNIOR-2') == line(TPS) == (
@@ -198,7 +149,7 @@ def test_junior_is_offered_on_size_medium_only_and_changes_no_price(admin):  # n
 
 
 @pytest.mark.django_db
-def test_an_inactive_or_repeated_add_on_is_refused(admin):  # noqa: F811
+def test_an_inactive_or_repeated_add_on_is_refused(admin):
     add_ons = [{**entry, 'active': entry['code'] != 'BYTE-SYNC'} for entry in ADD_ONS]
     pull(admin, 1, full(add_ons=add_ons))
     assert 'BYTE-SYNC' not in offered_on(TPS)
@@ -213,7 +164,7 @@ def test_an_inactive_or_repeated_add_on_is_refused(admin):  # noqa: F811
 # --- The matrix: per unit, calls -------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_a_product_per_unit_is_priced_by_its_quantity_within_the_range(admin):  # noqa: F811
+def test_a_product_per_unit_is_priced_by_its_quantity_within_the_range(admin):
     pull(admin, 1, full())
     spark = resolver.product(SPARK)
     assert spark.per_unit and (spark.min_quantity, spark.max_quantity) == (4, 9)
@@ -236,7 +187,7 @@ def test_a_product_per_unit_is_priced_by_its_quantity_within_the_range(admin):  
 
 
 @pytest.mark.django_db
-def test_the_calls_of_a_product_are_readable(admin):  # noqa: F811
+def test_the_calls_of_a_product_are_readable(admin):
     pull(admin, 1, full())
     tps, branded = resolver.product(TPS), resolver.product(BRANDED)
     assert (tps.calls, tps.call_minutes, tps.size) == (3, 25, 'medium')
@@ -248,7 +199,7 @@ def test_the_calls_of_a_product_are_readable(admin):  # noqa: F811
 # --- The matrix: costs -----------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_the_cost_at_a_date_is_the_sum_of_the_links(admin):  # noqa: F811
+def test_the_cost_at_a_date_is_the_sum_of_the_links(admin):
     pull(admin, 1, linked(link(SCAN), link(PRINT, 2)), provider_costs=COSTS)
     tps = resolver.product(TPS)
     assert tps.cost_links == [link(SCAN), link(PRINT, 2)]
@@ -273,7 +224,7 @@ def test_the_cost_at_a_date_is_the_sum_of_the_links(admin):  # noqa: F811
 
 @pytest.mark.django_db
 def test_a_gap_in_the_costs_gives_the_partial_sum_marked_incomplete(
-        admin, monkeypatch):  # noqa: F811
+        admin, monkeypatch):
     monkeypatch.setattr(resolver, 'today', lambda now=None: DAY)
     pull(admin, 1, linked(link(SCAN), link(PRINT, 2)), provider_costs=COSTS)
     cost_ = resolver.cost(resolver.product(TPS))  # today: PRINT ended on 31 October
@@ -301,7 +252,7 @@ def test_a_gap_in_the_costs_gives_the_partial_sum_marked_incomplete(
 
 
 @pytest.mark.django_db
-def test_a_monthly_link_is_listed_apart_and_never_in_the_sum(admin):  # noqa: F811
+def test_a_monthly_link_is_listed_apart_and_never_in_the_sum(admin):
     pull(admin, 1, linked(link(SCAN), link(DM, 2, monthly=True),
                           link(PRINT, 1, monthly=True)), provider_costs=COSTS)
     cost_ = resolver.cost(resolver.product(TPS), DAY)
@@ -313,7 +264,7 @@ def test_a_monthly_link_is_listed_apart_and_never_in_the_sum(admin):  # noqa: F8
 # --- The matrix: an old snapshot -------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_a_snapshot_of_an_admin_site_before_this_release_still_applies(admin):  # noqa: F811
+def test_a_snapshot_of_an_admin_site_before_this_release_still_applies(admin):
     pull(admin, 1, full(), provider_costs=COSTS)
     assert AddOn.objects.count() == 5 and ProviderProduct.objects.count() == 4
     # No add-ons, no new product fields, no provider costs section.
@@ -335,7 +286,7 @@ def test_a_snapshot_of_an_admin_site_before_this_release_still_applies(admin):  
 # --- The applier -------------------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_the_tables_hold_what_the_admin_site_sent(admin, caplog):  # noqa: F811
+def test_the_tables_hold_what_the_admin_site_sent(admin, caplog):
     caplog.set_level(logging.INFO, logger='integration.config')
     add_ons = ADD_ONS + [
         add_on('a6666666-6666-4666-8666-666666666666', 'GBP-ONLY', 'Secret-Add-On',
@@ -373,7 +324,7 @@ def test_the_tables_hold_what_the_admin_site_sent(admin, caplog):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_no_write_path_outside_the_snapshot_apply(admin):  # noqa: F811
+def test_no_write_path_outside_the_snapshot_apply(admin):
     pull(admin, 1, full(), provider_costs=COSTS)
     for row in (AddOn.objects.first(), ProviderProduct.objects.first(),
                 ProviderCost.objects.first()):
@@ -385,7 +336,7 @@ def test_no_write_path_outside_the_snapshot_apply(admin):  # noqa: F811
 
 @pytest.mark.django_db
 def test_a_failing_provider_costs_apply_keeps_the_previous_snapshot(
-        admin, monkeypatch):  # noqa: F811
+        admin, monkeypatch):
     pull(admin, 1, linked(link(SCAN)), provider_costs=COSTS)
 
     def failing(section):
@@ -409,7 +360,7 @@ def test_a_failing_provider_costs_apply_keeps_the_previous_snapshot(
     lambda section: section['products'][0].update(calls={'count': 3}),
     lambda section: section['products'][0].update(cost_links=[link(SCAN), link(SCAN, 2)]),
 ])
-def test_an_invalid_part_is_refused_and_the_applied_catalogue_kept(admin, change):  # noqa: F811
+def test_an_invalid_part_is_refused_and_the_applied_catalogue_kept(admin, change):
     import copy
 
     import jwt
@@ -436,7 +387,7 @@ def test_an_invalid_part_is_refused_and_the_applied_catalogue_kept(admin, change
 
 @pytest.mark.django_db
 def test_price_catalogue_shows_add_ons_quantities_and_line_prices(
-        admin, monkeypatch):  # noqa: F811
+        admin, monkeypatch):
     monkeypatch.setattr(resolver, 'today', lambda now=None: DAY)
     pull(admin, 1, full(), provider_costs=COSTS)
     assert run('--country', 'ES', '--tier', 'basic') == (
@@ -522,7 +473,7 @@ def test_price_catalogue_shows_add_ons_quantities_and_line_prices(
 
 @pytest.mark.django_db
 def test_price_catalogue_shows_the_cost_and_the_incomplete_warning(
-        admin, monkeypatch):  # noqa: F811
+        admin, monkeypatch):
     monkeypatch.setattr(resolver, 'today', lambda now=None: DAY)
     pull(admin, 1, linked(link(SCAN), link(PRINT, 2), link(DM, 2, monthly=True)),
          provider_costs=COSTS)
@@ -546,7 +497,7 @@ def test_price_catalogue_shows_the_cost_and_the_incomplete_warning(
 
 @pytest.mark.django_db
 def test_another_release_stores_the_add_ons_and_costs_of_the_version_already_applied(
-        admin, settings):  # noqa: F811
+        admin, settings):
     """One release applied version 5 without add-ons and provider costs; another one
     pulls the same version carrying them: the real appliers store them, once."""
     settings.SENTRY_RELEASE = '6b27169cc0f014905d7dbfe73335ef7aa2123d26'
@@ -579,7 +530,7 @@ def at_0002(transactional_db):
 
 @pytest.mark.django_db(transaction=True)
 def test_migration_0003_keeps_the_products_and_makes_the_first_pull_apply_again(
-        at_0002, admin):  # noqa: F811
+        at_0002, admin):
     """The admin site, deployed first, published add-ons and costs in version 5; the
     previous release applied it without them."""
     OldProduct = at_0002.get_model('catalogue', 'Product')

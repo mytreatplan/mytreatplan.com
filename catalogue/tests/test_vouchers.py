@@ -3,10 +3,11 @@ the snapshot apply replaces (catalogue.applier.apply_vouchers; a voucher of anot
 skipped; an absent list empties it), the resolver (a voucher by its code as a doctor types
 it; whether it is usable on a day) and `price_catalogue --voucher`. One test (or more) per
 row of the plan's matrix that the portal decides. The admin site is the fake of
-integration/tests/test_config.py (no network)."""
+integration/tests/snapshot_rows.py (no network)."""
 import logging
 from datetime import date
 from decimal import Decimal
+from functools import partial
 
 import pytest
 from django.core.management import CommandError
@@ -15,41 +16,28 @@ from catalogue import resolver
 from catalogue.models import Voucher
 from catalogue.tests.test_catalogue import run
 from integration import config
-from integration.tests.test_config import (ADMIN, admin,  # noqa: F401
-                                           interface_settings, snapshot, state)
+from integration.tests import snapshot_rows
+from integration.tests.snapshot_rows import (ADMIN, GENERAL, TRY_ME, snapshot, state,
+                                             voucher)
 from mytp_core import snapshots
 from mytp_core.money import Money
 
-TRY_ME = 'f0000001-0000-4000-8000-000000000001'
 FOR_ANA = 'f0000002-0000-4000-8000-000000000002'
 OTHER_REGION = 'f0000003-0000-4000-8000-000000000003'
 ANA = '9a000000-0000-4000-8000-000000000001'
 DAY = date(2026, 11, 12)
-
-
-def voucher(id_, code, type_='try_me', region='eu', amount='50.00', currency='EUR',
-            client=None, valid_from='2026-11-12', valid_to=None, active=True):
-    return {'id': id_, 'code': code, 'type': type_, 'region': region,
-            'amount': {'amount': amount, 'currency': currency}, 'client': client,
-            'valid_from': valid_from, 'valid_to': valid_to, 'active': active}
-
-
-GENERAL = voucher(TRY_ME, 'K7QM2XH9TR')
 DOCTOR = voucher(FOR_ANA, 'ABCDE23456', type_='subscription', amount='100.00',
                  client=ANA, valid_to='2026-12-31')
 
 
-def pull(admin, version, vouchers=None, **changes):  # noqa: F811
-    admin.snapshot = snapshot(version=version, **changes)
-    if vouchers is not None:
-        admin.snapshot['vouchers'] = vouchers
-    return config.pull()
+# pull(admin, version, vouchers=None, **changes): the snapshot with that vouchers list.
+pull = partial(snapshot_rows.pull, key='vouchers')
 
 
 # --- The apply ----------------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_the_vouchers_of_this_region_are_stored_and_read_by_code(admin):  # noqa: F811
+def test_the_vouchers_of_this_region_are_stored_and_read_by_code(admin):
     assert pull(admin, 1, [GENERAL, DOCTOR]) == ('applied', 1)
     general = resolver.voucher_by_code('K7QM2XH9TR')
     assert (general.type, general.amount, general.currency, general.client) == (
@@ -61,20 +49,20 @@ def test_the_vouchers_of_this_region_are_stored_and_read_by_code(admin):  # noqa
 
 @pytest.mark.django_db
 @pytest.mark.parametrize('typed', ['k7qm2-xh9tr', 'K7QM2XH9TR', ' k7qm2xh9tr ', 'K7QM2 XH9TR'])
-def test_a_code_is_read_with_or_without_the_hyphen_in_any_case(admin, typed):  # noqa: F811
+def test_a_code_is_read_with_or_without_the_hyphen_in_any_case(admin, typed):
     pull(admin, 1, [GENERAL])
     assert resolver.voucher_by_code(typed).pk is not None
 
 
 @pytest.mark.django_db
 @pytest.mark.parametrize('typed', ['', None, 'K7QM2_XH9TR', 'NOPE23456X'])
-def test_an_unknown_or_malformed_code_is_none(admin, typed):  # noqa: F811
+def test_an_unknown_or_malformed_code_is_none(admin, typed):
     pull(admin, 1, [GENERAL])
     assert resolver.voucher_by_code(typed) is None
 
 
 @pytest.mark.django_db
-def test_a_voucher_of_another_region_is_skipped_with_a_warning(admin, caplog):  # noqa: F811
+def test_a_voucher_of_another_region_is_skipped_with_a_warning(admin, caplog):
     other = voucher(OTHER_REGION, 'ZZZZZ99999', region='ae', currency='AED')
     with caplog.at_level(logging.WARNING, logger='catalogue.applier'):
         assert pull(admin, 1, [GENERAL, other]) == ('applied', 1)
@@ -85,7 +73,7 @@ def test_a_voucher_of_another_region_is_skipped_with_a_warning(admin, caplog):  
 
 
 @pytest.mark.django_db
-def test_on_dev_ae_only_the_ae_voucher_is_kept(admin, settings):  # noqa: F811
+def test_on_dev_ae_only_the_ae_voucher_is_kept(admin, settings):
     settings.REGION = 'ae'
     other = voucher(OTHER_REGION, 'ZZZZZ99999', region='ae', amount='200.00',
                     currency='AED')
@@ -94,7 +82,7 @@ def test_on_dev_ae_only_the_ae_voucher_is_kept(admin, settings):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_a_snapshot_without_vouchers_empties_the_table(admin):  # noqa: F811
+def test_a_snapshot_without_vouchers_empties_the_table(admin):
     pull(admin, 1, [GENERAL, DOCTOR])
     # An admin site before 0.24.0, or a region left without vouchers: no list.
     assert pull(admin, 2) == ('applied', 2)
@@ -102,14 +90,14 @@ def test_a_snapshot_without_vouchers_empties_the_table(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_an_old_snapshot_keeps_the_table_empty_and_works(admin):  # noqa: F811
+def test_an_old_snapshot_keeps_the_table_empty_and_works(admin):
     assert pull(admin, 1) == ('applied', 1)
     assert not Voucher.objects.exists() and resolver.voucher_by_code('K7QM2XH9TR') is None
     assert run('--voucher', 'K7QM2XH9TR').strip() == 'no voucher with this code'
 
 
 @pytest.mark.django_db
-def test_a_release_without_the_applier_applies_and_ignores_them(admin, monkeypatch):  # noqa: F811
+def test_a_release_without_the_applier_applies_and_ignores_them(admin, monkeypatch):
     # A portal before this entry has no applier for the list: it applies the snapshot.
     monkeypatch.delitem(config._SECTION_APPLIERS, 'vouchers')
     assert pull(admin, 1, [GENERAL]) == ('applied', 1)
@@ -117,7 +105,7 @@ def test_a_release_without_the_applier_applies_and_ignores_them(admin, monkeypat
 
 
 @pytest.mark.django_db
-def test_an_invalid_list_is_refused_and_the_applied_one_kept(admin):  # noqa: F811
+def test_an_invalid_list_is_refused_and_the_applied_one_kept(admin):
     import jwt
     pull(admin, 1, [GENERAL])
 
@@ -136,7 +124,7 @@ def test_an_invalid_list_is_refused_and_the_applied_one_kept(admin):  # noqa: F8
 
 
 @pytest.mark.django_db
-def test_no_write_path_outside_the_snapshot_apply(admin):  # noqa: F811
+def test_no_write_path_outside_the_snapshot_apply(admin):
     pull(admin, 1, [GENERAL])
     stored = Voucher.objects.get()
     with pytest.raises(TypeError):
@@ -146,7 +134,7 @@ def test_no_write_path_outside_the_snapshot_apply(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_the_applied_log_line_counts_the_vouchers(admin, caplog):  # noqa: F811
+def test_the_applied_log_line_counts_the_vouchers(admin, caplog):
     with caplog.at_level(logging.INFO):
         pull(admin, 1, [GENERAL, DOCTOR])
     assert 'vouchers: 2' in caplog.text and 'K7QM2XH9TR' not in caplog.text
@@ -155,7 +143,7 @@ def test_the_applied_log_line_counts_the_vouchers(admin, caplog):  # noqa: F811
 # --- Usable on a day ----------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_an_inactive_voucher_is_sent_and_not_usable_then_usable_again(admin):  # noqa: F811
+def test_an_inactive_voucher_is_sent_and_not_usable_then_usable_again(admin):
     pull(admin, 1, [GENERAL])
     assert resolver.voucher_state(resolver.voucher_by_code('K7QM2XH9TR'), DAY) == 'usable'
     pull(admin, 2, [{**GENERAL, 'active': False}])
@@ -167,7 +155,7 @@ def test_an_inactive_voucher_is_sent_and_not_usable_then_usable_again(admin):  #
 
 
 @pytest.mark.django_db
-def test_outside_its_dates_a_voucher_is_not_in_force(admin):  # noqa: F811
+def test_outside_its_dates_a_voucher_is_not_in_force(admin):
     pull(admin, 1, [DOCTOR])
     found = resolver.voucher_by_code('ABCDE23456')
     assert resolver.voucher_state(found, date(2026, 11, 11)) == 'not_in_force'
@@ -177,7 +165,7 @@ def test_outside_its_dates_a_voucher_is_not_in_force(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_today_is_a_madrid_day(admin, monkeypatch):  # noqa: F811
+def test_today_is_a_madrid_day(admin, monkeypatch):
     from datetime import datetime, timezone as dt_timezone
     pull(admin, 1, [GENERAL])
     # 23:30 UTC on 11 November is 12 November in Madrid: the first day.
@@ -187,7 +175,7 @@ def test_today_is_a_madrid_day(admin, monkeypatch):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_a_type_or_currency_this_release_does_not_know_is_kept_and_not_usable(admin):  # noqa: F811
+def test_a_type_or_currency_this_release_does_not_know_is_kept_and_not_usable(admin):
     pull(admin, 1, [voucher(TRY_ME, 'LOYAL23456', type_='loyalty'),
                     voucher(FOR_ANA, 'POUND23456', currency='GBP')])
     loyalty = resolver.voucher_by_code('LOYAL23456')
@@ -199,7 +187,7 @@ def test_a_type_or_currency_this_release_does_not_know_is_kept_and_not_usable(ad
 # --- price_catalogue --voucher --------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_price_catalogue_prints_each_voucher(admin):  # noqa: F811
+def test_price_catalogue_prints_each_voucher(admin):
     pull(admin, 1, [GENERAL, DOCTOR])
     general = run('--voucher', 'k7qm2-xh9tr', '--on', '2026-11-12')
     assert general.splitlines() == [
@@ -216,7 +204,7 @@ def test_price_catalogue_prints_each_voucher(admin):  # noqa: F811
 @pytest.mark.django_db
 @pytest.mark.parametrize('others', [('--country', 'ES', '--tier', 'basic'),
                                     ('--language', 'es')])
-def test_price_catalogue_voucher_goes_alone(admin, others):  # noqa: F811
+def test_price_catalogue_voucher_goes_alone(admin, others):
     pull(admin, 1, [GENERAL])
     with pytest.raises(CommandError, match='--voucher goes alone'):
         run('--voucher', 'K7QM2XH9TR', *others)

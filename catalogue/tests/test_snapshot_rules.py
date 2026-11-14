@@ -4,7 +4,7 @@ longer offered; a past order's country group and billing rule are read by id wha
 their state (`country_group_by_id`, `billing_rule_by_id`, `price_catalogue`); a voucher of
 another region never reaches this portal. The write guard is
 integration/tests/test_snapshot_tables.py. The admin site is the fake of
-integration/tests/test_config.py (no network)."""
+integration/tests/snapshot_rows.py (no network)."""
 import copy
 import logging
 import uuid
@@ -15,14 +15,13 @@ from django.core.management import CommandError
 from catalogue import resolver
 from catalogue.models import (AddOn, BillingCompany, BillingRule, CountryGroup, Product,
                               ProviderProduct, Subscription, Voucher)
-from catalogue.tests.test_add_ons_costs import ADD_ONS, BYTE_SYNC, COSTS, SCAN
-from catalogue.tests.test_billing import (EMIRATES, SPAIN, SUBSCRIPTIONS, TPS, UAE,
-                                          billed, offered, rule)
-from catalogue.tests.test_catalogue import IBERIA, WORLD, run
-from catalogue.tests.test_vouchers import GENERAL, TRY_ME, voucher
+from catalogue.tests.test_billing import offered
+from catalogue.tests.test_catalogue import run
 from integration import config
-from integration.tests.test_config import (admin, interface_settings,  # noqa: F401
-                                           snapshot)
+from integration.tests.snapshot_rows import (ADD_ONS, BYTE_SYNC, COSTS, EMIRATES, GENERAL,
+                                             IBERIA, SCAN, SPAIN, SUBSCRIPTIONS, TPS, TRY_ME,
+                                             UAE, WORLD, billed, pull, rule, snapshot,
+                                             voucher)
 from mytp_core.contracts import vouchers_for_region
 
 pytestmark = pytest.mark.django_db
@@ -41,11 +40,6 @@ def everything():
             'vouchers': [dict(GENERAL)]}
 
 
-def pull(admin, version, sections):  # noqa: F811
-    admin.snapshot = snapshot(version=version, **sections)
-    return config.pull()
-
-
 def deactivate(entries, id_):
     found = [entry for entry in entries if entry['id'] == id_]
     assert len(found) == 1
@@ -58,45 +52,45 @@ def tps_offered(country='ES'):
 
 # --- Deactivated object (the I/O matrix): sent, inactive, read, not offered ---------------
 
-def test_a_deactivated_product_is_read_by_id_and_not_offered(admin):  # noqa: F811
-    pull(admin, 1, everything())
+def test_a_deactivated_product_is_read_by_id_and_not_offered(admin):
+    pull(admin, 1, **everything())
     assert tps_offered()
     sections = everything()
     deactivate(sections['catalogue']['products'], TPS)
-    pull(admin, 2, sections)
+    pull(admin, 2, **sections)
     assert Product.objects.filter(pk=TPS, active=False).exists()
     assert resolver.product(TPS).active is False
     assert not tps_offered()
 
 
-def test_a_deactivated_subscription_is_read_by_id_and_code_and_offers_nothing(admin):  # noqa: F811
+def test_a_deactivated_subscription_is_read_by_id_and_code_and_offers_nothing(admin):
     sections = everything()
     deactivate(sections['catalogue']['subscriptions'], SUBSCRIPTIONS[IBERIA])
-    pull(admin, 1, sections)
+    pull(admin, 1, **sections)
     found = resolver.subscription_by_id(SUBSCRIPTIONS[IBERIA])
     assert found.active is False and resolver.subscription_by_code(found.code) == found
     assert resolver.subscription('ES', 'basic') is None and offered('ES') == []
     assert Subscription.objects.filter(active=False).count() == 1
 
 
-def test_a_deactivated_add_on_is_read_by_code_and_not_offered(admin):  # noqa: F811
-    pull(admin, 1, everything())
+def test_a_deactivated_add_on_is_read_by_code_and_not_offered(admin):
+    pull(admin, 1, **everything())
     assert 'BYTE-SYNC' in [found.code for found in resolver.add_ons(resolver.product(TPS))]
     sections = everything()
     deactivate(sections['catalogue']['add_ons'], BYTE_SYNC)
-    pull(admin, 2, sections)
+    pull(admin, 2, **sections)
     assert resolver.add_on('byte-sync').active is False
     assert AddOn.objects.filter(pk=BYTE_SYNC, active=False).exists()
     assert 'BYTE-SYNC' not in [found.code
                                for found in resolver.add_ons(resolver.product(TPS))]
 
 
-def test_a_deactivated_country_group_is_read_by_id_and_never_chosen(admin):  # noqa: F811
-    pull(admin, 1, everything())
+def test_a_deactivated_country_group_is_read_by_id_and_never_chosen(admin):
+    pull(admin, 1, **everything())
     assert resolver.country_group('ES').pk == uuid.UUID(IBERIA)
     sections = everything()
     deactivate(sections['catalogue']['country_groups'], IBERIA)
-    pull(admin, 2, sections)
+    pull(admin, 2, **sections)
     group = resolver.country_group_by_id(IBERIA)
     assert group.name == 'Iberia' and group.active is False
     assert resolver.country_group_by_id(uuid.UUID(IBERIA)) == group
@@ -104,7 +98,7 @@ def test_a_deactivated_country_group_is_read_by_id_and_never_chosen(admin):  # n
     assert CountryGroup.objects.filter(active=False).count() == 1
 
 
-def test_a_deactivated_billing_company_is_read_by_code(admin, settings):  # noqa: F811
+def test_a_deactivated_billing_company_is_read_by_code(admin, settings):
     # The UAE company and group are the ae region's: on its portal (entry 16).
     from regions.profiles import get_profile
     settings.REGION, settings.REGION_PROFILE = 'ae', get_profile('ae')
@@ -113,7 +107,7 @@ def test_a_deactivated_billing_company_is_read_by_code(admin, settings):  # noqa
     for found in sections['catalogue']['billing_rules']:
         if found['company'] == EMIRATES:
             found['active'] = False
-    pull(admin, 1, sections)
+    pull(admin, 1, **sections)
     company = resolver.billing_company('ae')
     assert company.pk == uuid.UUID(EMIRATES) and company.active is False
     assert BillingCompany.objects.filter(active=False).count() == 1
@@ -121,31 +115,31 @@ def test_a_deactivated_billing_company_is_read_by_code(admin, settings):  # noqa
     assert resolver.country_group('AE').pk == uuid.UUID(UAE)
 
 
-def test_a_deactivated_billing_rule_is_read_by_id_and_not_the_rule(admin):  # noqa: F811
-    pull(admin, 1, everything())
+def test_a_deactivated_billing_rule_is_read_by_id_and_not_the_rule(admin):
+    pull(admin, 1, **everything())
     assert resolver.billing_rule('ES', 'tps_branded').pk == uuid.UUID(IBERIA_TPS_RULE)
     sections = everything()
     deactivate(sections['catalogue']['billing_rules'], IBERIA_TPS_RULE)
-    pull(admin, 2, sections)
+    pull(admin, 2, **sections)
     found = resolver.billing_rule_by_id(IBERIA_TPS_RULE)
     assert found.active is False and found.company.code == 'ES'
     assert resolver.billing_rule('ES', 'tps_branded') is None and not tps_offered()
     assert BillingRule.objects.filter(active=False).count() == 1
 
 
-def test_a_deactivated_provider_product_is_read_by_id(admin):  # noqa: F811
+def test_a_deactivated_provider_product_is_read_by_id(admin):
     sections = everything()
     deactivate(sections['provider_costs']['products'], SCAN)
-    pull(admin, 1, sections)
+    pull(admin, 1, **sections)
     found = resolver.provider_product_by_id(SCAN)
     assert found.active is False and found.code == 'SCAN' and len(found.costs.all()) == 1
     assert ProviderProduct.objects.filter(active=False).count() == 1
 
 
-def test_a_deactivated_voucher_is_read_by_code_and_not_usable(admin):  # noqa: F811
+def test_a_deactivated_voucher_is_read_by_code_and_not_usable(admin):
     sections = everything()
     sections['vouchers'][0]['active'] = False
-    pull(admin, 1, sections)
+    pull(admin, 1, **sections)
     found = resolver.voucher_by_code('K7QM2XH9TR')
     assert found.pk == uuid.UUID(TRY_ME) and found.active is False
     assert resolver.voucher_state(found) == resolver.INACTIVE
@@ -154,18 +148,18 @@ def test_a_deactivated_voucher_is_read_by_code_and_not_usable(admin):  # noqa: F
 # --- Past orders: by id whatever the state; an unknown id gives nothing -----------------
 
 @pytest.mark.parametrize('typed', [None, '', 'not-a-uuid', str(uuid.uuid4()), uuid.uuid4()])
-def test_an_unknown_id_gives_nothing(admin, typed):  # noqa: F811
-    pull(admin, 1, everything())
+def test_an_unknown_id_gives_nothing(admin, typed):
+    pull(admin, 1, **everything())
     assert resolver.country_group_by_id(typed) is None
     assert resolver.billing_rule_by_id(typed) is None
     assert resolver.provider_product_by_id(typed) is None
 
 
-def test_price_catalogue_prints_a_deactivated_group_and_rule_by_id(admin):  # noqa: F811
+def test_price_catalogue_prints_a_deactivated_group_and_rule_by_id(admin):
     sections = everything()
     deactivate(sections['catalogue']['country_groups'], IBERIA)
     deactivate(sections['catalogue']['billing_rules'], IBERIA_TPS_RULE)
-    pull(admin, 1, sections)
+    pull(admin, 1, **sections)
     out = run('--country-group', IBERIA)
     assert f'{IBERIA}  Iberia' in out and 'status: inactive' in out
     assert 'countries: ES, PT' in out and 'chosen for new doctors: no' in out
@@ -184,7 +178,7 @@ def test_price_catalogue_prints_a_deactivated_group_and_rule_by_id(admin):  # no
 
 # --- A voucher of ae never reaches dev (the acceptance criterion) -------------------------
 
-def test_a_voucher_of_ae_leaves_no_row_and_no_skipped_line_on_dev(admin, settings,  # noqa: F811
+def test_a_voucher_of_ae_leaves_no_row_and_no_skipped_line_on_dev(admin, settings,
                                                                   caplog):
     """The admin site stores every region's vouchers in one body and serves dev only
     eu's (mytp-core's vouchers_for_region, as interface.views.config does)."""

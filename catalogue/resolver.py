@@ -145,7 +145,8 @@ from regions.countries import lookup_country
 from .models import (AddOn, BillingCompany, BillingRule, CatalogueState, CountryGroup,
                      Product, ProviderProduct, Subscription, Voucher)
 
-__all__ = ['AddOnRefused', 'ProductRefused', 'QuantityRefused', 'add_on', 'add_ons',
+__all__ = ['AddOnRefused', 'ProductRefused', 'QuantityRefused', 'add_on', 'add_on_terms',
+           'add_ons',
            'billing_company', 'billing_rule', 'billing_rule_by_id', 'billing_rule_for',
            'calls', 'cost', 'country_group', 'country_group_by_id', 'discount_percent',
            'has_billing_rules', 'linked', 'normal_category', 'normal_country',
@@ -410,11 +411,17 @@ def price(product, subscription, add_ons=(), quantity=1):
         if not (chosen.active and _applies(chosen, product)):
             raise AddOnRefused(f'the add-on {chosen.code} is not offered on the product '
                                f'{product.pk}')
-    return line_price(
-        product.net_price, quantity=quantity,
-        discount_percent=discount_percent(product, subscription),
-        percents=[chosen.percent for chosen in add_ons if chosen.percent is not None],
-        amounts=[chosen.amount_money for chosen in add_ons if chosen.amount is not None])
+    return line_price(product.net_price, quantity=quantity,
+                      discount_percent=discount_percent(product, subscription),
+                      **add_on_terms(add_ons))
+
+
+def add_on_terms(add_ons):
+    """The chosen add-ons' percents and amounts, as `line_price` takes them (`percents`,
+    `amounts`): `price` and catalogue.pricing's list amount build them here."""
+    return {'percents': [chosen.percent for chosen in add_ons if chosen.percent is not None],
+            'amounts': [chosen.amount_money for chosen in add_ons
+                        if chosen.amount is not None]}
 
 
 def cost(product, day=None):

@@ -2,8 +2,8 @@
 `price_subscription` through catalogue.resolver, and `price_catalogue --order` / `--buy`.
 One test (or more) per row of the plan's matrix, on the documented prices (TPS branded
 199/249/359 EUR, AED 1045; in-house 170; VirtuaOrtho One 1200; ICE 80; Advanced 6 % and
-Premium 12 % on TPS). The admin site is the fake of integration/tests/test_config.py (no
-network)."""
+Premium 12 % on TPS). The admin site is the fake of integration/tests/snapshot_rows.py
+(no network)."""
 import random
 from datetime import date
 from decimal import Decimal
@@ -14,14 +14,10 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
 from catalogue import pricing, resolver
-from catalogue.tests.test_add_ons_costs import add_on
-from catalogue.tests.test_billing import (COMPANIES, EMIRATES, EXEMPT, IRELAND, REVERSE,
-                                          SPAIN, ae_portal, rule)  # noqa: F401
-from catalogue.tests.test_catalogue import group, product, pull, run
-from catalogue.tests.test_subscriptions import full_subscription
-from catalogue.tests.test_vouchers import voucher
-from integration.tests.test_config import (ADMIN, admin,  # noqa: F401
-                                           interface_settings, snapshot, state)
+from catalogue.tests.test_catalogue import run
+from integration.tests.snapshot_rows import (COMPANIES, EMIRATES, EXEMPT, IRELAND, REVERSE,
+                                             SPAIN, add_on, full_subscription, group,
+                                             product, pull, rule, voucher)
 from mytp_core.money import Money
 
 IBERIA = 'a1000001-0000-4000-8000-000000000001'
@@ -161,7 +157,7 @@ VOUCHERS = [
 
 
 @pytest.fixture
-def priced_catalogue(admin):  # noqa: F811
+def priced_catalogue(admin):
     assert pull(admin, 1, catalogue_section(), vouchers=VOUCHERS) == ('applied', 1)
 
 
@@ -454,7 +450,7 @@ def test_a_country_not_served_or_no_lines_is_refused(priced_catalogue):
 
 
 @pytest.mark.django_db
-def test_without_any_billing_rule_every_order_is_refused(admin):  # noqa: F811
+def test_without_any_billing_rule_every_order_is_refused(admin):
     pull(admin, 1, catalogue_section(rules_=False))
     refused(resolver.NO_BILLING_RULES, order, 'ES', 'basic', line(TPS_M))
 
@@ -468,7 +464,7 @@ def test_an_order_with_no_common_gateway_is_flagged(priced_catalogue):
 
 
 @pytest.mark.django_db
-def test_a_uae_order_today_has_no_payment_method(admin, ae_portal):  # noqa: F811
+def test_a_uae_order_today_has_no_payment_method(admin, ae_portal):
     pull(admin, 1, catalogue_section())
     priced = holds(order('AE', 'basic', line(TPS_AED, ice=Money('80.00', 'AED'))))
     assert priced.company.code == 'AE' and priced.currency == 'AED'
@@ -502,7 +498,7 @@ def test_a_free_subscription_costs_nothing(priced_catalogue):
 
 
 @pytest.mark.django_db
-def test_a_subscription_priced_0_for_the_period_costs_nothing(admin):  # noqa: F811
+def test_a_subscription_priced_0_for_the_period_costs_nothing(admin):
     section = catalogue_section()
     section['subscriptions'][0]['price'] = {'currency': 'EUR', 'monthly': '0.00'}
     pull(admin, 1, section)
@@ -514,7 +510,7 @@ def test_a_subscription_priced_0_for_the_period_costs_nothing(admin):  # noqa: F
 
 
 @pytest.mark.django_db
-def test_a_free_subscription_billed_in_an_unknown_currency_is_refused(admin):  # noqa: F811
+def test_a_free_subscription_billed_in_an_unknown_currency_is_refused(admin):
     section = catalogue_section()
     next(found for found in section['billing_rules']
          if found['country_group'] == IBERIA
