@@ -132,3 +132,16 @@ deploy/README.md, "Doctor subscriptions"):
     python manage.py doctor_subscription <uid or email> [--offers]
     python manage.py doctor_subscription <uid or email> --order --product <UUID or code> \
         [--quantity N] [--vies valid|invalid|pending|not_applicable]
+
+## Legal texts and the region's company (epic-regions 2.6)
+
+The footer, the home page's JSON-LD and the public Privacy and Terms pages name the
+company of the instance's region profile (`settings.REGION_PROFILE.company`, exposed to
+templates as `region_company` by `regions.context_processors`). Legal documents
+(`legal.LegalDocument`) carry a `region`: `current`, `current_by_kind`, the version
+numbering (per region and kind) and the admin read only the instance's region, so a site
+never offers another region's document; acceptances carry no region (their document
+does). A document is `provisional` until the lawyer's final text replaces it: a final
+text is a new version with `provisional` off in the admin; for the public pages, the
+templates are replaced and `LEGAL_TEXTS_FINAL` is set to `True` (deploy/README.md,
+"Legal texts: from provisional to final").

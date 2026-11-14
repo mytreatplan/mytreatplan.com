@@ -1,7 +1,9 @@
 {# DRAFT legal text ported from mytreatplan.ae, pending lawyer: not for production. #}
 {% comment %}
 Ported verbatim from the mytreatplan.ae terms/ page (uae_landing commit 1a8f27e).
-Only internal links were changed to url tags so they render on this site. Replace this
+Only internal links were changed to url tags so they render on this site, and the company
+(name, registration, registered office) comes from the region profile (epic-regions 2.6:
+regions.context_processors). Replace this
 whole file with the lawyer's mytreatplan.com text, then set LEGAL_TEXTS_FINAL = True in
 settings. No translate tags here: the lawyer's Spanish text goes in _terms_body_es.html.
 {% endcomment %}
@@ -14,8 +16,8 @@ settings. No translate tags here: the lawyer's Spanish text goes in _terms_body_
       tool is activated.</p>
 </div>
 <h2>1. About this Website and Acceptance</h2>
-<p>This website is operated by MyTPDSO L.L.C-FZ, a company incorporated in the United Arab
-    Emirates and established in Meydan Free Zone, Dubai, UAE ("MyTreatPlan", "we", "us" or
+<p>This website is operated by {{ region_company.name }} ({{ legal_company_registration }}),
+    whose registered office is at {{ legal_company_address }} ("MyTreatPlan", "we", "us" or
     "our").</p>
 <p>These Terms &amp; Conditions govern access to and use of this website. By accessing and
     using the website you accept these Terms &amp; Conditions.</p>
@@ -123,6 +125,6 @@ settings. No translate tags here: the lawyer's Spanish text goes in _terms_body_
     courts of Dubai may be conducted in Arabic in accordance with applicable procedural
     requirements.</p>
 <h2>16. Contact</h2>
-<p>MyTPDSO L.L.C-FZ<br>
-Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, U.A.E.<br>
+<p>{{ region_company.name }}<br>
+{{ legal_company_address }}<br>
 <a href="mailto:gdpr@mytreatplan.com">gdpr@mytreatplan.com</a></p>

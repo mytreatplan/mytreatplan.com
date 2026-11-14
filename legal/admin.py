@@ -1,8 +1,9 @@
 """Admin for the legal documents. A new version is added here (its number is set
 automatically: the previous version of its kind + 1) and applies as soon as its
 `published_at` passes, with no deploy. A published version is read-only and cannot be
-deleted (as eventlog.admin, per object); a change means a new version. Choices are
-evidence: read-only."""
+deleted (as eventlog.admin, per object); a change means a new version. Only this
+instance's region's documents (with any whose region is unset, the previous release's)
+are listed and editable (epic-regions 2.6); a new one is the site's. Choices are evidence: read-only."""
 from django.contrib import admin
 from django.utils import timezone
 from django.utils.html import format_html
@@ -13,14 +14,18 @@ from .rendering import render_markdown
 
 @admin.register(LegalDocument)
 class LegalDocumentAdmin(admin.ModelAdmin):
-    list_display = ('kind', 'version', 'title_en', 'published_at', 'status')
-    list_filter = ('kind',)
+    list_display = ('kind', 'version', 'title_en', 'published_at', 'provisional', 'status')
+    list_filter = ('kind', 'provisional')
     ordering = ('kind', '-version')
-    fields = ('kind', 'version', 'title_en', 'title_es', 'body_en', 'body_es', 'published_at',
-              'preview_en', 'preview_es', 'created_at', 'uid')
-    readonly_fields = ('version', 'preview_en', 'preview_es', 'created_at', 'uid')
+    fields = ('kind', 'version', 'region', 'title_en', 'title_es', 'body_en', 'body_es',
+              'published_at', 'provisional', 'preview_en', 'preview_es', 'created_at', 'uid')
+    readonly_fields = ('version', 'region', 'preview_en', 'preview_es', 'created_at', 'uid')
     # No bulk actions: the bulk delete would bypass the per-object rule.
     actions = None
+
+    def get_queryset(self, request):
+        # Another region's documents are never shown, changed or deleted here.
+        return super().get_queryset(request).of_site()
 
     def _is_published(self, obj):
         return obj is not None and obj.pk is not None and obj.is_published()

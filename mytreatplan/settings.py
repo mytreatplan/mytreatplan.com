@@ -116,11 +116,13 @@ if not re.fullmatch(r'[a-z]([a-z0-9-]{0,18}[a-z0-9])?', SITE):
         f'letter, not ending with "-"), got {SITE!r}')
 SITE_HOME = Path('/srv') / f'mytp-{SITE}'
 
-# The Privacy and Terms pages show draft texts (ported from mytreatplan.ae) until the
-# lawyer supplies the mytreatplan.com versions. While this is False, `check --deploy`
-# fails with DEBUG off, so production cannot ship the drafts. Set it to True only after
-# replacing mytp_publicsite/templates/publicsite/legal/_privacy_body.html and _terms_body.html
-# and adding the Spanish texts as _privacy_body_es.html and _terms_body_es.html.
+# The Privacy and Terms pages show draft texts (ported from mytreatplan.ae, with the
+# company, registration and office of the region profile) until the lawyer supplies the
+# final versions. While this is False, both pages show a "provisional text" notice and
+# `check --deploy` fails with DEBUG off, so production cannot ship the drafts. Set it to
+# True only after replacing mytp_publicsite/templates/publicsite/legal/_privacy_body.html
+# and _terms_body.html and adding the Spanish texts as _privacy_body_es.html and
+# _terms_body_es.html.
 LEGAL_TEXTS_FINAL = False
 
 # Staging: keep crawlers out. When True every response carries
@@ -471,6 +473,8 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # The region's company, for the footer and the public legal texts.
+                'regions.context_processors.region_company',
             ],
         },
     },

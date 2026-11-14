@@ -106,8 +106,9 @@
         </li>
       </ul>
       <p class="mx-auto max-w-[62ch] text-legal text-footer-text">
-        MyTPDSO Limited &middot; {% translate "Company number" %} 815526<br>
-        {% translate "Registered office: 19 Baggot Street Lower, Dublin 2, D02 X658, Ireland" %}
+        {# The region's company (regions.context_processors, from the region profile). #}
+        {{ region_company.name }} &middot; {{ region_company_registration }}<br>
+        {% blocktranslate with address=region_company_address %}Registered office: {{ address }}{% endblocktranslate %}
       </p>
       <nav aria-label="{% translate 'Legal' %}" class="mt-[18px]">
         <ul class="flex flex-wrap justify-center gap-x-[26px] gap-y-2.5">

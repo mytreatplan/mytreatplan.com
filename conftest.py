@@ -188,6 +188,33 @@ def portal_urls(settings):
 # --- Shared by several apps' tests ----------------------------------------------------------
 
 @pytest.fixture
+def ae_portal(settings):
+    """This portal is the ae region's (dev-ae): its profile (company, country map,
+    legal documents of its own region) is the ae one."""
+    from regions.profiles import get_profile
+
+    settings.REGION = 'ae'
+    settings.REGION_PROFILE = get_profile('ae')
+    return settings
+
+
+def publish_site_documents():
+    """A published version of each kind of legal document in this instance's region, for
+    the kinds that have none (the migration's drafts are the default region's only, and an
+    earlier transactional test may have flushed them)."""
+    from django.utils import timezone
+
+    from legal.models import LegalDocument
+
+    now = timezone.now()
+    for kind in LegalDocument.Kind.values:
+        if LegalDocument.objects.current(kind, now) is None:
+            LegalDocument.objects.create(
+                kind=kind, title_en=f'{kind} (test)', title_es=f'{kind} (prueba)',
+                body_en='Test text.', body_es='Texto de prueba.', published_at=now)
+
+
+@pytest.fixture
 def release_jobs(settings, tmp_path):
     """runjob (mytp-core) reads the release's deploy/jobs.conf (no provisioned copy)."""
     settings.MYTP_INSTALLED_JOBS_FILE = tmp_path / 'missing.conf'

@@ -13,6 +13,9 @@ def test_eu_profile():
     assert p.domains == ('mytreatplan.com', 'www.mytreatplan.com')
     assert p.company.name == 'MyTPDSO Limited'
     assert p.company.registration == 'Company number 815526 (Ireland)'
+    assert p.company.registration_number == '815526'
+    assert p.company.office.lines == ('19 Baggot Street Lower', 'Dublin 2', 'D02 X658')
+    assert p.company.office.country_code == 'IE'
     assert p.time_zone == 'Europe/Madrid'
     assert p.languages == ('en', 'es')
     assert p.language_choices == [('en', 'English'), ('es', 'Español')]
@@ -31,6 +34,10 @@ def test_ae_profile():
     assert p.domains == ('mytreatplan.ae', 'www.mytreatplan.ae')
     assert p.company.name == 'MyTPDSO L.L.C-FZ'
     assert p.company.registration == 'License 2542361.01 (Dubai)'
+    assert p.company.registration_number == '2542361.01'
+    assert p.company.office.lines == (
+        'Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba', 'Dubai')
+    assert p.company.office.country_code == 'AE'
     assert p.time_zone == 'Asia/Dubai'
     assert p.language_choices == [('en', 'English')]
     assert p.currencies == ('AED', 'USD')

@@ -532,13 +532,18 @@ msgstr "dónde estamos"
 msgid "contact"
 msgstr "contacto"
 
-#: templates/base.html:108
-msgid "Company number"
-msgstr "Número de registro mercantil"
+#: templates/base.html:110
+#, python-format
+msgid "Registered office: %(address)s"
+msgstr "Domicilio social: %(address)s"
 
-#: templates/base.html:109
-msgid "Registered office: 19 Baggot Street Lower, Dublin 2, D02 X658, Ireland"
-msgstr "Domicilio social: 19 Baggot Street Lower, Dublin 2, D02 X658, Irlanda"
+#: regions/profiles.py
+msgid "Company number 815526 (Ireland)"
+msgstr "Número de registro mercantil 815526 (Irlanda)"
+
+#: regions/profiles.py
+msgid "License 2542361.01 (Dubai)"
+msgstr "Licencia 2542361.01 (Dubái)"
 
 #: templates/base.html:111
 msgid "Legal"
@@ -836,6 +841,15 @@ msgstr "Lea los documentos siguientes. Para crear su cuenta debe aceptar los Té
 #, python-format
 msgid "version %(version)s"
 msgstr "versión %(version)s"
+
+#: mytp_publicsite/templates/publicsite/legal/base_legal.html
+#: signup/templates/signup/step_legal.html
+msgid ""
+"Provisional text: this document is pending legal review and will be replaced "
+"by its final version."
+msgstr ""
+"Texto provisional: este documento está pendiente de revisión legal y se "
+"sustituirá por su versión definitiva."
 
 #: signup/forms.py
 msgid "The documents have been updated. Please review them again."

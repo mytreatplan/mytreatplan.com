@@ -20,15 +20,42 @@ LANGUAGE_NAMES = {
 }
 
 
+def gettext_noop(message):
+    """Marks a string for makemessages without translating it (no Django import here:
+    settings.py loads this module first). Templates translate it where it is shown."""
+    return message
+
+
 class UnknownRegion(ValueError):
     """`REGION` names no profile."""
 
 
 @dataclass(frozen=True)
+class RegionOffice:
+    """A registered office: its address lines (street, locality, postal code; an empty one
+    is left out) and its ISO country code. The country's name is not stored: templates
+    show it in the page language from the code (regions.context_processors)."""
+    street: str
+    locality: str
+    postal_code: str
+    country_code: str
+
+    @property
+    def lines(self):
+        """The address lines without the country, empty ones left out."""
+        return tuple(line for line in (self.street, self.locality, self.postal_code) if line)
+
+
+@dataclass(frozen=True)
 class RegionCompany:
-    """The region's company, for the footer and legal texts (used from epic-regions 2.6)."""
+    """The region's company, for the footer, the home page's structured data and the
+    public legal texts (epic-regions 2.6). The registration line is shown as a whole,
+    translated where it is rendered (marked with gettext_noop); `registration_number` is
+    the bare number or license, for the structured data."""
     name: str
     registration: str
+    registration_number: str
+    office: RegionOffice
 
 
 @dataclass(frozen=True)
@@ -70,7 +97,12 @@ PROFILES = {
         code='eu',
         domains=('mytreatplan.com', 'www.mytreatplan.com'),
         company=RegionCompany(name='MyTPDSO Limited',
-                              registration='Company number 815526 (Ireland)'),
+                              registration=gettext_noop('Company number 815526 (Ireland)'),
+                              registration_number='815526',
+                              office=RegionOffice(street='19 Baggot Street Lower',
+                                                  locality='Dublin 2',
+                                                  postal_code='D02 X658',
+                                                  country_code='IE')),
         time_zone='Europe/Madrid',
         languages=('en', 'es'),
         currencies=('EUR', 'USD'),
@@ -83,7 +115,14 @@ PROFILES = {
         code='ae',
         domains=('mytreatplan.ae', 'www.mytreatplan.ae'),
         company=RegionCompany(name='MyTPDSO L.L.C-FZ',
-                              registration='License 2542361.01 (Dubai)'),
+                              registration=gettext_noop('License 2542361.01 (Dubai)'),
+                              registration_number='2542361.01',
+                              office=RegionOffice(
+                                  street='Meydan Grandstand, 6th Floor, Meydan Road, '
+                                         'Nad Al Sheba',
+                                  locality='Dubai',
+                                  postal_code='',
+                                  country_code='AE')),
         time_zone='Asia/Dubai',
         languages=('en',),
         currencies=('AED', 'USD'),

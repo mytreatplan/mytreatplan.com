@@ -1,7 +1,9 @@
 {# DRAFT legal text ported from mytreatplan.ae, pending lawyer: not for production. #}
 {% comment %}
 Ported verbatim from the mytreatplan.ae privacy/ page (uae_landing commit 1a8f27e).
-Only internal links were changed to url tags so they render on this site. Replace this
+Only internal links were changed to url tags so they render on this site, and the company
+(name, registration, registered office) comes from the region profile (epic-regions 2.6:
+regions.context_processors). Replace this
 whole file with the lawyer's mytreatplan.com text, then set LEGAL_TEXTS_FINAL = True in
 settings. No translate tags here: the lawyer's Spanish text goes in _privacy_body_es.html.
 {% endcomment %}
@@ -14,8 +16,8 @@ settings. No translate tags here: the lawyer's Spanish text goes in _privacy_bod
       tool is activated.</p>
 </div>
 <h2>1. Introduction</h2>
-<p>This Privacy Policy explains how MyTPDSO L.L.C-FZ, a company incorporated in the United
-    Arab Emirates and established in Meydan Free Zone, Dubai, UAE ("MyTreatPlan", "we", "us"
+<p>This Privacy Policy explains how {{ region_company.name }} ({{ legal_company_registration }}),
+    whose registered office is at {{ legal_company_address }} ("MyTreatPlan", "we", "us"
     or "our"), collects, uses, stores and shares personal data through this website.</p>
 <p>We are committed to protecting personal data and processing it responsibly and in
     accordance with applicable data protection laws in the United Arab Emirates, including
@@ -170,6 +172,6 @@ settings. No translate tags here: the lawyer's Spanish text goes in _privacy_bod
     Where a change materially affects how personal data is processed, we will take
     appropriate steps to inform the individuals concerned.</p>
 <h2>14. Contact</h2>
-<p>MyTPDSO L.L.C-FZ<br>
-Meydan Grandstand, 6th Floor, Meydan Road, Nad Al Sheba, Dubai, U.A.E.<br>
+<p>{{ region_company.name }}<br>
+{{ legal_company_address }}<br>
 <a href="mailto:gdpr@mytreatplan.com">gdpr@mytreatplan.com</a></p>

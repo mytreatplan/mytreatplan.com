@@ -18,6 +18,12 @@
       {{ body }}
     </div>
   </details>
+  {# Not the lawyer's final text yet (LegalDocument.provisional, set in the admin). #}
+  {% if document.provisional %}
+  <p class="rounded-12 border border-notice-border bg-notice-bg px-4 py-3 text-[14px] leading-[1.5] text-notice-text" role="note" data-legal-provisional>
+    {% translate "Provisional text: this document is pending legal review and will be replaced by its final version." %}
+  </p>
+  {% endif %}
   <label for="{{ field.id_for_label }}" class="flex cursor-pointer items-start gap-3 text-[15px] leading-[1.45] text-ink">
     {{ field }}
     <span>{{ field.label }}</span>

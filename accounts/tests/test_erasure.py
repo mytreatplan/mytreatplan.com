@@ -148,6 +148,26 @@ def test_erase_ends_the_sessions(staff):
     assert not Client().login(email=EMAIL, password=PASSWORD)
 
 
+@pytest.mark.parametrize('site', ['eu', 'ae'])
+def test_withdrawal_is_recorded_on_the_sites_consent(staff, request, site):
+    """The current commercial consent is the site's region's (epic-regions 2.6): another
+    region's later version is never the one withdrawn."""
+    if site == 'ae':
+        request.getfixturevalue('ae_portal')
+    other = LegalDocument(kind=CONSENT, title_en='x', title_es='x', body_en='x', body_es='x',
+                          published_at=timezone.now() - timedelta(minutes=1))
+    other.region = 'eu' if site == 'ae' else 'ae'
+    other.save()
+    user = _user()
+    consent = _choose(user, CONSENT, True).document
+    assert consent.region == site
+
+    erase_user(user, by=staff)
+
+    withdrawal = user.legal_choices.order_by('-decided_at', '-id').first()
+    assert (withdrawal.document, withdrawal.accepted) == (consent, False)
+
+
 # --- Re-register -------------------------------------------------------------------------------
 
 def test_erased_email_and_phone_are_free_again(staff):
