@@ -3,7 +3,7 @@ title: 'Refactor sweep (epic-admin-interface)'
 type: 'refactor'
 ticket: '12'
 created: '2026-11-14'
-status: 'built'
+status: 'done'
 baseline_revision: '650ac9f7c59e7e785fe179589687cfd35d11491d'
 route: 'full'
 route_source: 'auto'
@@ -124,3 +124,10 @@ Quick lens (Opus, one reviewer per repo), 2026-11-14: 2 findings, both low, both
 - the admin suite (admin venv) -- expected: 1582 passed, 12 skipped
 - `manage.py makemigrations --check --dry-run` in both repos -- expected: no changes
 - `git diff --stat` in both repos -- expected: no migration, template, `vendor/` or core file
+
+## Staging
+
+- Merged 2026-11-14: portal PR #100 (merge 822382e), mytp-admin PR #40 (merge 78aadf0). No mytp-core release, no migration.
+- CI: every PR check `pass` on both repos. Master runs: portal 43632711386 (test, deploy dev, deploy dev-ae) all `success`; admin 43632718501 `test` failed once on `layout/tests/test_pages.py::test_home_is_the_empty_adminlte_layout` (not touched by this entry; recorded in `deferred-work.md`), then `success` on the re-run of the same commit, and the admindev deploy `success`.
+- Local suites before the merge: portal 3027 passed, 12 skipped, 0 failed; admin 1582 passed, 12 skipped.
+- Checks (2026-11-14): `/healthz` answers on dev, dev-ae and admindev; `pull_config` prints `v205 applied` on dev and dev-ae; a count-only search of each site's settings finds no `INTERFACE_SAMPLE_EVENTS` (0 on dev, dev-ae, admindev).
