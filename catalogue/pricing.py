@@ -48,7 +48,10 @@ line's rule order; an order of 0.00 needs none; an order above 0 with no common 
 is priced and flagged `no_payment_method`.
 
 "Offered" is what `resolver.offers_under(subscription, day, country)` means; with no
-billing rule typed at all there is no company, so every order is refused.
+billing rule typed at all there is no company, so every order is refused. `price_order`'s
+optional `held=True` (epic-subscriptions entry 1) prices under a subscription the doctor
+holds: a deactivated one offers as an active one (`price_subscription`, a purchase, has
+no such argument: a deactivated subscription is not sold).
 """
 import uuid
 from dataclasses import dataclass
@@ -211,9 +214,11 @@ def _check_vies(vies):
 
 
 def price_order(billing_country, subscription, lines, *, vies, voucher=None, doctor=None,
-                day=None):
+                day=None, held=False):
     """The `PricedOrder` of a service order, or `OrderRefused`: see the module
-    docstring. A voucher must be of type `try_me`."""
+    docstring. A voucher must be of type `try_me`. `held`: the subscription is one the
+    doctor holds, offered as an active one when deactivated (`resolver.offers_under`;
+    epic-subscriptions entry 1, through `subscriptions.service.price_order_for`)."""
     _check_vies(vies)
     day = day or resolver.today()
     lines = list(lines)
@@ -221,7 +226,7 @@ def price_order(billing_country, subscription, lines, *, vies, voucher=None, doc
         raise OrderRefused(NO_LINES, 'the order has no lines')
     group = _group(billing_country)
     offered = {found.pk for found, _price in resolver.offers_under(
-        subscription, day, country=billing_country)}
+        subscription, day, country=billing_country, held=held)}
     priced = []
     for asked in lines:
         product = asked.product

@@ -81,3 +81,54 @@ its reason):
 
 Each `--product` starts a line; the `--quantity`, `--add-on` and `--ice` after it belong
 to that line. `--subscription <id or code>` replaces `--tier` for a manual subscription.
+
+## A doctor's subscription (epic-subscriptions entry 1)
+
+Each doctor (neither staff nor a superuser) has one subscription record
+(`subscriptions.DoctorSubscription`) and one change row per change of it
+(`SubscriptionChange`: when, who, why, the values before and after). One module reads and
+writes them (AD-15): `subscriptions.service`. A record of a staff account (a doctor
+made staff or a superuser) is ignored: the service reads it as no record and refuses to
+change it (`RecordGone`); the row is kept. Nothing else writes the two tables; the
+record names the catalogue subscription by its UUID only (no database link), so a
+snapshot apply never deletes, blocks on or changes a record.
+
+- `ensure_basic(user, actor)`: Basic for a doctor without a record, inside the caller's
+  transaction. Signup calls it (actor: the doctor) and so does the Django admin's add
+  (actor: the system). It reads no catalogue table: signup never fails because of the
+  catalogue. A Basic record that is not manual holds the level only: the doctor's
+  subscription is whichever active standard Basic their country group has today.
+- `effective(user, day=None)`: the one rule. Active and past due count as the record's
+  tier; cancelled as the record's tier up to and including its end date, Basic after
+  it; expired as Basic; a doctor without a record as Basic. Basic is the active standard
+  Basic of the profile country's group (none for another region's country, a blank one,
+  a group without a Basic or no snapshot yet: the doctor is then offered nothing).
+  Another tier is the record's own catalogue row (`held`), whatever its state: a row
+  deactivated on the admin site is no longer sold, and its holder keeps it until its end
+  date. A row the snapshot does not have is logged as an error and priced as the
+  group's Basic; so is a row whose tier or kind (standard or manual) was changed on the
+  admin site under the same id. A manual record cannot be switched by the doctor
+  (`can_self_switch`) while it counts as its own tier; an expired one, or a cancelled
+  one past its end date, is Basic and the doctor may switch (the record then becomes
+  standard). A cancelled record always has an end date.
+- `offers_for(user, day=None)`, `price_order_for(user, lines, *, vies, voucher=None,
+  day=None)`: the doctor's offers and an order's price, through
+  `catalogue.resolver.offers_under` and `price_order` (new optional `held=True`: a
+  deactivated subscription the doctor holds offers as an active one). No arithmetic in
+  the service (AD-16).
+- `change(user, *, expected_version, actor, reason, **fields)`, `assign_manual(user,
+  subscription, *, expected_version, actor, ends_on=None)`: lock the record, check its
+  version (`StaleVersion` with the current one, the remote write's), refuse a doctor's
+  change of a manual record (`ManualLocked`), check the values (`ChangeRefused`), apply,
+  version + 1, store the actor (doctor, admin or system, AD-22), add a change row.
+  `assign_manual` takes an admin or system actor and an active manual catalogue row.
+
+Existing doctors get Basic from migration `subscriptions.0002` (started the day they
+joined). After a deploy, `assign_basic` gives one to any doctor the previous release
+created meanwhile; `doctor_subscription` prints a doctor's record (both in
+deploy/README.md, "Doctor subscriptions"):
+
+    python manage.py assign_basic [--dry-run]
+    python manage.py doctor_subscription <uid or email> [--offers]
+    python manage.py doctor_subscription <uid or email> --order --product <UUID or code> \
+        [--quantity N] [--vies valid|invalid|pending|not_applicable]

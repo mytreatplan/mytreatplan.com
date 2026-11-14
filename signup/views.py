@@ -44,6 +44,7 @@ from eventlog import service as eventlog
 from eventlog.models import Attempt
 from legal.models import LegalChoice, LegalDocument
 from regions.countries import lookup_country
+from subscriptions import service as subscriptions
 
 from .forms import (BLOCKED_CAPTCHA, COUNTRY_BANNED_MESSAGE, EMAIL_EXISTS, EMAIL_PENDING,
                     EMAIL_REGISTERED_MESSAGE, PHONE_EXISTS,
@@ -432,6 +433,9 @@ def _create_account(request, index, step, form, pending, attempt):
             user.save()
             # The admin site's copy (client.updated, epic-admin-interface entry 8).
             client_sync.emit(user)
+            # Basic, by the doctor (epic-subscriptions entry 1): reads no catalogue
+            # table, so signup never fails because of the catalogue.
+            subscriptions.ensure_basic(user, subscriptions.doctor_actor(user))
             # The legal choices become the user's (same versions and times), before
             # the pending registration (and its CASCADE) goes.
             LegalChoice.objects.filter(pending_registration=pending).update(

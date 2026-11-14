@@ -9,6 +9,8 @@ from django.template.response import TemplateResponse
 from django.utils import timezone
 from django.utils.translation import gettext, gettext_lazy as _, pgettext_lazy
 
+from subscriptions import service as subscriptions
+
 from . import client_sync, erasure
 from .crypto import email_index
 from .models import User
@@ -211,10 +213,13 @@ class UserAdmin(BaseUserAdmin):
     def save_model(self, request, obj, form, change):
         """Save (add or change), then tell the admin site in the same transaction
         (client.updated; client.erased for a client made staff; nothing for a staff
-        account never sent: accounts.client_sync)."""
+        account never sent: accounts.client_sync). A doctor added here gets Basic, by
+        the system (epic-subscriptions entry 1; nothing for staff)."""
         with transaction.atomic():
             super().save_model(request, obj, form, change)
             client_sync.emit(obj)
+            if not change:
+                subscriptions.ensure_basic(obj, subscriptions.SYSTEM_ACTOR)
 
     def log_addition(self, request, obj, message):
         return super().log_addition(request, _LoggedUser(obj), message)

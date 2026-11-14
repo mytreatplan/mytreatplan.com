@@ -409,6 +409,11 @@ INSTALLED_APPS = [
     # read-only tables filled by the snapshot apply, the resolver that prices
     # (catalogue.resolver) and the command price_catalogue.
     'catalogue.apps.CatalogueConfig',
+    # The subscription a doctor holds (epic-subscriptions entry 1, AD-15): the record
+    # (one per doctor, Basic from signup) and its change rows, written only by
+    # subscriptions.service (the effective tier, the doctor's offers and order prices
+    # through catalogue.resolver), and the commands assign_basic and doctor_subscription.
+    'subscriptions.apps.SubscriptionsConfig',
     # The django.tasks database backend (AD-8, epic-platform entry 9): its table of
     # queued and finished tasks, and the commands db_worker (systemd
     # mytp-<site>-worker) and prune_db_task_results (the `prunetasks` job).
