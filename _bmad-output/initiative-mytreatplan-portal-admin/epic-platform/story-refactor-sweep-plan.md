@@ -3,7 +3,7 @@ title: 'Refactor sweep (epic-platform)'
 type: 'refactor'
 ticket: '15'
 created: '2026-11-14'
-status: 'built'
+status: 'done'
 baseline_revision: '7839a25736fd1e0b5b19f7b3fddad663201297f0'
 route: 'full'
 route_source: 'auto'
@@ -134,3 +134,10 @@ Quick lens (Opus), 2026-11-14: 7 findings, 6 patched, 1 rejected.
 - the portal's full suite command (SQLite, `../.venv`) -- expected: baseline count minus the tests named in the notes
 - the admin suite (admin venv) -- expected: 1582 passed, 12 skipped
 - `git diff --stat` in both repos -- expected: no migration, template, `vendor/`, `deploy/*.sh`, systemd, nginx or core file
+
+## Staging
+
+- Merged 2026-11-14: portal PR #97 (merge 08097cb), mytp-admin PR #39 (merge bd1ef04). No mytp-core release, no migration.
+- CI: every PR check `pass` on both repos; master runs 43571132214 (portal: test, deploy dev, deploy dev-ae) and 43571135890 (admin: test, deploy) all `success`.
+- Local suites before the merge: portal 2893 passed, 11 skipped, 0 failed (implementer) and 2892 passed, 11 skipped, 1 failed (second run, the recorded SQLite-only `test_remembered_device` failure that depends on the local `SECRET_KEY`); admin 1582 passed, 12 skipped.
+- Checks: `/healthz` answers 200 on dev, dev-ae and admindev after the deploys (2026-11-14).
