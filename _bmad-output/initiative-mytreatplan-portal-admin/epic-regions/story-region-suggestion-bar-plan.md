@@ -3,7 +3,7 @@ title: 'Region suggestion bar'
 type: 'feature'
 ticket: '5'
 created: '2026-11-03'
-status: 'built'
+status: 'done'
 baseline_revision: 'bb089c013cf285fb2f1ac694c9393ea9c00e4266'
 route: 'full'
 route_source: 'auto'
@@ -35,6 +35,7 @@ context: []
 - Cookie `mytp_stay_region`, value `1`, path `/`, HttpOnly, SameSite=Lax, Secure when DEBUG is off (as `accounts/devices.py:80-84`), max-age 1 year.
 - No literal `'eu'`/`'ae'` in .py outside `regions/`. No IP or country is logged.
 
+- Decision (user, 2026-11-04): the brand is spelled "MyTreatPlan", as on the rest of the site.
 - Decision (user, 2026-11-04): the cookie lasts 1 year; the bar's × is the same link as "Stay here".
 - Decision (user, 2026-11-04): the DB-IP attribution is a small "IP geolocation by DB-IP" link (https://db-ip.com) in the footer of every page (base.html), translated.
 - Decision (user, 2026-11-04): create `_bmad-output/initiative-mytreatplan-portal-admin/privacy-notes-for-lawyer.md` listing every cookie (csrftoken, sessionid, the remembered-device cookie, `mytp_stay_region`) with purpose and lifetime, and the local geo-IP lookup (no IP leaves the instance, nothing stored). The public privacy text stays unchanged until the lawyer answers.
@@ -115,3 +116,15 @@ Verification after the patches: full suite on SQLite with the CI environment, 17
 
 **Manual checks (if no CLI):**
 - On dev with the override header SA: the bar links to dev-ae; Stay here hides it on later pages; ES and a crawler UA see none. Mirror on dev-ae.
+
+## Staging
+
+- Merged 2026-11-04: portal PR #65 (merge 5842b04), deployed to dev and dev-ae (master run 41818581609). The user postponed the staging checks that day and asked for them on 2026-11-14.
+- Checks on 2026-11-14, run on each site through its own code and settings (Django's test client from the site's shell, with the override header `X-MyTP-Geo-Country`; not through nginx), all passed:
+  1. dev with `SA`: the bar shows on `/en/` and `/es/privacy/` and links to dev-ae.
+  2. dev with `SA` and the `mytp_stay_region` cookie: no bar. The "Stay here" click itself (the view that sets the cookie) was not clicked in a browser; the suite covers it.
+  3. dev with `ES`, and with `SA` plus a Googlebot user agent: no bar.
+  4. dev `/en/login/` with `SA`: no bar.
+  5. The footer credits DB-IP on both sites.
+  6. dev-ae with `ES`: the bar links to dev; with `AE`, a bot or the cookie: no bar. Without the header (the shell's own address) neither site shows a bar.
+- Marked done on the user's instruction (2026-11-14).

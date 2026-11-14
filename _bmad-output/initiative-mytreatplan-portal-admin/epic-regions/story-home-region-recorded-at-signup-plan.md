@@ -3,7 +3,7 @@ title: 'Home region recorded at signup'
 type: 'feature'
 ticket: '2'
 created: '2026-11-02'
-status: 'built'
+status: 'done'
 baseline_revision: '5148c12b6bc8ff4be15f42b10c537fa23f959246'
 route: 'full'
 route_source: 'auto'
@@ -101,3 +101,12 @@ The database default must not depend on settings, because migrations are frozen 
 ### Pass 1 (quick, 2026-11-02): high 0, medium 0, low 0, false 0, maybe-false 0
 
 No findings. Reviewer ran test_user, test_home_region, test_guard (38 passed) and makemigrations --check under REGION=eu and ae (no changes). Noted, not defects: 0012 freezes `accounts.models.instance_region` as its default (keep a stub there if it ever moves); a row the old release inserts after 0013 keeps `''` (the accepted residual risk; re-run `fill_home_regions` from the shell).
+
+## Staging
+
+- Merged 2026-11-02: portal PR #60 (merge 7434d79), deployed to dev and dev-ae by CI.
+- Checks on 2026-11-14 (read from each site's database, counts and regions only), all passed:
+  1. dev: the doctor who signed up on 2026-11-14 has home region `eu`.
+  2. dev-ae: the doctor who signed up on 2026-11-13 (country AE) has `ae`; the account from 2026-11-01, created before this entry, was filled with `ae` by the migration (its country is IE: the region comes from the site, not from the country).
+  3. That a later change of the country map leaves the value alone is covered by the suite only.
+- The completion record was written late (2026-11-14); nothing was pending but the record.
