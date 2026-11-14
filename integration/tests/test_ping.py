@@ -20,16 +20,13 @@ from django.utils import timezone
 from integration import calls
 from integration.models import InterfaceCall
 from integration.peers import parse_peers
+from integration.tests.snapshot_rows import ADMIN, ADMIN_SEED, PORTAL, PORTAL_SEED
 from mytp_core import interface
 
 DEPLOY = Path(django_settings.BASE_DIR) / 'deploy'
 
-ADMIN_SEED = b'test-only-interface-seed-admin!!'
 ADMIN_NEW_SEED = b'test-only-interface-seed-admin2!'
-PORTAL_SEED = b'test-only-interface-seed-portal!'
-ADMIN = interface.SigningKey('a1', ADMIN_SEED)
 ADMIN_NEW = interface.SigningKey('a2', ADMIN_NEW_SEED)
-PORTAL = interface.SigningKey('p1', PORTAL_SEED)
 SEED_TEXTS = [text for seed in (ADMIN_SEED, ADMIN_NEW_SEED, PORTAL_SEED)
               for text in (seed.decode(), base64.b64encode(seed).decode(), seed.hex())]
 PING = '/api/v1/ping'
@@ -184,7 +181,7 @@ def test_claimed_identifiers_are_sanitized():
         method = 'GET'
         META = {'REMOTE_ADDR': '203.0.113.7'}
     request = Request()
-    calls._outcome(request, False, 'signature', 'bad iss\nline', 'k' * 80)
+    calls.outcome(request, False, 'signature', 'bad iss\nline', 'k' * 80)
     assert request.interface_outcome['iss'] == '?' and request.interface_outcome['kid'] == '?'
 
 

@@ -11,15 +11,13 @@ from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
-from mytp_core import interface
 from mytp_core.contracts import errors as contract_errors
 from mytp_core.contracts import error_body, utc_text
 from mytp_core.contracts.events import UUID_RE
 from mytp_publicsite.models import ContactMessage
 
-from . import calls, config, remote, sample
-from .calls import signed_endpoint
-from .outbox import admin_site_url
+from . import config, remote, sample
+from .calls import not_the_admin_site, signed_endpoint
 
 logger = logging.getLogger('integration.config')
 clients_logger = logging.getLogger('integration.clients')
@@ -35,21 +33,6 @@ def ping(request):
                          'time': utc_text(timezone.now())})
 
 
-def _not_the_admin_site(request):
-    """None when the request is signed by the admin site; else the response: 503 when the
-    admin site cannot be told, 401 (an unknown key) for another signed peer."""
-    claims = request.interface_claims
-    try:
-        admin, _url = admin_site_url()
-    except interface.InterfaceError as exc:
-        return calls._unavailable(request, exc)
-    if claims['iss'] != admin:
-        calls._outcome(request, False, contract_errors.UNKNOWN_KEY, claims['iss'],
-                       claims.kid)
-        return JsonResponse(interface.refusal_body(contract_errors.UNKNOWN_KEY), status=401)
-    return None
-
-
 @require_POST
 @signed_endpoint
 def config_nudge(request):
@@ -58,7 +41,7 @@ def config_nudge(request):
     repeated nudges coalesce into the one already queued). The body is ignored: the
     snapshot is always pulled, never pushed. Only the admin site may nudge: another signed
     peer is refused as an unknown key (401)."""
-    refused = _not_the_admin_site(request)
+    refused = not_the_admin_site(request)
     if refused is not None:
         return refused
     queued = config.request_pull()
@@ -95,16 +78,11 @@ def clients_resync(request):
     other body (extra keys included).
     Only the admin site may ask: another signed peer is refused as an unknown key
     (401)."""
-    refused = _not_the_admin_site(request)
+    refused = not_the_admin_site(request)
     if refused is not None:
         return refused
-    try:
-        data = json.loads(request.body)
-    except (ValueError, RecursionError):
-        data = None
-    uid = data.get('aggregate_id') if isinstance(data, dict) and set(data) == {
-        'aggregate_id'} else None
-    if not (isinstance(uid, str) and UUID_RE.fullmatch(uid)):
+    uid = _resync_uid(request)
+    if uid is None:
         return JsonResponse(error_body(INVALID_BODY, 'The body is not {"aggregate_id": '
                                                      '"<uuid>"}.'), status=400)
     user = (get_user_model().objects.filter(uid=uid)
@@ -133,7 +111,7 @@ def contact_messages_resync(request):
     uid that is no message here (never one, or deleted); 400 `invalid_body` for any other
     body (extra keys included). Only the admin site may ask: another signed peer is
     refused as an unknown key (401)."""
-    refused = _not_the_admin_site(request)
+    refused = not_the_admin_site(request)
     if refused is not None:
         return refused
     uid = _resync_uid(request)
@@ -163,7 +141,7 @@ def remote_sample_record(request):
     integration.sample.update_sample_record). Another signed peer is refused (401
     `unknown_key`) first, whatever the setting; then 404 `not_found` when the setting
     is off."""
-    refused = _not_the_admin_site(request)
+    refused = not_the_admin_site(request)
     if refused is not None:
         return refused
     if not sample.enabled():

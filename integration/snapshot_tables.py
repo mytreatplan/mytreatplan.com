@@ -12,7 +12,7 @@ not inherited by a child that declares its own, so each model sets it), so
 `Model._base_manager` and the reverse related managers' `add()` / `set()` (which update
 through the base manager) are refused too.
 
-The marker is a context variable, set only by `_snapshot_apply()` around the writes of
+The marker is a context variable, set only by `snapshot_apply()` around the writes of
 integration.config._apply and reset when it ends, also by an error: a thread (or an async
 task) sees only its own apply, never another one's. Production code sets it nowhere else
 (integration/tests/test_snapshot_tables.py checks that). Tests that need rows write them
@@ -49,7 +49,7 @@ def snapshot_apply_running():
 
 
 @contextlib.contextmanager
-def _snapshot_apply():
+def snapshot_apply():
     """Mark the snapshot apply as running for the block (integration.config._apply only;
     the test helper integration/tests/snapshot_rows.py)."""
     token = _applying.set(True)

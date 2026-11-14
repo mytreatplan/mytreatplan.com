@@ -21,13 +21,12 @@ from django.core.management import CommandError, call_command
 
 from integration import checks, hub
 from integration.hub import HubLookupFailed, HubRefused, HubUnavailable, lookup
+from integration.tests.snapshot_rows import PORTAL, PORTAL_SEED
 from mytp_core import interface
 from mytp_core.contracts import SampleAvailability, error_body, sample_availability
 from mytp_core.contracts.hub import SAMPLE_AVAILABILITY_PATH
 
-PORTAL_SEED = b'test-only-interface-seed-portal!'
 PORTAL_AE_SEED = b'test-only-interface-seed-portal2'
-PORTAL = interface.SigningKey('p1', PORTAL_SEED)
 PORTAL_AE = interface.SigningKey('q1', PORTAL_AE_SEED)
 ADMIN_URL = 'https://admindev.example.test'
 NOW = datetime(2026, 11, 9, 10, 0, tzinfo=UTC)

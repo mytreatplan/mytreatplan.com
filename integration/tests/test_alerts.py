@@ -311,3 +311,20 @@ def test_the_thresholds_are_checked(settings, name, value, ok):
     assert [e.id for e in errors] == ([] if ok else [check_id])
     if not ok:
         assert name in errors[0].msg
+
+
+@pytest.mark.parametrize('name', ['integration.alerts', 'integration.remote'])
+def test_the_info_lines_reach_the_journal(monkeypatch, name):
+    """`integration.alerts` (an alert cleared) and `integration.remote` (each remote read
+    and write) have the console handler at INFO, as their neighbours in LOGGING: without
+    it their INFO lines never reached the journal (deferred-work, epic-admin-interface)."""
+    assert django_settings.LOGGING['loggers'][name] == {'handlers': ['console'],
+                                                        'level': 'INFO'}
+    logger = logging.getLogger(name)
+    handlers = [h for h in logger.handlers if isinstance(h, logging.StreamHandler)]
+    assert handlers
+    emitted = []
+    for handler in handlers:
+        monkeypatch.setattr(handler, 'emit', emitted.append)
+    logger.info('probe line')
+    assert [record.getMessage() for record in emitted] == ['probe line'] * len(handlers)

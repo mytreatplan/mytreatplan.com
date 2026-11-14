@@ -23,13 +23,12 @@ from django.utils import timezone
 
 from integration import outbox
 from integration.models import OutboxEvent
+from integration.tests.snapshot_rows import PORTAL, PORTAL_SEED
 from mytp_core import interface
 from mytp_core.contracts import (ContractViolation, EventEnvelope, InvalidPayload,
                                  UnknownEventType, check_central_payload)
 
 DEPLOY = Path(django_settings.BASE_DIR) / 'deploy'
-PORTAL_SEED = b'test-only-interface-seed-portal!'
-PORTAL = interface.SigningKey('p1', PORTAL_SEED)
 SAMPLE = 'client.updated'
 EVENTS_URL = 'https://admindev.example.test/api/v1/events'
 SECRET_LABEL = 'label-that-must-not-leak'
@@ -678,14 +677,6 @@ def test_the_migration_encrypts_existing_payloads_and_reverses():
 
 
 # --- Checks -----------------------------------------------------------------------------
-
-def test_the_sample_setting_and_its_check_are_gone():
-    from integration.checks import check_interface_settings
-    assert not hasattr(django_settings, 'INTERFACE_SAMPLE_EVENTS')
-    assert 'integration.E004' not in {e.id for e in check_interface_settings()}
-    with pytest.raises(CommandError):
-        call_command('emit_sample_event', str(uuid.uuid4()), '1', stdout=io.StringIO())
-
 
 def test_admin_site_must_be_a_peer(settings):
     from integration.checks import check_interface_settings

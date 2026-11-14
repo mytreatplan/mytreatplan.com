@@ -2370,9 +2370,7 @@ only a code (`missing`, `signature`, `unknown_key`, `audience`, `expired`,
 
 The `purgeinterfacecalls` job (04:20 UTC daily) and the `/api/` Nginx block reach a site
 only when `provision.sh` runs again after the merge's deploy (see [Sites on the staging
-host](#sites-on-the-staging-host)); admindev's copy of `deploy/` needs the same. After
-its first run, disable its Sentry monitor `mytp-<site>-purgeinterfacecalls` as for the
-other jobs.
+host](#sites-on-the-staging-host)); admindev's copy of `deploy/` needs the same.
 
 ### Set up the keys (dev and admindev)
 
@@ -2704,8 +2702,7 @@ sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from django.db.models imp
 
 A stopped admin site: with admindev's Gunicorn stopped, a recorded event stays pending with
 `attempts` and `last_error` growing (1, 2, 4 ... minutes apart); once it is started again,
-the next run delivers it. (The staging-only sample event of entry 3, `emit_sample_event`
-and `INTERFACE_SAMPLE_EVENTS`, are gone: remove the setting from `shared/settings.env`.)
+the next run delivers it.
 
 #### Client records
 

@@ -71,6 +71,7 @@ from mytp_core.contracts import (RemoteWriteRequest, canonical_json, changes_for
 from mytp_core.contracts import errors as contract_errors
 
 from . import access_log
+from .calls import not_the_admin_site
 from .models import REMOTE_WRITE_RETENTION_DAYS, RemoteAccess, RemoteWrite
 
 logger = logging.getLogger('integration.remote')
@@ -110,9 +111,7 @@ def remote_read(request, resource, object_id, load, build, assignee=None, versio
     resource has none); `build(record)` the dict of all its fields (JSON-ready), called
     only after the access is logged; `version(record)` its version, for a versioned
     resource (entry 6)."""
-    from .views import _not_the_admin_site
-
-    refused = _not_the_admin_site(request)
+    refused = not_the_admin_site(request)
     if refused is not None:
         return refused
     claims = request.interface_claims
@@ -241,9 +240,7 @@ def remote_write(request, resource, load, update, build, assignee=None, version=
     the resource's service function (locks, checks the version, applies, version + 1;
     raises StaleVersion or RecordGone; returns the updated record); `build(record)` all
     its fields, JSON-ready; `version(record)` its version."""
-    from .views import _not_the_admin_site
-
-    refused = _not_the_admin_site(request)
+    refused = not_the_admin_site(request)
     if refused is not None:
         return refused
     claims = request.interface_claims
