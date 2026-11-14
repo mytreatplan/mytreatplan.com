@@ -59,6 +59,9 @@ from django.conf import settings
 from mytp_core.contracts import AddOnRefused, QuantityRefused, line_price
 from mytp_core.money import CURRENCIES, Money
 
+# catalogue.resolver reads this module's names lazily (its `__getattr__`), so importing it
+# here is not circular.
+from . import resolver
 from .models import Product, Voucher
 
 __all__ = ['OrderLine', 'OrderRefused', 'PLANNING_CATEGORIES', 'PricedLine', 'PricedOrder',
@@ -190,18 +193,13 @@ class _Line:
     period: str | None = None
 
 
-def _resolver():
-    from . import resolver
-    return resolver
-
-
 def _group(billing_country):
-    group = _resolver().country_group(billing_country)
+    group = resolver.country_group(billing_country)
     if group is None:
         raise OrderRefused(COUNTRY_NOT_SERVED,
                            f'the country {billing_country!r} is not served by this region',
                            subject=billing_country)
-    if not _resolver().has_billing_rules():
+    if not resolver.has_billing_rules():
         raise OrderRefused(NO_BILLING_RULES,
                            'the catalogue has no billing rules: no company bills')
     return group
@@ -216,7 +214,6 @@ def price_order(billing_country, subscription, lines, *, vies, voucher=None, doc
                 day=None):
     """The `PricedOrder` of a service order, or `OrderRefused`: see the module
     docstring. A voucher must be of type `try_me`."""
-    resolver = _resolver()
     _check_vies(vies)
     day = day or resolver.today()
     lines = list(lines)
@@ -240,10 +237,8 @@ def price_order(billing_country, subscription, lines, *, vies, voucher=None, doc
                                f' {refusal}', subject=product) from None
         except AddOnRefused as refusal:
             raise OrderRefused(ADD_ON_REFUSED, str(refusal), subject=product) from None
-        list_amount = line_price(
-            product.net_price, quantity=asked.quantity,
-            percents=[chosen.percent for chosen in add_ons if chosen.percent is not None],
-            amounts=[chosen.amount_money for chosen in add_ons if chosen.amount is not None])
+        list_amount = line_price(product.net_price, quantity=asked.quantity,
+                                 **resolver.add_on_terms(add_ons))
         priced.append(_Line(product, asked.quantity, list_amount,
                             resolver.discount_percent(product, subscription), discounted,
                             resolver.billing_rule_for(group, product.category),
@@ -258,7 +253,6 @@ def price_subscription(billing_country, subscription, period, *, vies, voucher=N
     `subscription` category rule of the billing country's group (company, VAT, gateways
     and currency, as a product's); a voucher must be of type `subscription`. A free
     subscription is priced at 0.00 in the rule's currency."""
-    resolver = _resolver()
     _check_vies(vies)
     if period not in SUBSCRIPTION_PERIODS:
         raise ValueError(f'period is one of {", ".join(SUBSCRIPTION_PERIODS)}, '
@@ -324,7 +318,6 @@ def _price(billing_country, lines, vies, voucher, voucher_type, doctor, day):
         _check_voucher(voucher, voucher_type, currency, doctor, day)
         shares = _spread(min(voucher.money, sum(bases, zero)), bases)
 
-    resolver = _resolver()
     country = resolver.normal_country(billing_country)
     priced, groups = [], {}
     for line, base, share in zip(lines, bases, shares):
@@ -367,7 +360,6 @@ def _price(billing_country, lines, vies, voucher, voucher_type, doctor, day):
 
 
 def _check_voucher(voucher, voucher_type, currency, doctor, day):
-    resolver = _resolver()
     state = resolver.voucher_state(voucher, day)
     code = voucher.display_code
     if state != resolver.USABLE:

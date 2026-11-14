@@ -39,3 +39,18 @@
 - source_plan: `epic-catalogue/story-products-add-ons-quantities-calls-and-costs-plan.md`
   summary: Make the portal re-apply the current snapshot whenever its appliers change, without relying on a migration that clears the applied version.
   evidence: Entries 5 and 6 clear `ConfigState.version` in a migration; the previous release can pull between `migrate` and the switch (the `pullconfig` timer runs the previous release), or after a failed deploy that is retried, and record the current version without the new parts, after which the new release answers `unchanged` until the next admin write (review finding 7 of entry 6). A stored applier revision next to the applied version would close it.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-catalogue/story-refactor-sweep-plan.md`
+  summary: Status (5.15, 2026-11-14) of "re-apply the current snapshot whenever the appliers change" (epic-catalogue entry 6, review finding 7): closed by `plan-reapply-snapshot-after-deploy.md` (status done).
+  evidence: that plan's Implementation Notes say it closes this entry; the entry above stays as written (append-only).
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-catalogue/story-refactor-sweep-plan.md`
+  summary: Status (5.15, 2026-11-14) of the banned-country re-check at signup (epic-catalogue entry 3's follow-up: a pending registration that passed step 1 before its country was banned could still finish): closed by `plan-signup-banned-country-recheck.md` (status done).
+  evidence: recorded as a follow-up in `epic-catalogue/story-country-groups-and-country-map-editing-plan.md`, not in this file; `signup/views.py::_create_account` re-reads the country map before the account is created.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-catalogue/story-refactor-sweep-plan.md`
+  summary: Recorded and left (user decision 2026-11-14): mytp-admin's copied audited-write and view helpers across catalogue, billing and providers (each service's write-audit-rebuild steps; `catalogue.views`' `StatusColumn`, `EditColumn`, `RegionColumn`, `StyledForm`, `RegionFormMixin`, `PlainTextField` and `add_errors`, imported by billing, providers, vouchers and country_map; `catalogue.service`'s `region_of` and `plain_text`, imported by billing and vouchers). Only `_fixed_region` became public (`fixed_region`) in 5.15; `country_map.service` still imports the private `catalogue.service._lock_groups`.
+  evidence: 5.15 sweep read of mytp-admin; a shared home (a common app or module) is a structural change, out of a behaviour-neutral sweep.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-catalogue/story-refactor-sweep-plan.md`
+  summary: Recorded and left, one entry, no ticket now (user decision 2026-11-14): the mytp-core contract cleanup: drop the two former TPS discount fields (`tps_discount_percent`, `tps_in_house_discount_percent`, superseded by a subscription's `discounts` map), drop the legacy `tps` / `other` category reading, fix the stale `money.py` docstring, and give the portal core's voucher checks instead of its own copy (`catalogue/resolver.py::voucher_state`).
+  evidence: each needs a mytp-core release and a contract change on both sites; 5.15 changed no core file.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-catalogue/story-refactor-sweep-plan.md`
+  summary: Recorded and left: the portal's `catalogue/management/commands/price_catalogue.py` is 627 lines; split it (by mode) when an entry next extends it.
+  evidence: 5.15 plan's Never list (no split in the sweep).

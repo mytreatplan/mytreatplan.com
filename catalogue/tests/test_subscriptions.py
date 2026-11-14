@@ -4,7 +4,7 @@ with their code, texts, linked products, discounts per product category, own pri
 call extras, and the resolver: only the products of a subscription are offered, at its
 discount for the product's category; a manual one is read by its id; the calls of a
 product under a subscription; with `price_catalogue`. One test (or more) per row of the
-plan's matrix. The admin site is the fake of integration/tests/test_config.py (no
+plan's matrix. The admin site is the fake of integration/tests/snapshot_rows.py (no
 network)."""
 import copy
 from decimal import Decimal
@@ -14,11 +14,11 @@ from django.core.management import CommandError
 
 from catalogue import resolver
 from catalogue.models import Product, Subscription
-from catalogue.tests.test_catalogue import (BASIC, IBERIA, REST_OF_EU, TPS, catalogue,
-                                            priced, product, pull, run, subscription)
+from catalogue.tests.test_catalogue import (BASIC, REST_OF_EU, TPS, catalogue, priced, run,
+                                            subscription)
 from integration import config
-from integration.tests.test_config import (ADMIN, admin,  # noqa: F401
-                                           interface_settings, snapshot, state)
+from integration.tests.snapshot_rows import (ADMIN, IBERIA, full_subscription, product, pull,
+                                             snapshot, state)
 from mytp_core import snapshots
 from mytp_core.money import Money
 
@@ -42,19 +42,6 @@ PRODUCTS = [
             code='VO-TWIN', calls={'count': 2, 'minutes': 30}),
     product(RETAINERS, 'Retainers', 'retainers', '50.00', code='RET-1'),
 ]
-
-
-def full_subscription(id_, tier, group_id, code, name, products, discounts=None,
-                      active=True, **more):
-    """A subscription as an admin site on mytp-core 0.22.0 sends it: the two former
-    discount fields equal the map's `tps_branded` and `tps_in_house` values."""
-    discounts = dict(discounts or {})
-    return {'id': id_, 'tier': tier, 'country_group': group_id,
-            'tps_discount_percent': discounts.get('tps_branded', '0.00'),
-            'tps_in_house_discount_percent': discounts.get('tps_in_house', '0.00'),
-            'active': active, 'code': code,
-            'texts': {'en': {'name': name, 'description': ''}},
-            'products': list(products), 'discounts': discounts, **more}
 
 
 PREMIUM_EXTRAS = {'virtuaortho_one': {'extra_calls': 1, 'minutes': 35},
@@ -100,7 +87,7 @@ def names(offers):
 # --- Linked products ----------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_a_doctor_is_offered_only_the_products_of_their_subscription(admin):  # noqa: F811
+def test_a_doctor_is_offered_only_the_products_of_their_subscription(admin):
     assert pull(admin, 1, full()) == ('applied', 1)
     # Advanced Iberia is linked to VirtuaOrtho One; Advanced Rest of EU is not.
     assert priced('ES', 'advanced') == [('TPS branded', Money('94.00', 'EUR')),
@@ -121,7 +108,7 @@ def test_a_doctor_is_offered_only_the_products_of_their_subscription(admin):  # 
 
 
 @pytest.mark.django_db
-def test_a_linked_product_that_is_inactive_or_not_stored_is_not_offered(admin):  # noqa: F811
+def test_a_linked_product_that_is_inactive_or_not_stored_is_not_offered(admin):
     products = copy.deepcopy(PRODUCTS)
     products[2]['active'] = False                      # VirtuaOrtho One, deactivated
     products[0]['category'] = 'a_new_category'         # not stored by this release
@@ -135,7 +122,7 @@ def test_a_linked_product_that_is_inactive_or_not_stored_is_not_offered(admin): 
 
 
 @pytest.mark.django_db
-def test_a_line_of_a_product_the_subscription_does_not_offer_is_refused(admin):  # noqa: F811
+def test_a_line_of_a_product_the_subscription_does_not_offer_is_refused(admin):
     pull(admin, 1, full())
     virtua = resolver.product(VIRTUA)
     assert resolver.price(virtua, resolver.subscription('ES', 'advanced')) == (
@@ -150,7 +137,7 @@ def test_a_line_of_a_product_the_subscription_does_not_offer_is_refused(admin): 
 # --- Snapshots of an admin site before mytp-core 0.22.0 ------------------------------------
 
 @pytest.mark.django_db
-def test_a_snapshot_without_links_offers_every_product_as_before(admin):  # noqa: F811
+def test_a_snapshot_without_links_offers_every_product_as_before(admin):
     """An admin site before this release: subscriptions with their two TPS discounts
     only, no manual list."""
     old = [subscription(BASIC, 'basic', IBERIA, '10.00', in_house='5.00')]
@@ -174,7 +161,7 @@ def test_a_snapshot_without_links_offers_every_product_as_before(admin):  # noqa
 
 @pytest.mark.django_db
 def test_the_first_pull_of_this_release_stores_the_new_parts_of_the_applied_version(
-        admin, settings):  # noqa: F811
+        admin, settings):
     """The admin site, deployed first, published version 5 with the new parts; the
     previous release applied it without them (as a snapshot without them here). No
     migration clears the applied version: the first pull of another release applies the
@@ -195,7 +182,7 @@ def test_the_first_pull_of_this_release_stores_the_new_parts_of_the_applied_vers
 # --- Discounts per product category -------------------------------------------------------
 
 @pytest.mark.django_db
-def test_the_discount_is_the_subscriptions_for_the_products_category(admin):  # noqa: F811
+def test_the_discount_is_the_subscriptions_for_the_products_category(admin):
     pull(admin, 1, full())
     premium = resolver.subscription('ES', 'premium')
     # 12 % on TPS branded: 100.00 is 88.00; nothing on VirtuaOrtho One: its net price.
@@ -213,7 +200,7 @@ def test_the_discount_is_the_subscriptions_for_the_products_category(admin):  # 
 
 
 @pytest.mark.django_db
-def test_the_two_former_fields_are_the_tps_discounts(admin):  # noqa: F811
+def test_the_two_former_fields_are_the_tps_discounts(admin):
     """A subscription saved before this release at the admin site (10 % branded, 0 %
     in-house), as that site now sends it."""
     saved = full_subscription(BASIC, 'basic', IBERIA, 'BAS-IB', 'Basic', [TPS, IN_HOUSE],
@@ -239,7 +226,7 @@ def test_the_two_former_fields_are_the_tps_discounts(admin):  # noqa: F811
 # --- Manual subscriptions -----------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_a_manual_subscription_is_read_by_its_id_only(admin):  # noqa: F811
+def test_a_manual_subscription_is_read_by_its_id_only(admin):
     manual = MANUAL + [full_subscription(ORMCO_2, 'premium', IBERIA, 'ORMCO-PREMIUM-2',
                                          'Ormco Premium II', [TPS])]
     pull(admin, 1, full(manual=manual))
@@ -266,7 +253,7 @@ def test_a_manual_subscription_is_read_by_its_id_only(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_without_the_standard_one_there_are_no_offers(admin):  # noqa: F811
+def test_without_the_standard_one_there_are_no_offers(admin):
     """The standard Premium of Iberia is deactivated: the tier and group have no
     default. The manual ones never stand in for it."""
     subscriptions = copy.deepcopy(STANDARD)
@@ -286,7 +273,7 @@ def test_without_the_standard_one_there_are_no_offers(admin):  # noqa: F811
 # --- Own price, call extras, code and texts -----------------------------------------------
 
 @pytest.mark.django_db
-def test_the_own_price_is_stored_and_readable(admin):  # noqa: F811
+def test_the_own_price_is_stored_and_readable(admin):
     pull(admin, 1, full())
     advanced = resolver.subscription('ES', 'advanced')
     assert advanced.price_currency == 'EUR' and not advanced.free
@@ -305,7 +292,7 @@ def test_the_own_price_is_stored_and_readable(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_a_subscription_priced_in_an_unknown_currency_is_skipped(admin):  # noqa: F811
+def test_a_subscription_priced_in_an_unknown_currency_is_skipped(admin):
     subscriptions = copy.deepcopy(STANDARD)
     subscriptions[1]['price'] = {'currency': 'JPY', 'monthly': '9000.00'}
     assert pull(admin, 1, full(subscriptions=subscriptions)) == ('applied', 1)
@@ -315,7 +302,7 @@ def test_a_subscription_priced_in_an_unknown_currency_is_skipped(admin):  # noqa
 
 
 @pytest.mark.django_db
-def test_the_call_extras_are_readable(admin):  # noqa: F811
+def test_the_call_extras_are_readable(admin):
     pull(admin, 1, full())
     premium, basic = (resolver.subscription('ES', tier) for tier in ('premium', 'basic'))
     assert premium.call_extras == PREMIUM_EXTRAS and basic.call_extras == {}
@@ -340,7 +327,7 @@ def test_the_call_extras_are_readable(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_the_code_and_texts_are_stored_and_spanish_falls_back(admin):  # noqa: F811
+def test_the_code_and_texts_are_stored_and_spanish_falls_back(admin):
     subscriptions = copy.deepcopy(STANDARD)
     subscriptions[1]['texts'] = {'en': {'name': 'Advanced', 'description': 'More.'}}
     subscriptions[3]['texts'] = {'en': {'name': 'Premium', 'description': 'All.'},
@@ -373,7 +360,7 @@ def test_the_code_and_texts_are_stored_and_spanish_falls_back(admin):  # noqa: F
 ], ids=['second-active-standard', 'id-in-both-lists', 'code-twice',
         'former-field-differs-from-the-map', 'negative-price', 'minutes-below-1',
         'discount-above-100'])
-def test_an_invalid_section_is_refused_and_the_applied_one_kept(admin, change):  # noqa: F811
+def test_an_invalid_section_is_refused_and_the_applied_one_kept(admin, change):
     import jwt
     pull(admin, 1, full())
     section = full()
@@ -395,7 +382,7 @@ def test_an_invalid_section_is_refused_and_the_applied_one_kept(admin, change): 
 # --- price_catalogue ----------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_price_catalogue_lists_what_each_subscription_offers(admin):  # noqa: F811
+def test_price_catalogue_lists_what_each_subscription_offers(admin):
     pull(admin, 1, full())
     assert run('--country', 'ES', '--tier', 'advanced') == (
         'ES advanced (Iberia): 3 offer(s)\n'
@@ -430,7 +417,7 @@ def test_price_catalogue_lists_what_each_subscription_offers(admin):  # noqa: F8
 
 
 @pytest.mark.django_db
-def test_price_catalogue_reads_a_subscription_by_its_id_or_code(admin):  # noqa: F811
+def test_price_catalogue_reads_a_subscription_by_its_id_or_code(admin):
     pull(admin, 1, full())
     expected = ('ORMCO-PREMIUM premium (Iberia), manual: 2 offer(s)\n'
                 '  subscription: ORMCO-PREMIUM  Ormco Premium  free\n'
@@ -470,7 +457,7 @@ def test_price_catalogue_reads_a_subscription_by_its_id_or_code(admin):  # noqa:
 
 
 @pytest.mark.django_db
-def test_price_catalogue_says_when_a_subscription_offers_nothing(admin):  # noqa: F811
+def test_price_catalogue_says_when_a_subscription_offers_nothing(admin):
     subscriptions = copy.deepcopy(STANDARD)
     subscriptions[3]['active'] = False
     subscriptions[0]['products'] = []

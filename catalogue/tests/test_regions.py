@@ -4,7 +4,7 @@ hangs from a skipped group, with one warning giving the counts; a record without
 (an admin site before 0.25.0) is this region's, as before; a doctor of a country this
 region does not serve (another region's, or banned) has no group, no subscription and no
 offers; each region's catch-all covers only its own countries; an empty rules list offers
-nothing. The admin site is the fake of integration/tests/test_config.py (no network)."""
+nothing. The admin site is the fake of integration/tests/snapshot_rows.py (no network)."""
 import logging
 
 import pytest
@@ -12,9 +12,7 @@ import pytest
 from catalogue import resolver
 from catalogue.models import (BillingCompany, BillingRule, CatalogueState, CountryGroup,
                               Product, Subscription)
-from catalogue.tests.test_catalogue import group, product, pull
-from catalogue.tests.test_subscriptions import full_subscription
-from integration.tests.test_config import admin, interface_settings  # noqa: F401
+from integration.tests.snapshot_rows import full_subscription, group, product, pull
 from mytp_core.contracts import snapshot_for_region
 from regions.profiles import get_profile
 
@@ -92,14 +90,6 @@ def ids(model):
     return {str(pk) for pk in model.objects.values_list('pk', flat=True)}
 
 
-@pytest.fixture
-def ae_portal(settings):
-    """This portal is the ae region's (dev-ae)."""
-    settings.REGION = 'ae'
-    settings.REGION_PROFILE = get_profile('ae')
-    return settings
-
-
 def offered(country, tier='basic'):
     return [found.code for found, _price in resolver.offers(country, tier)]
 
@@ -107,7 +97,7 @@ def offered(country, tier='basic'):
 # --- The served bodies (Acceptance: dev and dev-ae pull) ----------------------------------
 
 @pytest.mark.django_db
-def test_dev_applies_eus_body_and_holds_no_ae_record(admin, caplog):  # noqa: F811
+def test_dev_applies_eus_body_and_holds_no_ae_record(admin, caplog):
     caplog.set_level(logging.WARNING, logger='catalogue.applier')
     assert pull(admin, 1, snapshot_for_region({'catalogue': two_regions()}, 'eu')[
         'catalogue']) == ('applied', 1)
@@ -119,7 +109,7 @@ def test_dev_applies_eus_body_and_holds_no_ae_record(admin, caplog):  # noqa: F8
 
 
 @pytest.mark.django_db
-def test_dev_ae_applies_aes_body_and_holds_no_eu_record(admin, ae_portal):  # noqa: F811
+def test_dev_ae_applies_aes_body_and_holds_no_eu_record(admin, ae_portal):
     pull(admin, 1, snapshot_for_region({'catalogue': two_regions()}, 'ae')['catalogue'])
     assert ids(CountryGroup) == {UAE, MIDDLE_EAST}
     assert ids(Product) == {AED_TPS} and ids(BillingCompany) == {EMIRATES}
@@ -131,7 +121,7 @@ def test_dev_ae_applies_aes_body_and_holds_no_eu_record(admin, ae_portal):  # no
 
 @pytest.mark.django_db
 def test_a_record_of_another_region_is_skipped_with_what_hangs_from_it(
-        admin, caplog):  # noqa: F811
+        admin, caplog):
     caplog.set_level(logging.WARNING, logger='catalogue.applier')
     section = two_regions()
     # A subscription of eu linking an ae product (the admin site refuses it; skipped).
@@ -150,7 +140,7 @@ def test_a_record_of_another_region_is_skipped_with_what_hangs_from_it(
 
 
 @pytest.mark.django_db
-def test_a_rule_naming_a_company_of_another_region_is_skipped(admin, caplog):  # noqa: F811
+def test_a_rule_naming_a_company_of_another_region_is_skipped(admin, caplog):
     caplog.set_level(logging.WARNING, logger='catalogue.applier')
     section = two_regions()
     section['billing_rules'][0]['company'] = EMIRATES     # Iberia × the AE company
@@ -160,7 +150,7 @@ def test_a_rule_naming_a_company_of_another_region_is_skipped(admin, caplog):  #
 
 
 @pytest.mark.django_db
-def test_an_old_admin_body_without_regions_is_this_regions(admin, caplog):  # noqa: F811
+def test_an_old_admin_body_without_regions_is_this_regions(admin, caplog):
     caplog.set_level(logging.WARNING, logger='catalogue.applier')
     pull(admin, 1, two_regions(regions=False))
     assert ids(CountryGroup) == {IBERIA, WORLD} and ids(Product) == {EUR_TPS, USD_TPS}
@@ -171,7 +161,7 @@ def test_an_old_admin_body_without_regions_is_this_regions(admin, caplog):  # no
 # --- Who is offered what (Acceptance: US on dev, SA on dev-ae, SA on dev) ------------------
 
 @pytest.mark.django_db
-def test_each_doctor_falls_into_their_own_regions_catch_all(admin, settings):  # noqa: F811
+def test_each_doctor_falls_into_their_own_regions_catch_all(admin, settings):
     pull(admin, 1, two_regions())
     world = resolver.country_group('US')
     assert str(world.pk) == WORLD and offered('US') == ['TPS-USD']
@@ -192,7 +182,7 @@ def test_each_doctor_falls_into_their_own_regions_catch_all(admin, settings):  #
 
 
 @pytest.mark.django_db
-def test_a_doctor_of_a_banned_country_is_offered_nothing(admin):  # noqa: F811
+def test_a_doctor_of_a_banned_country_is_offered_nothing(admin):
     pull(admin, 1, two_regions())
     assert resolver.country_group('RU') is None      # banned in the country map
     assert offered('RU') == [] and resolver.billing_rule('RU', 'tps_branded') is None
@@ -201,7 +191,7 @@ def test_a_doctor_of_a_banned_country_is_offered_nothing(admin):  # noqa: F811
 # --- No rules left for this region ---------------------------------------------------------
 
 @pytest.mark.django_db
-def test_an_empty_rules_list_offers_nothing(admin, ae_portal):  # noqa: F811
+def test_an_empty_rules_list_offers_nothing(admin, ae_portal):
     section = two_regions()
     section['billing_rules'] = [rule for rule in section['billing_rules']
                                 if REGION_OF[rule['country_group']] == 'eu']
@@ -223,7 +213,7 @@ def test_an_empty_rules_list_offers_nothing(admin, ae_portal):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_a_body_mixing_records_with_and_without_a_region(admin, caplog):  # noqa: F811
+def test_a_body_mixing_records_with_and_without_a_region(admin, caplog):
     """Iberia without a region (as an admin site before 0.25.0 wrote it), the rest with
     theirs: on the eu portal Iberia is kept, the ae records are skipped."""
     caplog.set_level(logging.WARNING, logger='catalogue.applier')
@@ -238,7 +228,7 @@ def test_a_body_mixing_records_with_and_without_a_region(admin, caplog):  # noqa
 
 
 @pytest.mark.django_db
-def test_price_catalogue_names_rest_of_middle_east_on_dev_ae(admin, ae_portal):  # noqa: F811
+def test_price_catalogue_names_rest_of_middle_east_on_dev_ae(admin, ae_portal):
     """The staging check of deploy/README.md: Rest of Middle East is created empty (no
     subscription, no rule), while the UAE has its rule."""
     from catalogue.tests.test_catalogue import run

@@ -3,7 +3,7 @@ filled only by the snapshot apply (integration.config with catalogue.applier), t
 resolver that prices (catalogue.resolver) and `price_catalogue`; and products in full
 (entry 5): texts per language with the English fallback, code, validity dates in Madrid
 time, the ten categories and the two TPS discounts. The admin site is the fake of
-integration/tests/test_config.py (fixed, non-secret test seeds; no network).
+integration/tests/snapshot_rows.py (fixed, non-secret test seeds; no network).
 
 The subscriptions here are sent as an admin site before epic-catalogue entry 8 sends them
 (`subscription`: no linked products, no discounts map), so every active product is offered
@@ -21,30 +21,16 @@ from catalogue import applier, resolver
 from catalogue.models import CountryGroup, Product, Subscription
 from integration import config
 from integration.models import AdminDirectoryEntry
-from integration.tests.test_config import (ADA, ADMIN, admin,  # noqa: F401
-                                           interface_settings, snapshot, state)
+from integration.tests.snapshot_rows import (ADA, ADMIN, IBERIA, WORLD, group, product,
+                                             pull, snapshot, state)
 from mytp_core import snapshots
 from mytp_core.money import Money
 
-IBERIA = '11111111-1111-4111-8111-111111111111'
 REST_OF_EU = '12121212-1212-4212-8212-121212121212'
-WORLD = '22222222-2222-4222-8222-222222222222'
 TPS = '33333333-3333-4333-8333-333333333333'
 OTHER = '44444444-4444-4444-8444-444444444444'
 BASIC = '55555555-5555-4555-8555-555555555555'
 WORLD_BASIC = '66666666-6666-4666-8666-666666666666'
-
-
-def group(id_, name, countries, catch_all=False, active=True):
-    return {'id': id_, 'name': name, 'countries': countries, 'catch_all': catch_all,
-            'active': active}
-
-
-def product(id_, name, category, amount, currency='EUR', active=True, **more):
-    """A product as the admin site sends it; `more`: the optional fields of mytp-core
-    0.20.0 (texts, code, valid_from, valid_to)."""
-    return {'id': id_, 'name': name, 'category': category,
-            'net_price': {'amount': amount, 'currency': currency}, 'active': active, **more}
 
 
 def subscription(id_, tier, group_id, percent, active=True, in_house=None):
@@ -74,13 +60,6 @@ def catalogue(products=None, subscriptions=None, groups=None):
     }
 
 
-def pull(admin, version, section, **changes):  # noqa: F811
-    admin.snapshot = snapshot(version=version, **changes)
-    if section is not None:
-        admin.snapshot['catalogue'] = section
-    return config.pull()
-
-
 def priced(country, tier='basic'):
     return [(p.name, price) for p, price in resolver.offers(country, tier)]
 
@@ -88,7 +67,7 @@ def priced(country, tier='basic'):
 # --- The I/O matrix ---------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_an_es_doctor_gets_the_tps_product_at_the_discounted_price(admin):  # noqa: F811
+def test_an_es_doctor_gets_the_tps_product_at_the_discounted_price(admin):
     assert pull(admin, 1, catalogue()) == ('applied', 1)
     assert priced('ES') == [('TPS', Money('90.00', 'EUR'))]
     assert priced('es') == priced('PT') == [('TPS', Money('90.00', 'EUR'))]
@@ -96,7 +75,7 @@ def test_an_es_doctor_gets_the_tps_product_at_the_discounted_price(admin):  # no
 
 
 @pytest.mark.django_db
-def test_a_us_doctor_gets_nothing(admin):  # noqa: F811
+def test_a_us_doctor_gets_nothing(admin):
     pull(admin, 1, catalogue())
     assert priced('US') == []
     # The catch-all group applies once it has a subscription of the tier.
@@ -110,7 +89,7 @@ def test_a_us_doctor_gets_nothing(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_a_country_of_a_deactivated_group_falls_to_rest_of_world(admin):  # noqa: F811
+def test_a_country_of_a_deactivated_group_falls_to_rest_of_world(admin):
     # Epic-catalogue entry 3: the admin site deactivates Iberia.
     subscriptions = [subscription(BASIC, 'basic', IBERIA, '10.00'),
                      subscription(WORLD_BASIC, 'basic', WORLD, '0.00')]
@@ -127,7 +106,7 @@ def test_a_country_of_a_deactivated_group_falls_to_rest_of_world(admin):  # noqa
 
 
 @pytest.mark.django_db
-def test_a_country_added_to_a_group_is_priced_as_that_group(admin):  # noqa: F811
+def test_a_country_added_to_a_group_is_priced_as_that_group(admin):
     # Epic-catalogue entry 3: the admin site adds FR to Iberia (and takes it from Rest of
     # EU, as the one-active-group rule requires).
     pull(admin, 1, catalogue())
@@ -141,7 +120,7 @@ def test_a_country_added_to_a_group_is_priced_as_that_group(admin):  # noqa: F81
 
 
 @pytest.mark.django_db
-def test_a_non_tps_product_is_listed_at_its_net_price(admin):  # noqa: F811
+def test_a_non_tps_product_is_listed_at_its_net_price(admin):
     pull(admin, 1, catalogue(products=[product(TPS, 'TPS', 'tps_branded', '100.00'),
                                        product(OTHER, 'Retainers', 'retainers', '50.00')]))
     assert priced('ES') == [('Retainers', Money('50.00', 'EUR')),
@@ -150,7 +129,7 @@ def test_a_non_tps_product_is_listed_at_its_net_price(admin):  # noqa: F811
 
 @pytest.mark.django_db
 @pytest.mark.parametrize('change', ['product', 'subscription'])
-def test_a_deactivated_row_is_gone_after_the_next_snapshot(admin, change):  # noqa: F811
+def test_a_deactivated_row_is_gone_after_the_next_snapshot(admin, change):
     pull(admin, 1, catalogue())
     assert priced('ES')
     if change == 'product':
@@ -165,7 +144,7 @@ def test_a_deactivated_row_is_gone_after_the_next_snapshot(admin, change):  # no
 
 
 @pytest.mark.django_db
-def test_rounding_is_half_up_to_cents(admin):  # noqa: F811
+def test_rounding_is_half_up_to_cents(admin):
     pull(admin, 1, catalogue(products=[product(TPS, 'TPS', 'tps_branded', '33.33')],
                              subscriptions=[subscription(BASIC, 'basic', IBERIA, '15.00')]))
     assert priced('ES') == [('TPS', Money('28.33', 'EUR'))]  # 28.3305
@@ -200,7 +179,7 @@ def test_rounding_is_half_up_to_cents(admin):  # noqa: F811
 ], ids=['discount-120', 'negative-price', 'second-active-subscription', 'float',
         'float-amount', 'texts-without-english', 'code-malformed', 'validity-backwards',
         'in-house-above-100'])
-def test_an_invalid_catalogue_is_refused_and_the_applied_one_kept(admin, section):  # noqa: F811
+def test_an_invalid_catalogue_is_refused_and_the_applied_one_kept(admin, section):
     import jwt
     pull(admin, 1, catalogue())
 
@@ -220,7 +199,7 @@ def test_an_invalid_catalogue_is_refused_and_the_applied_one_kept(admin, section
 
 
 @pytest.mark.django_db
-def test_the_same_version_changes_nothing(admin):  # noqa: F811
+def test_the_same_version_changes_nothing(admin):
     pull(admin, 1, catalogue())
     assert pull(admin, 1, catalogue(products=[])) == ('unchanged', 1)
     assert priced('ES') == [('TPS', Money('90.00', 'EUR'))]
@@ -230,7 +209,7 @@ def test_the_same_version_changes_nothing(admin):  # noqa: F811
 
 @pytest.mark.django_db
 def test_a_snapshot_without_a_catalogue_applies_the_directory_and_empties_the_tables(
-        admin):  # noqa: F811
+        admin):
     assert pull(admin, 1, None) == ('applied', 1)
     assert AdminDirectoryEntry.objects.count() == 2
     assert not CountryGroup.objects.exists() and not Product.objects.exists()
@@ -250,7 +229,7 @@ def test_a_snapshot_without_a_catalogue_applies_the_directory_and_empties_the_ta
 # --- The tables and the applier -----------------------------------------------------------
 
 @pytest.mark.django_db
-def test_the_tables_hold_every_row_with_the_admin_ids(admin):  # noqa: F811
+def test_the_tables_hold_every_row_with_the_admin_ids(admin):
     pull(admin, 1, catalogue(products=[product(TPS, 'TPS', 'tps_branded', '100.00'),
                                        product(OTHER, 'Old', 'retainers', '5.00', active=False)]))
     assert {str(g.id) for g in CountryGroup.objects.all()} == {IBERIA, REST_OF_EU, WORLD}
@@ -262,7 +241,7 @@ def test_the_tables_hold_every_row_with_the_admin_ids(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_no_write_path_outside_the_snapshot_apply(admin):  # noqa: F811
+def test_no_write_path_outside_the_snapshot_apply(admin):
     pull(admin, 1, catalogue())
     for row in (CountryGroup.objects.first(), Product.objects.first(),
                 Subscription.objects.first()):
@@ -279,7 +258,7 @@ def test_no_write_path_outside_the_snapshot_apply(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_unknown_codes_are_skipped(admin):  # noqa: F811
+def test_unknown_codes_are_skipped(admin):
     pull(admin, 1, catalogue(
         products=[product(TPS, 'TPS', 'tps_branded', '100.00'),
                   product(OTHER, 'Aligners', 'aligners', '10.00')],
@@ -290,7 +269,7 @@ def test_unknown_codes_are_skipped(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_a_failing_catalogue_apply_keeps_the_previous_snapshot(admin, monkeypatch):  # noqa: F811
+def test_a_failing_catalogue_apply_keeps_the_previous_snapshot(admin, monkeypatch):
     pull(admin, 1, catalogue())
     real = applier.apply
 
@@ -324,7 +303,7 @@ def test_the_catalogue_applier_is_registered_once():
 
 
 @pytest.mark.django_db
-def test_the_applied_log_line_has_the_catalogue_counts_only(admin, caplog):  # noqa: F811
+def test_the_applied_log_line_has_the_catalogue_counts_only(admin, caplog):
     import logging
     caplog.set_level(logging.INFO, logger='integration.config')
     pull(admin, 1, catalogue(products=[
@@ -341,7 +320,7 @@ def test_the_applied_log_line_has_the_catalogue_counts_only(admin, caplog):  # n
 # --- price_catalogue ----------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_price_catalogue_prints_the_offers(admin):  # noqa: F811
+def test_price_catalogue_prints_the_offers(admin):
     pull(admin, 1, catalogue())
     out = io.StringIO()
     call_command('price_catalogue', '--country', 'ES', '--tier', 'basic', stdout=out)
@@ -381,7 +360,7 @@ def run(*args):
 
 
 @pytest.mark.django_db
-def test_a_product_of_each_category_is_readable_in_both_languages(admin):  # noqa: F811
+def test_a_product_of_each_category_is_readable_in_both_languages(admin):
     from django.utils import translation
     products = [product(product_id(index), 'Plan', category, '100.00', texts=BOTH,
                         code=f'P-{index}')
@@ -403,7 +382,7 @@ def test_a_product_of_each_category_is_readable_in_both_languages(admin):  # noq
 
 
 @pytest.mark.django_db
-def test_a_missing_spanish_text_falls_back_to_english(admin):  # noqa: F811
+def test_a_missing_spanish_text_falls_back_to_english(admin):
     from django.utils import translation
     pull(admin, 1, catalogue(products=[
         product(TPS, 'TPS', 'tps_branded', '100.00',
@@ -423,7 +402,7 @@ def test_a_missing_spanish_text_falls_back_to_english(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_a_deactivated_product_stays_readable_by_id(admin):  # noqa: F811
+def test_a_deactivated_product_stays_readable_by_id(admin):
     pull(admin, 1, catalogue(products=[
         product(TPS, 'Plan', 'tps_branded', '100.00', texts=BOTH, code='TPS-1')]))
     assert priced('ES')
@@ -447,7 +426,7 @@ def tps_pair(**more):
 
 
 @pytest.mark.django_db
-def test_branded_and_in_house_tps_have_separate_discounts(admin):  # noqa: F811
+def test_branded_and_in_house_tps_have_separate_discounts(admin):
     pull(admin, 1, catalogue(products=tps_pair(), subscriptions=[
         subscription(BASIC, 'basic', IBERIA, '10.00', in_house='0.00')]))
     assert priced('ES') == [('Branded', Money('90.00', 'EUR')),
@@ -469,7 +448,7 @@ def test_branded_and_in_house_tps_have_separate_discounts(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_no_other_category_is_ever_discounted(admin):  # noqa: F811
+def test_no_other_category_is_ever_discounted(admin):
     others = [category for category in CATEGORIES + ('uncategorised',)
               if category not in ('tps_branded', 'tps_in_house')]
     pull(admin, 1, catalogue(
@@ -485,7 +464,7 @@ def test_no_other_category_is_ever_discounted(admin):  # noqa: F811
 
 @pytest.mark.django_db
 def test_a_product_outside_its_validity_is_not_offered_but_stays_readable(
-        admin, monkeypatch):  # noqa: F811
+        admin, monkeypatch):
     yesterday, tomorrow = DAY - timedelta(days=1), DAY + timedelta(days=1)
     monkeypatch.setattr(resolver, 'today', lambda now=None: DAY)
     pull(admin, 1, catalogue(products=[
@@ -523,7 +502,7 @@ def test_the_validity_day_is_madrid_time():
 
 
 @pytest.mark.django_db
-def test_a_snapshot_of_an_admin_site_before_entry_5_still_applies(admin):  # noqa: F811
+def test_a_snapshot_of_an_admin_site_before_entry_5_still_applies(admin):
     """The former categories (`tps`, `other`), no texts, code or dates, no in-house
     discount."""
     pull(admin, 1, catalogue(products=[product(TPS, 'TPS', 'tps', '100.00'),
@@ -541,7 +520,7 @@ def test_a_snapshot_of_an_admin_site_before_entry_5_still_applies(admin):  # noq
 
 
 @pytest.mark.django_db
-def test_price_catalogue_prints_codes_texts_and_one_product(admin, monkeypatch):  # noqa: F811
+def test_price_catalogue_prints_codes_texts_and_one_product(admin, monkeypatch):
     monkeypatch.setattr(resolver, 'today', lambda now=None: DAY)
     pull(admin, 1, catalogue(products=[
         product(TPS, 'Plan', 'tps_branded', '100.00', texts=BOTH, code='TPS-1'),
@@ -637,7 +616,7 @@ def test_migration_0002_maps_the_former_categories(at_0001):
 
 @pytest.mark.django_db(transaction=True)
 def test_migration_0002_makes_the_first_pull_apply_the_current_version_again(
-        at_0001, admin):  # noqa: F811
+        at_0001, admin):
     """The admin site, deployed first, published the new categories in version 5; the
     previous release applied it and skipped every product."""
     from integration.models import ConfigState

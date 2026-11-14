@@ -1,13 +1,14 @@
 """Epic-catalogue entry 3: the configuration snapshot's `country_map` section, applied
 (regions.applier through integration.config). The admin site is the fake of
-integration/tests/test_config.py (fixed, non-secret test seeds; no network)."""
+integration/tests/snapshot_rows.py (fixed, non-secret test seeds; no network)."""
 import logging
+from functools import partial
 
 import pytest
 
 from integration import config
-from integration.tests.test_config import (ADMIN, admin,  # noqa: F401
-                                           interface_settings, snapshot, state)
+from integration.tests import snapshot_rows
+from integration.tests.snapshot_rows import ADMIN, snapshot, state
 from mytp_core import snapshots
 from regions import applier
 from regions.countries import lookup_country, seed_state
@@ -16,7 +17,8 @@ from regions.profiles import get_profile
 from signup.models import PendingRegistration
 from signup.tests.helpers import _step1
 
-pytestmark = pytest.mark.django_db
+# The root conftest's `interface_settings`, module-wide; its `admin` is the fake admin site.
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('interface_settings')]
 
 EU_SITE = 'https://eu.example.test'
 AE_SITE = 'https://ae.example.test'
@@ -33,11 +35,8 @@ def country_map(*pairs):
     return {'countries': [{'code': code, 'state': state} for code, state in pairs]}
 
 
-def pull(admin, version, section):  # noqa: F811
-    admin.snapshot = snapshot(version=version)
-    if section is not None:
-        admin.snapshot['country_map'] = section
-    return config.pull()
+# pull(admin, version, section): the snapshot with that country map (None: none).
+pull = partial(snapshot_rows.pull, key='country_map')
 
 
 def rows():
@@ -50,7 +49,7 @@ def answers():
 
 # --- The I/O matrix ---------------------------------------------------------------------
 
-def test_a_seed_equal_map_changes_no_answer(admin, eu_site, caplog):  # noqa: F811
+def test_a_seed_equal_map_changes_no_answer(admin, eu_site, caplog):
     caplog.set_level(logging.INFO, logger='integration.config')
     before_rows, before = rows(), answers()
     assert len(before_rows) == 251
@@ -62,7 +61,7 @@ def test_a_seed_equal_map_changes_no_answer(admin, eu_site, caplog):  # noqa: F8
     assert 'country map: 251 listed, 0 changed, 0 added, 0 skipped' in caplog.text
 
 
-def test_a_partial_map_changes_only_its_countries(admin, eu_site, caplog):  # noqa: F811
+def test_a_partial_map_changes_only_its_countries(admin, eu_site, caplog):
     caplog.set_level(logging.INFO, logger='integration.config')
     seed = rows()
     pull(admin, 1, country_map(('FR', 'ae')))
@@ -74,7 +73,7 @@ def test_a_partial_map_changes_only_its_countries(admin, eu_site, caplog):  # no
     assert 'country map: 1 listed, 1 changed, 0 added, 0 skipped' in caplog.text
 
 
-def test_a_moved_country_is_answered_by_its_new_region(admin, eu_site):  # noqa: F811
+def test_a_moved_country_is_answered_by_its_new_region(admin, eu_site):
     assert lookup_country('FR').state == 'eu'
     pull(admin, 1, country_map(('FR', 'ae')))
     answer = lookup_country('FR', 'en')
@@ -84,7 +83,7 @@ def test_a_moved_country_is_answered_by_its_new_region(admin, eu_site):  # noqa:
     assert lookup_country('DE').state == 'eu' and lookup_country('RU').banned
 
 
-def test_a_newly_banned_country_is_refused_at_signup(client, admin, eu_site,  # noqa: F811
+def test_a_newly_banned_country_is_refused_at_signup(client, admin, eu_site,
                                                      portal_urls):
     assert lookup_country('US').state == 'eu'
     pull(admin, 1, country_map(('US', BANNED)))
@@ -98,7 +97,7 @@ def test_a_newly_banned_country_is_refused_at_signup(client, admin, eu_site,  # 
     assert lookup_country('US').state == 'eu'
 
 
-def test_a_snapshot_without_the_section_keeps_the_rows(admin, eu_site):  # noqa: F811
+def test_a_snapshot_without_the_section_keeps_the_rows(admin, eu_site):
     seed = rows()
     # An older admin site: the seed stays the map.
     assert pull(admin, 1, None) == ('applied', 1)
@@ -109,7 +108,7 @@ def test_a_snapshot_without_the_section_keeps_the_rows(admin, eu_site):  # noqa:
     assert rows() == {**seed, 'FR': 'ae'}
 
 
-def test_an_unknown_state_is_skipped_and_the_row_kept(admin, eu_site):  # noqa: F811
+def test_an_unknown_state_is_skipped_and_the_row_kept(admin, eu_site):
     pull(admin, 1, country_map(('FR', 'quarantined'), ('DE', 'ae'), ('XK', 'quarantined')))
     assert lookup_country('FR').state == 'eu'
     assert lookup_country('DE').state == 'ae'
@@ -118,7 +117,7 @@ def test_an_unknown_state_is_skipped_and_the_row_kept(admin, eu_site):  # noqa: 
     assert len(rows()) == 251
 
 
-def test_a_country_without_a_row_is_added(admin, eu_site):  # noqa: F811
+def test_a_country_without_a_row_is_added(admin, eu_site):
     assert not Country.objects.filter(code='XK').exists()
     assert lookup_country('XK').state == 'eu'
     pull(admin, 1, country_map(('XK', BANNED)))
@@ -131,7 +130,7 @@ def test_a_country_without_a_row_is_added(admin, eu_site):  # noqa: F811
     country_map(('FR', 'AE')),
     {'countries': [{'code': 'FR'}]},
 ], ids=['code-twice', 'code-lowercase', 'state-uppercase', 'state-missing'])
-def test_an_invalid_map_is_refused_and_the_rows_kept(admin, eu_site, section):  # noqa: F811
+def test_an_invalid_map_is_refused_and_the_rows_kept(admin, eu_site, section):
     import jwt
     pull(admin, 1, country_map(('FR', 'ae')))
     applied = rows()
@@ -150,7 +149,7 @@ def test_an_invalid_map_is_refused_and_the_rows_kept(admin, eu_site, section):  
     assert rows() == applied and state().version == 1
 
 
-def test_a_failing_apply_keeps_the_previous_map(admin, eu_site, monkeypatch):  # noqa: F811
+def test_a_failing_apply_keeps_the_previous_map(admin, eu_site, monkeypatch):
     # The real country map applier runs; the catalogue's (applied in the same
     # transaction) fails, so the whole snapshot is rolled back, the map's change too.
     pull(admin, 1, country_map(('FR', 'ae')))
@@ -174,7 +173,7 @@ def test_the_country_map_applier_is_registered_once():
         config.register_section_applier('country_map', lambda section: None)
 
 
-def test_the_applied_log_line_has_counts_only(admin, eu_site, caplog):  # noqa: F811
+def test_the_applied_log_line_has_counts_only(admin, eu_site, caplog):
     caplog.set_level(logging.INFO, logger='integration.config')
     pull(admin, 1, country_map(('FR', 'ae'), ('DE', 'eu'), ('XK', BANNED),
                                ('IT', 'quarantined')))

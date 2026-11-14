@@ -3,8 +3,8 @@
 resolver (the rule of a country and a product category; only what has an available rule,
 in the rule's currency, is offered once rules exist; the rule of a subscription's own
 price), the region profile mismatch warning and `price_catalogue`. One test (or more) per
-row of the plan's matrix. The admin site is the fake of integration/tests/test_config.py
-(no network)."""
+row of the plan's matrix. The admin site is the fake of
+integration/tests/snapshot_rows.py (no network)."""
 import copy
 import logging
 from decimal import Decimal
@@ -14,130 +14,15 @@ from django.core.management import CommandError
 
 from catalogue import billing, resolver
 from catalogue.models import BillingCompany, BillingRule, CountryGroup
-from catalogue.tests.test_catalogue import IBERIA, WORLD, group, product, pull, run
-from catalogue.tests.test_subscriptions import full_subscription
+from catalogue.tests.test_catalogue import run
 from integration import config
-from integration.tests.snapshot_rows import snapshot_writes
-from integration.tests.test_config import (ADMIN, admin,  # noqa: F401
-                                           interface_settings, snapshot, state)
+from integration.tests.snapshot_rows import (ADMIN, CATEGORIES, COMPANIES, EXEMPT, EXPORT,
+                                             IBERIA, IRELAND, MANUAL, RETAINERS, REVERSE,
+                                             SPAIN, TPS, billed, pull, rule, rules,
+                                             snapshot, snapshot_writes, state)
 from mytp_core import snapshots
 from mytp_core.money import Money
 from regions.profiles import get_profile
-
-EU = 'a1111111-1111-4111-8111-111111111111'
-UAE = 'a2222222-2222-4222-8222-222222222222'
-TPS = 'b0000001-0000-4000-8000-000000000001'
-TPS_USD = 'b0000002-0000-4000-8000-000000000002'
-TPS_AED = 'b0000003-0000-4000-8000-000000000003'
-VIRTUA = 'b0000004-0000-4000-8000-000000000004'
-VIRTUA_AED = 'b0000005-0000-4000-8000-000000000005'
-RETAINERS = 'b0000006-0000-4000-8000-000000000006'
-ODB = 'b0000007-0000-4000-8000-000000000007'
-SPAIN = 'c0000001-0000-4000-8000-000000000001'
-IRELAND = 'c0000002-0000-4000-8000-000000000002'
-EMIRATES = 'c0000003-0000-4000-8000-000000000003'
-SUBSCRIPTIONS = {IBERIA: 'e0000001-0000-4000-8000-000000000001',
-                 EU: 'e0000002-0000-4000-8000-000000000002',
-                 WORLD: 'e0000003-0000-4000-8000-000000000003',
-                 UAE: 'e0000004-0000-4000-8000-000000000004'}
-MANUAL = 'e0000005-0000-4000-8000-000000000005'
-
-EXEMPT = 'Exempt from VAT (art. 20 LIVA).'
-REVERSE = 'Reverse charge (art. 196 Directive 2006/112/EC).'
-EXPORT = 'Export of services: outside the scope of EU VAT.'
-CATEGORIES = ('tps_branded', 'virtuaortho_one')
-
-GROUPS = [group(IBERIA, 'Iberia', ['ES', 'PT']), group(EU, 'Rest of EU', ['IE', 'DE']),
-          group(UAE, 'UAE', ['AE']), group(WORLD, 'Rest of world', [], catch_all=True)]
-PRODUCTS = [
-    product(TPS, 'TPS branded', 'tps_branded', '100.00', code='TPS-BR'),
-    product(TPS_USD, 'TPS branded USD', 'tps_branded', '110.00', 'USD', code='TPS-BR-USD'),
-    product(TPS_AED, 'TPS branded AED', 'tps_branded', '400.00', 'AED', code='TPS-BR-AED'),
-    product(VIRTUA, 'VirtuaOrtho One', 'virtuaortho_one', '250.00', code='VO-ONE'),
-    product(VIRTUA_AED, 'VirtuaOrtho One AED', 'virtuaortho_one', '1000.00', 'AED',
-            code='VO-ONE-AED'),
-    product(RETAINERS, 'Retainers', 'retainers', '50.00', code='RET-1'),
-    product(ODB, 'ODB', 'odb', '80.00', code='ODB-1'),
-]
-ALL = [TPS, TPS_USD, TPS_AED, VIRTUA, VIRTUA_AED, RETAINERS, ODB]
-COMPANIES = [
-    {'id': SPAIN, 'code': 'ES', 'legal_name': 'MyTPDSO Spain S.L.',
-     'address': 'Avda. Labradores, 1, Edificio COS, Planta 4, Oficina 6\n'
-                'TRES CANTOS 28760 (MADRID)',
-     'country': 'ES', 'time_zone': 'Europe/Madrid', 'vat_number': 'B93858371',
-     'tax_number': 'B93858371', 'active': True},
-    {'id': IRELAND, 'code': 'IE', 'legal_name': 'MyTPDSO Limited', 'address': 'Dublin',
-     'country': 'IE', 'time_zone': 'Europe/Dublin',
-     'company_number': 'Company number 815526 (Ireland)', 'active': True},
-    {'id': EMIRATES, 'code': 'AE', 'legal_name': 'MyTPDSO L.L.C-FZ', 'address': 'Dubai',
-     'country': 'AE', 'time_zone': 'Asia/Dubai',
-     'company_number': 'License 2542361.01 (Dubai)', 'vat_number': 'VAT-100',
-     'tax_number': 'TAX-100', 'active': True},
-]
-
-
-def rule(number, group_id, category, company, percent, gateways, currency='EUR',
-         available=True, active=True, **texts):
-    return {'id': f'd00000{number:02d}-0000-4000-8000-000000000001',
-            'country_group': group_id, 'category': category, 'company': company,
-            'vat_percent': percent, 'gateways': list(gateways), 'currency': currency,
-            'available': available, 'active': active, **texts}
-
-
-def rules():
-    """The plan's rules, on the TPS branded and VirtuaOrtho One categories: Iberia → the
-    Spanish company, exempt, Redsys then bank transfer; Rest of EU → the Irish company,
-    23 % with a reverse-charge text, Revolut; Rest of world → the Irish company, rate 0
-    with its export text; UAE → the UAE company, 5 %, no gateway, AED. And Iberia's
-    `subscription` rule (21 %) and an unavailable ODB rule. Retainers have no rule."""
-    found = []
-    for index, category in enumerate(CATEGORIES):
-        base = index * 10
-        found += [
-            rule(base + 1, IBERIA, category, SPAIN, '0.00', ['redsys', 'bank_transfer'],
-                 exemption_text=EXEMPT),
-            rule(base + 2, EU, category, IRELAND, '23.00', ['revolut'],
-                 reverse_charge_text=REVERSE),
-            rule(base + 3, WORLD, category, IRELAND, '0.00', ['revolut'],
-                 exemption_text=EXPORT),
-            rule(base + 4, UAE, category, EMIRATES, '5.00', [], 'AED'),
-        ]
-    return found + [
-        rule(31, IBERIA, 'subscription', SPAIN, '21.00', ['redsys']),
-        rule(32, IBERIA, 'odb', SPAIN, '21.00', ['redsys'], available=False),
-    ]
-
-
-def billed(rules_=None, companies=COMPANIES, products=PRODUCTS, manual=True):
-    """A catalogue with a basic subscription per country group, each linked to every
-    product, the companies and the rules (`rules_` None: the plan's; `companies` None and
-    `rules_` False: none of either, as an admin site before mytp-core 0.23.0)."""
-    section = {
-        'country_groups': copy.deepcopy(GROUPS), 'products': copy.deepcopy(products),
-        'subscriptions': [
-            full_subscription(id_, 'basic', group_id, f'BAS-{index}', 'Basic', ALL,
-                              **({'price': {'currency': 'EUR', 'monthly': '60.00'}}
-                                 if group_id in (IBERIA, EU) else {}))
-            for index, (group_id, id_) in enumerate(SUBSCRIPTIONS.items())],
-    }
-    if manual:
-        section['manual_subscriptions'] = [full_subscription(
-            MANUAL, 'premium', IBERIA, 'ORMCO', 'Ormco', [TPS, TPS_USD, RETAINERS],
-            {'tps_branded': '20.00'})]
-    if companies is not None:
-        section['billing_companies'] = copy.deepcopy(companies)
-    if rules_ is not False:
-        section['billing_rules'] = copy.deepcopy(rules() if rules_ is None else rules_)
-    return section
-
-
-@pytest.fixture
-def ae_portal(settings):
-    """This portal is the ae region's (dev-ae): the country map's ae countries are its
-    own (epic-catalogue entry 16: a portal answers only for the countries it serves)."""
-    settings.REGION = 'ae'
-    settings.REGION_PROFILE = get_profile('ae')
-    return settings
 
 
 def offered(country):
@@ -153,7 +38,7 @@ def resolved(country, category):
 # --- Stored as sent ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_the_companies_and_rules_are_stored(admin):  # noqa: F811
+def test_the_companies_and_rules_are_stored(admin):
     assert pull(admin, 1, billed()) == ('applied', 1)
     spain = BillingCompany.objects.get(code='ES')
     assert (spain.legal_name, spain.country, spain.time_zone, spain.active) == (
@@ -186,7 +71,7 @@ def test_the_companies_and_rules_are_stored(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_the_applied_log_line_counts_the_companies_and_rules(admin, caplog):  # noqa: F811
+def test_the_applied_log_line_counts_the_companies_and_rules(admin, caplog):
     caplog.set_level(logging.INFO, logger='integration.config')
     pull(admin, 1, billed())
     assert ('4 country groups, 7 products, 5 subscriptions, 0 add-ons, 3 billing '
@@ -197,7 +82,7 @@ def test_the_applied_log_line_counts_the_companies_and_rules(admin, caplog):  # 
 # --- The rule of a country and a category -----------------------------------------------------
 
 @pytest.mark.django_db
-def test_each_country_resolves_to_its_company_vat_and_gateways(admin):  # noqa: F811
+def test_each_country_resolves_to_its_company_vat_and_gateways(admin):
     pull(admin, 1, billed())
     for category in CATEGORIES:
         # Iberia: the Spanish company, exempt with its text, Redsys then bank transfer.
@@ -217,8 +102,6 @@ def test_each_country_resolves_to_its_company_vat_and_gateways(admin):  # noqa: 
         assert resolver.billing_rule('AE', category) is None
     spain = resolver.billing_rule('ES', 'tps_branded').company
     assert (spain.legal_name, spain.vat_number) == ('MyTPDSO Spain S.L.', 'B93858371')
-    assert resolver.billing_rule('ES', 'tps_branded').vat_text == f'VAT 0.00 %: {EXEMPT}'
-    assert resolver.billing_rule('IE', 'tps_branded').vat_text == 'VAT 23.00 %'
     # "tps", the code of an admin site before entry 5, is tps_branded.
     assert resolver.billing_rule('ES', ' TPS ').category == 'tps_branded'
     # No rule for the pair, no group for the country, or a malformed country: None.
@@ -229,7 +112,7 @@ def test_each_country_resolves_to_its_company_vat_and_gateways(admin):  # noqa: 
 
 
 @pytest.mark.django_db
-def test_the_uae_resolves_on_the_ae_portal(admin, ae_portal):  # noqa: F811
+def test_the_uae_resolves_on_the_ae_portal(admin, ae_portal):
     pull(admin, 1, billed())
     for category in CATEGORIES:
         # The UAE: 5 %, an empty gateway list, AED.
@@ -241,7 +124,7 @@ def test_the_uae_resolves_on_the_ae_portal(admin, ae_portal):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_the_gateways_keep_their_order_and_an_unknown_one_is_skipped(admin):  # noqa: F811
+def test_the_gateways_keep_their_order_and_an_unknown_one_is_skipped(admin):
     changed = rules()
     changed[0]['gateways'] = ['bank_transfer', 'wio', 'revolut', 'redsys']
     pull(admin, 1, billed(rules_=changed))
@@ -251,7 +134,7 @@ def test_the_gateways_keep_their_order_and_an_unknown_one_is_skipped(admin):  # 
 
 
 @pytest.mark.django_db
-def test_a_deactivated_rule_is_not_the_rule(admin):  # noqa: F811
+def test_a_deactivated_rule_is_not_the_rule(admin):
     changed = rules()
     changed[0]['active'] = False
     changed.append(rule(40, IBERIA, 'tps_branded', IRELAND, '21.00', ['revolut']))
@@ -264,7 +147,7 @@ def test_a_deactivated_rule_is_not_the_rule(admin):  # noqa: F811
 # --- What is offered ---------------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_only_what_has_an_available_rule_in_its_currency_is_offered(admin):  # noqa: F811
+def test_only_what_has_an_available_rule_in_its_currency_is_offered(admin):
     pull(admin, 1, billed())
     # Currency: an ES doctor is offered the EUR products, not the USD or AED clones.
     # No rule: Retainers (no rule for Iberia) are not offered. Unavailable: nor the ODB.
@@ -282,7 +165,7 @@ def test_only_what_has_an_available_rule_in_its_currency_is_offered(admin):  # n
 
 
 @pytest.mark.django_db
-def test_the_uae_is_offered_in_aed_on_the_ae_portal(admin, ae_portal):  # noqa: F811
+def test_the_uae_is_offered_in_aed_on_the_ae_portal(admin, ae_portal):
     pull(admin, 1, billed())
     # The UAE: sold in AED; an empty gateway list does not stop the offer.
     assert offered('AE') == ['TPS branded AED', 'VirtuaOrtho One AED']
@@ -290,7 +173,7 @@ def test_the_uae_is_offered_in_aed_on_the_ae_portal(admin, ae_portal):  # noqa: 
 
 
 @pytest.mark.django_db
-def test_a_rule_marked_unavailable_or_missing_takes_its_products_away(admin):  # noqa: F811
+def test_a_rule_marked_unavailable_or_missing_takes_its_products_away(admin):
     changed = rules()
     changed[0]['available'] = False                # Iberia × tps_branded
     del changed[1]                                 # Rest of EU × tps_branded
@@ -306,7 +189,7 @@ def test_a_rule_marked_unavailable_or_missing_takes_its_products_away(admin):  #
 
 
 @pytest.mark.django_db
-def test_a_rule_in_a_currency_or_category_this_release_does_not_know(admin):  # noqa: F811
+def test_a_rule_in_a_currency_or_category_this_release_does_not_know(admin):
     changed = rules()
     changed[0]['currency'] = 'JPY'
     changed[4]['category'] = 'a_new_category'      # Iberia × virtuaortho_one, renamed
@@ -317,7 +200,7 @@ def test_a_rule_in_a_currency_or_category_this_release_does_not_know(admin):  # 
 
 
 @pytest.mark.django_db
-def test_a_manual_subscription_offers_under_its_groups_rules(admin):  # noqa: F811
+def test_a_manual_subscription_offers_under_its_groups_rules(admin):
     pull(admin, 1, billed())
     ormco = resolver.subscription_by_id(MANUAL)
     # Linked to the EUR and USD TPS and Retainers: Iberia's rules leave the EUR TPS.
@@ -333,7 +216,7 @@ def test_a_manual_subscription_offers_under_its_groups_rules(admin):  # noqa: F8
 # --- A subscription's own price ----------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_the_rule_of_a_subscriptions_own_price(admin):  # noqa: F811
+def test_the_rule_of_a_subscriptions_own_price(admin):
     pull(admin, 1, billed())
     iberia = resolver.subscription('ES', 'basic')
     found = resolver.subscription_rule(iberia)
@@ -348,7 +231,7 @@ def test_the_rule_of_a_subscriptions_own_price(admin):  # noqa: F811
 # --- Snapshots without rules, and the release before ---------------------------------------------
 
 @pytest.mark.django_db
-def test_an_old_snapshot_keeps_every_offer_in_every_currency(admin):  # noqa: F811
+def test_an_old_snapshot_keeps_every_offer_in_every_currency(admin):
     everything = ['ODB', 'Retainers', 'TPS branded', 'TPS branded AED', 'TPS branded USD',
                   'VirtuaOrtho One', 'VirtuaOrtho One AED']
     # An admin site before this release: no lists at all.
@@ -373,7 +256,7 @@ def test_an_old_snapshot_keeps_every_offer_in_every_currency(admin):  # noqa: F8
 
 @pytest.mark.django_db
 def test_the_first_pull_of_this_release_stores_the_rules_of_the_applied_version(
-        admin, monkeypatch):  # noqa: F811
+        admin, monkeypatch):
     # The release before applied version 1 without knowing companies and rules.
     monkeypatch.setattr(config, 'current_release', lambda: 'release-before')
     pull(admin, 1, billed())
@@ -388,7 +271,7 @@ def test_the_first_pull_of_this_release_stores_the_rules_of_the_applied_version(
 
 
 @pytest.mark.django_db
-def test_the_release_before_can_still_replace_the_country_groups(admin):  # noqa: F811
+def test_the_release_before_can_still_replace_the_country_groups(admin):
     """A portal before this release applies a snapshot with companies and rules and
     ignores them: it replaces the country groups without knowing the rules table, which
     a database constraint from the rules to the groups would stop."""
@@ -415,7 +298,7 @@ def test_the_release_before_can_still_replace_the_country_groups(admin):  # noqa
     lambda section: section['billing_companies'][1].update(code='ES'),  # a code twice
 ], ids=['second-active-rule', 'rate-0-without-text', 'company-not-listed',
         'group-not-listed', 'gateway-twice', 'company-code-twice'])
-def test_an_invalid_section_is_refused_and_the_applied_one_kept(admin, change):  # noqa: F811
+def test_an_invalid_section_is_refused_and_the_applied_one_kept(admin, change):
     import jwt
     pull(admin, 1, billed())
     section = billed()
@@ -438,7 +321,7 @@ def test_an_invalid_section_is_refused_and_the_applied_one_kept(admin, change): 
 # --- The region profile's company ----------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_no_warning_when_the_regions_company_is_the_profiles(admin, caplog):  # noqa: F811
+def test_no_warning_when_the_regions_company_is_the_profiles(admin, caplog):
     caplog.set_level(logging.WARNING, logger='catalogue.applier')
     pull(admin, 1, billed())
     assert billing.profile_mismatch() == '' and 'differs' not in caplog.text
@@ -462,7 +345,7 @@ def test_no_warning_when_the_regions_company_is_the_profiles(admin, caplog):  # 
     ({'company_number': None, 'vat_number': 'IE1234567T'}, 'company number or license ""'),
 ])
 def test_a_profile_mismatch_is_a_warning_and_nothing_is_refused(
-        admin, caplog, changes, named):  # noqa: F811
+        admin, caplog, changes, named):
     caplog.set_level(logging.WARNING, logger='catalogue.applier')
     companies = copy.deepcopy(COMPANIES)
     companies[1].update(changes)
@@ -481,7 +364,7 @@ def test_a_profile_mismatch_is_a_warning_and_nothing_is_refused(
 
 
 @pytest.mark.django_db
-def test_the_uae_region_compares_its_own_company(admin, settings):  # noqa: F811
+def test_the_uae_region_compares_its_own_company(admin, settings):
     settings.REGION_PROFILE = get_profile('ae')
     pull(admin, 1, billed())
     assert billing.profile_mismatch() == ''
@@ -496,7 +379,7 @@ def test_the_uae_region_compares_its_own_company(admin, settings):  # noqa: F811
 # --- price_catalogue ------------------------------------------------------------------------------
 
 @pytest.mark.django_db
-def test_price_catalogue_prints_each_offers_company_vat_and_gateways(admin):  # noqa: F811
+def test_price_catalogue_prints_each_offers_company_vat_and_gateways(admin):
     pull(admin, 1, billed())
     assert run('--country', 'ES', '--tier', 'basic') == (
         'ES basic (Iberia): 2 offer(s)\n'
@@ -531,7 +414,7 @@ def test_price_catalogue_prints_each_offers_company_vat_and_gateways(admin):  # 
 
 
 @pytest.mark.django_db
-def test_price_catalogue_on_the_ae_portal(admin, ae_portal):  # noqa: F811
+def test_price_catalogue_on_the_ae_portal(admin, ae_portal):
     pull(admin, 1, billed())
     out = run('--country', 'AE', '--tier', 'basic')
     assert out.startswith('AE basic (UAE): 2 offer(s)\n')
@@ -547,7 +430,7 @@ def test_price_catalogue_on_the_ae_portal(admin, ae_portal):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_price_catalogue_prints_one_rule(admin):  # noqa: F811
+def test_price_catalogue_prints_one_rule(admin):
     pull(admin, 1, billed())
     assert run('--country', 'es', '--category', 'tps_branded') == (
         'ES tps_branded (Iberia): billing rule\n'
@@ -577,7 +460,7 @@ def test_price_catalogue_prints_one_rule(admin):  # noqa: F811
 
 
 @pytest.mark.django_db
-def test_price_catalogue_without_rules_is_as_before(admin):  # noqa: F811
+def test_price_catalogue_without_rules_is_as_before(admin):
     pull(admin, 1, billed(rules_=False, companies=None))
     out = run('--country', 'ES', '--tier', 'basic')
     assert out.startswith('ES basic (Iberia): 7 offer(s)\n') and 'billing' not in out

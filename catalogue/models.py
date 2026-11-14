@@ -4,8 +4,9 @@ snapshot's `catalogue` section. Filled only by the snapshot apply (catalogue.app
 through integration.config); there is no other write path: since epic-catalogue entry 11
 every ORM write (an instance's `save()` and `delete()`, a queryset's `update()`,
 `delete()`, `bulk_create()` and `bulk_update()`) raises outside the snapshot apply
-(integration.snapshot_tables), and the Django admin does not list them. Prices are net (VAT comes at checkout, a later
-entry); `catalogue.resolver` is the only code that prices.
+(integration.snapshot_tables), and the Django admin does not list them. Prices are net:
+the VAT is added by the pricing function (catalogue.pricing, epic-catalogue entry 12),
+through `catalogue.resolver`, the only code that prices.
 
 Products in full (epic-catalogue entry 5, mytp-core 0.20.0): a product also has its
 public texts per language (English always; any other language falls back to English), its
@@ -51,7 +52,6 @@ from decimal import Decimal
 from django.db import models
 from django.utils import translation
 
-from integration.snapshot_tables import READ_ONLY_MESSAGE  # noqa: F401  (re-exported)
 from integration.snapshot_tables import SnapshotFedModel
 from mytp_core.money import Money
 
@@ -461,13 +461,6 @@ class BillingRule(SnapshotFedModel):
         """The gateways this release knows, in the rule's order of preference."""
         from mytp_core.contracts import known_gateways
         return known_gateways(self.gateways)
-
-    @property
-    def vat_text(self):
-        """"VAT 23.00 %", or "VAT 0.00 %: <the exemption text>" for a rate of 0."""
-        if self.exempt:
-            return f'VAT {self.vat_percent} %: {self.exemption_text}'
-        return f'VAT {self.vat_percent} %'
 
 
 class CatalogueState(SnapshotFedModel):

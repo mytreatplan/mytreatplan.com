@@ -3,7 +3,7 @@
 path is refused outside the apply and allowed inside; a model an applier writes without
 the guard fails a test; the marker is per thread and reset by a failing apply; the test
 helper (integration/tests/snapshot_rows.py) and the marker are imported by no production
-module. The admin site is the fake of integration/tests/test_config.py (no network)."""
+module. The admin site is the fake of integration/tests/snapshot_rows.py (no network)."""
 import ast
 import re
 import threading
@@ -20,21 +20,17 @@ from django.db.migrations.executor import MigrationExecutor
 from catalogue.models import (AddOn, BillingCompany, BillingRule, CatalogueState,
                               CountryGroup, Product, ProviderCost, ProviderProduct,
                               Subscription, Voucher)
-from catalogue.tests.test_add_ons_costs import ADD_ONS, COSTS
-from catalogue.tests.test_billing import billed
-from catalogue.tests.test_vouchers import GENERAL
 from integration import config
 from integration.models import AdminDirectoryEntry, ConfigState
 from integration.snapshot_tables import (READ_ONLY_MESSAGE, ReadOnlyTable,
                                          SnapshotFedModel, SnapshotQuerySet,
                                          snapshot_apply_running)
-from integration.tests.snapshot_rows import snapshot_writes
-from integration.tests.test_config import (admin, interface_settings,  # noqa: F401
-                                           snapshot)
+from integration.tests.snapshot_rows import (ADD_ONS, COSTS, GENERAL, billed, snapshot,
+                                             snapshot_writes)
 from regions.models import Country
 
-# test_config's interface settings (autouse here, as imported) clear the database cache.
-pytestmark = pytest.mark.django_db
+# The root conftest's interface settings (module-wide) clear the database cache.
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('interface_settings')]
 # Decision (user, 2026-11-12): the nine catalogue tables, the country map and the admin
 # directory; and (epic-catalogue entry 16) the catalogue's state row.
 SNAPSHOT_FED = [CountryGroup, Product, Subscription, AddOn, ProviderProduct, ProviderCost,
@@ -56,7 +52,7 @@ def full_snapshot(version=1):
 
 
 @pytest.fixture
-def applied(admin):  # noqa: F811
+def applied(admin):
     admin.snapshot = full_snapshot()
     assert config.pull() == ('applied', 1)
     for model in SNAPSHOT_FED:
@@ -165,7 +161,7 @@ def test_the_apply_replaces_the_rows_as_before(applied):
 _WRITE = re.compile(r'^\s*(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+"?(\w+)"?', re.I)
 
 
-def test_every_model_an_applier_writes_has_the_guard(admin):  # noqa: F811
+def test_every_model_an_applier_writes_has_the_guard(admin):
     """Fails when an applier (registered or the admin directory) writes a table whose
     model lacks the guard: the tables are those the SQL of a full apply writes while the
     marker is set (the state row is written after it)."""
@@ -239,7 +235,7 @@ def test_an_error_inside_the_block_resets_the_marker():
     assert not snapshot_apply_running()
 
 
-def test_the_marker_is_set_only_while_apply_runs(admin, monkeypatch):  # noqa: F811
+def test_the_marker_is_set_only_while_apply_runs(admin, monkeypatch):
     """Not before the version check (a stale or unchanged pull writes nothing), and not
     after the apply."""
     seen = []
