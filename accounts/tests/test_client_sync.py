@@ -18,6 +18,7 @@ from django.test import Client
 from accounts import client_sync
 from accounts.erasure import erase_user, purge_erased
 from integration.models import OutboxEvent
+from integration.tests.snapshot_rows import ADMIN, OTHER_SEED, PORTAL_SEED
 from mytp_core import interface
 from mytp_core.contracts import ClientUpdated, check_central_payload
 from signup.tests.helpers import (FIRST_NAME, LAST_NAME, MOBILE_E164, NORMALIZED, PASSWORD,
@@ -27,10 +28,6 @@ pytestmark = [pytest.mark.django_db,
               pytest.mark.usefixtures('capture_codes', 'clear_cache', 'portal_urls')]
 
 User = get_user_model()
-ADMIN_SEED = b'test-only-interface-seed-admin!!'
-PORTAL_SEED = b'test-only-interface-seed-portal!'
-OTHER_SEED = b'test-only-interface-seed-other!!'
-ADMIN = interface.SigningKey('a1', ADMIN_SEED)
 RESYNC = '/api/v1/clients/resync'
 OTHER_TEXT = 'Found-us-through-a-secret-friend'
 

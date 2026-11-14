@@ -722,5 +722,11 @@ LOGGING = {
         # Hub lookups (integration.hub, entry 7): one line per lookup, the path and the
         # outcome code (a warning when it failed); never the answer.
         'integration.hub': {'handlers': ['console'], 'level': 'INFO'},
+        # The remote reads and writes (integration.remote, entries 5 and 6): the
+        # resource, the record id, the actor and the outcome; never the fields.
+        'integration.remote': {'handlers': ['console'], 'level': 'INFO'},
+        # Interface health (integration.alerts, entry 10): each alert sent and cleared,
+        # with counts and ages only.
+        'integration.alerts': {'handlers': ['console'], 'level': 'INFO'},
     },
 }

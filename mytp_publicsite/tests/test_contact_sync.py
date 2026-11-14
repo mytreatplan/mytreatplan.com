@@ -19,6 +19,7 @@ from django.db import transaction
 from django.test import Client
 
 from integration.models import OutboxEvent
+from integration.tests.snapshot_rows import ADMIN, OTHER_SEED, PORTAL_SEED
 from mytp_core import interface
 from mytp_core.contracts import ContactMessageUpdated, check_central_payload
 from mytp_publicsite import contact, contact_sync
@@ -26,10 +27,6 @@ from mytp_publicsite.models import ContactMessage, MailStatus
 
 pytestmark = pytest.mark.django_db
 
-ADMIN_SEED = b'test-only-interface-seed-admin!!'
-PORTAL_SEED = b'test-only-interface-seed-portal!'
-OTHER_SEED = b'test-only-interface-seed-other!!'
-ADMIN = interface.SigningKey('a1', ADMIN_SEED)
 RESYNC = '/api/v1/contact-messages/resync'
 INBOX = 'webform@example.test'
 VALID = {

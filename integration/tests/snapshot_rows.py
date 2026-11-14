@@ -25,13 +25,14 @@ import threading
 import urllib.error
 from urllib.parse import urlsplit
 
-from integration.snapshot_tables import _snapshot_apply
+from integration.snapshot_tables import snapshot_apply
 from mytp_core import interface, snapshots
 
 # --- The fake admin site and the snapshot ---------------------------------------------
 
 ADMIN_SEED = b'test-only-interface-seed-admin!!'
 PORTAL_SEED = b'test-only-interface-seed-portal!'
+OTHER_SEED = b'test-only-interface-seed-other!!'
 ADMIN = interface.SigningKey('a1', ADMIN_SEED)
 PORTAL = interface.SigningKey('p1', PORTAL_SEED)
 CONFIG_URL = 'https://admindev.example.test/api/v1/config'
@@ -113,7 +114,7 @@ def pull(admin, version, section=None, *, key='catalogue', **changes):
 
 def snapshot_writes():
     """A context manager: the block writes as the snapshot apply does."""
-    return _snapshot_apply()
+    return snapshot_apply()
 
 
 def put_country(code, state):

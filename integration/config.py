@@ -11,7 +11,7 @@ by the admin site's signed nudge, ``POST /api/v1/config/nudge``):
 
 1. records the attempt (`ConfigState.last_pull_at`);
 2. fetches the answer with a signed GET (mytp-core's `signed_get`) from the admin site
-   (`outbox.admin_site_url()`: INTERFACE_ADMIN_SITE, or the only INTERFACE_PEERS entry);
+   (`peers.admin_site_url()`: INTERFACE_ADMIN_SITE, or the only INTERFACE_PEERS entry);
 3. verifies it before anything is applied (mytp-core's `verify_snapshot`: the admin's
    public key from INTERFACE_PEER_KEYS, the issuer, this site as the audience, ``typ``,
    ``sha`` and ``ver``, the contract's shape, the reader format);
@@ -67,8 +67,8 @@ from mytp_core import interface, snapshots
 from mytp_core.contracts import ConfigSnapshot
 
 from .models import AdminDirectoryEntry, ConfigState
-from .outbox import _error_code, admin_site_url
-from .snapshot_tables import _snapshot_apply
+from .peers import admin_site_url, error_code
+from .snapshot_tables import snapshot_apply
 
 logger = logging.getLogger('integration.config')
 
@@ -156,7 +156,7 @@ def _fetch():
     except interface.SigningKeyUnavailable:
         raise PullFailed(SIGNING_KEY) from None
     except interface.PeerCallFailed as exc:
-        raise PullFailed(_error_code(exc)[:64]) from None
+        raise PullFailed(error_code(exc)[:64]) from None
     try:
         return snapshots.verify_snapshot(answer.data, keyring=keyring, issuer=site)
     except snapshots.SnapshotRefused as exc:
@@ -212,7 +212,7 @@ def _apply(snapshot, now, summaries=None):
                 return UNCHANGED
         # The only place the snapshot-fed tables are written (integration.snapshot_tables):
         # the marker is set for these writes only and reset however they end.
-        with _snapshot_apply():
+        with snapshot_apply():
             AdminDirectoryEntry.objects.all().delete()
             AdminDirectoryEntry.objects.bulk_create(
                 AdminDirectoryEntry(id=entry.id, display_name=entry.display_name,

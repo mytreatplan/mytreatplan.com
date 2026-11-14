@@ -39,6 +39,8 @@ logger = logging.getLogger('integration.alerts')
 
 OUTBOX = InterfaceAlert.OUTBOX
 CONFIG = InterfaceAlert.CONFIG
+# The thresholds' defaults (also the checks' hints, integration.checks); settings.py
+# sets the same ones.
 DEFAULT_MINUTES = {OUTBOX: 15, CONFIG: 60}
 SETTING_NAMES = {OUTBOX: 'OUTBOX_ALERT_MINUTES', CONFIG: 'CONFIG_ALERT_MINUTES'}
 

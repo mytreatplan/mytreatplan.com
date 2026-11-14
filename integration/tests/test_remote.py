@@ -18,13 +18,9 @@ from django.utils import timezone
 
 from integration import checks, sample
 from integration.models import AppendOnly, InterfaceCall, RemoteAccess, SampleRecord
+from integration.tests.snapshot_rows import ADMIN, OTHER_SEED, PORTAL_SEED
 from mytp_core import interface
 
-ADMIN_SEED = b'test-only-interface-seed-admin!!'
-PORTAL_SEED = b'test-only-interface-seed-portal!'
-OTHER_SEED = b'test-only-interface-seed-other!!'
-ADMIN = interface.SigningKey('a1', ADMIN_SEED)
-PORTAL = interface.SigningKey('p1', PORTAL_SEED)
 DEV_AE = interface.SigningKey('e1', OTHER_SEED)
 URL = '/api/v1/remote/sample-record'
 ME = '6f1c2b8a-3d4e-4f5a-9b6c-7d8e9f0a1b2c'

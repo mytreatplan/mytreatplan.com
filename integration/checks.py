@@ -24,8 +24,9 @@ from mytp_core import interface
 ADMIN_SITE_NOT_A_PEER = 'integration.E005'
 SAMPLE_ON_PUBLIC_SITE = 'integration.E006'
 BAD_HUB_LOOKUP_TIMEOUT = 'integration.E007'
-BAD_ALERT_MINUTES = {'OUTBOX_ALERT_MINUTES': ('integration.E008', 15),
-                     'CONFIG_ALERT_MINUTES': ('integration.E009', 60)}
+# The thresholds' defaults are integration.alerts.DEFAULT_MINUTES.
+BAD_ALERT_MINUTES = {'OUTBOX_ALERT_MINUTES': 'integration.E008',
+                     'CONFIG_ALERT_MINUTES': 'integration.E009'}
 
 
 @register()
@@ -78,7 +79,9 @@ def check_interface_settings(app_configs=None, **kwargs):
             f'{OVERALL_CAP} (the hub lookups\' overall cap).',
             hint='Remove HUB_LOOKUP_TIMEOUT from settings.env (default 3).',
             id=BAD_HUB_LOOKUP_TIMEOUT))
-    for name, (check_id, default) in BAD_ALERT_MINUTES.items():
+    from .alerts import DEFAULT_MINUTES, SETTING_NAMES
+    for kind, name in SETTING_NAMES.items():
+        check_id, default = BAD_ALERT_MINUTES[name], DEFAULT_MINUTES[kind]
         minutes = getattr(settings, name, default)
         if not isinstance(minutes, int) or isinstance(minutes, bool) or minutes < 1:
             errors.append(Error(

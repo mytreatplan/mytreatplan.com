@@ -387,10 +387,10 @@ def test_production_code_never_imports_a_tests_package_or_sets_the_marker():
                 assert 'snapshot_rows' not in target, (name, target)
             if name not in MARKER_USERS:
                 for target in imported:
-                    assert target != '_snapshot_apply', name
+                    assert target != 'snapshot_apply', name
                 if isinstance(node, (ast.Name, ast.Attribute)):
                     assert getattr(node, 'id', getattr(node, 'attr', None)) not in (
-                        '_snapshot_apply', '_applying'), name
+                        'snapshot_apply', '_applying'), name
 
 
 def test_the_helpers_write_the_country_map_as_the_apply_does():

@@ -18,15 +18,14 @@ from django.utils import timezone
 
 from integration import config
 from integration.models import AdminDirectoryEntry, ConfigState
-from integration.tests.snapshot_rows import (ADA, ADMIN, ADMIN_SEED, BOB, snapshot,
-                                             state)
+from integration.tests.snapshot_rows import (ADA, ADMIN, ADMIN_SEED, BOB, OTHER_SEED,
+                                             snapshot, state)
 from mytp_core import interface, snapshots
 
 # The root conftest's `interface_settings`, module-wide; its `admin` is the fake admin site.
 pytestmark = pytest.mark.usefixtures('interface_settings')
 
 DEPLOY = Path(django_settings.BASE_DIR) / 'deploy'
-OTHER_SEED = b'test-only-interface-seed-other!!'
 NUDGE = '/api/v1/config/nudge'
 SECRET_NAME = 'Admin-Name-That-Must-Not-Leak'
 

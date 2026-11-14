@@ -20,8 +20,10 @@ from django.views.decorators.csrf import csrf_exempt
 
 from eventlog.service import client_ip
 from mytp_core import interface
+from mytp_core.contracts import errors as contract_errors
 
 from .models import InterfaceCall
+from .peers import admin_site_url
 
 logger = logging.getLogger('integration.calls')
 
@@ -45,7 +47,7 @@ def keyring():
     return interface.Keyring.from_settings()
 
 
-def _outcome(request, accepted, reason, iss='', kid=''):
+def outcome(request, accepted, reason, iss='', kid=''):
     request.interface_outcome = {'accepted': accepted, 'reason': reason,
                                  'iss': _safe(iss), 'kid': _safe(kid)}
 
@@ -54,12 +56,26 @@ def _unavailable(request, detail):
     # One warning, and the response marked as logged, so django.request does not log the
     # 503 as an error (a Sentry event for every scanner hit before the keys are set).
     logger.warning('interface unavailable: %s', detail)
-    _outcome(request, False, UNAVAILABLE)
+    outcome(request, False, UNAVAILABLE)
     response = JsonResponse({'error': {'code': UNAVAILABLE, 'message':
                                        'The interface is not configured on this site.'}},
                             status=503)
     response._has_been_logged = True
     return response
+
+
+def not_the_admin_site(request):
+    """None when the request is signed by the admin site; else the response: 503 when the
+    admin site cannot be told, 401 (an unknown key) for another signed peer."""
+    claims = request.interface_claims
+    try:
+        admin, _url = admin_site_url()
+    except interface.InterfaceError as exc:
+        return _unavailable(request, exc)
+    if claims['iss'] != admin:
+        outcome(request, False, contract_errors.UNKNOWN_KEY, claims['iss'], claims.kid)
+        return JsonResponse(interface.refusal_body(contract_errors.UNKNOWN_KEY), status=401)
+    return None
 
 
 def signed_endpoint(view):
@@ -72,7 +88,7 @@ def signed_endpoint(view):
         try:
             return _checked(request, *args, **kwargs)
         except Exception:
-            _outcome(request, False, ERROR)
+            outcome(request, False, ERROR)
             raise
 
     def _checked(request, *args, **kwargs):
@@ -84,9 +100,9 @@ def signed_endpoint(view):
         try:
             claims = interface.verify_django_request(request, ring)
         except interface.VerificationFailed as exc:
-            _outcome(request, False, exc.code, exc.iss, exc.kid)
+            outcome(request, False, exc.code, exc.iss, exc.kid)
             return JsonResponse(interface.refusal_body(exc.code), status=401)
-        _outcome(request, True, '', claims['iss'], claims.kid)
+        outcome(request, True, '', claims['iss'], claims.kid)
         request.interface_claims = claims
         return view(request, *args, **kwargs)
     return wrapped

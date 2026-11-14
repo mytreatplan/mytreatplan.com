@@ -53,7 +53,7 @@ from mytp_core.contracts import (DELIVERED_RESULTS, MAX_EVENT_BYTES, EventEnvelo
                                  EventResult, build_payload)
 
 from .models import OUTBOX_RETENTION_DAYS, OutboxAggregate, OutboxEvent
-from .peers import parse_peers
+from .peers import admin_site_url, error_code, unavailable
 
 logger = logging.getLogger('integration.outbox')
 
@@ -69,10 +69,6 @@ RUN_SECONDS = 50
 DELIVERED = 'delivered'
 REJECTED = 'rejected'
 RETRY = 'retry'
-# The error codes of retried failures that say the admin site is unreachable or
-# unavailable (they count towards MAX_FAILURES_IN_A_ROW).
-NETWORK = 'network'
-PEER_URL = 'peer_url'
 # The reasons of a row rejected here, before sending (final; the admin site never sees
 # it): each sends one Sentry warning.
 LOCAL_REJECTIONS = ('body_too_large', 'invalid_envelope')
@@ -177,22 +173,6 @@ def admin_site():
     return site, base_url + EVENTS_PATH
 
 
-def admin_site_url():
-    """The admin site's name and base URL (INTERFACE_ADMIN_SITE, or the only
-    INTERFACE_PEERS entry); InterfaceConfigurationError when it cannot be told."""
-    site = (getattr(settings, 'INTERFACE_ADMIN_SITE', '') or '').strip()
-    peers = parse_peers(getattr(settings, 'INTERFACE_PEERS', '') or '')
-    if not site:
-        if len(peers) != 1:
-            raise interface.InterfaceConfigurationError(
-                'Set INTERFACE_ADMIN_SITE: INTERFACE_PEERS does not list exactly one site.')
-        site = next(iter(peers))
-    if site not in peers:
-        raise interface.InterfaceConfigurationError(
-            f'INTERFACE_ADMIN_SITE {site!r} is not in INTERFACE_PEERS.')
-    return site, peers[site]
-
-
 def backoff(attempts):
     """The wait after the `attempts`-th failure: min(2^(attempts-1), 60) minutes."""
     return timedelta(minutes=min(2 ** (max(attempts, 1) - 1), MAX_BACKOFF_MINUTES))
@@ -212,23 +192,6 @@ def _take(now):
     return _eligible(now).defer('payload').select_for_update(skip_locked=True).first()
 
 
-def _error_code(exc):
-    """The code of a call failure: `network` only for no answer at all, `peer_url` for a
-    peer URL refused before the call, `http_<status>[_<peer code>]` for an HTTP error,
-    `bad_answer` for a 2xx answer that is not a JSON object."""
-    if exc.status is None:
-        return NETWORK if str(exc).startswith('no answer') else PEER_URL
-    if 200 <= exc.status < 300:
-        return 'bad_answer'
-    return f'http_{exc.status}' + (f'_{exc.code}' if exc.code else '')
-
-
-def _unavailable(exc):
-    """Whether a call failure says the admin site is unreachable or unavailable (rather
-    than refusing this one event)."""
-    return exc.status is None or exc.status >= 500 or exc.status == 401
-
-
 def _send(event, audience, url):
     """(outcome, code, short text, whether it says the admin site is unavailable)."""
     try:
@@ -243,7 +206,7 @@ def _send(event, audience, url):
     except interface.BodyTooLarge as exc:
         return REJECTED, 'body_too_large', str(exc), False
     except interface.PeerCallFailed as exc:
-        return RETRY, _error_code(exc), str(exc), _unavailable(exc)
+        return RETRY, error_code(exc), str(exc), unavailable(exc)
     try:
         result = EventResult.model_validate(answer.data)
     except ValueError:

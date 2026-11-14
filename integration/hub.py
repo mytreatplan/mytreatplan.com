@@ -4,7 +4,7 @@ epic-appointments). When the admin site is down a lookup fails cleanly and nothi
 on this site is affected.
 
 `lookup(path, reader)` signs ``GET <admin site><path>?region=<REGION>`` for the admin site
-(`outbox.admin_site_url`: INTERFACE_ADMIN_SITE in INTERFACE_PEERS), waits at most
+(`peers.admin_site_url`: INTERFACE_ADMIN_SITE in INTERFACE_PEERS), waits at most
 HUB_LOOKUP_TIMEOUT seconds per socket operation and `OVERALL_CAP` seconds in all, reads at
 most mytp-core's `MAX_LOOKUP_BYTES` (64 KB), and returns the answer read with `reader`
 (the lookup's closed model in `mytp_core.contracts.LOOKUP_READERS`). Nothing of it is
@@ -16,9 +16,9 @@ detail, and no other exception leaves `lookup`:
 - `HubUnavailable` (outcome ``unavailable``): no answer (``network``; also a peer that
   hangs without sending anything, after HUB_LOOKUP_TIMEOUT), the overall cap reached
   (``timeout``), every lookup slot taken by earlier lookups still running (``busy``, no
-  call made), a 5xx or a 401 (``http_<status>[_<peer code>]``, as the outbox's
-  `_unavailable`), an answer that is too large, not JSON or not the reader's model, or for
-  another region (``bad_answer``), the interface not set up here (``not_configured``,
+  call made), a 5xx or a 401 (``http_<status>[_<peer code>]``, as `peers.unavailable`),
+  an answer that is too large, not JSON or not the reader's model, or for another region
+  (``bad_answer``), the interface not set up here (``not_configured``,
   ``signing_key``, ``peer_url`` for an admin URL `signed_get` refuses), or anything
   unexpected (``error``);
 - `HubRefused` (outcome ``refused``): any other 4xx (``http_404_not_found``,
@@ -57,7 +57,7 @@ from mytp_core.contracts import MAX_LOOKUP_BYTES
 from mytp_core.contracts.errors import BAD_ANSWER, HUB_REFUSED, HUB_UNAVAILABLE
 from mytp_core.contracts.hub import HUB_PREFIX
 
-from .outbox import _error_code, _unavailable, admin_site_url
+from .peers import admin_site_url, error_code, unavailable
 
 logger = logging.getLogger('integration.hub')
 
@@ -185,10 +185,10 @@ def _within_cap(call):
     if isinstance(error, interface.SigningKeyUnavailable):
         raise HubUnavailable(SIGNING_KEY)
     if isinstance(error, interface.PeerCallFailed):
-        code = _error_code(error)[:64]
+        code = error_code(error)[:64]
         if error.status is not None and 200 <= error.status < 300:
             raise HubUnavailable(BAD_ANSWER)
-        if _unavailable(error):
+        if unavailable(error):
             raise HubUnavailable(code)
         raise HubRefused(code)
     if isinstance(error, interface.InterfaceError):
