@@ -3,7 +3,7 @@ title: 'Region company in the footer and legal pages'
 type: 'feature'
 ticket: '6'
 created: '2026-11-14'
-status: 'built'
+status: 'done'
 baseline_revision: '822382e4062881d04b1b2de76ce8b4b6f236d7c8'
 route: 'full'
 route_source: 'auto'
@@ -126,3 +126,17 @@ Not run locally: the two migrations on PostgreSQL (the local role cannot create 
 **Commands:**
 - the portal's full suite command (SQLite, `../.venv`, sandbox off) -- expected: 0 failed
 - `manage.py makemigrations --check --dry-run` -- expected: no changes
+
+## Staging
+
+- Merged 2026-11-14: portal PR #101 (merge 313baf4). Migrations `legal` 0006 and 0007. No mytp-core release.
+- CI: both PR checks `test` `pass` (the migrations' first PostgreSQL run); master run 43635750276 (test, deploy dev, deploy dev-ae) all `success`.
+- Local suite before the merge: 3082 passed, 12 skipped, 0 failed.
+- Checks (2026-11-14, read-only on the servers through the test client and the ORM):
+  1. `/healthz` answers on dev (eu) and dev-ae (ae).
+  2. Footer: dev shows "MyTPDSO Limited · Company number 815526 (Ireland)" with the Dublin office in EN and "Número de registro mercantil 815526 (Irlanda)", "Domicilio social" in ES, nothing of the UAE company; dev-ae shows "MyTPDSO L.L.C-FZ · License 2542361.01 (Dubai)" with the Meydan office, nothing of the Irish company (dev-ae serves English only).
+  3. Privacy and Terms: on dev (EN and ES) the text names MyTPDSO Limited and the Dublin office only; on dev-ae MyTPDSO L.L.C-FZ and the Meydan office only; the provisional notice shows on all (`LEGAL_TEXTS_FINAL` is off).
+  4. Documents: dev's five rows are region eu, dev-ae's four are region ae, all provisional; acceptances are unchanged from before the deploy (dev 4, dev-ae 8, pointing at the same documents).
+  5. The signup legal step's notice was not exercised on the servers (it needs a signup in progress); it is covered by the suite. Left for the user's next signup on dev.
+  6. Structured data: dev carries MyTPDSO Limited, 815526 and the Dublin address (IE); dev-ae MyTPDSO L.L.C-FZ, 2542361.01 and the Dubai address (AE).
+- Known limits, told to the user: the .com Terms and Privacy still mention Dubai and UAE law (provisional texts); a document added in the Django admin with "provisional" unticked is saved as final.
