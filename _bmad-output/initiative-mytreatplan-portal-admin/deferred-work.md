@@ -114,3 +114,7 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-admin-interface/story-refactor-sweep-plan.md`
   summary: Recorded and left (user decision 2026-11-14): the admin's event-ingest region guard needs an existing record, so a `client.*` or `contact_message.*` event for a uid the admin has no record of (never received, or deleted) is accepted from any region (an update then creates the record in the sender's region), and a wrong-region event at or below the stored version is `stale`, not `rejected`, as the version check comes before the applier.
   evidence: mytp-admin `interface/events.py:87-95` (`_locked_record`) and `:246-250` (the version check before the applier); its `README.md:1048-1052` "Known limits"; closing it changes what the ingest accepts (a behaviour change), out of the sweep.
+- source_plan: `epic-admin-interface/story-refactor-sweep-plan.md`
+  summary: mytp-admin's `layout/tests/test_pages.py::test_home_is_the_empty_adminlte_layout` fails at random: it asserts that the lower-cased home page HTML does not contain `cdn`, and the page carries random tokens that can spell it. Check the assets' addresses instead of the whole page.
+  evidence: master run 43632718501 (commit 78aadf0) failed on that assertion and passed on the re-run of the same commit; both PR runs of the same change passed; the cause (a random token) is the likely one, not confirmed from the failing page. The portal has the same pattern (`'cdn'` in `mytp_publicsite/tests/test_home.py`).
+
