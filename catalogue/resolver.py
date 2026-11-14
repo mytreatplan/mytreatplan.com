@@ -470,19 +470,23 @@ def product(product_id):
     return Product.objects.filter(pk=product_id).first()
 
 
-def offers_under(subscription, day=None, country=None):
+def offers_under(subscription, day=None, country=None, *, held=False):
     """[(product, Money)] a subscription (standard or manual) offers on `day` (a date in
     Madrid time; today when None): the active products linked to it (every active
     product when it has no links: a snapshot of an admin site before mytp-core 0.22.0)
     that are within their validity dates, by name; [] for an inactive subscription. The
     price is `unit_price`: of one unit for a product priced per unit, without add-ons.
 
+    `held` (epic-subscriptions entry 1, user decision 2026-11-14): the subscription is
+    one a doctor holds (`subscriptions.service.effective`); a deactivated one is no longer
+    sold but its holder keeps it until its end date, so it offers as an active one.
+
     Once the catalogue has billing rules (entry 9), a product is offered only when its
     category has an active, available rule in the doctor's country group and the product
     is in that rule's currency. The group is the one of `country` (the doctor's, an
     alpha-2 code) when given, else the subscription's own (for a standard subscription
     they are the same). Without any rule every product above is offered, as before."""
-    if not subscription.active:
+    if not (subscription.active or held):
         return []
     day = day or today()
     products = Product.objects.filter(active=True).order_by('name', 'id')

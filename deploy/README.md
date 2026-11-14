@@ -35,6 +35,7 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Signup and login codes | Twilio Verify (email via SendGrid, WhatsApp, SMS); credentials in `shared/settings.env` ("Twilio Verify") |
 | Geo-IP | DB-IP Lite country database `/srv/mytp-dev/shared/geoip/dbip-country-lite.mmdb` (CC BY 4.0), monthly `geoipupdate` job ("Geo-IP database") |
 | Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute; configuration snapshot pulled from it, `pullconfig` job every 5 minutes, `show_config`; `checkinterface` job every 5 minutes, one Sentry warning per outage of either; the catalogue it carries, `price_catalogue`; the country map it carries ("Interface with the admin site", "Interface alerts", "Outbox", "Configuration snapshot", "Catalogue", "Country map") |
+| Doctor subscriptions | one record per doctor (Basic from signup; migration `subscriptions.0002` for existing doctors), `assign_basic` after a deploy, `doctor_subscription` to read one ("Doctor subscriptions") |
 | Errors and job alerts | Sentry (EU region), one environment per site (`dev`, `dev-ae`, `admindev`), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -3276,6 +3277,59 @@ dev, `pull_config` (or wait for the nudge), then the two commands above print 90
 and nothing. Until the first catalogue (or staff user) change on admindev after its
 deploy, the applied snapshot has no catalogue section and `price_catalogue` prints no
 offers.
+
+### Doctor subscriptions
+
+The subscription each doctor holds (epic-subscriptions entry 1, AD-15; the
+`subscriptions` app; the rule and the service in the root README, "A doctor's
+subscription"): one record per doctor (`subscriptions_doctorsubscription`) and one row per
+change (`subscriptions_subscriptionchange`), written only by `subscriptions.service`.
+Signup gives the doctor Basic in its transaction (it never fails because of the
+catalogue); staff and superusers have none. A record names its catalogue subscription by
+UUID only: `pull_config` never touches it. The rows go with the user at the purge of
+erased accounts. There is no portal page and no Django admin page for them yet. The
+previous release does not know these tables: before rolling back past this release, run
+`manage.py migrate subscriptions zero` (otherwise deleting a user, the purge job
+included, fails on the foreign key).
+
+**After the deploy that adds it** (and after any deploy, harmless): migration
+`subscriptions.0002` gives every existing doctor Basic; a doctor the previous release
+created between `migrate` and the switch has none (counts as Basic) until:
+
+```sh
+cd /srv/mytp-dev/current
+sudo -u mytp-dev ./venv/bin/python manage.py assign_basic --dry-run   # "assign_basic: N doctor(s) without a record (dry run: nothing written)"
+sudo -u mytp-dev ./venv/bin/python manage.py assign_basic             # "assign_basic: N doctor(s) given Basic"; again: 0
+```
+
+Same on dev-ae with `mytp-dev-ae` and `/srv/mytp-dev-ae/current`.
+
+**Read a doctor's subscription** (reads only; the email is never printed):
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py doctor_subscription <uid or email>
+#   doctor <uid>: country ES, on <date>
+#     record: basic, active, subscription -, started <date>, ends -, period -, auto-renew off, manual no, version 1, last change by doctor
+#     effective: basic, subscription SEED-BASIC-IBERIA, manual no, can switch yes
+sudo -u mytp-dev ./venv/bin/python manage.py doctor_subscription <uid or email> --offers
+sudo -u mytp-dev ./venv/bin/python manage.py doctor_subscription <uid or email> --order --product SEED-TPSB-MEDIUM-EUR [--quantity N] [--vies valid]
+```
+
+`subscription none (offered nothing)`: the doctor's country has no group here or its
+group no standard Basic (another region's country, a blank country, no snapshot yet).
+`(held)`: the record's own catalogue row (`, deactivated` when the admin site
+deactivated it: the doctor keeps it until its end date). A row missing from the snapshot
+is a Sentry error (`subscriptions.service`) and the doctor is priced with the Basic; so is
+a row whose tier or kind the admin site changed under the same id. A staff account's
+record is ignored (`record: none (staff account: any record is ignored)`).
+
+Staging checks (entry 1): `assign_basic --dry-run` on dev and dev-ae reports 0;
+`doctor_subscription` for dev-ae's existing doctor shows Basic; sign up one doctor on dev
+with country ES, then `doctor_subscription <email>` shows Basic, `SEED-BASIC-IBERIA`,
+can switch, version 1; `--offers` lists Iberia's Basic offers and `--order --product
+SEED-TPSB-MEDIUM-EUR` is billed by the Spanish company; in `manage.py shell`, a doctor's
+change of a manual record is refused with `ManualLocked` (inside a rolled-back
+transaction); `pull_config` afterwards is `applied` or `unchanged`, the records intact.
 
 ### Country map
 
