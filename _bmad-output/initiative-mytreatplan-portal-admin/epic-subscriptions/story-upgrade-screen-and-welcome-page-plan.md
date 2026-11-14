@@ -3,7 +3,7 @@ title: 'Upgrade screen and welcome page'
 type: 'feature'
 ticket: '2'
 created: '2026-11-14'
-status: 'built'
+status: 'done'
 baseline_revision: '68680f4b5e054c63de737ae57284470e70f34e0d'
 route: 'full'
 route_source: 'auto'
@@ -129,3 +129,15 @@ The placeholder page is refused (404) for the current level and lower ones so en
 **Commands:**
 - `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU="; export DATABASE_URL="sqlite:///$TMPDIR/x.sqlite3"; ../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: 0 failed (2970 passed, 12 skipped before this story).
 - `../.venv/bin/python manage.py makemigrations --check --dry-run` (same environment) -- expected: no changes.
+
+## Staging
+
+- Merged 2026-11-14: portal PR #99 (merge 7b66efa). Portal only: no migration, no mytp-core release, no admin change.
+- CI: both PR `test` checks `pass`; master run 43597482231 (test, deploy dev, deploy dev-ae) all `success`; `/healthz` 200 on dev and dev-ae. Local suite on the merged branch: 3026 passed, 12 skipped, 0 failed.
+- Fixture: the manual subscription `STG-ORMCO-PREMIUM` ("Ormco Premium", Iberia, premium, free, the products of the seed's Premium Iberia) was created on admindev and reached dev and dev-ae in snapshot v205. A re-run of `seed_staging_catalogue` deactivates it.
+- Checks on 2026-11-14, all confirmed by the user (Safari on an iPad):
+  1. A new doctor signed up on dev with country ES (uid 272b64f1-8492-4dd2-9ea1-945f6cc98dd9): signup ended on the upgrade screen with Iberia's three levels, Basic current, Advanced 60.00 EUR per month and 600.00 EUR upfront, Premium 120.00 EUR and 1,200.00 EUR.
+  2. The buttons, the placeholder page and "Not now" work.
+  3. The screen works in English and in Spanish; the prices and the layout are accepted.
+  4. After `assign_manual` with `STG-ORMCO-PREMIUM` from the shell (record: premium, manual, version 2; `doctor_subscription`: manual yes, can switch no), the screen names "Ormco Premium" as the current level with no buttons and "Continue", and `/en/upgrade/advanced/` goes back to `/en/upgrade/`. This doctor stays as the manual fixture for entries 3 and 10.
+- Found during the checks, recorded in `deferred-work.md`: the Cloudflare widget failed several times in the browser before the signup went through; the user asks for a design review of the screen against the corporate style.
