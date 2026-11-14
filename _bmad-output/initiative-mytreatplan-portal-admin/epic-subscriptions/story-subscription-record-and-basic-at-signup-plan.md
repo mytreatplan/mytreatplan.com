@@ -3,7 +3,7 @@ title: 'Subscription record and Basic at signup'
 type: 'feature'
 ticket: '1'
 created: '2026-11-14'
-status: 'built'
+status: 'done'
 baseline_revision: '7839a25736fd1e0b5b19f7b3fddad663201297f0'
 route: 'full'
 route_source: 'auto'
@@ -251,3 +251,15 @@ Quick lens (Opus), 2026-11-14: 10 findings, 9 patched, 1 rejected. Matrix audit:
 4. `doctor_subscription <email> --offers`: Iberia's Basic offers; `--order --product SEED-TPSB-MEDIUM-EUR`: priced by the Spanish company.
 5. In a shell on dev with a system actor: `assign_manual` to a manual subscription if staging has one, else a change by a doctor actor on a record flagged manual in a rolled-back transaction: refused with `ManualLocked`.
 6. `pull_config` on dev after the checks: `applied` or `unchanged`, records intact.
+
+## Staging
+
+- Merged 2026-11-14: portal PR #98 (merge 9777265). Portal only: no mytp-core release, no admin change. Migrations `subscriptions` 0001 and 0002.
+- CI: both PR `test` checks `pass`; master run 43572234247 (test, deploy dev, deploy dev-ae) all `success`. Local suite on the merged branch: 2970 passed, 12 skipped, 0 failed.
+- Checks on 2026-11-14, all passed:
+  1. `assign_basic --dry-run` reports 0 on dev and dev-ae. dev had only a staff account (no record). dev-ae's two doctors have a Basic record from the migration (`backfill`): the AE doctor is priced with `SEED-BASIC-UAE` (7 AED offers), the IE doctor (another region's country) is on Basic with no subscription.
+  2. The user signed up a doctor on dev with country ES (uid 965c9a59-f6cb-46ad-957d-49652812c9f7).
+  3. `doctor_subscription <email>` on dev: Basic, active, started 2026-11-14, version 1, last change by the doctor; effective Basic with `SEED-BASIC-IBERIA`, can switch.
+  4. `--offers`: ICE and the six TPS products in EUR. `--order --product SEED-TPSB-MEDIUM-EUR`: 249.00 EUR, MyTPDSO Spain S.L., VAT 0 % with the staging text, gateways redsys and bank_transfer.
+  5. On dev-ae, in a transaction that was rolled back: a record flagged manual reads "cannot switch" and a change by the doctor is refused with `ManualLocked`; a change with a wrong version is refused with `StaleVersion`. Nothing was left behind.
+  6. `pull_config` on dev and dev-ae: v204 applied, the records unchanged.
