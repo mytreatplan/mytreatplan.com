@@ -3,7 +3,7 @@ title: 'Included cases on subscriptions'
 type: 'feature'
 ticket: '17'
 created: '2026-11-15'
-status: 'built'
+status: 'done'
 baseline_revision: 'd26fc1e'
 route: 'full'
 route_source: 'auto'
@@ -120,3 +120,13 @@ Quick lens (Opus reviewer, 2026-11-15) over the three repos: backward compatibil
 | 4 | low | Long lines / import order | patched |
 
 Suites after the patches, run by me on the tagged v0.27.0 wheel (sha256 e759698f…): core 1599 passed / 4 skipped (CI green on master and the tag); admin 1609 / 12; portal 3307 / 12; `makemigrations --check` clean in both sites.
+
+## Staging
+
+mytp-core v0.27.0 released (commit 6e55e1e, tag CI green). Admin PR mytreatplan/mytp-admin#42 merged as 3a2dd50 (run 43742263493: test + admindev deploy green; `/healthz` ok; `catalogue` 0010 applied). Portal PR #106 merged as 9d542d2 (run 43742948494: test + dev and dev-ae deploys green; `catalogue` 0009 applied on both).
+
+1. admindev: the full `seed_staging_catalogue` was NOT run: its dry run would also have deactivated `STG-ORMCO-PREMIUM`, an active manual Premium created after the last seed. Instead the 15 active `SEED-` subscriptions got their numbers through `service.update_subscription` (audited, actor `command_actor`): Advanced `{"tps_branded": 12}`, Premium 25, Basic none; snapshot v205 → v215, each write validated by the vendored 0.27.0.
+2. dev and dev-ae: the 18:00 pull under the new release re-applied v215 ("v215 applied"); `included_cases(sub, "tps_branded")` (and `"tps"`) reads 12 on every active Advanced, 25 on every active seeded Premium, 0 on Basic and on the manual Premium without a number. Confirmed.
+3. The admin form (0 by default on every category, the seeded numbers on an edit): visual, left to the user.
+
+Note: the dev release went live just after a pull, so the copies read 0 for one pull interval (5 minutes) before the re-apply.
