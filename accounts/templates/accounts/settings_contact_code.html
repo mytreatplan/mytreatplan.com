@@ -1,0 +1,29 @@
+{% extends "accounts/settings_base.html" %}
+{% load i18n %}
+{% comment %}
+The code of a contact change (accounts.views._change_code, epic-doctor-profile entry 3):
+the code sent to the new value, with signup's help under the form (signup/_code_help.html:
+resend, "Send by SMS instead" for the mobile, the notices, the link back to the start to
+change the value, the support contact). The intro mirrors the login code page.
+{% endcomment %}
+
+{% block title %}{% translate "Enter your code" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block settings_content %}
+<h1 class="text-[clamp(28px,4.4vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Enter your code" %}</h1>
+<div class="mt-3 text-copy text-ink-muted">
+  {% if code.failed %}<p>{% if kind == "mobile" %}{% blocktranslate with phone=contact %}We couldn't send a code to <strong class="text-ink">{{ phone }}</strong>.{% endblocktranslate %}{% else %}{% blocktranslate with email=contact %}We couldn't send a code to <strong class="text-ink">{{ email }}</strong>.{% endblocktranslate %}{% endif %}</p>
+  {% elif not code.sent_recently %}<p data-no-code>{% translate "Ask for a new code below to continue." %}</p>
+  {% elif kind == "mobile" and code.channel == "sms" %}{% if code.fallback %}<p data-sms-fallback>{% translate "WhatsApp is not available for this number, so we sent the code by SMS." %}</p>{% endif %}<p{% if code.fallback %} class="mt-3"{% endif %} data-sent="sms">{% blocktranslate with phone=contact %}We have sent a 6-digit code by SMS to <strong class="text-ink">{{ phone }}</strong>. Enter it below to confirm the change.{% endblocktranslate %}</p>
+  {% elif kind == "mobile" and code.channel == "whatsapp" %}<p data-sent="whatsapp">{% blocktranslate with phone=contact %}We have sent a 6-digit code by WhatsApp to <strong class="text-ink">{{ phone }}</strong>. Enter it below to confirm the change.{% endblocktranslate %}</p>
+  {% else %}<p data-sent="{{ kind }}">{% blocktranslate with email=contact %}We have sent a 6-digit code to <strong class="text-ink">{{ email }}</strong>. Enter it below to confirm the change.{% endblocktranslate %}</p>
+  {% endif %}
+</div>
+
+<form method="post" class="mt-8 flex max-w-[520px] flex-col gap-5" novalidate data-change-code="{{ kind }}">
+  {% csrf_token %}
+  {% include "includes/_form_field.html" with field=form.code %}
+  <button type="submit" class="mt-2 min-h-[52px] cursor-pointer self-start rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none">{% translate "Confirm" %}</button>
+</form>
+{% include "signup/_code_help.html" with kind=kind %}
+{% endblock %}

@@ -405,6 +405,11 @@ _REGISTERED = {
 }
 
 
+def _lost_race_field(error):
+    """The field of a unique-index IntegrityError at account creation."""
+    return 'phone' if 'phone_index' in str(error) else 'email'
+
+
 def _create_account(request, index, step, form, pending, attempt):
     """Once no step is left: create the user with the stored hash, move the legal choices
     to it, drop the pending registration and every other one with its email or mobile,
@@ -417,7 +422,7 @@ def _create_account(request, index, step, form, pending, attempt):
             pending = PendingRegistration.objects.select_for_update().get(pk=pending.pk)
             if email_is_registered(pending.email):
                 raise _AlreadyRegistered('email')
-            # No database constraint on the mobile: this check guards the race.
+            # The database rule on the mobile (accounts 0017) is the last guard.
             if phone_is_registered(pending.phone):
                 raise _AlreadyRegistered('phone')
             # Never an account without the Terms and the Conditions (any version: one
@@ -474,8 +479,10 @@ def _create_account(request, index, step, form, pending, attempt):
         return redirect('signup')
     except (_AlreadyRegistered, IntegrityError) as error:
         # Someone registered this email (or mobile) while this signup was in progress;
-        # an IntegrityError is the unique email index losing the same race.
-        field = getattr(error, 'field', 'email')
+        # an IntegrityError is a unique index losing the same race: the mobile's when
+        # the database names it (SQLite the column, PostgreSQL the constraint, both
+        # holding `phone_index`), else the email's.
+        field = getattr(error, 'field', None) or _lost_race_field(error)
         reason, message, code = _REGISTERED[field]
         eventlog.record(attempt, 'rejected', request=request, step=step.slug, field=field,
                         reason=reason, data={field: getattr(pending, field)})

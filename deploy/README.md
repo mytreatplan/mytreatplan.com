@@ -1109,6 +1109,88 @@ it is **erased**, for example when the user asks (GDPR art. 17).
 - **Backups:** the nightly dumps still hold an erased (or purged) account until they
   expire, 30 days later (see [Backups and restore](#backups-and-restore)).
 
+## Contact changes: mobile and contact email (epic-doctor-profile entry 3)
+
+A doctor changes their mobile, or their contact (alternative) email, from Settings → My
+details → "Change". They type the new value and their current password; a code (purpose
+`change`) goes to the new value: the mobile's as signup's (WhatsApp when
+`TWILIO_WHATSAPP_ENABLED`, otherwise SMS, with "Send by SMS instead"), the email's through
+Verify's email channel. The value is written only once the code is accepted; meanwhile it
+waits, encrypted, in `accounts_pendingcontactchange` (10 minutes; the session holds only
+the row's id). The login email and the country are not changed here (support changes the
+login email).
+
+- **Checks:** a wrong password counts on the login's password lockout (5 lock the account
+  for 10 minutes, as at login; the session stays). A mobile already used by another
+  account is refused. A code dies after 5 wrong tries; the account is not locked.
+- **Limits:** the per-contact cooldown and hourly limits and the per-IP limit of every
+  code, plus 8 change codes per account per hour, whatever the numbers or addresses
+  (`signup.limits.ACCOUNT_CHANGE_SENDS`).
+- **After a mobile change:** every remembered device of the account is forgotten
+  (`User.devices_valid_after`), this browser's too; the doctor stays signed in (the
+  account has only one session anyway). An email change forgets nothing.
+- **Notice:** a plain-text mail to the login email after each change (in the page's
+  language), naming what changed with the new value masked.
+- **Admin site:** the change travels in `client.updated` as any personal-data save.
+
+### Unique mobile (migration accounts 0017)
+
+No two accounts may share a mobile: a database rule on the mobile's blind index
+(`accounts_user_phone_index_unique`; erased accounts and accounts without a mobile are left
+out). The staff admin (`/admin/`) shows the mobile read-only and refuses one in use where a
+form edits it. If accounts already share a mobile when the release migrates, migration
+`accounts.0017_user_phone_index_unique` **stops** and `release.sh` fails with:
+
+```
+RuntimeError: These accounts share a mobile (each group one number): 12, 40. Give each a
+different mobile, or erase the unused account, then migrate again.
+```
+
+It names account ids only (never the number); nothing is changed and the previous release
+stays live. To resolve: in the admin, open each listed account (Admin → Users →
+`/admin/accounts/user/<id>/change/`), decide with the doctor (or support) which account
+keeps the number, and erase the account that is not used (see
+[Erase an account](#erase-an-account): its mobile is freed), or, for a real account,
+ask its doctor to change their mobile first (the code goes to the new number, so the
+shared number is freed). Then deploy again (re-run the workflow): the migration passes
+when no number is shared.
+
+### Checks on staging (the fake provider)
+
+dev uses Twilio Verify, and with `DEBUG` off the fake provider is refused for the site
+(`mytp_publicsite.E006`). The code steps are checked on the server, in one Django shell
+process that uses the fake provider for itself only, on a test account (never a real
+doctor's). As `debian`: `cd /srv/mytp-dev/current`, then
+`sudo -u mytp-dev ./venv/bin/python manage.py shell`, and in it:
+
+```python
+from django.test import Client, override_settings
+from django.contrib.auth import get_user_model
+from signup.verification import FAKE_PROVIDER, FakeVerificationProvider, SMS, EMAIL
+from accounts import profile
+from accounts.models import Profile
+User = get_user_model()
+user = User.objects.by_email('<the test account email>').get()
+NEW = '+34622000111'           # a mobile no account has
+with override_settings(VERIFICATION_PROVIDER=FAKE_PROVIDER, ALLOWED_HOSTS=['testserver']):
+    c = Client(); c.force_login(user)
+    r = c.post('/en/settings/mobile/', {'phone_prefix': 'ES', 'phone': NEW[3:],
+                                        'password': '<the test account password>'})
+    print(r.status_code, r['Location'])                    # 302 /en/settings/mobile/code/
+    code = FakeVerificationProvider.current_code(SMS, NEW, profile.CHANGE_PURPOSE)
+    r = c.post('/en/settings/mobile/code/', {'code': code})
+    print(r.status_code, r['Location'])                    # 302 /en/settings/
+user.refresh_from_db(); print(user.phone == NEW, user.devices_valid_after is not None)
+```
+
+The same with `/en/settings/email/` (`{'email': ..., 'password': ...}`) and
+`FakeVerificationProvider.current_code(EMAIL, <address>, profile.CHANGE_PURPOSE)`; then
+`Profile.objects.get(user=user).alternative_email`. Each change sends the notice to the
+test account's login email (SMTP). The fake writes the code to the journal for these
+calls only: run `sudo journalctl -u mytp-dev-gunicorn -n 100` and check the site's own
+lines hold no code or contact. A real change in a browser, with Twilio, is the same pages
+from Settings → My details.
+
 ## Legal texts: from provisional to final (epic-regions 2.6)
 
 Each site shows its own region's company (`company` in `regions/profiles.py`: name,

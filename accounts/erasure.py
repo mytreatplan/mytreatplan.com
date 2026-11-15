@@ -3,7 +3,8 @@
 `erase_user` (the admin's "Erase account" action, accounts.admin) deactivates the account
 and keeps only what the evidence needs (email, title, names, country, phone, date joined,
 and the legal choices) until `purge_after`, ACCOUNT_ERASURE_RETENTION_DAYS later; it
-clears the rest (the profile of the personal-data page too) and records the commercial
+clears the rest (the profile of the personal-data page and any pending contact change
+too) and records the commercial
 and WhatsApp contact consents as withdrawn. Its `email_index` becomes a tombstone (accounts.models.User), so the same
 email can register again. `purge_erased` (the daily `purgeerased` job, `manage.py
 purge_erased_accounts`) then deletes each erased account with its legal choices once
@@ -94,8 +95,10 @@ def erase_user(user, *, by, now=None):
         user.groups.clear()
         user.user_permissions.clear()
         _withdraw_optional_consents(user, now)
-        # The personal data of the settings page (epic-doctor-profile entry 2).
+        # The personal data of the settings page (epic-doctor-profile entry 2), and any
+        # contact change waiting for its code (entry 3): the row stays, so no CASCADE.
         profile.clear_profile(user)
+        profile.clear_contact_changes(user)
         # The admin site deletes its copy (client.erased, epic-admin-interface entry 8).
         client_sync.emit(user)
         LogEntry.objects.log_actions(user_id=by.pk, queryset=[_LoggedUser(user)],

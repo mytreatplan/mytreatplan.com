@@ -140,3 +140,12 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-settings-shell-and-personal-data-plan.md`
   summary: Product/legal decision for when the final texts arrive: should a new version of an optional consent text (WhatsApp contact, commercial communications) require a fresh acceptance? Today (6.2) an acceptance given on an earlier version still shows as ticked on the personal-data page after a new version is published (the latest choice of the kind wins, whatever its version); only a save made on a page showing the older version is refused.
   evidence: `accounts/profile.py` `consents_of` (latest choice per kind), `accounts/forms.py` `PersonalDataForm.clean` (`consents_changed`).
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-code-confirmed-mobile-and-contact-email-changes-plan.md`
+  summary: Which address future doctor messages use (epic-case-lifecycle): 6.3 makes the contact (alternative) email code-confirmed, but nothing sends to it yet; the change notices go to the login email. Decide whether case messages go to the login email, the contact email, or both.
+  evidence: `accounts/models.py` `Profile.alternative_email`; `accounts/profile.py` `notify_change` (to `user.email`).
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-code-confirmed-mobile-and-contact-email-changes-plan.md`
+  summary: A pending contact change lives 10 minutes from its start, like the first code; a code first sent later (a failed send retried after some minutes) can outlive the pending row, and the doctor then sees "This change has expired. Please start again." before the code expires. Refresh the row's start on each new code if this shows up in use.
+  evidence: `accounts/profile.py` `PENDING_CHANGE_SECONDS`, `pending_change`; `accounts/views.py` `_change_code`.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-code-confirmed-mobile-and-contact-email-changes-plan.md`
+  summary: Change codes share Twilio Verify's one service with signup and login codes (as the open item above): a change code and a pending signup or login code to the same new contact are interchangeable at Twilio, and wrong tries count against both. Accepted as for login (control of the same contact); revisit with the provider-path item.
+  evidence: `signup/twilio_verify.py` (module docstring), `accounts/profile.py` `CHANGE_PURPOSE`.

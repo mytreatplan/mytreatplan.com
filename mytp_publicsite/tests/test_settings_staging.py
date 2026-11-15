@@ -225,7 +225,10 @@ PORTAL_URL_NAMES = ['signup', 'signup_step', 'welcome', 'login', 'logout',
                     'tutorials', 'virtuaortho', 'planning_services', 'start_a_case',
                     # The settings area's sections (epic-doctor-profile entry 2).
                     'settings_maker', 'settings_password', 'settings_fiscal',
-                    'settings_shipping']
+                    'settings_shipping',
+                    # The code-confirmed contact changes (epic-doctor-profile entry 3).
+                    'settings_mobile', 'settings_mobile_code', 'settings_email',
+                    'settings_email_code']
 
 
 def test_portal_patterns_hold_the_signup_routes(settings):

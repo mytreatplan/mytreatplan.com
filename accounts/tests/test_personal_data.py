@@ -54,7 +54,7 @@ def _initial(user, **changes):
             'title': user.title, 'profession': '', 'first_name': user.first_name,
             'middle_name': user.middle_name, 'last_name': user.last_name,
             'landline_prefix': user.country.code if user.country else '', 'landline': '',
-            'alternative_email': '', 'consent_token': _token(user)}
+            'consent_token': _token(user)}
     data.update(changes)
     return {key: value for key, value in data.items() if value is not None}
 
@@ -63,7 +63,7 @@ def _token(user):
     """The consent token the page shows now (the consents as they are stored)."""
     from accounts.forms import PersonalDataForm
 
-    return PersonalDataForm(login_email=user.email, user_pk=user.pk,
+    return PersonalDataForm(user_pk=user.pk,
                             consent_state=profile.consents_of(user)).current_token()
 
 
@@ -86,11 +86,11 @@ def test_page_shows_the_form_the_read_only_data_and_the_tiles(doctor):
     form = response.context['form']
     assert form['title'].value() == 'mrs' and form['first_name'].value() == 'María José'
     assert form['city'].value() == '' and form['profession'].value() == ''
-    assert form['landline'].value() == '' and form['alternative_email'].value() == ''
+    assert form['landline'].value() == ''
     assert form['time_zone'].value() == django_settings.TIME_ZONE
     assert form['language'].value() == 'en'
     # Read-only: shown, never fields.
-    for name in ('country', 'phone', 'email'):
+    for name in ('country', 'phone', 'email', 'alternative_email'):
         assert name not in form.fields
         assert f'data-readonly="{name}"' in html
     assert 'value="Spain"' in html and 'value="+34611222333"' in html
@@ -179,8 +179,9 @@ def test_success_message_is_shown_after_the_save(doctor):
 
 def test_city_is_encrypted_in_the_database(doctor):
     _browser(doctor).post(PAGE, _initial(doctor, city='Secret-City',
-                                         alternative_email='clinic@example.com',
                                          landline='910 00 00 00'))
+    # The alternative email is written by a code-confirmed change (test_contact_change.py).
+    Profile.objects.filter(user=doctor).update(alternative_email='clinic@example.com')
     with connection.cursor() as cursor:
         cursor.execute('SELECT city, landline, alternative_email FROM accounts_profile')
         row = cursor.fetchone()
@@ -312,14 +313,18 @@ def test_invalid_landline_is_a_field_error_and_saves_nothing(doctor, prefix, num
     assert not Profile.objects.exists() and _events(doctor) == []
 
 
-def test_alternative_email_valid_malformed_or_the_login(doctor):
+def test_alternative_email_is_no_longer_a_field_of_this_page(doctor):
+    """6.3: the contact email changes only after a code (test_contact_change.py); a
+    posted value is ignored and the row is read-only with a "Change" link."""
+    Profile.objects.create(user=doctor, alternative_email='clinic@example.com')
     browser = _browser(doctor)
-    for value in ('not-an-email', 'MARIA.ESPUNY@example.net'):
-        response = browser.post(PAGE, _initial(doctor, alternative_email=value))
-        assert 'alternative_email' in response.context['form'].errors, value
-    assert not Profile.objects.exists()
-    browser.post(PAGE, _initial(doctor, alternative_email='clinic@Example.COM'))
+    browser.post(PAGE, _initial(doctor, alternative_email='MARIA.ESPUNY@example.net',
+                                city='Madrid'))
+
     assert Profile.objects.get(user=doctor).alternative_email == 'clinic@example.com'
+    html = _html(browser.get(PAGE))
+    assert 'value="clinic@example.com" readonly' in html
+    assert 'href="/en/settings/email/"' in html and 'href="/en/settings/mobile/"' in html
 
 
 def test_time_zone_not_in_the_list_is_a_field_error(doctor):

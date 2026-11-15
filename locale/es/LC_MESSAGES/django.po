@@ -1922,3 +1922,126 @@ msgid "The consent texts have been updated. Please review them again and save."
 msgstr ""
 "Los textos de los consentimientos se han actualizado. Revíselos de nuevo y "
 "guarde."
+
+# --- epic-doctor-profile entry 3: code-confirmed contact changes ---
+#: accounts/forms.py
+msgid "Current password"
+msgstr "Contraseña actual"
+
+#: accounts/forms.py
+msgid "The password is not correct."
+msgstr "La contraseña no es correcta."
+
+#: accounts/forms.py
+msgid "This is already your mobile phone number."
+msgstr "Este ya es su número de teléfono móvil."
+
+#: accounts/forms.py accounts/admin.py
+msgid "This mobile phone number is already used by another account."
+msgstr "Este número de teléfono móvil ya lo utiliza otra cuenta."
+
+#: accounts/forms.py
+msgid "New mobile phone number"
+msgstr "Nuevo número de teléfono móvil"
+
+#: accounts/forms.py
+msgid "This is already your contact email."
+msgstr "Este ya es su email de contacto."
+
+#: accounts/forms.py
+msgid "New contact email"
+msgstr "Nuevo email de contacto"
+
+#: accounts/models.py
+msgid "contact email"
+msgstr "email de contacto"
+
+#: accounts/views.py
+msgid "This change has expired. Please start again."
+msgstr "Este cambio ha caducado. Vuelva a empezar."
+
+#: accounts/views.py
+msgid "Your mobile phone number has been changed."
+msgstr "Su número de teléfono móvil se ha cambiado."
+
+#: accounts/views.py
+msgid "Your contact email has been changed."
+msgstr "Su email de contacto se ha cambiado."
+
+#: accounts/templates/accounts/settings_contact_change.html accounts/templates/accounts/personal_data.html
+msgid "Change your mobile phone number"
+msgstr "Cambiar su número de teléfono móvil"
+
+#: accounts/templates/accounts/settings_contact_change.html accounts/templates/accounts/personal_data.html
+msgid "Change your contact email"
+msgstr "Cambiar su email de contacto"
+
+#: accounts/templates/accounts/settings_contact_change.html
+msgid "We will send a code to the new number. The change is made once you enter it. Devices remembered for login will then ask for a code again."
+msgstr "Le enviaremos un código al nuevo número. El cambio se realiza cuando lo introduzca. Los dispositivos recordados para iniciar sesión volverán a pedirle un código."
+
+#: accounts/templates/accounts/settings_contact_change.html
+msgid "We will send a code to the new address. The change is made once you enter it."
+msgstr "Le enviaremos un código a la nueva dirección. El cambio se realiza cuando lo introduzca."
+
+#: accounts/templates/accounts/settings_contact_change.html
+msgid "Current mobile phone number"
+msgstr "Número de teléfono móvil actual"
+
+#: accounts/templates/accounts/settings_contact_change.html
+msgid "Current contact email"
+msgstr "Email de contacto actual"
+
+#: accounts/templates/accounts/settings_contact_change.html
+msgid "Send the code"
+msgstr "Enviar el código"
+
+#: accounts/templates/accounts/settings_contact_code.html
+#, python-format
+msgid "We have sent a 6-digit code by SMS to <strong class=\"text-ink\">%(phone)s</strong>. Enter it below to confirm the change."
+msgstr "Hemos enviado un código de 6 dígitos por SMS a <strong class=\"text-ink\">%(phone)s</strong>. Introdúzcalo a continuación para confirmar el cambio."
+
+#: accounts/templates/accounts/settings_contact_code.html
+#, python-format
+msgid "We have sent a 6-digit code by WhatsApp to <strong class=\"text-ink\">%(phone)s</strong>. Enter it below to confirm the change."
+msgstr "Hemos enviado un código de 6 dígitos por WhatsApp a <strong class=\"text-ink\">%(phone)s</strong>. Introdúzcalo a continuación para confirmar el cambio."
+
+#: accounts/templates/accounts/settings_contact_code.html
+#, python-format
+msgid "We have sent a 6-digit code to <strong class=\"text-ink\">%(email)s</strong>. Enter it below to confirm the change."
+msgstr "Hemos enviado un código de 6 dígitos a <strong class=\"text-ink\">%(email)s</strong>. Introdúzcalo a continuación para confirmar el cambio."
+
+#: accounts/templates/accounts/settings_contact_code.html
+msgid "Confirm"
+msgstr "Confirmar"
+
+#: accounts/templates/accounts/personal_data.html
+msgid "Change"
+msgstr "Cambiar"
+
+#: accounts/templates/accounts/email/contact_changed_subject.txt
+msgid "Your MyTreatPlan mobile phone number has been changed"
+msgstr "Se ha cambiado el número de teléfono móvil de su cuenta de MyTreatPlan"
+
+#: accounts/templates/accounts/email/contact_changed_subject.txt
+msgid "Your MyTreatPlan contact email has been changed"
+msgstr "Se ha cambiado el email de contacto de su cuenta de MyTreatPlan"
+
+#: accounts/templates/accounts/email/contact_changed.txt
+#, python-format
+msgid "The mobile phone number of your MyTreatPlan account was changed on %(date)s (new number: %(masked)s)."
+msgstr "El número de teléfono móvil de su cuenta de MyTreatPlan se cambió el %(date)s (nuevo número: %(masked)s)."
+
+#: accounts/templates/accounts/email/contact_changed.txt
+msgid "The devices remembered for login have been forgotten: your next login on each of them will ask for a code."
+msgstr "Los dispositivos recordados para iniciar sesión se han olvidado: su próximo inicio de sesión en cada uno de ellos le pedirá un código."
+
+#: accounts/templates/accounts/email/contact_changed.txt
+#, python-format
+msgid "The contact email of your MyTreatPlan account was changed on %(date)s (new address: %(masked)s)."
+msgstr "El email de contacto de su cuenta de MyTreatPlan se cambió el %(date)s (nueva dirección: %(masked)s)."
+
+#: accounts/templates/accounts/email/contact_changed.txt
+#, python-format
+msgid "If you didn't make this change, please write to us at %(email)s right away."
+msgstr "Si no ha realizado este cambio, escríbanos de inmediato a %(email)s."
