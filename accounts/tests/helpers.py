@@ -20,6 +20,8 @@ META = {'REMOTE_ADDR': IP, 'HTTP_USER_AGENT': AGENT}
 WRONG_PASSWORD = 'wrong-password-123'
 VERIFY, CODE, LOGIN, WELCOME = ('/en/login/verify/', '/en/login/code/', '/en/login/',
                                 '/en/welcome/')
+# Where a login lands without a `next`: the doctor area's home (epic-doctor-profile 1).
+HOME = '/en/home/'
 
 
 # --- The login ----------------------------------------------------------------------------

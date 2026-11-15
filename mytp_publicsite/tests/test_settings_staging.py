@@ -219,7 +219,10 @@ def _fresh_urlconf():
     return module
 
 
-PORTAL_URL_NAMES = ['signup', 'signup_step', 'welcome', 'login', 'logout']
+PORTAL_URL_NAMES = ['signup', 'signup_step', 'welcome', 'login', 'logout',
+                    # The doctor area (epic-doctor-profile entry 1).
+                    'home', 'patients', 'support', 'messages', 'settings', 'cart',
+                    'tutorials', 'virtuaortho', 'planning_services', 'start_a_case']
 
 
 def test_portal_patterns_hold_the_signup_routes(settings):
@@ -233,6 +236,8 @@ def test_portal_patterns_hold_the_signup_routes(settings):
             assert reverse('welcome', urlconf) == '/en/welcome/'
             assert reverse('login', urlconf) == '/en/login/'
             assert reverse('logout', urlconf) == '/en/logout/'
+            assert reverse('home', urlconf) == '/en/home/'
+            assert reverse('planning_services', urlconf) == '/en/planning-services/'
     finally:
         clear_url_caches()
 
@@ -269,7 +274,10 @@ def test_portal_hook_is_wired_into_language_patterns(settings, enabled):
                                   (f'/{lang}/signup/verify-email/', 'signup_step'),
                                   (f'/{lang}/welcome/', 'welcome'),
                                   (f'/{lang}/login/', 'login'),
-                                  (f'/{lang}/logout/', 'logout')]:
+                                  (f'/{lang}/logout/', 'logout'),
+                                  (f'/{lang}/home/', 'home'),
+                                  (f'/{lang}/patients/', 'patients'),
+                                  (f'/{lang}/start-a-case/', 'start_a_case')]:
                     if enabled:
                         assert resolve(url, urlconf).url_name == name
                     else:
@@ -279,7 +287,7 @@ def test_portal_hook_is_wired_into_language_patterns(settings, enabled):
                     for name in PORTAL_URL_NAMES:
                         with pytest.raises(NoReverseMatch):
                             reverse(name, urlconf, args=['x'] if name == 'signup_step' else [])
-        for url in ['/signup/', '/welcome/', '/login/', '/logout/']:
+        for url in ['/signup/', '/welcome/', '/login/', '/logout/', '/home/']:
             with pytest.raises(Resolver404):
                 resolve(url, urlconf)  # only under the language prefixes
         assert resolve('/en/', urlconf).url_name == 'home'

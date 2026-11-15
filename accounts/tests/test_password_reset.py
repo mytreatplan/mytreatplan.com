@@ -473,7 +473,7 @@ def test_reset_on_b_ends_a_and_the_new_password_logs_in(client, doctor, mailoutb
     link; A is logged out, B is not logged in, the new password then logs in (with the
     code)."""
     a = Client()
-    assert _login_with_code(a)['Location'] == '/en/welcome/'
+    assert _login_with_code(a)['Location'] == '/en/home/'
     assert _logged_in(a)
     a_key = a.session.session_key
 
@@ -493,12 +493,12 @@ def test_reset_on_b_ends_a_and_the_new_password_logs_in(client, doctor, mailoutb
     login_clock.advance(61)  # past the login code's cooldown
     assert _login(b, password=PASSWORD).context['form'].has_error('__all__', 'invalid_login')
     response = _login_with_code(b, password=NEW_PASSWORD)
-    assert response['Location'] == '/en/welcome/'
+    assert response['Location'] == '/en/home/'
     assert _logged_in(b)
 
 
 def test_reset_from_a_logged_in_browser_logs_it_out(client, doctor, mailoutbox):
-    assert _login_with_code(client)['Location'] == '/en/welcome/'
+    assert _login_with_code(client)['Location'] == '/en/home/'
     _open(client, _requested_link(client, mailoutbox))
 
     assert _set_password(client)['Location'] == LOGIN
@@ -514,10 +514,10 @@ def test_reset_from_a_logged_in_browser_logs_it_out(client, doctor, mailoutbox):
 
 def test_remembered_device_needs_the_code_after_a_reset(client, doctor, mailoutbox,
                                                         login_clock):
-    assert _login_remembering(client)['Location'] == '/en/welcome/'
+    assert _login_remembering(client)['Location'] == '/en/home/'
     client.post('/en/logout/')
     login_clock.advance(61)
-    assert _login(client)['Location'] == '/en/welcome/'  # remembered: no code
+    assert _login(client)['Location'] == '/en/home/'  # remembered: no code
     client.post('/en/logout/')
 
     browser = Client()
@@ -626,7 +626,7 @@ def test_idle_ended_session_opening_the_link_gets_the_reset_page(client, doctor,
     """Decision 4: an idle session (3.6) ended on a reset page carries on anonymously there
     instead of bouncing to login."""
     monkeypatch.setattr('accounts.sessions._now', login_clock)
-    assert _login_with_code(client)['Location'] == '/en/welcome/'
+    assert _login_with_code(client)['Location'] == '/en/home/'
     link = _requested_link(Client(), mailoutbox)
     login_clock.advance(sessions.IDLE_LIMIT + 1)
 

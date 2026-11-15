@@ -1,4 +1,5 @@
-"""The registered area's entry and exit: login, logout and the welcome page.
+"""The registered area's entry and exit: login, logout, the welcome page, and the doctor
+area's home and "coming soon" pages (epic-doctor-profile entry 1).
 
 Login checks the CAPTCHA (signup.captcha) first, then the credentials (accounts.forms).
 A right password logs no one in: it starts a pending login (`start_pending_login`), and
@@ -35,7 +36,7 @@ from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import NON_FIELD_ERRORS
-from django.http import HttpResponseRedirect
+from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import redirect, render, resolve_url
 from django.utils.crypto import constant_time_compare
 from django.utils.http import url_has_allowed_host_and_scheme
@@ -54,11 +55,12 @@ from signup.steps import (CODE_STATE_SESSION_KEY, SENT, code_help_context, code_
 from signup.verification import (CODE_TTL_SECONDS, EMAIL, MOBILE, PURPOSE_LOGIN, SMS,
                                  WHATSAPP)
 
-from . import devices, login_guard
+from . import devices, doctor_area, login_guard
 from .forms import LoginCodeForm, LoginContactForm, LoginForm, mask_email, mask_phone
 
-# Where a login lands without a safe `next`.
-LOGIN_REDIRECT = 'welcome'
+# Where a login lands without a safe `next`: the doctor area's home (signup still ends on
+# the upgrade screen or the welcome page).
+LOGIN_REDIRECT = 'home'
 
 
 # The session's pending login (see the module docstring). Never a contact or a code.
@@ -91,13 +93,13 @@ def requested_next(request):
 
 def redirect_after_login(request):
     """To the safe `next` as given (a literal URL, never reversed as a view name, as
-    Django's LoginView does), else to the welcome page."""
+    Django's LoginView does), else to the home page."""
     return HttpResponseRedirect(requested_next(request) or resolve_url(LOGIN_REDIRECT))
 
 
 def complete_login(request, user, next_url=None):
     """Finish the login of `user`: log them in and send them to `next_url` (already
-    checked; by default the request's safe `next`), or the welcome page. Called only once
+    checked; by default the request's safe `next`), or the home page. Called only once
     the second factor has passed (`finish_login`)."""
     auth_login(request, user)
     if next_url is None:
@@ -381,5 +383,42 @@ def logout(request):
 
 @login_required
 def welcome(request):
-    """Landing page right after signup or login. Its content comes with the onboarding spec."""
+    """The page after signup (and after the upgrade screen), with a button to the home.
+    Its content comes with the onboarding spec."""
     return render(request, 'accounts/welcome.html')
+
+
+@login_required
+def home(request):
+    """The doctor area's home (Annex I mockup): the greeting, the quick links and the
+    profile card. Staff accounts see the same page."""
+    user = request.user
+    return render(request, 'accounts/home.html', {
+        'greeting_name': doctor_area.first_name(user),
+        'profile_name': doctor_area.display_name(user),
+        'profile_line': doctor_area.country_name(user),
+    })
+
+
+# The doctor-area addresses not built yet, each served by `coming_soon` until its epic
+# replaces the route of the same name (accounts.urls): the URL name and the area's name,
+# the one its link on the home shows (the same msgid).
+COMING_SOON_AREAS = {
+    'patients': gettext_lazy('Patients'),
+    'support': gettext_lazy('Support'),
+    'messages': gettext_lazy('Messages'),
+    'settings': gettext_lazy('Settings'),
+    'cart': gettext_lazy('Cart'),
+    'tutorials': gettext_lazy('Tutorials'),
+    'virtuaortho': 'Virtua ORTHO',
+    'planning_services': gettext_lazy('Planning Services'),
+    'start_a_case': gettext_lazy('Request New Planning'),
+}
+
+
+@login_required
+def coming_soon(request, area):
+    """The "coming soon" page of an area not built yet, naming it; an unknown area is 404."""
+    if area not in COMING_SOON_AREAS:
+        raise Http404
+    return render(request, 'accounts/coming_soon.html', {'area': COMING_SOON_AREAS[area]})

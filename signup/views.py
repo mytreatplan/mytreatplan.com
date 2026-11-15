@@ -10,7 +10,7 @@ removes the session's pending registration; after IDLE_TIMEOUT without a signup 
 the signup session keys are cleared (`idle_check`), the pending registration stays and
 the email check offers the resume. A confirmed cancel is done whenever it comes.
 
-A logged-in user gets none of these pages: they go to the welcome page
+A logged-in user gets none of these pages: they go to the doctor area's home
 (`anonymous_only`).
 
 Plus the anti-abuse protections (signup entry 9): Cloudflare Turnstile on every step 1
@@ -131,13 +131,13 @@ def idle_check(view):
 
 
 def anonymous_only(view):
-    """Signup is for people without an account: a logged-in user goes to the welcome
-    page, as the login page does (plan-fix-signup-logged-in-and-idle-cancel). Nothing is
-    saved and the session's signup keys stay."""
+    """Signup is for people without an account: a logged-in user goes to the doctor
+    area's home, as the login page does (plan-fix-signup-logged-in-and-idle-cancel;
+    epic-doctor-profile entry 1). Nothing is saved and the session's signup keys stay."""
     @functools.wraps(view)
     def wrapper(request, *args, **kwargs):
         if request.user.is_authenticated:
-            return redirect('welcome')
+            return redirect('home')
         return view(request, *args, **kwargs)
     return wrapper
 
@@ -486,7 +486,8 @@ def _create_account(request, index, step, form, pending, attempt):
     eventlog.end_attempt(attempt, 'completed')
     _abandon_attempts(other_attempt_ids, keep=attempt)
     # The upgrade screen, once (epic-subscriptions entry 2), when the doctor's group sells
-    # a paid level; else, and on every later login, the welcome page. The account exists
+    # a paid level; else the welcome page (a later login lands on the doctor area's home,
+    # accounts.views.LOGIN_REDIRECT). The account exists
     # by now: a catalogue error never fails signup, the doctor lands on welcome.
     try:
         on_offer = subscriptions.upgrade_options(user).on_offer

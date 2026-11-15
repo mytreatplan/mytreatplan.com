@@ -118,3 +118,13 @@
   summary: mytp-admin's `layout/tests/test_pages.py::test_home_is_the_empty_adminlte_layout` fails at random: it asserts that the lower-cased home page HTML does not contain `cdn`, and the page carries random tokens that can spell it. Check the assets' addresses instead of the whole page.
   evidence: master run 43632718501 (commit 78aadf0) failed on that assertion and passed on the re-run of the same commit; both PR runs of the same change passed; the cause (a random token) is the likely one, not confirmed from the failing page. The portal has the same pattern (`'cdn'` in `mytp_publicsite/tests/test_home.py`).
 
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-doctor-area-layout-and-home-plan.md`
+  summary: The home's "Messages / Alerts" and "Welcome / Tutorials" tiles and the header's messages icon lead to "coming soon" pages (`/<lang>/messages/`, `/<lang>/tutorials/`) that no portal epic owns yet (user decision 2026-11-14): give them an owner, or remove them, before they are noticed as dead ends.
+  evidence: `accounts/urls.py` (`messages`, `tutorials` on `accounts.views.coming_soon`), `accounts/templates/accounts/home.html`, `templates/doctor_base.html`.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-doctor-area-layout-and-home-plan.md`
+  summary: The corporate-style review of the upgrade screen, the purchase placeholder and the welcome page (8.2's entry above) now also covers the doctor layout and home (6.1): the gradient, the isotype, the avatar with initials (until 6.4's photo), the tiles and the handshake band follow the Annex I mockup by eye, with the theme's colours and arbitrary sizes, and the Spanish home uses the mockup's informal "tú" ("Aquí tienes…", "Solicita…") while the rest of the portal says "usted".
+  evidence: `templates/doctor_base.html`, `accounts/templates/accounts/home.html`, `locale/es/LC_MESSAGES/django.po`.
+- source_plan: `epic-doctor-profile/story-doctor-area-layout-and-home-plan.md`
+  summary: Tests that mix a fixed calendar day with today's date fail once that day has passed; three in `subscriptions/tests/test_service.py` did on 2026-11-15 and were given an explicit start date in 6.1's PR. The other fixed days in the test trees (`catalogue/tests` `DAY` constants, `subscriptions/tests/helpers.py` `DAY`) have not been audited for the same pattern: do it in epic-subscriptions' refactor sweep (entry 12).
+  evidence: `subscriptions/tests/helpers.py:25` `DAY = date(2026, 11, 14)`; `service.change` defaults `started_on` to today and refuses an end date before it; the full suite on 2026-11-15 gave 3 failed, 3138 passed before the fix.
+

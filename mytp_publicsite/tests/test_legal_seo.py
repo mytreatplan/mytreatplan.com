@@ -255,7 +255,7 @@ def test_portal_links_for_a_logged_in_user(client, url, lang, portal, logout):
     html = _html(client, url)
     nav = re.search(r'<nav[^>]*aria-label="(?:Main|Principal)".*?</nav>', html, re.S).group(0)
 
-    assert re.search(rf'href="/{lang}/welcome/" class="[^"]*" data-portal-link="portal">'
+    assert re.search(rf'href="/{lang}/home/" class="[^"]*" data-portal-link="portal">'
                      rf'{portal}</a>', nav)
     form = re.search(r'<form method="post" action="([^"]+)"[^>]*>(.*?)</form>', nav, re.S)
     assert form.group(1) == f'/{lang}/logout/'

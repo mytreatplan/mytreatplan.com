@@ -1,0 +1,77 @@
+{% extends "portal_base.html" %}
+{% load i18n static doctor_area %}
+{% comment %}
+Layout of the signed-in doctor area (epic-doctor-profile entry 1, Annex I mockup): the
+gradient header with the isotype, the area's links (home, patients, support), the
+messages, settings and cart icons, the avatar with the doctor's initials, the logout
+button (a POST form) and the language switcher; then a white rounded panel over the
+header holding the page, the handshake band, and the shared footer.
+
+Below the `tablet` breakpoint the links collapse behind the public site's menu button
+(static/js/menu.js: the same `site-menu-toggle` / `site-menu` ids). Pages extend this and
+fill `portal_content`; `portal_width` widens the column (480 px by default, as on
+portal_base); `doctor_band` may drop the handshake band. Not indexed (portal_base's head).
+{% endcomment %}
+
+{% block header %}
+{% url 'home' as home_url %}{% with here=request.resolver_match.url_name %}
+<header class="bg-linear-to-r from-cornflower via-[#c4d3ee] to-[#f3f7ea] px-gutter pt-[clamp(20px,4vw,56px)] pb-[clamp(64px,9vw,128px)]" data-doctor-header>
+  <div class="mx-auto flex max-w-[1100px] items-center justify-between gap-6">
+    <a href="{{ home_url }}" class="block shrink-0 text-white" aria-label="{% translate 'MyTreatPlan home' %}" data-isotype>
+      <span class="block aspect-[964/1014] w-[clamp(44px,5.4vw,78px)] bg-current" aria-hidden="true"
+            style="-webkit-mask:url('{% static 'img/isotype.svg' %}') center/contain no-repeat;mask:url('{% static 'img/isotype.svg' %}') center/contain no-repeat"></span>
+    </a>
+    {# Menu button: below the tablet breakpoint, and only once menu.js runs (it sets html.js). #}
+    <button id="site-menu-toggle" type="button" class="group relative z-60 hidden size-11 cursor-pointer flex-col justify-center gap-[6px] px-2 max-tablet:[.js_&]:flex"
+            aria-label="{% translate 'Menu' %}" aria-expanded="false" aria-controls="site-menu">
+      <span class="block h-[3px] w-full rounded-2 bg-ink transition-transform duration-[220ms] group-aria-expanded:translate-y-[9px] group-aria-expanded:rotate-45 group-aria-expanded:bg-white"></span>
+      <span class="block h-[3px] w-full rounded-2 bg-ink transition-opacity duration-[160ms] group-aria-expanded:opacity-0"></span>
+      <span class="block h-[3px] w-full rounded-2 bg-ink transition-transform duration-[220ms] group-aria-expanded:-translate-y-[9px] group-aria-expanded:-rotate-45 group-aria-expanded:bg-white"></span>
+    </button>
+    {# One nav for every width: a row from the tablet breakpoint; below it, with JS, the full-screen menu panel. #}
+    <nav id="site-menu" aria-label="{% translate 'Main' %}"
+         class="flex flex-wrap items-center justify-end gap-x-[clamp(10px,1.8vw,24px)] gap-y-3 text-nav max-tablet:[.js_&]:fixed max-tablet:[.js_&]:inset-0 max-tablet:[.js_&]:z-50 max-tablet:[.js_&]:flex-col max-tablet:[.js_&]:flex-nowrap max-tablet:[.js_&]:items-center max-tablet:[.js_&]:justify-center max-tablet:[.js_&]:gap-[28px] max-tablet:[.js_&]:bg-ink max-tablet:[.js_&]:not-data-open:hidden max-tablet:[.js_&]:data-open:flex">
+      {% with item="flex items-center gap-x-[clamp(10px,1.8vw,24px)] not-first:before:block not-first:before:size-[6px] not-first:before:rounded-pill not-first:before:bg-white max-tablet:[.js_&]:before:hidden" link="font-semibold text-ink hover:text-white max-tablet:[.js_&]:text-[22px] max-tablet:[.js_&]:text-white" current="font-black text-white max-tablet:[.js_&]:text-[22px]" icon="flex items-center gap-3 text-ink hover:text-white max-tablet:[.js_&]:text-[20px] max-tablet:[.js_&]:font-medium max-tablet:[.js_&]:text-white" label="sr-only max-tablet:[.js_&]:not-sr-only" %}
+      <ul class="flex flex-wrap items-center justify-end gap-x-[clamp(10px,1.8vw,24px)] gap-y-2 max-tablet:[.js_&]:flex-col max-tablet:[.js_&]:gap-[22px]" aria-label="{% translate 'Doctor area' %}" data-doctor-nav>
+        <li class="{{ item }}"><a href="{{ home_url }}" {% if here == 'home' %}class="{{ current }}" aria-current="page"{% else %}class="{{ link }}"{% endif %}>{% translate "home" context "doctor area" %}</a></li>
+        <li class="{{ item }}"><a href="{% url 'patients' %}" {% if here == 'patients' %}class="{{ current }}" aria-current="page"{% else %}class="{{ link }}"{% endif %}>{% translate "patients" context "doctor area" %}</a></li>
+        <li class="{{ item }}"><a href="{% url 'support' %}" {% if here == 'support' %}class="{{ current }}" aria-current="page"{% else %}class="{{ link }}"{% endif %}>{% translate "support" context "doctor area" %}</a></li>
+        <li class="{{ item }}"><a href="{% url 'messages' %}" class="{{ icon }}" aria-label="{% translate 'Messages' %}"{% if here == 'messages' %} aria-current="page"{% endif %}>{% include "includes/_icon.html" with name="messages" class="size-[clamp(24px,2.6vw,34px)]" %}<span class="{{ label }}" aria-hidden="true">{% translate "Messages" %}</span></a></li>
+        <li class="{{ item }}"><a href="{% url 'settings' %}" class="{{ icon }}" aria-label="{% translate 'Settings' %}"{% if here == 'settings' %} aria-current="page"{% endif %}>{% include "includes/_icon.html" with name="settings" class="size-[clamp(24px,2.6vw,34px)]" %}<span class="{{ label }}" aria-hidden="true">{% translate "Settings" %}</span></a></li>
+        <li class="{{ item }}"><a href="{% url 'cart' %}" class="{{ icon }}" aria-label="{% translate 'Cart' %}"{% if here == 'cart' %} aria-current="page"{% endif %}>{% include "includes/_icon.html" with name="cart" class="size-[clamp(24px,2.6vw,34px)]" %}<span class="{{ label }}" aria-hidden="true">{% translate "Cart" %}</span></a></li>
+      </ul>
+      {% endwith %}
+      {# The avatar: the doctor's initials until entry 4 brings the photo. #}
+      <span role="img" aria-label="{{ user|display_name }}" title="{{ user|display_name }}"
+            class="flex h-[clamp(56px,6.6vw,96px)] w-[clamp(44px,5.2vw,74px)] items-center justify-center rounded-[50%] bg-violet text-[clamp(17px,1.9vw,26px)] font-black tracking-[-0.02em] text-white"
+            data-avatar><span aria-hidden="true">{{ user|initials }}</span></span>
+      <form method="post" action="{% url 'logout' %}">{% csrf_token %}
+        <button type="submit" class="inline-flex cursor-pointer items-center gap-2 rounded-pill bg-violet px-[clamp(14px,1.6vw,22px)] py-2 font-bold text-white hover:bg-ink" data-portal-link="logout">{% include "includes/_icon.html" with name="logout" class="size-5" %}{% translate "Log out" %}</button>
+      </form>
+      {% include "includes/_language_switcher.html" with ul_class="flex gap-[clamp(10px,1.4vw,16px)] text-[clamp(13px,1.4vw,15px)] max-tablet:[.js_&]:text-[18px]" link="font-semibold text-ink-muted underline-offset-4 hover:underline max-tablet:[.js_&]:text-white" current="font-black text-ink max-tablet:[.js_&]:text-green" %}
+    </nav>
+  </div>
+</header>
+{% endwith %}
+{% endblock %}
+
+{% block content %}
+<div class="relative -mt-[clamp(40px,5vw,72px)] rounded-t-[clamp(28px,4vw,56px)] bg-surface" data-doctor-panel>
+  <div class="mx-auto {% block portal_width %}max-w-[480px]{% endblock %} px-gutter pt-[clamp(32px,5vw,64px)] pb-[clamp(40px,6vw,72px)]">
+    {% if messages %}
+    <ul class="mb-6 space-y-2">
+      {% for message in messages %}
+      <li class="rounded-12 border border-line bg-panel px-5 py-3 text-[15px] leading-[1.5]" role="status">{{ message }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% block portal_content %}{% endblock %}
+  </div>
+</div>
+{% block doctor_band %}
+{# The handshake band above the footer (the mockup's). #}
+<img class="block h-[clamp(200px,36vw,520px)] w-full object-cover object-[center_40%]" src="{% static 'img/Img_Contact.webp' %}"
+     srcset="{% static 'img/Img_Contact-480.webp' %} 480w, {% static 'img/Img_Contact-768.webp' %} 768w, {% static 'img/Img_Contact-1200.webp' %} 1200w, {% static 'img/Img_Contact.webp' %} 1980w"
+     sizes="(min-width: 1440px) 1440px, 100vw" width="1980" height="1191" alt="" loading="lazy" data-doctor-band>
+{% endblock %}
+{% endblock %}

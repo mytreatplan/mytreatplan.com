@@ -68,13 +68,13 @@ def test_mobile_code_by_sms_without_whatsapp(live_server, page):
     expect(page.locator('[data-sms-fallback]')).to_have_text(SMS_FALLBACK)
     expect(page.locator('[data-sent="sms"]')).to_contain_text('by SMS to')
     enter_code(page, _right_code('mobile', phone=FAKE_NO_WHATSAPP_NUMBER), 'Log in')
-    at(page, live_server, 'en', 'welcome/')
-    expect(page.locator('h1')).to_have_text('Welcome to MyTreatPlan')
+    at(page, live_server, 'en', 'home/')
+    expect(page.locator('h1')).to_have_text('Hello, Anabel')
 
 
 def test_wrong_code_then_the_right_one(live_server, page):
     """CAP-7, "only the right code completes the login": a wrong code is refused on the
-    code page, then the right one lands on welcome."""
+    code page, then the right one lands on the home."""
     sign_up(page, live_server)
     log_out(page, live_server)
 
@@ -86,8 +86,8 @@ def test_wrong_code_then_the_right_one(live_server, page):
     expect(page.get_by_text(WRONG_CODE)).to_be_visible()
 
     enter_code(page, _right_code(), 'Log in')
-    at(page, live_server, 'en', 'welcome/')
-    expect(page.locator('h1')).to_have_text('Welcome to MyTreatPlan')
+    at(page, live_server, 'en', 'home/')
+    expect(page.locator('h1')).to_have_text('Hello, Anabel')
 
 
 # --- One session and the idle limit (CAP-9) -----------------------------------------------
@@ -109,14 +109,14 @@ def test_single_session_across_two_browsers(live_server, browser, page):
         log_in(b, live_server, contact='mobile')
 
         page.reload()
-        at(page, live_server, 'en', 'login/?next=/en/welcome/')
+        at(page, live_server, 'en', 'login/?next=/en/home/')
         expect(status(page, REPLACED)).to_be_visible()
-        page.goto(f'{live_server.url}/en/welcome/')  # the message shows once
-        at(page, live_server, 'en', 'login/?next=/en/welcome/')
+        page.goto(f'{live_server.url}/en/home/')  # the message shows once
+        at(page, live_server, 'en', 'login/?next=/en/home/')
         expect(status(page, REPLACED)).to_have_count(0)
 
         b.reload()
-        at(b, live_server, 'en', 'welcome/')
+        at(b, live_server, 'en', 'home/')
     finally:
         other.close()
 
@@ -130,11 +130,11 @@ def test_idle_session_ends(live_server, page, idle_clock):
 
     idle_clock.advance(IDLE_LIMIT - 1)
     page.reload()  # still in, and the activity clock starts again
-    at(page, live_server, 'en', 'welcome/')
+    at(page, live_server, 'en', 'home/')
 
     idle_clock.advance(IDLE_LIMIT + 1)
     page.reload()
-    at(page, live_server, 'en', 'login/?next=/en/welcome/')
+    at(page, live_server, 'en', 'login/?next=/en/home/')
     expect(status(page, IDLE)).to_be_visible()
 
 
@@ -167,7 +167,8 @@ def test_lockout_after_five_wrong_passwords(live_server, page, lock_clock):
 def test_records_after_the_journey(live_server, page, mailoutbox, clock, settings):
     """CAP-3 and CAP-4, "logins and the pages opened are on record": after the English
     success journey the account has its login records (with this browser's IP and
-    User-Agent) and page records of the welcome page."""
+    User-Agent) and page records of the welcome page (signup's landing) and the home (each
+    login's)."""
     settings.SITE_URL = live_server.url
     started = timezone.now()
     success_journey(page, live_server, mailoutbox, clock)
@@ -187,10 +188,10 @@ def test_records_after_the_journey(live_server, page, mailoutbox, clock, setting
         assert event.data['ip'] == '127.0.0.1'
         assert event.data['user_agent'] == agent
 
-    pages = Event.objects.filter(attempt__kind=Attempt.PAGE, step='welcome',
-                                 attempt__account_id=account_id)
+    pages = Event.objects.filter(attempt__kind=Attempt.PAGE, attempt__account_id=account_id)
     # Signup's landing, then each of the three logins.
-    assert pages.count() == 4
+    assert pages.filter(step='welcome').count() == 1
+    assert pages.filter(step='home').count() == 3
 
 
 # --- The way to the reset (CAP-2) ---------------------------------------------------------

@@ -17,7 +17,7 @@ from accounts.views import PENDING_LOGIN_SESSION_KEY
 from signup.tests.helpers import PASSWORD, _complete, _step1
 from signup.views import SEEN_SESSION_KEY as SIGNUP_SEEN
 
-from .helpers import (LOGIN, WELCOME, _during_the_view, _html, _logged_in, _login,
+from .helpers import (HOME, LOGIN, WELCOME, _during_the_view, _html, _logged_in, _login,
                       _login_remembering, _login_with_code, _mark)
 
 pytestmark = [pytest.mark.django_db,
@@ -38,7 +38,7 @@ def _browser(lang='en', contact='email'):
     the same test uses the other `contact` (the first one's code is used up)."""
     browser = Client()
     response = _login_with_code(browser, contact=contact, lang=lang)
-    assert response['Location'] == f'/{lang}/welcome/'
+    assert response['Location'] == f'/{lang}/home/'
     return browser
 
 
@@ -309,7 +309,7 @@ def test_remembered_mark_survives_a_replaced_session(doctor):
 
     assert _mark(a, doctor) == mark
     # The next login skips the code.
-    assert _login(a)['Location'] == WELCOME
+    assert _login(a)['Location'] == HOME
 
 
 def test_remembered_mark_survives_the_idle_end(doctor, idle_clock):
@@ -321,7 +321,7 @@ def test_remembered_mark_survives_the_idle_end(doctor, idle_clock):
     assert not _logged_in(a)
 
     assert _mark(a, doctor) == mark
-    assert _login(a)['Location'] == WELCOME
+    assert _login(a)['Location'] == HOME
 
 
 # --- Anonymous sessions ---------------------------------------------------------------------

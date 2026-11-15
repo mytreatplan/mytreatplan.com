@@ -3,14 +3,14 @@ title: 'Doctor area layout and home'
 type: 'feature'
 ticket: '1'
 created: '2026-11-14'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: '0886c03e5b1381c298ce3ed769f506bbfdeefa1f'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -86,7 +86,7 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `static/img/` -- the isotype as SVG, made from the user's PDF (see Design Notes): a single-colour version using `currentColor` for the header, and the gradient version if a light background needs it; compare the result with the PDF page before using it.
+- [ ] `static/img/isotype.svg` -- already in the working tree (made from the user's PDF, single path, `fill="currentColor"`, checked against the PDF): use it inline or as a file so the header can colour it white; do not redraw it.
 - [ ] `templates/doctor_base.html` (extends `portal_base.html`), `templates/includes/` -- the doctor header and the white panel of the mockup; inline SVG icons with accessible names; avatar with initials; logout form; language switcher; menu button below `tablet` through `static/js/menu.js`.
 - [ ] `accounts/views.py`, `accounts/urls.py`, `accounts/templates/accounts/home.html`, `coming_soon.html` -- the `home` view and one `coming_soon` view behind named routes `patients`, `support`, `messages`, `settings`, `cart`, `tutorials`, `virtuaortho`, `planning_services`, `start_a_case`; all `@login_required`; `LOGIN_REDIRECT = 'home'`.
 - [ ] `accounts/` (a small helper module) -- display name and initials from the decrypted names, with the fallbacks of the matrix.
@@ -109,10 +109,23 @@ context: []
 
 ## Review Triage Log
 
+Quick lens (Opus), 2026-11-15: 6 findings (2 medium, 4 low), all patched by the implementer; none deferred.
+
+| # | Severity | Finding | Verdict |
+|---|----------|---------|---------|
+| 1 | medium | The matrix row "Other signed-in pages" was tested only for welcome | patched: tests for the upgrade screen, the purchase placeholder, and welcome as staff, superuser and a manual-subscription doctor |
+| 2 | low | `mytp_publicsite/tests/urls_with_portal.py` had only the `home` stub | patched: the nine area stubs |
+| 3 | medium | The public site's "Client portal" link still led a signed-in doctor to the welcome page | patched: the link's target is `home` (only the target; told to the user as a change inside the public header's include) |
+| 4 | low | A signed-in visitor opening signup went to welcome, one opening login to home | patched: both go to `home`; the end of a signup is unchanged (told to the user) |
+| 5 | low | Initials of a name stored decomposed showed the bare base letter | patched: names normalised to NFC; tests with decomposed, non-Latin and HTML-character names |
+| 6 | low | Each area was named differently on its tile and on the page it opens | patched: one msgid per area; the bar is one string, so it lost the mockup's two weights (left to the style review) |
+
+Outside the review: three tests in `subscriptions/tests/test_service.py` (8.1) began to fail on 2026-11-15 because they set an end date of 2026-11-14 with a start date of today; they now pass their start date. Recorded in `deferred-work.md`.
+
 ## Design Notes
 
 - The isotype: the user provided `AAFF_MytreatPlan_IsotipoDef_RGB.pdf` on 2026-11-14, kept two levels above the repo in `Isotipo_MyTreatPlan/`. A vector PDF, one variant per page: gradient (blue to lime) on white and on dark, white on black and on dark grey, dark grey on white, black on white. The mockup header uses the white outline on the blue gradient. Convert the needed page(s) to an optimised SVG in `static/img/` (no converter is installed: use a throwaway virtualenv with PyMuPDF or similar, outside the repo); one SVG using `currentColor` covers the white, grey and black variants.
-- Working notes for the implementer: the branch is `story/6.1-doctor-area-home`, already created in the portal checkout; do not create another branch and do not commit. Build after 2.6 (it rewrites the footer in `templates/base.html`).
+- Working notes for the implementer: the branch is `story/6.1-doctor-area-home`, already created in the portal checkout; do not create another branch and do not commit. 2.6 is merged: the footer and the context processor `regions/context_processors.py` are in place. Baseline suite: 3082 passed, 12 skipped. The mockup images are not in the repo; an extracted copy of the home mockup is at `/private/tmp/claude-501/annex/word/media/image1.png` (temporary; read it first, and if it is gone work from the description in the Code Map). Do not copy the mockup into the repo.
 
 ## Verification
 

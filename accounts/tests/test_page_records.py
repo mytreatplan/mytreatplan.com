@@ -182,6 +182,19 @@ def test_htmx_full_page_load_is_recorded(doctor, header):
     assert record.attempt.account_id == doctor.pk
 
 
+@pytest.mark.parametrize('url, name', [('/en/home/', 'home'), ('/es/home/', 'home'),
+                                       ('/en/patients/', 'patients'),
+                                       ('/es/planning-services/', 'planning_services')])
+def test_doctor_area_pages_are_recorded_with_their_url_name(doctor, url, name):
+    """The doctor area (epic-doctor-profile entry 1): the home and a "coming soon" area."""
+    response = _browser(doctor).get(url)
+
+    assert response.status_code == 200
+    [record] = _records()
+    assert record.step == name and record.reason == '200'
+    assert record.data['path'] == url
+
+
 @pytest.mark.parametrize('url', ['/es/welcome/', '/en/password-reset/'])
 def test_other_portal_pages_are_recorded(doctor, url):
     response = _browser(doctor).get(url)
@@ -192,8 +205,9 @@ def test_other_portal_pages_are_recorded(doctor, url):
 
 
 def test_signup_while_logged_in_redirects_and_is_not_recorded(doctor):
-    """Since signup retro R2, signup sends a logged-in user to welcome: a redirect, so
-    no page record (the welcome page it leads to is recorded when it is shown)."""
+    """Since signup retro R2, signup sends a logged-in user away (to the home since
+    epic-doctor-profile entry 1): a redirect, so no page record (the page it leads to is
+    recorded when it is shown)."""
     response = _browser(doctor).get('/es/signup/')
 
     assert response.status_code == 302

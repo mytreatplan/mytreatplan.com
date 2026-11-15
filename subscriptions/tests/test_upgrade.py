@@ -230,11 +230,12 @@ def test_signup_lands_on_welcome_when_the_options_fail(admin, signed_up, monkeyp
     assert NORMALIZED not in logged.getMessage()  # no personal values
 
 
-def test_a_later_login_lands_on_welcome_and_the_screen_stays_open(admin, client, signed_up):
+def test_a_later_login_lands_on_home_and_the_screen_stays_open(admin, client, signed_up):
+    """Since epic-doctor-profile entry 1 a login lands on the doctor area's home."""
     load(admin)
     signed_up(UPGRADE)
     client.logout()
-    assert _login_with_code(client)['Location'] == WELCOME
+    assert _login_with_code(client)['Location'] == '/en/home/'
     assert 'Subscription levels' in html(client.get(UPGRADE))
 
 
@@ -389,3 +390,46 @@ def test_the_money_filter(language, value, text):
         assert Template('{% load money %}{{ value|money }}').render(
             Context({'value': value})) == text
 
+
+
+# --- The doctor layout (epic-doctor-profile entry 1) -----------------------------------------
+
+def doctor_layout(page):
+    """The page has the doctor area's header and panel, not the light portal header."""
+    assert 'data-doctor-header' in page and 'data-doctor-panel' in page
+    assert 'data-avatar' in page and 'data-portal-link="logout"' in page
+    assert 'Logo_MyTreatPlan.webp' not in page
+
+
+def test_the_screen_has_the_doctor_layout_and_its_content(admin):
+    load(admin)
+    page = html(browser(doctor()).get(UPGRADE))
+    doctor_layout(page)
+    assert '<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] ' \
+           'tracking-[-0.03em]">Subscription levels</h1>' in page
+    assert 'Upgrade to Advanced' in page and 'Upgrade to Premium' in page
+    assert 'href="/en/welcome/"' in page and 'Not now' in page
+    assert 'max-w-[1040px]' in page
+
+
+def test_the_placeholder_has_the_doctor_layout_and_its_content(admin):
+    load(admin)
+    page = html(browser(doctor()).get('/en/upgrade/advanced/'))
+    doctor_layout(page)
+    assert '>Upgrade to Advanced</h1>' in page
+    assert 'Online purchase of Advanced is coming soon.' in page
+    assert 'href="/en/upgrade/"' in page and 'Back to the subscription levels' in page
+
+
+@pytest.mark.parametrize('who', ['staff', 'superuser', 'manual'])
+def test_welcome_has_the_doctor_layout_for_staff_and_a_manual_doctor(admin, who):
+    load(admin)
+    if who == 'manual':
+        user = doctor()
+        manual(user)
+    else:
+        user = staff_account(who)
+    page = html(browser(user).get(WELCOME))
+    doctor_layout(page)
+    assert '>Welcome to MyTreatPlan</h1>' in page
+    assert 'href="/en/home/"' in page and 'data-go-home' in page

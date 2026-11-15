@@ -1,0 +1,56 @@
+{% extends "doctor_base.html" %}
+{% load i18n static doctor_area %}
+{% comment %}
+The doctor area's home (accounts.views.home, Annex I mockup): the greeting, the two large
+tiles (VirtuaORTHO, planning services), the green bar to start a case, the profile card
+and the three small tiles. Every link leads to an area's address ("coming soon" until its
+epic builds it). Below the tablet breakpoint everything stacks in one column.
+{% endcomment %}
+
+{% block title %}{% translate "Home" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_width %}max-w-[1080px]{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(34px,5vw,58px)] font-black leading-[1.05] tracking-[-0.04em]" data-greeting>{% if greeting_name %}{% blocktranslate with name=greeting_name %}Hello, {{ name }}{% endblocktranslate %}{% else %}{% translate "Hello" %}{% endif %}</h1>
+<p class="mt-2 text-[clamp(14px,1.4vw,16px)] font-medium">{% translate "Here are some quick links that may help you." %}</p>
+
+<div class="mt-[clamp(20px,3vw,32px)] grid grid-cols-1 gap-[clamp(12px,1.4vw,16px)] tablet:grid-cols-2" data-large-tiles>
+  <a href="{% url 'virtuaortho' %}" class="group relative flex min-h-[clamp(200px,26vw,370px)] items-center justify-center overflow-hidden rounded-[clamp(20px,2.4vw,32px)] p-6 text-center" data-tile="virtuaortho">
+    <img class="absolute inset-0 size-full object-cover object-[center_30%]" src="{% static 'img/virtuaortho-remote-orthodontist.webp' %}" width="812" height="1086" alt="" loading="lazy">
+    <span class="absolute inset-0 bg-linear-to-b from-mint/80 to-sky/85 transition-opacity group-hover:opacity-90" aria-hidden="true"></span>
+    <span class="relative">
+      <span class="block text-[clamp(32px,4.4vw,60px)] font-black leading-none tracking-[-0.04em]">Virtua ORTHO</span>
+      <span class="mt-2 block text-[clamp(14px,1.4vw,17px)]">{% translate "Aligners, planning and clinical support, all in one" %}</span>
+    </span>
+  </a>
+  <a href="{% url 'planning_services' %}" class="flex min-h-[clamp(200px,26vw,370px)] items-center justify-center rounded-[clamp(20px,2.4vw,32px)] bg-linear-to-b from-mint to-sky p-6 text-center transition-shadow hover:shadow-card" data-tile="planning_services">
+    <span>
+      <span class="block text-[clamp(32px,4.4vw,60px)] font-black leading-[0.98] tracking-[-0.04em]">{% translate "Planning Services" %}</span>
+      <span class="mt-2 block text-[clamp(14px,1.4vw,17px)]">{% translate "Expert planning and support at every step" %}</span>
+    </span>
+  </a>
+</div>
+
+<a href="{% url 'start_a_case' %}" class="mt-[clamp(14px,1.8vw,24px)] flex items-center justify-center gap-3 rounded-pill bg-linear-to-b from-green-ui to-green px-6 py-[clamp(14px,1.6vw,20px)] text-center text-[clamp(19px,2.4vw,34px)] leading-tight tracking-[-0.02em] text-white transition-shadow hover:shadow-lift" data-tile="start_a_case">
+  {% include "includes/_icon.html" with name="info" class="size-[clamp(30px,3.2vw,46px)]" %}
+  <span class="font-black">{% translate "Request New Planning" %}</span>
+</a>
+
+<div class="mt-[clamp(14px,1.8vw,24px)] grid grid-cols-1 gap-[clamp(12px,1.4vw,16px)] tablet:grid-cols-2">
+  <section class="flex items-center gap-[clamp(14px,1.8vw,22px)] rounded-[clamp(20px,2.4vw,32px)] bg-card-grey p-[clamp(14px,1.6vw,20px)]" aria-label="{% translate 'Your profile' %}" data-profile-card>
+    <span class="flex h-[clamp(84px,9vw,130px)] w-[clamp(64px,7vw,100px)] shrink-0 items-center justify-center rounded-[50%] bg-violet text-[clamp(24px,2.6vw,36px)] font-black tracking-[-0.02em] text-white" aria-hidden="true" data-profile-initials>{{ user|initials }}</span>
+    <span class="min-w-0">
+      <strong class="block break-words text-[clamp(15px,1.5vw,18px)] font-bold" data-profile-name>{{ profile_name }}</strong>
+      {% if profile_line %}<span class="block text-[clamp(14px,1.4vw,17px)]" data-profile-line>{{ profile_line }}</span>{% endif %}
+    </span>
+  </section>
+  <ul class="grid grid-cols-1 gap-[clamp(12px,1.4vw,16px)] tablet:grid-cols-3" data-small-tiles>
+    {% with tile="flex h-full flex-col items-center justify-center gap-2 rounded-[clamp(20px,2.4vw,32px)] bg-green-tint px-3 py-[clamp(16px,2vw,24px)] text-center text-[clamp(14px,1.3vw,17px)] leading-tight transition-shadow hover:shadow-card" icon="size-[clamp(36px,3.6vw,52px)]" %}
+    <li><a href="{% url 'settings' %}" class="{{ tile }}" data-tile="settings">{% include "includes/_icon.html" with name="wrench" class=icon %}<span>{% translate "Personal data" %}<strong class="block font-black">{% translate "Settings" %}</strong></span></a></li>
+    <li><a href="{% url 'messages' %}" class="{{ tile }}" data-tile="messages">{% include "includes/_icon.html" with name="bell" class=icon %}<span>{% translate "Messages" %}<strong class="block font-black">{% translate "Alerts" %}</strong></span></a></li>
+    <li><a href="{% url 'tutorials' %}" class="{{ tile }}" data-tile="tutorials">{% include "includes/_icon.html" with name="help" class=icon %}<span>{% translate "Welcome" %}<strong class="block font-black">{% translate "Tutorials" %}</strong></span></a></li>
+    {% endwith %}
+  </ul>
+</div>
+{% endblock %}

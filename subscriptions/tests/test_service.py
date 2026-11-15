@@ -210,7 +210,7 @@ def test_past_due_keeps_the_tier(admin):
 def test_cancelled_counts_up_to_and_including_its_end_date(admin):
     load(admin)
     user = doctor()
-    advanced(user, status='cancelled', ends_on=DAY)
+    advanced(user, status='cancelled', started_on=DAY, ends_on=DAY)
     assert held(user, DAY)[:3] == ('advanced', 'ADV-IB', True)
     assert held(user, DAY - timedelta(days=3))[:3] == ('advanced', 'ADV-IB', True)
     assert held(user, DAY + timedelta(days=1))[:3] == ('basic', 'BAS-0', False)
@@ -219,14 +219,14 @@ def test_cancelled_counts_up_to_and_including_its_end_date(admin):
 def test_expired_is_basic_with_the_groups_basic(admin):
     load(admin)
     user = doctor()
-    advanced(user, status='expired', ends_on=DAY)
+    advanced(user, status='expired', started_on=DAY, ends_on=DAY)
     assert held(user, DAY)[:3] == ('basic', 'BAS-0', False)
 
 
 def test_an_active_record_past_its_end_date_still_counts_as_its_tier(admin):
     load(admin)
     user = doctor()
-    advanced(user, ends_on=DAY)
+    advanced(user, started_on=DAY, ends_on=DAY)
     assert held(user, DAY + timedelta(days=30))[:3] == ('advanced', 'ADV-IB', True)
 
 

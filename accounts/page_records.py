@@ -38,7 +38,10 @@ STEP_MAX_LENGTH = 50
 # signup.urls, accounts.urls and subscriptions.urls (a new portal route needs its prefix here; a test checks
 # they match). The admin sits at the root, outside the language prefixes.
 PORTAL_PREFIXES = ('signup/', 'login', 'logout/', 'welcome/', 'password-reset/', 'reset/',
-                   'upgrade/')
+                   'upgrade/',
+                   # The doctor area (epic-doctor-profile entry 1).
+                   'home/', 'patients/', 'support/', 'messages/', 'settings/', 'cart/',
+                   'tutorials/', 'virtuaortho/', 'planning-services/', 'start-a-case/')
 ADMIN_PREFIX = '/admin/'
 
 
