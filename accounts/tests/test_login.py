@@ -29,7 +29,7 @@ def test_signup_user_logs_in_with_email_in_any_case(client, doctor, email):
     response = _login_with_code(client, email=email)
 
     assert response.status_code == 302
-    assert response['Location'] == '/en/welcome/'
+    assert response['Location'] == '/en/home/'
     assert int(client.session[SESSION_KEY]) == doctor.pk
     assert 'Welcome to MyTreatPlan' in _html(client.get('/en/welcome/'))
 
@@ -62,13 +62,13 @@ def test_safe_next_is_honoured(client, doctor, clock):
 
 @pytest.mark.parametrize('unsafe', ['https://evil.example/', '//evil.example/',
                                     'http://testserver/en/welcome/', 'javascript:alert(1)'])
-def test_unsafe_next_goes_to_welcome(client, doctor, unsafe):
+def test_unsafe_next_goes_to_home(client, doctor, unsafe):
     """Another host, a scheme-relative URL, and plain HTTP while the request is HTTPS are
     refused, as Django's LoginView refuses them."""
     response = _login_with_code(client, next=unsafe, extra={'secure': True})
 
     assert response.status_code == 302
-    assert response['Location'] == '/en/welcome/'
+    assert response['Location'] == '/en/home/'
     assert _logged_in(client)
 
 
@@ -93,13 +93,13 @@ def test_login_page_keeps_only_a_safe_next(client):
     assert 'name="next"' not in html  # (the language switcher keeps the query string)
 
 
-def test_already_logged_in_is_sent_to_welcome(client, doctor):
+def test_already_logged_in_is_sent_to_home(client, doctor):
     client.force_login(doctor)
 
     response = client.get('/en/login/')
 
     assert response.status_code == 302
-    assert response['Location'] == '/en/welcome/'
+    assert response['Location'] == '/en/home/'
 
 
 def test_anonymous_on_welcome_goes_to_login(client):
@@ -303,13 +303,14 @@ def test_nav_for_anonymous_visitors(client):
     assert 'data-portal-link' not in _nav(_html(client.get('/en/login/')))
 
 
-@pytest.mark.parametrize('url', ['/en/', '/en/welcome/'])
-def test_nav_for_a_logged_in_doctor(client, doctor, url):
+def test_nav_for_a_logged_in_doctor(client, doctor):
+    """The public site's nav; the welcome page has the doctor header since 6.1
+    (test_doctor_area.py)."""
     client.force_login(doctor)
 
-    nav = _nav(_html(client.get(url)))
+    nav = _nav(_html(client.get('/en/')))
 
-    assert 'href="/en/welcome/"' in nav and 'data-portal-link="portal"' in nav
+    assert 'href="/en/home/"' in nav and 'data-portal-link="portal"' in nav
     assert 'Client portal' in nav
     assert re.search(r'<form method="post" action="/en/logout/"', nav)
     assert 'name="csrfmiddlewaretoken"' in nav
@@ -343,9 +344,9 @@ def test_spanish_page_error_and_messages(client, doctor):
     assert SPANISH_ERROR in _html(response)
 
     response = _login_with_code(client, lang='es')
-    assert response['Location'] == '/es/welcome/'
-    nav = _nav(_html(client.get('/es/welcome/')))
-    assert 'Portal de clientes' in nav and 'Cerrar sesión' in nav
+    assert response['Location'] == '/es/home/'
+    nav = _nav(_html(client.get('/es/home/')))
+    assert 'pacientes' in nav and 'Cerrar sesión' in nav
 
     response = client.post('/es/logout/')
     assert response['Location'] == '/es/login/'

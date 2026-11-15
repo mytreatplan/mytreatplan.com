@@ -1,12 +1,12 @@
 {% load i18n %}{% comment %}
 Client portal links. Each renders only when its URL name exists, so the links appear by
 themselves once the portal is routed (PORTAL_ENABLED). A logged-in user sees "Client portal"
-(the welcome page) and "Log out" (a POST form: a GET never logs out); anyone else sees "Log
+(the doctor area's home) and "Log out" (a POST form: a GET never logs out); anyone else sees "Log
 in" and "Sign up". With `authenticated_only` (the portal pages' header) nothing renders for
 anonymous visitors.
-{% endcomment %}{% url 'login' as login_url %}{% url 'signup' as signup_url %}{% url 'welcome' as welcome_url %}{% url 'logout' as logout_url %}{% if user.is_authenticated and logout_url %}
+{% endcomment %}{% url 'login' as login_url %}{% url 'signup' as signup_url %}{% url 'home' as home_url %}{% url 'logout' as logout_url %}{% if user.is_authenticated and logout_url %}
 <ul class="{{ ul_class }}" aria-label="{% translate 'Client portal' %}">
-  {% if welcome_url %}<li><a href="{{ welcome_url }}" class="{{ link }}" data-portal-link="portal">{% translate "Client portal" %}</a></li>{% endif %}
+  {% if home_url %}<li><a href="{{ home_url }}" class="{{ link }}" data-portal-link="portal">{% translate "Client portal" %}</a></li>{% endif %}
   <li>
     <form method="post" action="{{ logout_url }}" class="inline">{% csrf_token %}<button type="submit" class="{{ link }} cursor-pointer" data-portal-link="logout">{% translate "Log out" %}</button></form>
   </li>

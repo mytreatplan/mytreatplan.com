@@ -23,7 +23,7 @@ TEXTS = {
         'logged_out': 'You have logged out.', 'login': 'Log in',
         'verify': "Confirm it's you", 'code': 'Enter your code',
         'remember': 'Remember me on this device/browser for 90 days',
-        'welcome': 'Welcome to MyTreatPlan',
+        'welcome': 'Welcome to MyTreatPlan', 'hello': 'Hello, Anabel',
         'recover': 'Recover your password', 'reset': 'Reset your password',
         'send_link': 'Send the link', 'sent': 'Check your email',
         'new_password': 'Choose a new password', 'change': 'Change password',
@@ -35,7 +35,7 @@ TEXTS = {
         'logged_out': 'Ha cerrado la sesión.', 'login': 'Iniciar sesión',
         'verify': 'Confirme que es usted', 'code': 'Introduzca su código',
         'remember': 'Recordarme en este dispositivo/navegador durante 90 días',
-        'welcome': 'Le damos la bienvenida a MyTreatPlan',
+        'welcome': 'Le damos la bienvenida a MyTreatPlan', 'hello': 'Hola, Anabel',
         'recover': 'Recuperar su contraseña', 'reset': 'Restablecer su contraseña',
         'send_link': 'Enviar el enlace', 'sent': 'Revise su correo electrónico',
         'new_password': 'Elija una nueva contraseña', 'change': 'Cambiar la contraseña',
@@ -90,7 +90,7 @@ def choose(page, contact):
 def log_in(page, live_server, lang='en', contact='email', phone=MOBILE_E164,
            remember=False, password=PASSWORD):
     """The password, the choice of `contact` and its code (ticking "Remember me" with
-    `remember`): the welcome page."""
+    `remember`): the doctor area's home."""
     t = TEXTS[lang]
     submit_password(page, lang, password=password)
     at(page, live_server, lang, 'login/verify/')
@@ -101,8 +101,8 @@ def log_in(page, live_server, lang='en', contact='email', phone=MOBILE_E164,
     if remember:
         page.get_by_label(t['remember']).check()
     enter_code(page, _right_code(contact, phone=phone), t['login'])
-    at(page, live_server, lang, 'welcome/')
-    expect(page.locator('h1')).to_have_text(t['welcome'])
+    at(page, live_server, lang, 'home/')
+    expect(page.locator('h1')).to_have_text(t['hello'])
 
 
 def wait_for_mail(page, mailoutbox):
@@ -152,7 +152,7 @@ def success_journey(page, live_server, mailoutbox, clock, lang='en'):
     password and the email code, "Remember me" ticked; after a logout, a login without a
     code; a logout; signup's recovery link (the live email check's), the reset through
     the mailed link; a login with the new password and a code. Ends logged in on
-    welcome. Needs SITE_URL set to live_server's URL (the mailed link's base)."""
+    the home. Needs SITE_URL set to live_server's URL (the mailed link's base)."""
     t = TEXTS[lang]
     sign_up(page, live_server, lang)
     log_out(page, live_server, lang)
@@ -161,10 +161,10 @@ def success_journey(page, live_server, mailoutbox, clock, lang='en'):
     log_in(page, live_server, lang, remember=True)
     log_out(page, live_server, lang)
 
-    # The remembered device: the password alone lands on welcome.
+    # The remembered device: the password alone lands on the home.
     submit_password(page, lang)
-    at(page, live_server, lang, 'welcome/')
-    expect(page.locator('h1')).to_have_text(t['welcome'])
+    at(page, live_server, lang, 'home/')
+    expect(page.locator('h1')).to_have_text(t['hello'])
     log_out(page, live_server, lang)
 
     # A forgotten password: signup's recovery link opens the request page.

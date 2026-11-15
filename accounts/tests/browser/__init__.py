@@ -9,7 +9,7 @@ its records: test_login_policies.py::test_records_after_the_journey.
 
 The spec's capabilities:
 
-CAP-1 Log in with email and password, land on welcome --
+CAP-1 Log in with email and password, land on the home (6.1; welcome before) --
       test_success.py::test_success_signal, test_login.py::test_signup_user_logs_out_and_logs_in,
       test_login.py::test_wrong_password_shows_the_generic_error
 CAP-2 Password reset through the emailed link -- test_success.py::test_success_signal

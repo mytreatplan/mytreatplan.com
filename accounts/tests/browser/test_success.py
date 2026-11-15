@@ -22,12 +22,12 @@ pytestmark = [
 @pytest.mark.parametrize('lang', ['en', 'es'])
 def test_success_signal(live_server, page, mailoutbox, clock, settings, lang):
     """Success signal (spec), CAP-1, CAP-2, CAP-6, CAP-7, CAP-8: the whole journey in
-    `lang`, its pages and its reset mail in that language; it ends logged in on welcome,
+    `lang`, its pages and its reset mail in that language; it ends logged in on the home,
     which a reload keeps."""
     settings.SITE_URL = live_server.url
     success_journey(page, live_server, mailoutbox, clock, lang)
 
     expect(page.locator('html')).to_have_attribute('lang', lang)
     page.reload()
-    expect(page).to_have_url(f'{live_server.url}/{lang}/welcome/')
+    expect(page).to_have_url(f'{live_server.url}/{lang}/home/')
     assert len(mailoutbox) == 1

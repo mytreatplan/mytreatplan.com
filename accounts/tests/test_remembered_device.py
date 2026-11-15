@@ -15,8 +15,8 @@ from signup.forms import BLOCKED_MESSAGE
 from signup.tests.helpers import MOBILE_E164, NORMALIZED, PASSWORD, _current_code, _wrong
 from signup.verification import EMAIL, PURPOSE_LOGIN
 
-from .helpers import (CODE, VERIFY, WELCOME, _html, _logged_in, _login, _login_remembering,
-                      _mark, _post_code, _to_code)
+from .helpers import (CODE, HOME, VERIFY, _html, _logged_in, _login,
+                      _login_remembering, _mark, _post_code, _to_code)
 
 pytestmark = [pytest.mark.django_db,
               pytest.mark.usefixtures('capture_codes', 'clear_cache', 'portal_urls')]
@@ -30,7 +30,7 @@ LABEL = 'Remember me on this device/browser for 90 days'
 def _remembered(client, doctor):
     """A browser where `doctor` ticked the box with the right code, then logged out."""
     response = _login_remembering(client)
-    assert response['Location'] == WELCOME
+    assert response['Location'] == HOME
     client.post('/en/logout/')
     assert not _logged_in(client)
     return response
@@ -66,7 +66,7 @@ def test_spanish_label(client, doctor):
 def test_ticked_right_code_logs_in_and_sets_the_mark(client, doctor, login_clock, settings):
     response = _login_remembering(client)
 
-    assert response['Location'] == WELCOME
+    assert response['Location'] == HOME
     assert _logged_in(client)
     cookie = response.cookies[devices.cookie_name(doctor)]
     assert cookie['max-age'] == 90 * DAY
@@ -95,7 +95,7 @@ def test_mark_is_secure_when_debug_is_off(client, doctor, settings):
 def test_unticked_right_code_logs_in_without_a_mark(client, doctor):
     response = _login_remembering(client, remember=False)
 
-    assert response['Location'] == WELCOME
+    assert response['Location'] == HOME
     assert _logged_in(client)
     assert devices.cookie_name(doctor) not in response.cookies
     assert _mark(client, doctor) is None
@@ -123,7 +123,7 @@ def test_remembered_device_skips_the_code(client, doctor, capture_codes):
     response = _login(client)
 
     assert response.status_code == 302
-    assert response['Location'] == WELCOME
+    assert response['Location'] == HOME
     assert _logged_in(client)
     assert PENDING_LOGIN_SESSION_KEY not in client.session
     assert len(capture_codes.records) == sent  # no code sent
@@ -136,26 +136,26 @@ def test_remembered_device_honours_the_safe_next(client, doctor):
 
     assert _login(client, query='?next=/es/welcome/')['Location'] == '/es/welcome/'
     client.post('/en/logout/')
-    assert _login(client, query='?next=https://evil.example/')['Location'] == WELCOME
+    assert _login(client, query='?next=https://evil.example/')['Location'] == HOME
 
 
 def test_still_remembered_after_logout(client, doctor):
     _remembered(client, doctor)
-    assert _login(client)['Location'] == WELCOME
+    assert _login(client)['Location'] == HOME
     client.post('/en/logout/')
 
     assert _mark(client, doctor)
-    assert _login(client)['Location'] == WELCOME
+    assert _login(client)['Location'] == HOME
 
 
 def test_mark_lasts_a_fixed_90_days(client, doctor, login_clock):
     _remembered(client, doctor)
 
     login_clock.advance(60 * DAY)
-    assert _login(client)['Location'] == WELCOME  # a later login does not extend it
+    assert _login(client)['Location'] == HOME  # a later login does not extend it
     client.post('/en/logout/')
     login_clock.advance(30 * DAY - 1)
-    assert _login(client)['Location'] == WELCOME
+    assert _login(client)['Location'] == HOME
     client.post('/en/logout/')
     login_clock.advance(2)  # 90 days and a second
 
@@ -188,13 +188,13 @@ def test_another_account_needs_its_own_code(client, doctor):
     assert client.post(VERIFY, {'contact': 'email'})['Location'] == CODE
     response = _post_code(client, _current_code(EMAIL, 'bea@example.com', PURPOSE_LOGIN),
                           remember='on')
-    assert response['Location'] == WELCOME
+    assert response['Location'] == HOME
     client.post('/en/logout/')
     assert _mark(client, doctor) == mark and _mark(client, bea)
     assert devices.cookie_name(doctor) != devices.cookie_name(bea)
-    assert _login(client, email='bea@example.com')['Location'] == WELCOME
+    assert _login(client, email='bea@example.com')['Location'] == HOME
     client.post('/en/logout/')
-    assert _login(client)['Location'] == WELCOME
+    assert _login(client)['Location'] == HOME
 
 
 def test_wrong_password_skips_nothing(client, doctor):
@@ -291,7 +291,7 @@ def test_skip_goes_through_finish_login(client, doctor, monkeypatch):
                             (dict(pending), kwargs)) or original(request, user, pending,
                                                                  **kwargs))
 
-    assert _login(client)['Location'] == WELCOME
+    assert _login(client)['Location'] == HOME
     assert len(calls) == 1
     pending, kwargs = calls[0]
     assert pending['user'] == str(doctor.pk) and pending['contact'] is None

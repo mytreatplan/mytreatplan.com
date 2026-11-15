@@ -1561,3 +1561,101 @@ msgstr "Avanzada"
 msgctxt "subscription level"
 msgid "Premium"
 msgstr "Premium"
+
+#: templates/doctor_base.html
+msgid "Doctor area"
+msgstr "Área del doctor"
+
+#: templates/doctor_base.html
+msgctxt "doctor area"
+msgid "home"
+msgstr "home"
+
+#: templates/doctor_base.html
+msgctxt "doctor area"
+msgid "patients"
+msgstr "pacientes"
+
+#: templates/doctor_base.html
+msgctxt "doctor area"
+msgid "support"
+msgstr "soporte"
+
+#: accounts/views.py templates/doctor_base.html
+#: accounts/templates/accounts/home.html
+msgid "Messages"
+msgstr "Mensajes"
+
+#: accounts/views.py templates/doctor_base.html
+#: accounts/templates/accounts/home.html
+msgid "Settings"
+msgstr "Configuración"
+
+#: accounts/views.py templates/doctor_base.html
+msgid "Cart"
+msgstr "Carrito"
+
+#: accounts/views.py
+msgid "Patients"
+msgstr "Pacientes"
+
+#: accounts/views.py
+msgid "Support"
+msgstr "Soporte"
+
+#: accounts/views.py accounts/templates/accounts/home.html
+msgid "Tutorials"
+msgstr "Tutoriales"
+
+#: accounts/templates/accounts/home.html
+#, python-format
+msgid "Hello, %(name)s"
+msgstr "Hola, %(name)s"
+
+#: accounts/templates/accounts/home.html
+msgid "Hello"
+msgstr "Hola"
+
+#: accounts/templates/accounts/home.html
+msgid "Here are some quick links that may help you."
+msgstr "Aquí tienes algunos accesos rápidos que te pueden ayudar."
+
+#: accounts/templates/accounts/home.html
+msgid "Aligners, planning and clinical support, all in one"
+msgstr "Alineadores, planificación y soporte clínico todo en uno"
+
+#: accounts/views.py accounts/templates/accounts/home.html
+msgid "Planning Services"
+msgstr "Servicios de Planificación"
+
+#: accounts/templates/accounts/home.html
+msgid "Expert planning and support at every step"
+msgstr "Planificación y soporte experto en cada paso"
+
+#: accounts/views.py accounts/templates/accounts/home.html
+msgid "Request New Planning"
+msgstr "Solicita Nueva Planificación"
+
+#: accounts/templates/accounts/home.html
+msgid "Your profile"
+msgstr "Su perfil"
+
+#: accounts/templates/accounts/home.html
+msgid "Personal data"
+msgstr "Datos personales"
+
+#: accounts/templates/accounts/home.html
+msgid "Alerts"
+msgstr "Alertas"
+
+#: accounts/templates/accounts/coming_soon.html
+msgid "This section is coming soon."
+msgstr "Esta sección estará disponible próximamente."
+
+#: accounts/templates/accounts/coming_soon.html
+msgid "Back to home"
+msgstr "Volver al inicio"
+
+#: accounts/templates/accounts/welcome.html
+msgid "Go to your home page"
+msgstr "Ir a su página de inicio"

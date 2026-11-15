@@ -145,3 +145,27 @@ does). A document is `provisional` until the lawyer's final text replaces it: a 
 text is a new version with `provisional` off in the admin; for the public pages, the
 templates are replaced and `LEGAL_TEXTS_FINAL` is set to `True` (deploy/README.md,
 "Legal texts: from provisional to final").
+
+## The doctor area (epic-doctor-profile entry 1)
+
+A signed-in doctor's pages extend `templates/doctor_base.html` (itself on
+`portal_base.html`, so not indexed): the gradient header with the isotype
+(`static/img/isotype.svg`, a `currentColor` mask), the links home, patients and support, the
+messages, settings and cart icons, the avatar with the doctor's initials, the logout button
+(a POST form) and the language switcher, collapsing behind `static/js/menu.js`'s menu button
+below the `tablet` breakpoint; then the white rounded panel holding the page
+(`portal_content`, widened in `portal_width`) and the handshake band (`doctor_band`). The
+names shown come from `accounts.doctor_area` (decrypted in Python; the `doctor_area`
+template filters `initials` and `display_name`). Login lands on the home (`/<lang>/home/`,
+`accounts.views.home`); signup still ends on the upgrade screen or the welcome page, which
+links to the home. The welcome page, the upgrade screen and the purchase placeholder use
+the doctor layout; login and signup keep the light one.
+
+Every area not built yet has its own address, served by `accounts.views.coming_soon`
+("coming soon", naming the area): `patients`, `support`, `messages`, `settings`, `cart`,
+`tutorials`, `virtuaortho`, `planning_services` and `start_a_case` (the URL names, in
+`accounts/urls.py`). An epic that builds one replaces that route with its own view under the
+same URL name and path, and removes the area from `COMING_SOON_AREAS`; the header and the
+home's links follow by themselves. A new doctor-area address also needs its first segment
+in `accounts.page_records.PORTAL_PREFIXES` (a test checks it) and its name in
+`mytp_publicsite/tests/test_settings_staging.py`'s `PORTAL_URL_NAMES`.

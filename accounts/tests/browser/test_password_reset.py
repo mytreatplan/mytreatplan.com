@@ -61,7 +61,7 @@ def test_reset_the_password_and_log_in_with_it(live_server, page, mailoutbox, se
     expect(page).to_have_url(f'{live_server.url}/en/login/verify/')
     choose(page, 'email')
     enter_code(page, email_code(purpose=PURPOSE_LOGIN), 'Log in')
-    expect(page).to_have_url(f'{live_server.url}/en/welcome/')
+    expect(page).to_have_url(f'{live_server.url}/en/home/')
 
     # The used link is no longer valid.
     page.goto(link)

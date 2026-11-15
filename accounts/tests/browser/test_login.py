@@ -1,7 +1,7 @@
 """Login (epic-login entries 1 and 2) in Chromium against live_server: a Doctor created by
 signup through the real pages logs out from the nav, logs in through the login page (the
 Turnstile widget holds the submit until its token arrives), chooses where the code goes,
-types it and lands on the welcome screen. Entry 3: with "Remember me" ticked, the next login
+types it and lands on the doctor area's home. Entry 3: with "Remember me" ticked, the next login
 from the same browser skips the code."""
 import pytest
 
@@ -48,8 +48,8 @@ window.turnstile = {
 def test_signup_user_logs_out_and_logs_in(live_server, page):
     sign_up(page, live_server)
 
-    # Log out from the header's button (a POST form).
-    expect(page.get_by_role('link', name='Client portal', exact=True)).to_be_visible()
+    # Log out from the doctor header's button (a POST form).
+    expect(page.get_by_role('link', name='home', exact=True)).to_be_visible()
     press(page, 'Log out')
     expect(page).to_have_url(f'{live_server.url}/en/login/')
     expect(page.get_by_role('status').filter(has_text='You have logged out.')).to_be_visible()
@@ -84,8 +84,8 @@ def test_signup_user_logs_out_and_logs_in(live_server, page):
     expect(page.get_by_text(
         'This code is not correct. Check it, or send a new one.')).to_be_visible()
     enter_code(page, email_code(purpose=PURPOSE_LOGIN), 'Log in')
-    expect(page).to_have_url(f'{live_server.url}/en/welcome/')
-    expect(page.locator('h1')).to_have_text('Welcome to MyTreatPlan')
+    expect(page).to_have_url(f'{live_server.url}/en/home/')
+    expect(page.locator('h1')).to_have_text('Hello, Anabel')
 
 
 def test_wrong_password_shows_the_generic_error(live_server, page):
@@ -106,7 +106,7 @@ def test_wrong_password_shows_the_generic_error(live_server, page):
 
 def test_remembered_device_logs_in_without_a_code(live_server, page):
     """Epic-login entry 3: ticking "Remember me" with the right code; after a logout the
-    next login from this browser lands on welcome without the code pages."""
+    next login from this browser lands on the home without the code pages."""
     sign_up(page, live_server)
     press(page, 'Log out')
 
@@ -118,12 +118,12 @@ def test_remembered_device_logs_in_without_a_code(live_server, page):
     expect(remember).not_to_be_checked()
     remember.check()
     enter_code(page, email_code(purpose=PURPOSE_LOGIN), 'Log in')
-    expect(page).to_have_url(f'{live_server.url}/en/welcome/')
+    expect(page).to_have_url(f'{live_server.url}/en/home/')
     cookies = [c for c in page.context.cookies() if c['name'].startswith('mtp_device_')]
     assert len(cookies) == 1 and cookies[0]['httpOnly'] and cookies[0]['sameSite'] == 'Lax'
 
     press(page, 'Log out')
     expect(page).to_have_url(f'{live_server.url}/en/login/')
     submit_password(page)
-    expect(page).to_have_url(f'{live_server.url}/en/welcome/')
-    expect(page.locator('h1')).to_have_text('Welcome to MyTreatPlan')
+    expect(page).to_have_url(f'{live_server.url}/en/home/')
+    expect(page.locator('h1')).to_have_text('Hello, Anabel')

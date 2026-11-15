@@ -18,7 +18,7 @@ from signup import limits
 from signup.forms import BLOCKED_MESSAGE
 from signup.tests.helpers import NORMALIZED, PASSWORD, _wrong
 
-from .helpers import (AGENT, CODE, IP, LOGIN, META, VERIFY, WELCOME, WRONG_PASSWORD,
+from .helpers import (AGENT, CODE, HOME, IP, LOGIN, META, VERIFY, WRONG_PASSWORD,
                       _failures, _html, _ip_blocks, _lock_by_passwords, _locks, _logged_in,
                       _login, _login_with_code, _messages, _post_code, _right_code, _to_code,
                       _wrong_password)
@@ -106,7 +106,7 @@ def test_every_attempt_during_a_lock_is_recorded(client, doctor, lock_clock):
     assert len(_locks()) == 1
     # The same 10 minutes: then the right password logs in.
     lock_clock.advance(login_failures.LOCK_SECONDS + 1)
-    assert _login_with_code(client, extra=META)['Location'] == WELCOME
+    assert _login_with_code(client, extra=META)['Location'] == HOME
 
 
 def test_attempt_for_a_locked_unknown_email_is_recorded_with_the_email(client, doctor,
@@ -185,7 +185,7 @@ def test_the_locking_code_is_not_recorded_as_blocked(client, doctor, lock_clock)
 
 def test_locked_account_refuses_a_remembered_device(client, doctor, lock_clock):
     _to_code(client, extra=META)
-    assert client.post(CODE, {'code': _right_code(), 'remember': 'on'})['Location'] == WELCOME
+    assert client.post(CODE, {'code': _right_code(), 'remember': 'on'})['Location'] == HOME
     client.post('/en/logout/')
     _lock_by_passwords(client)
 
@@ -209,7 +209,7 @@ def test_lock_ends_after_ten_minutes(client, doctor, lock_clock):
     assert response.context['form'].has_error('__all__', 'invalid_login')
     assert login_failures.failure_count(login_failures.PASSWORD, account_id=doctor.pk) == 1
     response = _login_with_code(client, extra=META)
-    assert response['Location'] == WELCOME and _logged_in(client)
+    assert response['Location'] == HOME and _logged_in(client)
 
 
 # --- Wrong codes ------------------------------------------------------------------------
@@ -439,7 +439,7 @@ def test_failing_lock_and_limit_never_stop_the_login(client, doctor, monkeypatch
     response = _login_with_code(client, extra=META)
     sentry_sdk.flush()
 
-    assert response['Location'] == WELCOME and _logged_in(client)
+    assert response['Location'] == HOME and _logged_in(client)
     messages = _messages(sentry_capture)
     assert 'Login failure counter error: ip_reserve (DatabaseError)' in messages
     assert 'Login failure counter error: is_locked (DatabaseError)' in messages
@@ -513,7 +513,7 @@ def test_remembered_device_locked_during_the_password_check(client, doctor, monk
     from accounts import login_guard
 
     _to_code(client, extra=META)
-    assert client.post(CODE, {'code': _right_code(), 'remember': 'on'})['Location'] == WELCOME
+    assert client.post(CODE, {'code': _right_code(), 'remember': 'on'})['Location'] == HOME
     client.post('/en/logout/')
     real_check = login_guard.login_locked
 

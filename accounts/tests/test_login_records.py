@@ -57,7 +57,7 @@ def test_login_with_code_is_recorded_and_resets_the_counters(client, doctor, loc
     _to_code(client, extra=META)
     response = _post_code(client, _right_code(), extra=META)
 
-    assert response['Location'] == '/en/welcome/'
+    assert response['Location'] == '/en/home/'
     [record] = _logins()
     assert record.attempt.account_id == doctor.pk
     assert record.attempt.ended_at is not None and record.attempt.outcome == 'login'
@@ -72,14 +72,14 @@ def test_login_with_code_is_recorded_and_resets_the_counters(client, doctor, loc
 def test_remembered_login_is_recorded_without_a_code(client, doctor, lock_clock):
     _to_code(client, extra=META)
     response = _post_code(client, _right_code(), extra=META, remember='on')
-    assert response['Location'] == '/en/welcome/'
+    assert response['Location'] == '/en/home/'
     client.post('/en/logout/')
     _wrong_password(client)
     assert _count(login_failures.PASSWORD, doctor) == 1
 
     response = _login(client, extra=META)
 
-    assert response['Location'] == '/en/welcome/' and _logged_in(client)
+    assert response['Location'] == '/en/home/' and _logged_in(client)
     code_login, remembered = _logins()
     assert code_login.reason == 'code'
     assert remembered.attempt.account_id == doctor.pk
@@ -386,7 +386,7 @@ def test_a_failing_log_write_never_stops_the_login(client, doctor, monkeypatch,
     response = _login_with_code(client, extra=META)
     sentry_sdk.flush()
 
-    assert response['Location'] == '/en/welcome/' and _logged_in(client)
+    assert response['Location'] == '/en/home/' and _logged_in(client)
     assert _records() == []
     # No login attempt left without its event (none would ever be cleaned up).
     assert not Attempt.objects.filter(kind=Attempt.LOGIN).exists()
@@ -408,7 +408,7 @@ def test_a_failing_counter_never_stops_the_login(client, doctor, monkeypatch,
     response = _login_with_code(client, extra=META)
     sentry_sdk.flush()
 
-    assert response['Location'] == '/en/welcome/' and _logged_in(client)
+    assert response['Location'] == '/en/home/' and _logged_in(client)
     assert len(_logins()) == 1
     assert _messages(sentry_capture) == [
         'Login failure counter error: record_failure (DatabaseError)',

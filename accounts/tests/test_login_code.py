@@ -120,7 +120,7 @@ def test_an_unknown_choice_sends_nothing(client, doctor):
 def test_logged_in_doctor_is_sent_on(client, doctor, url):
     client.force_login(doctor)
 
-    assert client.get(url)['Location'] == '/en/welcome/'
+    assert client.get(url)['Location'] == '/en/home/'
 
 
 # --- Choose email / mobile ----------------------------------------------------------------
@@ -164,7 +164,7 @@ def test_choose_mobile_falls_back_to_sms(client, doctor):
     assert '+34 ••• ••• 001' in html
     assert 'data-sms>' not in html  # sent by SMS already
     response = _post_code(client, _right_code('mobile', phone=FAKE_NO_WHATSAPP_NUMBER))
-    assert response['Location'] == '/en/welcome/'
+    assert response['Location'] == '/en/home/'
 
 
 def test_choosing_the_same_contact_again_within_the_cooldown_sends_nothing(client, doctor,
@@ -187,7 +187,7 @@ def test_switching_contact_sends_to_the_other(client, doctor):
     assert _to_code_choice['Location'] == CODE
     assert _pending(client)['contact'] == 'mobile'
     assert 'data-sent="whatsapp"' in _html(client.get(CODE))
-    assert _post_code(client, _right_code('mobile'))['Location'] == '/en/welcome/'
+    assert _post_code(client, _right_code('mobile'))['Location'] == '/en/home/'
 
 
 # --- Right code -----------------------------------------------------------------------------
@@ -209,11 +209,11 @@ def test_right_code_logs_in(client, doctor, contact):
     assert FakeVerificationProvider.current_code(EMAIL if contact == 'email' else SMS,
                                                  NORMALIZED if contact == 'email'
                                                  else MOBILE_E164, PURPOSE_LOGIN) is None
-    assert client.get(CODE)['Location'] == '/en/welcome/'
+    assert client.get(CODE)['Location'] == '/en/home/'
 
 
-def test_right_code_without_next_goes_to_welcome(client, doctor):
-    assert _login_with_code(client)['Location'] == '/en/welcome/'
+def test_right_code_without_next_goes_to_home(client, doctor):
+    assert _login_with_code(client)['Location'] == '/en/home/'
 
 
 def test_session_key_changes_at_login(client, doctor):
@@ -255,7 +255,7 @@ def test_wrong_code_is_refused(client, doctor, caplog):
     assert 'login code rejected: reasons=invalid_code' in [
         r.getMessage() for r in caplog.records if r.name == 'accounts.views']
     # The right one still works.
-    assert _post_code(client, _right_code())['Location'] == '/en/welcome/'
+    assert _post_code(client, _right_code())['Location'] == '/en/home/'
 
 
 def test_empty_code_is_required(client, doctor):
@@ -315,7 +315,7 @@ def test_five_wrong_codes_invalidate_it_and_a_new_one_works(client, doctor, logi
     response = client.post(CODE, {'action': 'resend'})
     assert response['Location'] == CODE
     assert 'We have sent you the code again.' in _html(client.get(CODE))
-    assert _post_code(client, _right_code())['Location'] == '/en/welcome/'
+    assert _post_code(client, _right_code())['Location'] == '/en/home/'
 
 
 # --- Resend / SMS ----------------------------------------------------------------------------
@@ -344,7 +344,7 @@ def test_resend_after_the_cooldown_and_the_hourly_limit(client, doctor, login_cl
     html = _html(client.get(CODE))
     assert 'data-hourly-limit' in html and 'data-support' in html
     assert 'You have asked for too many codes.' in html
-    assert _post_code(client, _right_code())['Location'] == '/en/welcome/'
+    assert _post_code(client, _right_code())['Location'] == '/en/home/'
 
 
 def test_resend_messages_in_spanish(client, doctor, login_clock):
@@ -486,7 +486,7 @@ def test_pending_login_is_valid_just_before_its_end(client, doctor, login_clock)
     _to_code(client)
     login_clock.advance(CODE_TTL_SECONDS - 5)
 
-    assert _post_code(client, _right_code())['Location'] == '/en/welcome/'
+    assert _post_code(client, _right_code())['Location'] == '/en/home/'
 
 
 def _change_password(doctor):
@@ -596,7 +596,7 @@ def test_spanish_pages_and_code(client, doctor, capture_codes):
 
     response = _post_code(client, _wrong(_right_code('mobile')), lang='es')
     assert 'Este código no es correcto. Revíselo o solicite uno nuevo.' in _html(response)
-    assert _post_code(client, _right_code('mobile'), lang='es')['Location'] == '/es/welcome/'
+    assert _post_code(client, _right_code('mobile'), lang='es')['Location'] == '/es/home/'
 
 
 def test_spanish_expired_message(client, doctor, login_clock):
@@ -665,7 +665,7 @@ def test_mobile_code_by_whatsapp_or_by_sms_when_it_is_off(client, doctor, settin
     assert ('data-sms-fallback' in html) is (not enabled)
 
     twilio_verify.answer = (200, {'status': 'approved'})
-    assert _post_code(client, '123456')['Location'] == '/en/welcome/'
+    assert _post_code(client, '123456')['Location'] == '/en/home/'
     assert twilio_verify.calls[-1][0] == 'VerificationCheck'
 
 
@@ -696,7 +696,7 @@ def test_login_page_ends_an_earlier_pending_login(client, doctor, settings, outc
 # --- "Sent" only for a send of this pending login -------------------------------------------
 
 def test_relogin_within_the_cooldown_shows_the_wait_not_sent(client, doctor, login_clock):
-    assert _login_with_code(client)['Location'] == '/en/welcome/'
+    assert _login_with_code(client)['Location'] == '/en/home/'
     client.logout()
     login_clock.advance(20)
 
@@ -712,7 +712,7 @@ def test_relogin_within_the_cooldown_shows_the_wait_not_sent(client, doctor, log
     assert _pending(client)['sent'] is True
     html = _html(client.get(CODE))
     assert 'data-sent="email"' in html and 'data-no-code' not in html
-    assert _post_code(client, _right_code())['Location'] == '/en/welcome/'
+    assert _post_code(client, _right_code())['Location'] == '/en/home/'
 
 
 # --- The per-IP code-send limit (signup retrospective R4) ---------------------------------
