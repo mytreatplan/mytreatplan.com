@@ -1547,20 +1547,35 @@ msgstr "La compra en línea de %(name)s estará disponible próximamente."
 msgid "Back to the subscription levels"
 msgstr "Volver a los niveles de suscripción"
 
-#: subscriptions/views.py
+#: subscriptions/levels.py
 msgctxt "subscription level"
 msgid "Basic"
 msgstr "Básica"
 
-#: subscriptions/views.py
+#: subscriptions/levels.py
 msgctxt "subscription level"
 msgid "Advanced"
 msgstr "Avanzada"
 
-#: subscriptions/views.py
+#: subscriptions/levels.py
 msgctxt "subscription level"
 msgid "Premium"
 msgstr "Premium"
+
+# --- The upgrade reminder (epic-subscriptions entry 3) ---
+#: templates/doctor_base.html
+#, python-format
+msgid "%(level)s · Upgrade"
+msgstr "%(level)s · Mejorar"
+
+#: accounts/templates/accounts/home.html
+#, python-format
+msgid "Level: %(level)s"
+msgstr "Nivel: %(level)s"
+
+#: accounts/templates/accounts/home.html
+msgid "See upgrade options"
+msgstr "Ver opciones de mejora"
 
 #: templates/doctor_base.html
 msgid "Doctor area"
