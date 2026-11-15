@@ -3,7 +3,7 @@ title: 'Upgrade reminder'
 type: 'feature'
 ticket: '3'
 created: '2026-11-15'
-status: 'built'
+status: 'done'
 baseline_revision: '83ef699'
 route: 'full'
 route_source: 'auto'
@@ -112,3 +112,14 @@ Full suite; `makemigrations --check`; `npm run build:css` to see the header loca
 | 1 | medium | The reminder runs `effective()` on every doctor page, so a drifted held row would log an error per page view | patched: `log_drift=False` on the reminder path; the other paths still log |
 | 2 | low | `level_name()` and `reverse()` were outside the tag's try/except: a failure there would be a 500 from the header | patched: the whole value is built inside the try |
 | 3 | low | Screen readers may read the middle dot in "Basic · Upgrade" aloud | rejected: needs another translated label for little gain; told the user |
+
+## Staging
+
+- PR #103, merge b58e5db; PR checks `test` pass (twice); master run 43693510897: test and both deploys success. Local suite 3183 passed, 12 skipped, 1 failed (the recorded SECRET_KEY-dependent `test_remembered_device` test, worktree only).
+- 2026-11-15, checks run from the server side (pages rendered with a request factory, no session; level changes inside a rolled-back transaction):
+  1. `/healthz` ok on dev and dev-ae.
+  2. Basic doctor (dev ES, dev-ae AE): header "Basic · Upgrade" and the profile-card line, both linking to `/en/upgrade/`; the upgrade screen shows no header item.
+  3. dev: the manual doctor and the superuser see no level and no link. dev-ae: a doctor whose country has no group sees nothing.
+  4. The same Basic doctors as Advanced: "Advanced · Upgrade"; as Premium: nothing. Records back to Basic after the rollback.
+  5. Spanish on dev: "Básico · Mejorar", "Nivel: Básico · Ver opciones de mejora" (the level name is the catalogue row's Spanish name), links to `/es/upgrade/`.
+  6. Visual check in a browser (desktop, phone): left to the user, not reported yet.
