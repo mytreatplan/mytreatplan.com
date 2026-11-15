@@ -52,6 +52,7 @@ Choosing and buying cases. Not the case after purchase (epic-case-lifecycle).
 
 - Tracer bullet: entry 1 (a patient, an ICE paid with the fake gateway, its work order in pending assignment); it owns the patient and work-order models, the patient-code generator and the case stage machine in mytp-core.
 - Lanes: one lane (1 → … → 9).
+- Handoff (2026-11-15, included cases): a paid subscription includes free branded-TPS cases (initiative Notes 2026-11-15; allowance service in epic-subscriptions entry 13). Entry 3 shows the remaining count in the wizard; entry 6 lets the doctor tick "use an included case" (default on) per eligible line, reserves the use with the order and passes the included line to the pricing function; entry 7 does not use up the ICE deduction on an included line; a voucher is refused on an order that comes to zero.
 - Decision (user, 2026-10-30): a paid ICE is deducted once, with no time limit, from the first later planning (TPS or VirtuaOrtho) for the same patient.
 - Decision (user, 2026-10-30): a live ICE work order closes automatically when the planning is paid; otherwise one live work order per patient blocks new services.
 - Decision (user, 2026-10-30): a named maker needs a saved maker login before ordering; the wizard warns and links to the maker-logins settings page ('not decided yet' and 'other' excepted).

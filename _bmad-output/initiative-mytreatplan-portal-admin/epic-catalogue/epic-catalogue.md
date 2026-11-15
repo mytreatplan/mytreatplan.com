@@ -34,6 +34,7 @@ Source: the initiative's P4, the requirements document's catalogue and subscript
 - C10 (P4): The catalogue in the configuration snapshot: per-region payloads, deactivation not deletion, read-only on the portal (AD-3).
 - C11 (P4): The portal's pricing function (AD-16).
 - C12 (P4): A staging seed with the documented catalogue and subscription grid.
+- C13 (P4): Included cases on subscriptions: a number per product category and 12-month term, in the snapshot.
 
 ## Done when
 
@@ -58,6 +59,7 @@ Definitions and the resolver. Not buying (epic-subscriptions, epic-ordering), no
 - Lanes: one lane (2 → 3 → … → 13); entries add their own snapshot section to entry 2's registry.
 - Decision (user, 2026-10-30): named, reusable country groups for subscriptions and billing rules.
 - Decision (user, 2026-10-30): line order net price → subscription discount → ICE deduction → voucher → floor at 0 → VAT; epic-subscriptions and epic-ordering pass the voucher and the ICE amount in.
+- Decision (user, 2026-11-15): a subscription carries a number of included cases per product category (first use: branded TPS); entry 17 adds the field on the admin site, in the snapshot (mytp-core 0.27.0) and on the portal. The line order becomes included case (base price free, named by the caller) → net price → subscription discount → ICE deduction → voucher → floor at 0 → VAT; the pricing function learns the included line when epic-ordering needs it (9.6). The full rule is in the initiative's Notes (2026-11-15).
 - Decision (user, 2026-10-30): subscription discounts are configurable per subscription and per category; the standard discount applies only to plain TPS; VirtuaOrtho is 0% but its cases count for the parked 5-case program.
 - Decision (user, 2026-10-30): currency clones pre-fill the ECB EUR→USD rate and AED through the 3.6725 peg, editable, rounded to whole units.
 - Decision (2026-10-30): provider fiscal and payment details are field-encrypted on the admin site and never sent to the regions.

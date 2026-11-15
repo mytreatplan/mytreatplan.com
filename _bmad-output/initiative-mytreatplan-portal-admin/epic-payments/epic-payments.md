@@ -52,6 +52,7 @@ Paying and invoicing. Not what is bought (epic-subscriptions, epic-ordering). Th
 ## Notes
 
 - Handoff (2026-10-30, epic-subscriptions inception): the order-creation service accepts a €0 order (a voucher covering the whole price), which skips the gateway, is marked paid and still gets a €0 invoice.
+- Handoff (2026-11-15, included cases): an order line can be an included case of the subscription (epic-subscriptions entry 13): entry 1's paid, cancelled and expired hooks consume or release its use; entries 6 and 10 show it on the invoice at list price with an "included in your subscription" deduction to 0.00; entry 7 gives the case back on a refund only while the term runs. VAT treatment to be confirmed by the tax advisor.
 - Tracer bullet: entry 1 (a test order through checkout and a fake gateway on dev).
 - Lanes: one lane (1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 → 9), with 10 after 7 and 11 after 4.
 - Decision (user, 2026-10-30): the user requests the Revolut Merchant sandbox and Santander's Redsys test credentials; building starts against Redsys's public test terminal.

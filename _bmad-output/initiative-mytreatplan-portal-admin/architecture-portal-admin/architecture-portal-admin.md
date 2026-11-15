@@ -91,6 +91,7 @@ flowchart TB
 | Records, STL files, photos, ticket attachments | Regional object storage | No | Original file name; objects encrypted at rest |
 | Orders, invoices, credit notes, payments | Region | Accounting copy with patient codes | Buyer fiscal data |
 | Voucher redemptions, current subscription | Region | Events | — |
+| Included-case uses (granted number, uses per order line) | Region | Events (used and remaining) | — |
 | Support tickets | Region | No | Text |
 | Contact messages | Region | Yes | Names, contact data |
 | Catalogue, subscriptions, billing rules, vouchers, country map | Admin | — (instances hold a signed snapshot) | — |
@@ -215,6 +216,7 @@ The admin site keeps no patient data anywhere (AD-23). **[ADOPTED]**
 - **Binds:** P4, P6, P8, P12
 - **Prevents:** a voucher used twice across pending orders or regions; two epics redeeming at different moments.
 - **Rule:** A voucher is defined centrally and belongs to one region. Its redemption is a regional entity, unique per voucher and doctor: reserved when the order is created, consumed when it is paid, released when it is cancelled or expires. Redemptions reach the admin site as `voucher.redeemed` and `voucher.released` events. **[ADOPTED]**
+- **Included cases (2026-11-15):** a subscription's included cases follow the same pattern: the number comes from the catalogue snapshot and is frozen on the doctor's subscription record for the term; a use is a regional entity, unique per order line, reserved when the order is created, consumed when it is paid, released when it is cancelled or expires. The pricing function stays read-only: the caller names the included line.
 
 ### AD-21 — Case stages, assignment and calendar
 

@@ -1,4 +1,4 @@
-# Stories of epic-subscriptions, in build order. Requirements S1–S9 are in epic-subscriptions.md.
+# Stories of epic-subscriptions, in build order. Requirements S1–S10 are in epic-subscriptions.md.
 
 [[entry]]
 id = 1
@@ -62,7 +62,7 @@ title = "Annual renewals"
 description = "Renews annual subscriptions: a reminder email 30 days before; the doctor can turn auto-renew off; on the end date a task creates the renewal order and charges the saved card (idempotent per subscription and period); when charging is not possible or fails, the doctor gets a payment link; a renewal still unpaid on the end date drops the doctor to Basic that day."
 verify = "A test annual subscription on dev gets the 30-day reminder, renews on its date in the sandbox, and a rerun does not charge twice; with auto-renew off nothing is charged; a declined card sends the link, and unpaid at the end date the doctor is Basic."
 covers = ["S7"]
-after = [5]
+after = [13]
 hitl = true
 risk = "high"
 
@@ -128,6 +128,17 @@ title = "Refactor sweep"
 description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
 verify = "The portal's, the admin repo's and mytp-core's test suites pass; deferred review findings are closed or recorded."
 covers = []
-after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+after = [1, 2, 3, 4, 5, 13, 6, 7, 8, 9, 10, 11]
 hitl = false
 risk = "low"
+
+[[entry]]
+id = 13
+type = "story"
+title = "Included-case allowance"
+description = "Gives a paid subscription its included cases (5.17): the number granted is frozen on the subscription record at purchase, renewal and upgrade; a regional use row per order line is reserved, consumed and released like a voucher redemption (AD-20), under a lock; one service function returns what is left in the term (upfront: all at the start; monthly: number × months paid ÷ 12) and the doctor's home shows it. Applying it to an order line is epic-ordering (9.6)."
+verify = "On dev a doctor on a subscription with included cases sees the remaining count on the home page; reserving, consuming and releasing a use through the service changes the count as documented; a monthly payer's count follows the months paid; a catalogue edit does not change a running term."
+covers = ["S10"]
+after = [5, "5.17"]
+hitl = false
+risk = "high"

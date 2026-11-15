@@ -1,4 +1,4 @@
-# Stories of epic-catalogue, in build order. Requirements C1–C12 are in epic-catalogue.md.
+# Stories of epic-catalogue, in build order. Requirements C1–C13 are in epic-catalogue.md.
 
 [[entry]]
 id = 1
@@ -175,3 +175,14 @@ covers = []
 after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 16, 12, 13, 14]
 hitl = false
 risk = "low"
+
+[[entry]]
+id = 17
+type = "story"
+title = "Included cases on subscriptions"
+description = "Adds to each subscription a number of included cases per product category and 12-month term (first use: branded TPS; blank means none), edited and validated on the admin site like the discount map, carried in the snapshot (mytp-core 0.27.0, optional field) and stored read-only on the portal with a resolver helper; the staging seed gets example numbers. Counting and applying the allowance is epic-subscriptions entry 13 and epic-ordering."
+verify = "An included-cases number set on a subscription on admindev appears on dev's copy after the pull and is read by the resolver helper; a subscription without it reads as none; the previous snapshot format still applies."
+covers = ["C13"]
+after = [12]
+hitl = false
+risk = "medium"
