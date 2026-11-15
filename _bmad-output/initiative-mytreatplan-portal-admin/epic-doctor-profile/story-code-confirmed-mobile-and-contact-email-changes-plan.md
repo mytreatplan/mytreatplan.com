@@ -3,7 +3,7 @@ title: 'Code-confirmed mobile and contact email changes'
 type: 'feature'
 ticket: '3'
 created: '2026-11-15'
-status: 'built'
+status: 'done'
 baseline_revision: 'e0460f6'
 route: 'full'
 route_source: 'auto'
@@ -146,3 +146,15 @@ Quick lens with a security focus (Opus reviewer, 2026-11-15). Focus areas 1-8 (c
 | 6 | low | No test for a failing notice; a stale staff admin save could restore the old mobile and `devices_valid_after` | patched: failure test; admin change saves only the changed fields; tests |
 
 Suite after the patches (mine): 3299 passed, 12 skipped, 0 failed; `makemigrations --check` clean. PostgreSQL paths (migration stop, row lock, IntegrityError) are first run by CI.
+
+## Staging
+
+Merged as PR #105 (merge a0288b5, 2026-11-15). Before the merge: no shared non-blank `phone_index` on dev or dev-ae. Master run 43735064691: `test` (PostgreSQL 17) and both deploys green.
+
+1. dev and dev-ae: `accounts` 0016 and 0017 applied, `/healthz` 200. Confirmed.
+2. dev, server shell with the fake provider on the test doctor (1c410768), inside a transaction rolled back at the end: right password + code store the new mobile, one `client.updated` in the outbox, a mark issued before is no longer valid, the session still opens `/en/settings/`. Confirmed.
+3. Same run, contact email: stored after the code, one event. Confirmed. The admindev record after the sync was not checked (the run was rolled back, so nothing was sent); covered by the 6.2 sync path and tests.
+4. A mobile of another account is refused on the start form with the in-use text. Confirmed. The Spanish change page answers in Spanish.
+5. Visual check (EN + ES, desktop + phone) and an optional real change: left to the user.
+
+After the rollback the test doctor is unchanged (password, `devices_valid_after` empty). The send-limit counters of that run may stay in the cache for an hour.
