@@ -1,9 +1,10 @@
 {% extends "doctor_base.html" %}
-{% load i18n static doctor_area %}
+{% load i18n static doctor_area upgrade_reminder %}
 {% comment %}
 The doctor area's home (accounts.views.home, Annex I mockup): the greeting, the two large
 tiles (VirtuaORTHO, planning services), the green bar to start a case, the profile card
-and the three small tiles. Every link leads to an area's address ("coming soon" until its
+(with the upgrade reminder's line for a doctor who can upgrade: epic-subscriptions entry
+3) and the three small tiles. Every link leads to an area's address ("coming soon" until its
 epic builds it). Below the tablet breakpoint everything stacks in one column.
 {% endcomment %}
 
@@ -43,6 +44,7 @@ epic builds it). Below the tablet breakpoint everything stacks in one column.
     <span class="min-w-0">
       <strong class="block break-words text-[clamp(15px,1.5vw,18px)] font-bold" data-profile-name>{{ profile_name }}</strong>
       {% if profile_line %}<span class="block text-[clamp(14px,1.4vw,17px)]" data-profile-line>{{ profile_line }}</span>{% endif %}
+      {% upgrade_reminder as reminder %}{% if reminder %}<span class="mt-1 block text-[clamp(14px,1.4vw,17px)]" data-upgrade-line="{{ reminder.tier }}">{% blocktranslate with level=reminder.name %}Level: {{ level }}{% endblocktranslate %} · <a href="{{ reminder.url }}" class="font-bold underline underline-offset-4 hover:text-violet">{% translate "See upgrade options" %}</a></span>{% endif %}
     </span>
   </section>
   <ul class="grid grid-cols-1 gap-[clamp(12px,1.4vw,16px)] tablet:grid-cols-3" data-small-tiles>

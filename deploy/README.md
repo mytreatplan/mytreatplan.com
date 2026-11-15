@@ -3404,6 +3404,21 @@ assign it to that doctor (above): the screen shows "Ormco Premium" as the curren
 no buttons and "Continue", and `/en/upgrade/advanced/` redirects to `/en/upgrade/`. Keep
 that doctor as the manual fixture for entries 3 and 10.
 
+**The upgrade reminder** (entry 3; the rule in `subscriptions.service.reminder`, built on
+`upgrade_options`; the `upgrade_reminder` template tag): a doctor who can upgrade on their
+own (Basic or Advanced, in a group that sells a higher level) sees their level and a link
+to `/<lang>/upgrade/` in the doctor header ("Basic · Upgrade", between the icons and the
+avatar, also in the phone menu) on every doctor page except `/upgrade/` and
+`/upgrade/<level>/`, and on the home's profile card ("Level: Basic · See upgrade
+options"). The level is named as on the upgrade screen (the row's name in the page
+language, else Basic/Advanced/Premium translated). Premium, a manual subscription that
+counts, staff and superusers, an Advanced doctor whose group sells no Premium, and a
+doctor with nothing on offer (no country group, no sellable paid level) see nothing, not
+even their level. The rule runs once per request; a fault of the service is a Sentry
+error (`subscriptions.templatetags.upgrade_reminder`) and the page shows no reminder. A
+held row missing from the snapshot or changed under the same id is not logged by the
+reminder (it would repeat on every page): the upgrade screen, offers and pricing log it.
+
 ### Country map
 
 Which region serves each country, or whether it is banned (epic-regions entry 1, AD-3,

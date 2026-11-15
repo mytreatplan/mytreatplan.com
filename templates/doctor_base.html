@@ -1,9 +1,10 @@
 {% extends "portal_base.html" %}
-{% load i18n static doctor_area %}
+{% load i18n static doctor_area upgrade_reminder %}
 {% comment %}
 Layout of the signed-in doctor area (epic-doctor-profile entry 1, Annex I mockup): the
 gradient header with the isotype, the area's links (home, patients, support), the
-messages, settings and cart icons, the avatar with the doctor's initials, the logout
+messages, settings and cart icons, the upgrade reminder (epic-subscriptions entry 3:
+"{Level} · Upgrade", for a doctor who can upgrade, not on the upgrade pages), the avatar with the doctor's initials, the logout
 button (a POST form) and the language switcher; then a white rounded panel over the
 header holding the page, the handshake band, and the shared footer.
 
@@ -41,6 +42,10 @@ portal_base); `doctor_band` may drop the handshake band. Not indexed (portal_bas
         <li class="{{ item }}"><a href="{% url 'cart' %}" class="{{ icon }}" aria-label="{% translate 'Cart' %}"{% if here == 'cart' %} aria-current="page"{% endif %}>{% include "includes/_icon.html" with name="cart" class="size-[clamp(24px,2.6vw,34px)]" %}<span class="{{ label }}" aria-hidden="true">{% translate "Cart" %}</span></a></li>
       </ul>
       {% endwith %}
+      {# The upgrade reminder (epic-subscriptions entry 3): the level and a link to the upgrade screen, only for a doctor who can upgrade, never on the upgrade pages. #}
+      {% if here != 'upgrade' and here != 'upgrade_purchase' %}{% upgrade_reminder as reminder %}{% if reminder %}
+      <a href="{{ reminder.url }}" class="inline-flex items-center rounded-pill border-2 border-white px-[clamp(10px,1.2vw,16px)] py-1 text-[clamp(13px,1.4vw,15px)] font-bold whitespace-nowrap text-ink hover:bg-white max-tablet:[.js_&]:text-[20px] max-tablet:[.js_&]:text-white max-tablet:[.js_&]:hover:text-ink" data-upgrade-reminder="{{ reminder.tier }}">{% blocktranslate with level=reminder.name %}{{ level }} · Upgrade{% endblocktranslate %}</a>
+      {% endif %}{% endif %}
       {# The avatar: the doctor's initials until entry 4 brings the photo. #}
       <span role="img" aria-label="{{ user|display_name }}" title="{{ user|display_name }}"
             class="flex h-[clamp(56px,6.6vw,96px)] w-[clamp(44px,5.2vw,74px)] items-center justify-center rounded-[50%] bg-violet text-[clamp(17px,1.9vw,26px)] font-black tracking-[-0.02em] text-white"
