@@ -53,6 +53,13 @@ it is the only writer of `subscriptions.models` (with the backfill migration 000
   while the doctor may switch on their own (never on a manual subscription that counts).
   Nothing is on offer (`on_offer` False: the screen is skipped) for a staff account, a
   doctor without a country group, or a group that sells neither Advanced nor Premium.
+- `reminder(user, day=None)` (epic-subscriptions entry 3, user decisions 2026-11-15): the
+  upgrade reminder of the doctor header and home (`Reminder`: the current tier and its
+  catalogue row), or None. Built on `upgrade_options` (one rule for the screen and the
+  reminder): only while something is on offer, the doctor may switch on their own and
+  some listed level is one they can upgrade to. A Premium, manual or staff account, or a
+  group with nothing higher to sell, gets None. It does not log a drifted held row
+  (`log_drift=False` down to `effective`): the other callers do.
 
 Actors (AD-22): `doctor_actor(user)` (the user's uid), `admin_actor(uuid)` (an admin
 user of the admin site), `SYSTEM_ACTOR` (no UUID).
@@ -75,10 +82,10 @@ from .models import (ADMIN, DOCTOR, SYSTEM, DoctorSubscription, SubscriptionChan
 logger = logging.getLogger(__name__)
 
 __all__ = ['Actor', 'ChangeRefused', 'Effective', 'Level', 'ManualLocked', 'RecordGone',
-           'StaleVersion', 'SYSTEM_ACTOR', 'TIERS', 'UpgradeOptions', 'admin_actor',
-           'assign_manual', 'change', 'doctor_actor', 'doctors_without_a_record',
-           'effective', 'ensure_basic', 'offers_for', 'price_order_for', 'record_of',
-           'upgrade_options']
+           'Reminder', 'StaleVersion', 'SYSTEM_ACTOR', 'TIERS', 'UpgradeOptions',
+           'admin_actor', 'assign_manual', 'change', 'doctor_actor',
+           'doctors_without_a_record', 'effective', 'ensure_basic', 'offers_for',
+           'price_order_for', 'record_of', 'reminder', 'upgrade_options']
 
 BASIC = DoctorSubscription.BASIC
 # The levels in order, lowest first (the catalogue's tiers).
@@ -182,9 +189,12 @@ def _counts(record, day):
     return True  # active, past due
 
 
-def effective(user, day=None):
+def effective(user, day=None, *, log_drift=True):
     """The doctor's `Effective` on `day` (a date in Madrid time; today when None): see
-    the module docstring. Reads only."""
+    the module docstring. A held row missing from the catalogue or changed under the same
+    id is logged as an error unless `log_drift` is False (the reminder, which runs on
+    every doctor page, leaves the logging to the screen, offers and pricing). Reads
+    only."""
     day = day or resolver.today()
     record = record_of(user)
     counts = _counts(record, day)
@@ -194,16 +204,18 @@ def effective(user, day=None):
     if counts and record.subscription_id is not None:
         held_row = resolver.subscription_by_id(record.subscription_id)
         if held_row is None:
-            logger.error('subscription record %s: its subscription %s is not in the '
-                         'catalogue; priced with the Basic of its country group',
-                         record.pk, record.subscription_id)
+            if log_drift:
+                logger.error('subscription record %s: its subscription %s is not in the '
+                             'catalogue; priced with the Basic of its country group',
+                             record.pk, record.subscription_id)
         elif held_row.tier != record.tier or held_row.manual != record.manual:
             # Edited on the admin site under the same id: never priced as the new row.
-            logger.error('subscription record %s: its subscription %s is now %s %s, the '
-                         'record %s %s; priced with the Basic of its country group',
-                         record.pk, record.subscription_id,
-                         'manual' if held_row.manual else 'standard', held_row.tier,
-                         'manual' if record.manual else 'standard', record.tier)
+            if log_drift:
+                logger.error('subscription record %s: its subscription %s is now %s %s, '
+                             'the record %s %s; priced with the Basic of its country '
+                             'group', record.pk, record.subscription_id,
+                             'manual' if held_row.manual else 'standard', held_row.tier,
+                             'manual' if record.manual else 'standard', record.tier)
             held_row = None
     subscription = held_row or resolver.subscription(_country(user), BASIC)
     return Effective(tier=tier, subscription=subscription, held=held_row is not None,
@@ -294,17 +306,18 @@ _NOTHING = UpgradeOptions(tier=BASIC, subscription=None, manual=False, can_switc
                           levels=(), on_offer=False)
 
 
-def upgrade_options(user, day=None):
+def upgrade_options(user, day=None, *, log_drift=True):
     """The doctor's `UpgradeOptions` on `day` (today when None): see the module
     docstring. Nothing on offer for a user who is not a client (staff, a superuser).
-    Reads only; no arithmetic (AD-16): the prices are the row's own."""
+    `log_drift` is passed to `effective` (False from `reminder` only). Reads only; no
+    arithmetic (AD-16): the prices are the row's own."""
     if not is_client(user):
         return _NOTHING
     day = day or resolver.today()
     country = _country(user)
     if resolver.country_group(country) is None:
         return _NOTHING
-    held = effective(user, day)
+    held = effective(user, day, log_drift=log_drift)
     manual = held.manual and not held.can_self_switch
     rank = TIERS.index(held.tier)
     levels = []
@@ -334,6 +347,26 @@ def upgrade_options(user, day=None):
     return UpgradeOptions(tier=held.tier, subscription=current, manual=manual,
                           can_switch=held.can_self_switch, levels=tuple(levels),
                           on_offer=True)
+
+
+@dataclass(frozen=True)
+class Reminder:
+    """The upgrade reminder: the doctor's current `tier` and its catalogue row
+    (`subscription`, named as on the upgrade screen; None when the group lists no row of
+    the tier)."""
+    tier: str
+    subscription: object
+
+
+def reminder(user, day=None):
+    """The doctor's `Reminder` on `day` (today when None), or None: see the module
+    docstring. Quiet about a drifted held row (`log_drift=False`): it runs on every
+    doctor page, and the upgrade screen, offers and pricing already log it. Reads only."""
+    options = upgrade_options(user, day, log_drift=False)
+    if not (options.on_offer and options.can_switch
+            and any(level.can_upgrade for level in options.levels)):
+        return None
+    return Reminder(tier=options.tier, subscription=options.subscription)
 
 
 # --- Writes -------------------------------------------------------------------------------

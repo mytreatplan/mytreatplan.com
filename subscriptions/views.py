@@ -13,27 +13,16 @@
   `upgrade`.
 
 Everything about the subscription comes from `subscriptions.service.upgrade_options`;
-the prices are the catalogue's (AD-16), shown with the `money` filter.
+the prices are the catalogue's (AD-16), shown with the `money` filter. A level is named
+as `subscriptions.levels.level_name` names it (the upgrade reminder shares it).
 """
 from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.utils.translation import get_language
-from django.utils.translation import pgettext_lazy
 
 from . import service
-
-# A level's name when its catalogue row has none in any language.
-TIER_NAMES = {
-    'basic': pgettext_lazy('subscription level', 'Basic'),
-    'advanced': pgettext_lazy('subscription level', 'Advanced'),
-    'premium': pgettext_lazy('subscription level', 'Premium'),
-}
-
-
-def _name(row, tier, language):
-    """The row's public name in `language`, else the translated tier name."""
-    return (row.name_in(language) if row is not None else '') or TIER_NAMES[tier]
+from .levels import level_name as _name
 
 
 def _level(level, language):
