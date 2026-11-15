@@ -214,7 +214,13 @@ class Subscription(SnapshotFedModel):
 
     `call_extras`: `{category: {"extra_calls": 1, "minutes": 35}}` (`minutes` optional):
     what it adds to the calls of a product of that category
-    (`catalogue.resolver.calls`)."""
+    (`catalogue.resolver.calls`).
+
+    `included_cases` (story 5.17, mytp-core 0.27.0): `{category: 12}`, how many cases of
+    that category the subscription includes free over its 12-month term; None when the
+    admin site sent no map (none, or an admin site before 0.27.0). Read it with
+    `catalogue.resolver.included_cases` (0 for none). Only the number: counting and
+    spending the cases is epic-subscriptions 8.13."""
 
     TIERS = ('basic', 'advanced', 'premium')
 
@@ -237,6 +243,9 @@ class Subscription(SnapshotFedModel):
     upfront_amount = models.DecimalField(max_digits=17, decimal_places=2, null=True)
     call_extras = models.JSONField(default=dict,
                                    db_default=models.Value({}, models.JSONField()))
+    # Story 5.17: nullable, as above (the previous release still applies a snapshot
+    # during a deploy).
+    included_cases = models.JSONField(null=True)
     active = models.BooleanField()
 
     class Meta:

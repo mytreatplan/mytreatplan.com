@@ -1,7 +1,8 @@
 """Subscriptions in full on the portal (epic-catalogue entry 8, mytp-core 0.22.0): the
 standard and the manual subscriptions stored by the snapshot apply (catalogue.applier)
 with their code, texts, linked products, discounts per product category, own price and
-call extras, and the resolver: only the products of a subscription are offered, at its
+call extras (and, since story 5.17 and mytp-core 0.27.0, the included cases), and the
+resolver: only the products of a subscription are offered, at its
 discount for the product's category; a manual one is read by its id; the calls of a
 product under a subscription; with `price_catalogue`. One test (or more) per row of the
 plan's matrix. The admin site is the fake of integration/tests/snapshot_rows.py (no
@@ -469,3 +470,97 @@ def test_price_catalogue_says_when_a_subscription_offers_nothing(admin):
         'year\n')
     assert run('--country', 'ES', '--tier', 'basic') == (
         'no offers for ES basic (Iberia)\n  subscription: BAS-IB  Basic  free\n')
+
+
+# --- Included cases (story 5.17, mytp-core 0.27.0) -----------------------------------------
+
+def with_cases():
+    """STANDARD and MANUAL with the owner's numbers: 12 on Advanced, 25 on Premium (both
+    TPS branded), 25 on the manual Ormco Premium; Basic and Rest of EU's Advanced with
+    none."""
+    standard, manual = copy.deepcopy(STANDARD), copy.deepcopy(MANUAL)
+    standard[1]['included_cases'] = {'tps_branded': 12}
+    standard[3]['included_cases'] = {'tps_branded': 25, 'odb': 3}
+    manual[0]['included_cases'] = {'tps_branded': 25}
+    return full(subscriptions=standard, manual=manual)
+
+
+@pytest.mark.django_db
+def test_the_included_cases_are_stored_and_resolved(admin):
+    assert pull(admin, 1, with_cases()) == ('applied', 1)
+    advanced, premium, basic = (resolver.subscription('ES', tier)
+                                for tier in ('advanced', 'premium', 'basic'))
+    assert advanced.included_cases == {'tps_branded': 12}
+    assert premium.included_cases == {'tps_branded': 25, 'odb': 3}
+    assert resolver.included_cases(advanced, 'tps_branded') == 12
+    assert resolver.included_cases(premium, 'tps_branded') == 25
+    assert resolver.included_cases(premium, 'odb') == 3
+    # A manual one carries its own.
+    ormco = resolver.subscription_by_id(ORMCO)
+    assert resolver.included_cases(ormco, 'tps_branded') == 25
+    # Prices are untouched by the numbers.
+    assert dict(priced('ES', 'advanced'))['TPS branded'] == Money('94.00', 'EUR')
+    # A subscription without the field: none; a category not in the map: 0.
+    assert basic.included_cases is None
+    assert resolver.included_cases(basic, 'tps_branded') == 0
+    assert resolver.included_cases(advanced, 'odb') == 0
+    assert resolver.included_cases(advanced, 'uncategorised') == 0
+    # The next snapshot without the number clears it.
+    assert pull(admin, 2, full()) == ('applied', 2)
+    advanced = resolver.subscription('ES', 'advanced')
+    assert advanced.included_cases is None
+    assert resolver.included_cases(advanced, 'tps_branded') == 0
+
+
+@pytest.mark.django_db
+def test_an_old_snapshot_applies_unchanged_with_no_included_cases(admin):
+    """A snapshot of an admin site before mytp-core 0.27.0 validates and applies on
+    0.27.0 as before (its signature is checked by the pull) and stores no number."""
+    old = full()
+    assert all('included_cases' not in entry
+               for entry in old['subscriptions'] + old['manual_subscriptions'])
+    assert pull(admin, 1, old) == ('applied', 1)
+    assert Subscription.objects.count() == 5
+    assert set(Subscription.objects.values_list('included_cases', flat=True)) == {None}
+    for subscription_ in Subscription.objects.all():
+        assert resolver.included_cases(subscription_, 'tps_branded') == 0
+
+
+@pytest.mark.django_db
+def test_the_legacy_tps_category_reads_as_tps_branded(admin):
+    pull(admin, 1, with_cases())
+    advanced = resolver.subscription('ES', 'advanced')
+    assert resolver.included_cases(advanced, 'tps') == 12
+    # A map keyed `tps` (the code of an admin site before mytp-core 0.20.0).
+    advanced.included_cases = {'tps': 7}
+    assert resolver.included_cases(advanced, 'tps_branded') == 7
+    assert resolver.included_cases(advanced, 'tps') == 7
+
+
+@pytest.mark.django_db
+def test_the_first_pull_of_this_release_fills_the_included_cases(admin, settings):
+    """The previous release applied version 5 without the column (as a snapshot without
+    the field here); the first pull of this release applies the same version again."""
+    settings.SENTRY_RELEASE = '6b27169cc0f014905d7dbfe73335ef7aa2123d26'
+    assert pull(admin, 5, full()) == ('applied', 5)
+    assert resolver.subscription('ES', 'advanced').included_cases is None
+    settings.SENTRY_RELEASE = 'c0ffee69cc0f014905d7dbfe73335ef7aa2123d2'
+    assert pull(admin, 5, with_cases()) == ('applied', 5)
+    assert resolver.included_cases(resolver.subscription('ES', 'advanced'),
+                                   'tps_branded') == 12
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('cases', [{'tps_branded': 0}, {'tps_branded': 1001},
+                                   {'tps_branded': '12'}],
+                         ids=['zero', 'above-1000', 'a-string'])
+def test_a_section_with_bad_included_cases_is_refused_and_the_applied_one_kept(
+        admin, cases):
+    pull(admin, 1, with_cases())
+    section = with_cases()
+    section['subscriptions'][1]['included_cases'] = cases
+    with pytest.raises(CommandError):
+        run(admin, 2, section)
+    assert state().version == 1
+    assert resolver.included_cases(resolver.subscription('ES', 'advanced'),
+                                   'tps_branded') == 12
