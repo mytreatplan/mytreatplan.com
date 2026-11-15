@@ -3,7 +3,7 @@ title: 'Doctor area layout and home'
 type: 'feature'
 ticket: '1'
 created: '2026-11-14'
-status: 'built'
+status: 'done'
 baseline_revision: '0886c03e5b1381c298ce3ed769f506bbfdeefa1f'
 route: 'full'
 route_source: 'auto'
@@ -133,3 +133,16 @@ Outside the review: three tests in `subscriptions/tests/test_service.py` (8.1) b
 - the portal's full suite command (SQLite, `../.venv`, sandbox off) -- expected: 0 failed
 - `npm run build:css` -- expected: builds; the new templates' classes are present
 - `manage.py makemigrations --check --dry-run` -- expected: no changes
+
+## Staging
+
+- Merged 2026-11-15: portal PR #102 (merge 7a468d3). No migration, no mytp-core release.
+- CI: both PR checks `test` `pass`; master run 43672640698 (test, deploy dev, deploy dev-ae) all `success`.
+- Local suite before the merge: 3138 passed, 12 skipped and 3 failed (the three date-dependent subscription tests named in the triage log), fixed in the same PR; the full suite was not repeated locally after that fix, CI ran it.
+- Checks (2026-11-15, read-only on the servers: the views rendered for the site's first doctor account without signing in, nothing written):
+  1. `/healthz` answers on dev (eu) and dev-ae (ae).
+  2. Home: 200 on dev in EN and ES and on dev-ae in EN, with the doctor's first name in the greeting, their full name and country in the profile card, the avatar's initials equal to the first letters of their names, and no asset from another host (the only absolute addresses are the page's own link tags and the footer's links).
+  3. The nine area addresses answer 200 with the doctor layout in every language of each site; an anonymous visitor to `/en/home/` or `/en/patients/` is sent to login with `next`.
+  4. Welcome renders with the doctor header on both sites; the upgrade screen does on dev (EN, ES); on dev-ae it redirects for that doctor, as before this entry.
+  5. NOT DONE: the comparison with the mockup by eye on dev (EN, ES, desktop and phone) is the user's.
+- Told to the user: the Spanish home uses the mockup's informal wording; the nav keeps "home" in Spanish; the green bar is one weight; the language switcher wraps under the logout button on desktop; the "Client portal" link and a signed-in visit to signup now lead to the home.
