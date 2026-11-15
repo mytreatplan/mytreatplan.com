@@ -14,7 +14,7 @@ from legal.rendering import render_markdown
 pytestmark = pytest.mark.django_db
 
 User = get_user_model()
-KINDS = ['terms', 'conditions', 'ormco_tps', 'commercial_consent']
+KINDS = ['terms', 'conditions', 'ormco_tps', 'commercial_consent', 'whatsapp_contact']
 
 
 def _publish(kind='terms', published_at=None, **fields):

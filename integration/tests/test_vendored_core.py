@@ -6,7 +6,8 @@ epic-catalogue entry 3; remote writes, entry 6; hub lookups, entry 7; the snapsh
 provider costs section, epic-catalogue entry 4; the products' texts, code and validity and
 the in-house TPS discount, epic-catalogue entry 5; add-ons, sizes, per-unit quantities,
 calls and cost links, entry 6; subscriptions in full, entry 8; billing companies and
-billing rules, entry 9; voucher definitions, entry 10)."""
+billing rules, entry 9; voucher definitions, entry 10; the catalogue per region, entry
+16; the client's personal-data fields, epic-doctor-profile entry 2)."""
 
 from decimal import Decimal
 
@@ -17,7 +18,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.25.0'
+    assert mytp_core.__version__ == '0.26.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -165,3 +166,13 @@ def test_vendored_mytp_core_has_the_catalogue_per_region():
                                                'subscriptions': [], 'billing_rules': []})
     assert not section.billing_offered('a', 'tps_branded')
     assert callable(snapshot_for_region)
+
+
+def test_vendored_mytp_core_has_the_client_personal_data_fields():
+    """Epic-doctor-profile entry 2 (0.26.0): the optional personal-data fields of
+    `client.updated`, empty by default."""
+    from mytp_core.contracts import ClientUpdated
+    for name in ('city', 'time_zone', 'profession', 'landline', 'alternative_email',
+                 'language'):
+        assert ClientUpdated.model_fields[name].is_required() is False
+        assert ClientUpdated.model_fields[name].default == ''

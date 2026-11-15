@@ -2740,6 +2740,7 @@ and its `sync_version` (bumped under the row's lock) as the version:
 |-------|-------|
 | Signup completed | `client.updated` (title, names, email, mobile, country, home region, active, joined, how found; never the "Others" text) |
 | A change in the Django admin (add or change) | `client.updated`; for a staff account nothing, or `client.erased` once it was a client (staff are not clients) |
+| A save of the personal-data page (`/<lang>/settings/`, epic-doctor-profile entry 2) that changes a title, a name or a profile field | `client.updated`, which also carries the profile (mytp-core 0.26.0: city, time zone, profession, landline, alternative email, preferred language; blank without a profile); a consent-only save, or a staff account's, sends nothing. The consents never travel |
 | Erase account (Django admin action) | `client.erased` (its `client.updated` rows still pending are deleted first): admindev deletes its copy; nothing for an account never sent |
 | Password, sign-in, sessions, re-encryption | nothing |
 | The purge of erased accounts | nothing sent; every outbox row of the purged accounts is deleted |
@@ -2772,6 +2773,35 @@ values) and skipped; the others are sent and the command exits non-zero at the e
 
 On admindev the copies are counted per region (its README, "Client records"); a row read
 straight from its database shows ciphertext in the names, email and mobile.
+
+**Personal data (epic-doctor-profile entry 2, mytp-core 0.26.0).** The doctor's settings
+area: `/<lang>/settings/` (URL name `settings`) is the personal-data page; maker data,
+change password, fiscal data and shipping addresses (`/<lang>/settings/maker/`,
+`password/`, `fiscal/`, `shipping/`) show "coming soon" inside the area. The page edits
+language (hidden on a one-language site), city, time zone (stored only: pages keep the
+site's zone), title, profession, names, landline, alternative email and the optional
+WhatsApp contact and commercial consents; country, mobile and login email are read-only
+and refused by the server. Everything goes through `accounts.profile.update_personal_data`
+(table `accounts_profile`, one row per doctor, city, landline and alternative email
+encrypted; `reencrypt_fields` covers it). Each consent tick or untick is a new
+`legal_legalchoice` row on the current document (append-only, the latest wins). The
+WhatsApp contact consent is a legal document kind of its own (`whatsapp_contact`, legal
+0008 publishes a provisional version 1 for the site's region; never on the signup legal
+step): its final text is published in the admin as any other (see "Legal texts"). Erasing
+a doctor deletes the profile and withdraws both consents, and deletes the account's
+pending `client.updated` rows; rows already delivered keep their encrypted payload (now
+with the landline and alternative email too, as they already held the email and mobile)
+until the outbox retention purge deletes them.
+
+Release order: mytp-core v0.26.0 tagged, the wheel vendored in both sites, admindev
+deployed (it stores the six fields; an event without them leaves them blank), then this
+portal. A portal deployed first would send the new fields to an admindev that drops them
+until its own deploy (nothing is refused). Rolling this portal back to a release before
+this one makes its events omit the six fields, which blanks them on the admin record:
+after rolling forward again, re-sync the clients (`sync_clients --all` here, or
+admindev's `resync_client`). After both deploys, check one doctor end to end:
+save the page on dev, then read the record on admindev from the shell (its README, "Client
+records": the personal-data fields of one record).
 
 #### Contact messages
 

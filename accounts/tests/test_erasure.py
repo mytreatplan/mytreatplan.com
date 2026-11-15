@@ -32,6 +32,7 @@ LAST_NAME = 'Garcia-Lorente'
 PHONE = '+34622918374'
 CHANGELIST = '/admin/accounts/user/'
 CONSENT = LegalDocument.Kind.COMMERCIAL_CONSENT
+WHATSAPP = LegalDocument.Kind.WHATSAPP_CONTACT
 
 
 @pytest.fixture(autouse=True)
@@ -120,8 +121,10 @@ def test_erase_through_the_admin(staff_client, staff):
     assert user.email_index == f'erased:{user.pk}'
     assert user.erased_email_index == email_index(EMAIL)
     assert user.phone_index == ''
-    # The choices kept, and the commercial consent withdrawn on the current version.
-    choices = list(user.legal_choices.order_by('decided_at', 'id'))
+    # The choices kept, and the commercial consent withdrawn on the current version (the
+    # WhatsApp contact consent too: test_erasure_withdraws_whatsapp_and_clears_the_profile).
+    choices = list(user.legal_choices.exclude(document__kind=WHATSAPP)
+                   .order_by('decided_at', 'id'))
     assert choices[:2] == [terms, consent]
     withdrawal = choices[2]
     assert (withdrawal.document, withdrawal.accepted, withdrawal.decided_at) == (
@@ -289,7 +292,7 @@ def test_already_erased_is_skipped(staff_client, staff):
 # --- Commercial consent withdrawal ---------------------------------------------------------------
 
 def test_no_consent_version_adds_no_withdrawal(staff):
-    LegalDocument.objects.filter(kind=CONSENT).update(published_at=None)
+    LegalDocument.objects.filter(kind__in=(CONSENT, WHATSAPP)).update(published_at=None)
     user = _user()
 
     erase_user(user, by=staff)
@@ -304,8 +307,45 @@ def test_already_declined_consent_adds_no_withdrawal(staff):
 
     erase_user(user, by=staff)
 
-    assert list(user.legal_choices.order_by('decided_at'))[-1] == declined
-    assert user.legal_choices.count() == 2
+    consents = user.legal_choices.filter(document__kind=CONSENT)
+    assert list(consents.order_by('decided_at'))[-1] == declined
+    assert consents.count() == 2
+
+
+def test_erasure_withdraws_whatsapp_and_clears_the_profile(staff):
+    """Epic-doctor-profile entry 2: the personal-data page's profile goes, and the
+    WhatsApp contact consent is withdrawn as the commercial one is."""
+    from accounts.models import Profile
+
+    user = _user()
+    Profile.objects.create(user=user, city='Madrid', landline='+34910000000',
+                           alternative_email='clinic@example.com', time_zone='Europe/Madrid',
+                           profession='orthodontist', language='es')
+    given = _choose(user, WHATSAPP, True)
+    # A pending client.updated that carries the profile (landline, alternative email).
+    from django.db import transaction
+
+    from accounts import client_sync
+    from integration.models import OutboxEvent
+    with transaction.atomic():
+        client_sync.emit(user)
+    pending = OutboxEvent.objects.get(aggregate_id=user.uid)
+    assert pending.payload['landline'] == '+34910000000'
+
+    erase_user(user, by=staff)
+
+    assert not Profile.objects.filter(user=user).exists()
+    # Its pending client.updated rows are gone; only the tombstone is left to send.
+    assert list(OutboxEvent.objects.filter(aggregate_id=user.uid)
+                .values_list('type', flat=True)) == ['client.erased']
+    choices = list(user.legal_choices.filter(document__kind=WHATSAPP)
+                   .order_by('decided_at', 'id'))
+    assert choices[0] == given and len(choices) == 2
+    user.refresh_from_db()
+    assert (choices[1].accepted, choices[1].decided_at) == (False, user.erased_at)
+    assert choices[1].document == LegalDocument.objects.current(WHATSAPP)
+    # Already declined: nothing more on a second look (latest wins).
+    assert user.legal_choices.filter(document__kind=CONSENT, accepted=False).count() == 1
 
 
 # --- Re-encrypt ----------------------------------------------------------------------------------

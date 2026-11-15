@@ -22,7 +22,6 @@ AREAS = [
     ('patients', 'patients/', 'Patients', 'Pacientes'),
     ('support', 'support/', 'Support', 'Soporte'),
     ('messages', 'messages/', 'Messages', 'Mensajes'),
-    ('settings', 'settings/', 'Settings', 'Configuración'),
     ('cart', 'cart/', 'Cart', 'Carrito'),
     ('tutorials', 'tutorials/', 'Tutorials', 'Tutoriales'),
     ('virtuaortho', 'virtuaortho/', 'Virtua ORTHO', 'Virtua ORTHO'),

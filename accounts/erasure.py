@@ -3,7 +3,8 @@
 `erase_user` (the admin's "Erase account" action, accounts.admin) deactivates the account
 and keeps only what the evidence needs (email, title, names, country, phone, date joined,
 and the legal choices) until `purge_after`, ACCOUNT_ERASURE_RETENTION_DAYS later; it
-clears the rest. Its `email_index` becomes a tombstone (accounts.models.User), so the same
+clears the rest (the profile of the personal-data page too) and records the commercial
+and WhatsApp contact consents as withdrawn. Its `email_index` becomes a tombstone (accounts.models.User), so the same
 email can register again. `purge_erased` (the daily `purgeerased` job, `manage.py
 purge_erased_accounts`) then deletes each erased account with its legal choices once
 `purge_after` has passed. There is no undo. Before it is deleted, each account leaves one
@@ -32,7 +33,7 @@ from eventlog.service import record_activity
 from integration.models import OutboxEvent
 from legal.models import LegalChoice, LegalDocument
 
-from . import client_sync
+from . import client_sync, profile
 
 logger = logging.getLogger(__name__)
 
@@ -59,18 +60,12 @@ def purge_date(now=None):
     return (now or timezone.now()) + timedelta(days=retention_days())
 
 
-def _withdraw_commercial_consent(user, now):
-    """Record the commercial consent as withdrawn (not accepted, on the current version, at
-    `now`), unless no version is published or the latest choice is already not accepted."""
-    kind = LegalDocument.Kind.COMMERCIAL_CONSENT
-    document = LegalDocument.objects.current(kind, now)
-    if document is None:
-        return
-    latest = (LegalChoice.objects.filter(user=user, document__kind=kind)
-              .order_by('-decided_at', '-id').first())
-    if latest is not None and not latest.accepted:
-        return
-    LegalChoice.objects.create(user=user, document=document, accepted=False, decided_at=now)
+def _withdraw_optional_consents(user, now):
+    """Record the commercial and the WhatsApp contact consents as withdrawn (not
+    accepted, on the current version, at `now`), each unless no version is published or
+    its latest choice is already not accepted (accounts.profile.withdraw_consent)."""
+    for kind in LegalDocument.PROFILE_CONSENT_KINDS:
+        profile.withdraw_consent(user, kind, now)
 
 
 def erase_user(user, *, by, now=None):
@@ -98,7 +93,9 @@ def erase_user(user, *, by, now=None):
         user.save()
         user.groups.clear()
         user.user_permissions.clear()
-        _withdraw_commercial_consent(user, now)
+        _withdraw_optional_consents(user, now)
+        # The personal data of the settings page (epic-doctor-profile entry 2).
+        profile.clear_profile(user)
         # The admin site deletes its copy (client.erased, epic-admin-interface entry 8).
         client_sync.emit(user)
         LogEntry.objects.log_actions(user_id=by.pk, queryset=[_LoggedUser(user)],

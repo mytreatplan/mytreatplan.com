@@ -41,6 +41,22 @@ def _new_version(kind='terms', published_at=None):
         published_at=published_at or timezone.now())
 
 
+# --- The WhatsApp contact consent stays out (epic-doctor-profile entry 2) ---------------
+
+def test_the_whatsapp_consent_is_not_on_the_legal_step(at_legal):
+    assert LegalDocument.objects.current('whatsapp_contact') is not None
+    response = at_legal.get(LEGAL_URL)
+    html = response.content.decode()
+
+    assert list(response.context['form'].documents) == KINDS
+    assert 'name="whatsapp_contact"' not in html
+    assert 'WhatsApp contact' not in html
+    # A forged tick is ignored and records nothing for the kind.
+    assert _legal(at_legal, whatsapp_contact='on').status_code == 302
+    pending = PendingRegistration.objects.get()
+    assert 'whatsapp_contact' not in _choices(pending)
+
+
 # --- All required / all ticked ---------------------------------------------------------
 
 def test_required_ticked_optional_not(at_legal, caplog):
@@ -107,7 +123,7 @@ def test_first_visit_nothing_is_ticked(at_legal):
     for kind in KINDS:
         assert not _checked(html, kind), kind
     # Every current document, its text (rendered Markdown) and version.
-    for document in LegalDocument.objects.current_by_kind().values():
+    for document in LegalDocument.objects.current_for_signup().values():
         assert document.title_en in html
     assert '<strong>Draft.</strong>' in html and 'version 1' in html
     assert '<details' in html

@@ -177,3 +177,50 @@ class User(AbstractUser):
                 *update_fields,
                 *(index for f in update_fields for index in self._INDEXES_OF.get(f, ()))}
         super().save(*args, **kwargs)
+
+
+class Profession(models.TextChoices):
+    """The doctor's profession (epic-doctor-profile entry 2, user decision 2026-11-15).
+    Stored as the code; the code travels to the admin site (`client.updated`)."""
+
+    ORTHODONTIST = 'orthodontist', _('Orthodontist')
+    GENERAL_DENTIST = 'general_dentist', _('General dentist')
+    PAEDIATRIC_DENTIST = 'paediatric_dentist', _('Paediatric dentist')
+    PROSTHODONTIST = 'prosthodontist', _('Prosthodontist')
+    PERIODONTIST = 'periodontist', _('Periodontist')
+    IMPLANTOLOGIST = 'implantologist', _('Implantologist')
+    ORAL_SURGEON = 'oral_maxillofacial_surgeon', _('Oral and maxillofacial surgeon')
+    OTHER = 'other', _('Other')
+
+
+class Profile(models.Model):
+    """The doctor's personal data beyond the account (epic-doctor-profile entry 2): one
+    row per user, created on the first save of the personal-data page (accounts.profile,
+    the only doctor-side writer). No backfill: a user without a row reads as blank.
+
+    `city`, `landline` (E.164, as the mobile) and `alternative_email` are contact data,
+    encrypted as the account's email and phone (no blind index: nothing looks a user up
+    by them). `language` is the preferred language code (one of the site's languages);
+    `time_zone` an IANA zone name, stored only (pages keep the site's zone). All six
+    travel to the admin site in `client.updated` (accounts.client_sync). Deleted with
+    the user; cleared when the account is erased (accounts.erasure)."""
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                                related_name='profile')
+    language = models.CharField(_('language'), max_length=10, blank=True)
+    city = EncryptedCharField(_('city'), max_length=150, blank=True)
+    time_zone = models.CharField(_('time zone'), max_length=64, blank=True)
+    profession = models.CharField(_('profession'), max_length=30,
+                                  choices=Profession.choices, blank=True)
+    landline = EncryptedCharField(_('landline'), max_length=PHONE_MAX_LENGTH, blank=True)
+    alternative_email = EncryptedEmailField(_('alternative email'), max_length=254,
+                                            blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    # The fields that travel in `client.updated`.
+    SYNCED_FIELDS = ('city', 'time_zone', 'profession', 'landline', 'alternative_email',
+                     'language')
+
+    def __str__(self):
+        # Never a name or contact data.
+        return f'Profile {self.pk}'

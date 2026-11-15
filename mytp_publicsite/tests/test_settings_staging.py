@@ -222,7 +222,10 @@ def _fresh_urlconf():
 PORTAL_URL_NAMES = ['signup', 'signup_step', 'welcome', 'login', 'logout',
                     # The doctor area (epic-doctor-profile entry 1).
                     'home', 'patients', 'support', 'messages', 'settings', 'cart',
-                    'tutorials', 'virtuaortho', 'planning_services', 'start_a_case']
+                    'tutorials', 'virtuaortho', 'planning_services', 'start_a_case',
+                    # The settings area's sections (epic-doctor-profile entry 2).
+                    'settings_maker', 'settings_password', 'settings_fiscal',
+                    'settings_shipping']
 
 
 def test_portal_patterns_hold_the_signup_routes(settings):

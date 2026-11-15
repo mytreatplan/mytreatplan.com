@@ -106,7 +106,10 @@ def test_signup_sends_client_updated_v1(client, caplog, django_capture_on_commit
     assert event.payload == {
         'title': 'dr', 'first_name': FIRST_NAME, 'middle_name': '', 'last_name': LAST_NAME,
         'email': NORMALIZED, 'phone': MOBILE_E164, 'country': 'ES', 'home_region': 'eu',
-        'active': True, 'joined_at': event.payload['joined_at'], 'how_found': 'linkedin'}
+        'active': True, 'joined_at': event.payload['joined_at'], 'how_found': 'linkedin',
+        # mytp-core 0.26.0: no profile yet (epic-doctor-profile entry 2).
+        'city': '', 'time_zone': '', 'profession': '', 'landline': '',
+        'alternative_email': '', 'language': ''}
     assert ClientUpdated.model_validate(event.payload).joined_at == user.date_joined
     assert check_central_payload(event.payload)
     # The outbox's lines (the fake verification provider logs the contacts on purpose).
@@ -190,7 +193,9 @@ def test_an_admin_add_sends_client_updated(staff_client):
     assert last_payload(user) == {
         'title': '', 'first_name': '', 'middle_name': '', 'last_name': '',
         'email': 'new@example.com', 'phone': '', 'country': '', 'home_region': 'eu',
-        'active': True, 'joined_at': last_payload(user)['joined_at'], 'how_found': ''}
+        'active': True, 'joined_at': last_payload(user)['joined_at'], 'how_found': '',
+        'city': '', 'time_zone': '', 'profession': '', 'landline': '',
+        'alternative_email': '', 'language': ''}
 
 
 def test_an_ordinary_save_never_writes_back_an_old_sync_version():

@@ -16,7 +16,9 @@ them, except `client.erased` (as above) when the account was sent as a client be
 (`sync_version` > 0), so the admin site drops it.
 
 Called from signup (`signup.views._create_account`), the Django admin's user save
-(`accounts.admin.UserAdmin.save_model`, add and change) and `accounts.erasure.erase_user`;
+(`accounts.admin.UserAdmin.save_model`, add and change), the doctor's personal-data page
+(`accounts.profile.update_personal_data`, epic-doctor-profile entry 2) and
+`accounts.erasure.erase_user`;
 also by the re-sync the admin site asks for (`resync`, POST /api/v1/clients/resync) and the
 backfill (`manage.py sync_clients`). Not for password, session or re-encryption writes;
 the purge of erased accounts sends nothing. If the caller's transaction rolls back,
@@ -29,7 +31,7 @@ from integration import outbox
 from integration.models import OutboxEvent
 from mytp_core.contracts import CLIENT_ERASED, CLIENT_UPDATED
 
-from .models import instance_region
+from .models import Profile, instance_region
 
 
 class ClientSyncError(Exception):
@@ -59,7 +61,18 @@ def payload_of(user):
         'active': bool(user.is_active),
         'joined_at': user.date_joined,
         'how_found': user.how_found or '',
+        # The personal data (mytp-core 0.26.0, epic-doctor-profile entry 2): blank while
+        # the account has no profile row. The consents are never sent.
+        **profile_payload(user),
     }
+
+
+def profile_payload(user):
+    """The six personal-data fields of `client.updated` from the account's profile
+    (accounts.models.Profile), each '' when there is no row or the value is unset."""
+    profile = Profile.objects.filter(user_id=user.pk).first()
+    return {name: (getattr(profile, name) or '') if profile is not None else ''
+            for name in Profile.SYNCED_FIELDS}
 
 
 def emit(user):

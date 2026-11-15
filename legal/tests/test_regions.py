@@ -13,7 +13,7 @@ from django.utils import timezone
 from legal.models import LegalChoice, LegalDocument
 
 User = get_user_model()
-KINDS = ['terms', 'conditions', 'ormco_tps', 'commercial_consent']
+KINDS = ['terms', 'conditions', 'ormco_tps', 'commercial_consent', 'whatsapp_contact']
 ADMIN = '/admin/legal/legaldocument/'
 
 BEFORE = [('legal', '0005_uid_unique')]
@@ -207,7 +207,9 @@ def _migrate_with_acceptances(region):
         assert {d.region for d in documents} == {region}
         assert all(d.provisional for d in documents)
         # Nothing rewritten: the seeded drafts keep their text, whatever the company.
-        assert {d.pk: (d.title_en, d.body_en, d.body_es) for d in documents} == bodies
+        # (legal 0008 adds the WhatsApp contact draft, epic-doctor-profile entry 2.)
+        assert {d.pk: (d.title_en, d.body_en, d.body_es) for d in documents
+                if d.kind != 'whatsapp_contact'} == bodies
         assert sorted(LegalChoice.objects.values_list('uid', 'document_id')) == accepted
 
         executor = MigrationExecutor(connection)
@@ -241,3 +243,44 @@ def test_a_row_inserted_between_0006_and_0007_is_filled():
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
     assert LegalDocument.objects.get(kind='terms', version=950).region == 'eu'
+
+
+# --- legal 0008: the WhatsApp contact draft (epic-doctor-profile entry 2) -----------------
+
+BEFORE_WHATSAPP = [('legal', '0007_region_fill')]
+
+
+def _forward_from_0007(prepare):
+    """Migrate legal back to 0007, run `prepare(old_apps)`, migrate forward again."""
+    executor = MigrationExecutor(connection)
+    executor.migrate(BEFORE_WHATSAPP)
+    try:
+        prepare(executor.loader.project_state(BEFORE_WHATSAPP).apps)
+    finally:
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_0008_leaves_a_region_that_already_has_the_kind_alone():
+    def prepare(old):
+        old.get_model('legal', 'LegalDocument').objects.create(
+            kind='whatsapp_contact', version=1, region='eu', title_en='Own text',
+            title_es='Texto propio', body_en='b', body_es='b', published_at=timezone.now())
+
+    _forward_from_0007(prepare)
+
+    documents = LegalDocument.objects.filter(kind='whatsapp_contact')
+    assert [(d.region, d.version, d.title_en) for d in documents] == [('eu', 1, 'Own text')]
+
+
+@pytest.mark.django_db(transaction=True)
+def test_0008_publishes_the_provisional_draft_for_the_ae_region(ae_portal):
+    _forward_from_0007(lambda old: None)
+
+    document = LegalDocument.objects.get(kind='whatsapp_contact', region='ae')
+    assert (document.region, document.version, document.provisional) == ('ae', 1, True)
+    assert document.is_published()
+    assert 'I agree to be contacted by MyTreatPlan via WhatsApp.' in document.body_en
+    assert 'Doy mi permiso para que contacten conmigo vía WhatsApp.' in document.body_es
+    assert LegalDocument.objects.current('whatsapp_contact') == document

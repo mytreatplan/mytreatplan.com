@@ -168,14 +168,14 @@ class LegalStep(Step):
 
     def get_form_kwargs(self, pending):
         # Read on every request: a version published in the admin applies at once.
-        return {'documents': LegalDocument.objects.current_by_kind()}
+        return {'documents': LegalDocument.objects.current_for_signup()}
 
     def get_initial(self, pending):
         """Back refills the Terms and the Conditions accepted in their current version.
         The Ormco TPS contract and the commercial consent always start unticked."""
         if not pending:
             return {}
-        current = LegalDocument.objects.current_by_kind()
+        current = LegalDocument.objects.current_for_signup()
         initial = {}
         for kind in LegalDocument.REQUIRED_KINDS:
             document = current.get(kind)
@@ -188,7 +188,7 @@ class LegalStep(Step):
         """Done when the Terms and the Conditions are accepted in their current versions."""
         if pending._state.adding:
             return False  # step 1 of a new signup, not saved yet: no choices
-        current = LegalDocument.objects.current_by_kind()
+        current = LegalDocument.objects.current_for_signup()
         documents = [current.get(kind) for kind in LegalDocument.REQUIRED_KINDS]
         if not all(documents):
             return False
