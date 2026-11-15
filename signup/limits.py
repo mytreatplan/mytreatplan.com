@@ -7,6 +7,11 @@ WINDOW_SECONDS. Only successful sends count (`record_send`); switching a mobile 
 a send like any other. The times of the sends are kept in CACHES['default'] (the database
 cache), keyed by the contact's blind index, never the plain address or number.
 
+Plus, for the contact changes of a signed-in account (epic-doctor-profile entry 3,
+purpose `change`), at most ACCOUNT_CHANGE_SENDS codes per account within WINDOW_SECONDS,
+whatever the numbers or addresses (the per-contact limits do not stop one account cycling
+through many): `check_account_send`, `record_account_send`, keyed by the account's id.
+
 Plus the per-IP limits (signup entry 9, CAP-11), against one source cycling through
 contacts: signup starts, live email checks and code sends (every purpose, successful
 sends only), plus login password submissions (epic-login entry 5) and password reset
@@ -117,6 +122,49 @@ def seconds_since_last_send(contact, purpose):
     now = _now()
     sends = _sends(contact, purpose, now)
     return now - sends[-1] if sends else None
+
+
+# The per-account limit on change codes (epic-doctor-profile entry 3): two contacts' worth
+# of the per-contact limit (HOURLY_SENDS each) in the hour, e.g. a mistyped number and the
+# right one, or a mobile and an email change, each with its resends.
+ACCOUNT_CHANGE_SENDS = 2 * HOURLY_SENDS
+
+
+def _account_key(account_id):
+    return f'signup:otp-sends:account:{account_id}:change'
+
+
+def _account_sends(account_id, now):
+    times = cache.get(_account_key(account_id)) or []
+    return [t for t in times if now - t < WINDOW_SECONDS]
+
+
+def check_account_send(account_id):
+    """Whether one more change code may be sent for the account now (the hourly limit
+    only: the cooldown is the contact's)."""
+    now = _now()
+    sends = _account_sends(account_id, now)
+    if len(sends) >= ACCOUNT_CHANGE_SENDS:
+        wait = sends[-ACCOUNT_CHANGE_SENDS] + WINDOW_SECONDS - now
+        return SendCheck(False, max(1, math.ceil(wait)), True)
+    return SendCheck(True, 0, False)
+
+
+def record_account_send(account_id):
+    """Count a successful change code of the account."""
+    now = _now()
+    sends = _account_sends(account_id, now) + [now]
+    cache.set(_account_key(account_id), sends, timeout=WINDOW_SECONDS + 60)
+
+
+def acquire_account_lock(account_id):
+    """The per-account send lock (as `acquire_send_lock`): two parallel change sends of
+    one account, to different contacts, cannot both pass `check_account_send`."""
+    return _lock(_account_key(account_id) + ':lock', LOCK_SECONDS)
+
+
+def release_account_lock(account_id):
+    _unlock(_account_key(account_id) + ':lock')
 
 
 # The per-IP counters (the keys of settings.SIGNUP_IP_LIMITS).

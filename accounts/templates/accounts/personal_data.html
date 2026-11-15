@@ -3,8 +3,10 @@
 {% comment %}
 The personal-data page (accounts.views.personal_data, Annex I mockup "Mis Datos"): the
 photo block (the initials until entry 4), then the form of accounts.forms.PersonalDataForm.
-Country, mobile and login email are shown read-only (no name: never posted), with the
-note that a change of the login is asked for in the support area. The privacy and terms
+Country, mobile, contact (alternative) email and login email are shown read-only (no
+name: never posted), with the note that a change of the login is asked for in the support
+area; the mobile and the contact email have a "Change" link to their code-confirmed
+change pages (entry 3). The privacy and terms
 box is ticked and locked, with the date they were accepted. Two columns from the tablet
 breakpoint, stacked on a phone. Cancel goes back to the home.
 {% endcomment %}
@@ -50,12 +52,17 @@ breakpoint, stacked on a phone. Cancel goes back to the home.
     <div class="flex flex-col gap-2">
       <label for="ro-mobile" class="{{ label }}">{% translate "Mobile phone number" %}</label>
       <input id="ro-mobile" type="text" class="{{ readonly }}" value="{{ mobile }}" readonly aria-readonly="true" data-readonly="phone">
+      <a href="{% url 'settings_mobile' %}" class="self-start text-[14px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" aria-label="{% translate 'Change your mobile phone number' %}" data-change="mobile">{% translate "Change" %}</a>
     </div>
     <div class="grid grid-cols-[minmax(0,2fr)_minmax(0,3fr)] gap-3" data-landline>
       {% include "includes/_form_field.html" with field=form.landline_prefix %}
       {% include "includes/_form_field.html" with field=form.landline %}
     </div>
-    {% include "includes/_form_field.html" with field=form.alternative_email %}
+    <div class="flex flex-col gap-2">
+      <label for="ro-contact-email" class="{{ label }}">{% translate "Alternative email" %}</label>
+      <input id="ro-contact-email" type="email" class="{{ readonly }}" value="{{ contact_email }}" readonly aria-readonly="true" data-readonly="alternative_email">
+      <a href="{% url 'settings_email' %}" class="self-start text-[14px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" aria-label="{% translate 'Change your contact email' %}" data-change="email">{% translate "Change" %}</a>
+    </div>
     <div class="hidden tablet:block" aria-hidden="true"></div>
     <div class="flex flex-col gap-2">
       <label for="ro-email" class="{{ label }}">{% translate "Login user (email)" %}</label>

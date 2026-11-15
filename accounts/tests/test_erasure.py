@@ -1,5 +1,6 @@
 """Account erasure from the admin (plan-account-erasure.md): every row of the plan's I/O
 matrix, the purge job and its schedule."""
+import itertools
 from datetime import timedelta
 
 import pytest
@@ -46,9 +47,15 @@ def _document(kind, published_at=None):
         published_at=published_at or timezone.now() - timedelta(days=1))
 
 
+_OTHER_PHONES = itertools.count(8400)
+
+
 def _user(email=EMAIL, **fields):
+    """An account; each other email gets a mobile of its own (no two accounts share one,
+    6.3)."""
+    phone = PHONE if email == EMAIL else f'+3462291{next(_OTHER_PHONES):04d}'
     defaults = dict(title='dr', first_name=FIRST_NAME, last_name=LAST_NAME, country='ES',
-                    phone=PHONE, how_found='others', how_found_other='A friend')
+                    phone=phone, how_found='others', how_found_other='A friend')
     user = User.objects.create_user(email, PASSWORD, **{**defaults, **fields})
     user.last_login = timezone.now()
     user.save()
@@ -310,6 +317,22 @@ def test_already_declined_consent_adds_no_withdrawal(staff):
     consents = user.legal_choices.filter(document__kind=CONSENT)
     assert list(consents.order_by('decided_at'))[-1] == declined
     assert consents.count() == 2
+
+
+def test_erasure_deletes_the_pending_contact_changes(staff):
+    """Epic-doctor-profile entry 3: a change waiting for its code goes with the erasure
+    (the account's row stays, so CASCADE would not); other accounts' changes stay."""
+    from accounts import profile
+    from accounts.models import PendingContactChange
+
+    user, other = _user(), _user('bea@example.org')
+    profile.start_contact_change(user, 'mobile', '+34622918399')
+    profile.start_contact_change(user, 'email', 'clinic@example.com')
+    kept = profile.start_contact_change(other, 'email', 'other@example.com')
+
+    erase_user(user, by=staff)
+
+    assert list(PendingContactChange.objects.values_list('pk', flat=True)) == [kept.pk]
 
 
 def test_erasure_withdraws_whatsapp_and_clears_the_profile(staff):

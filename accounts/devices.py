@@ -11,6 +11,9 @@ salt, carrying the account id, the issue time and the account's session auth has
 valid while the signature checks, the issue time is less than REMEMBER_SECONDS old (fixed
 from the moment it was given: a later login does not extend it) and the hash still matches
 the account, so a password change or reset forgets every remembered device of the account.
+A mark is also valid only when given after the account's `devices_valid_after` (set by a
+mobile change, epic-doctor-profile entry 3): that forgets every mark given before, this
+browser's too, without a password change.
 Each account has its own cookie, named from a keyed, non-reversible digest of its id, so
 several accounts in one browser keep their own marks. The cookie holds no email or phone;
 nothing here logs.
@@ -18,6 +21,7 @@ nothing here logs.
 Checked only by the login view, after a right password and a passed CAPTCHA, for the
 account that just passed them. Logout and the ends of a session leave it in place.
 """
+from django.core import signing
 from mytp_core.devices import RememberedDevices
 from mytp_core.policy import PORTAL
 
@@ -69,9 +73,17 @@ def issue(user, now):
 
 def is_valid(value, user, now):
     """Whether `value` is a valid mark of `user` at `now`: the signature checks, it was
-    given for this account less than REMEMBER_SECONDS ago, and the account's session
-    auth hash (its password) is the same."""
-    return RememberedDevices.is_valid(_devices, value, user, now)
+    given for this account less than REMEMBER_SECONDS ago, the account's session auth
+    hash (its password) is the same, and it was given after the account's
+    `devices_valid_after`, if set (the mark's time is in whole seconds: one given in the
+    same second as that time counts as before it)."""
+    if not RememberedDevices.is_valid(_devices, value, user, now):
+        return False
+    valid_after = getattr(user, 'devices_valid_after', None)
+    if valid_after is None:
+        return True
+    issued = signing.loads(value, salt=SIGNING_SALT)['t']  # the signature has checked
+    return issued > valid_after.timestamp()
 
 
 def is_remembered(request, user, now):

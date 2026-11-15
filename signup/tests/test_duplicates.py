@@ -579,6 +579,36 @@ def test_mobile_registered_meanwhile(client, first):
     assert event.data['phone'] == MOBILE_E164
 
 
+def test_mobile_taken_after_the_check_is_reported_as_the_mobile(client, first, monkeypatch):
+    """The database rule (accounts 0017) loses the race on the mobile: reported as the
+    mobile, not the email."""
+    _email_code(client)
+    User.objects.create_user('someone@example.net', 'another-password-123', phone=MOBILE_E164)
+    import signup.views
+
+    monkeypatch.setattr(signup.views, 'phone_is_registered', lambda phone: False)
+    response = _mobile_code(client)
+    assert response.status_code == 200
+    assert response.context['form'].non_field_errors() == [
+        'This mobile phone number is already registered.']
+    assert User.objects.count() == 1 and PendingRegistration.objects.exists()
+    event = list(first.attempt.events.all())[-1]
+    assert (event.event, event.field, event.reason) == ('rejected', 'phone', 'phone exists')
+
+
+def test_email_taken_after_the_check_is_reported_as_the_email(client, first, monkeypatch):
+    _email_code(client)
+    User.objects.create_user(NORMALIZED, 'another-password-123')
+    import signup.views
+
+    monkeypatch.setattr(signup.views, 'email_is_registered', lambda email: False)
+    response = _mobile_code(client)
+    assert response.context['form'].non_field_errors() == [
+        'This email address is already registered.']
+    event = list(first.attempt.events.all())[-1]
+    assert (event.field, event.reason) == ('email', 'email exists')
+
+
 def test_email_registered_meanwhile_shows_the_recovery_note(client, first):
     _email_code(client)
     User.objects.create_user(NORMALIZED, 'another-password-123')

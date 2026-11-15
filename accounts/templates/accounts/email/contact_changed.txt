@@ -1,0 +1,10 @@
+{% load i18n %}{% autoescape off %}{% translate "Hello," %}
+
+{% if kind == "mobile" %}{% blocktranslate with masked=masked date=changed_on %}The mobile phone number of your MyTreatPlan account was changed on {{ date }} (new number: {{ masked }}).{% endblocktranslate %}
+
+{% translate "The devices remembered for login have been forgotten: your next login on each of them will ask for a code." %}{% else %}{% blocktranslate with masked=masked date=changed_on %}The contact email of your MyTreatPlan account was changed on {{ date }} (new address: {{ masked }}).{% endblocktranslate %}{% endif %}
+
+{% blocktranslate with email=support_email %}If you didn't make this change, please write to us at {{ email }} right away.{% endblocktranslate %}
+
+MyTreatPlan
+{% endautoescape %}

@@ -275,7 +275,7 @@ def _store_outcome(request, page, outcome):
 
 
 def send_code(request, attempt, page, contact, purpose, channel, resend=False,
-              login_record=None):
+              login_record=None, account_id=None):
     """Send a code to `contact` within our limits (signup.limits) and log it.
 
     The flow is mytp-core's (`mytp_core.verification.send_code`); `_SendHooks` plugs in
@@ -290,11 +290,15 @@ def send_code(request, attempt, page, contact, purpose, channel, resend=False,
     FAILED (the provider failed: logged `code_send_failed` and reported to Sentry, with
     no personal data). The page's session state is updated (`code_state`). A short lock
     per contact and purpose makes parallel sends (a double click) answer COOLDOWN.
+    With `account_id` (a signed-in account's contact change, accounts.views) the send must
+    also pass the account's hourly limit (signup.limits.check_account_send: HOURLY when
+    over it), under a lock of its own.
     """
     kind = contact_kind(channel)
     field = 'email' if kind == EMAIL else 'phone'
     hooks = _SendHooks(request, attempt, page, purpose, resend, field,
-                       {field: contact, 'channel': channel, 'purpose': purpose}, login_record)
+                       {field: contact, 'channel': channel, 'purpose': purpose}, login_record,
+                       account_id)
     outcome = core_send_code(contact, purpose, channel, translation.get_language(),
                              hooks=hooks)
     _store_outcome(request, page, outcome)
@@ -312,7 +316,7 @@ class _SendHooks(SendHooks):
     send_failed_message = 'Signup code send failed: channel=%s purpose=%s error=%s'
 
     def __init__(self, request, attempt, page, purpose, resend, field, log_data,
-                 login_record):
+                 login_record, account_id=None):
         self.request = request
         self.attempt = attempt
         self.page = page
@@ -321,19 +325,30 @@ class _SendHooks(SendHooks):
         self.field = field
         self.log_data = log_data
         self.login_record = login_record
+        self.account_id = account_id
 
     @property
     def lock_wait_seconds(self):
         return limits.COOLDOWN_SECONDS
 
     def acquire_lock(self, contact, purpose):
-        return limits.acquire_send_lock(contact, purpose)
+        if not limits.acquire_send_lock(contact, purpose):
+            return False
+        if self.account_id is not None and not limits.acquire_account_lock(self.account_id):
+            limits.release_send_lock(contact, purpose)
+            return False
+        return True
 
     def release_lock(self, contact, purpose):
+        if self.account_id is not None:
+            limits.release_account_lock(self.account_id)
         limits.release_send_lock(contact, purpose)
 
     def check_send(self, contact, purpose):
-        return limits.check_send(contact, purpose)
+        check = limits.check_send(contact, purpose)
+        if check.allowed and self.account_id is not None:
+            return limits.check_account_send(self.account_id)
+        return check
 
     def reserve(self):
         # The per-IP limit: the send is counted first, and given back if it fails.
@@ -344,6 +359,8 @@ class _SendHooks(SendHooks):
 
     def record_send(self, contact, purpose):
         limits.record_send(contact, purpose)
+        if self.account_id is not None:
+            limits.record_account_send(self.account_id)
 
     def event(self, kind, **data):
         if kind == 'rejected':

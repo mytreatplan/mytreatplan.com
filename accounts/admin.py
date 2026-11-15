@@ -2,7 +2,7 @@ from django.contrib import admin, messages
 from django.contrib.admin import helpers
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import AdminUserCreationForm, UserChangeForm
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, ValidationError
 from django.db import transaction
 from django.db.models import Q
 from django.template.response import TemplateResponse
@@ -23,6 +23,20 @@ def _check_email_free(form, email, exclude_pk=None):
         others = others.exclude(pk=exclude_pk)
     if email and others.exists():
         raise form.instance.unique_error_message(User, ['email'])
+
+
+# No two accounts share a mobile (epic-doctor-profile entry 3; the database rule
+# accounts_user_phone_index_unique is the last guard).
+PHONE_IN_USE_MESSAGE = _('This mobile phone number is already used by another account.')
+
+
+def _check_phone_free(phone, exclude_pk=None):
+    """Reject a mobile already used by another account (through its blind index)."""
+    others = User.objects.by_phone(phone) if phone else User.objects.none()
+    if exclude_pk is not None:
+        others = others.exclude(pk=exclude_pk)
+    if others.exists():
+        raise ValidationError(PHONE_IN_USE_MESSAGE, code='phone_in_use')
 
 
 class UserCreationAdminForm(AdminUserCreationForm):
@@ -47,6 +61,14 @@ class UserChangeAdminForm(UserChangeForm):
         email = User.objects.normalize_email(self.cleaned_data.get('email'))
         _check_email_free(self, email, exclude_pk=self.instance.pk)
         return email
+
+    def clean_phone(self):
+        """The mobile is read-only in UserAdmin (signup and the doctor's code-confirmed
+        change set it); wherever this form edits it, one used by another account is
+        refused."""
+        phone = (self.cleaned_data.get('phone') or '').strip()
+        _check_phone_free(phone, exclude_pk=self.instance.pk)
+        return phone
 
 
 class _LoggedUser:
@@ -91,6 +113,12 @@ class ErasureStatusFilter(admin.SimpleListFilter):
         if self.value() == 'all':
             return queryset
         return queryset.filter(erased_at__isnull=True)
+
+
+def _changed_columns(form):
+    """The concrete (not many-to-many) model fields among the form's changed fields."""
+    columns = {field.name for field in User._meta.concrete_fields if not field.primary_key}
+    return [name for name in form.changed_data if name in columns]
 
 
 @admin.register(User)
@@ -216,7 +244,15 @@ class UserAdmin(BaseUserAdmin):
         account never sent: accounts.client_sync). A doctor added here gets Basic, by
         the system (epic-subscriptions entry 1; nothing for staff)."""
         with transaction.atomic():
-            super().save_model(request, obj, form, change)
+            if change:
+                # Only the fields this form changed (with the indexes `User.save` derives
+                # from them): a stale form never writes back a mobile, its index or
+                # `devices_valid_after` that the doctor changed meanwhile (entry 3).
+                fields = _changed_columns(form)
+                if fields:
+                    obj.save(update_fields=fields)
+            else:
+                super().save_model(request, obj, form, change)
             client_sync.emit(obj)
             if not change:
                 subscriptions.ensure_basic(obj, subscriptions.SYSTEM_ACTOR)

@@ -3,15 +3,15 @@ title: 'Code-confirmed mobile and contact email changes'
 type: 'feature'
 ticket: '3'
 created: '2026-11-15'
-status: 'ready-for-dev'
+status: 'built'
 baseline_revision: 'e0460f6'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
 review: 'quick'
 review_source: 'pinned'
-lenses_ran: []
-review_loop_iteration: 0
+lenses_ran: ['quick']
+review_loop_iteration: 1
 context: []
 ---
 
@@ -84,16 +84,16 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `accounts/models.py` + migrations -- `PendingContactChange` (user, kind mobile or email, encrypted value, blind index, created; one live row per user and kind); `User.devices_valid_after`; a partial unique constraint on `phone_index` (not blank) whose migration first stops with the account ids if duplicates exist.
-- [ ] `accounts/devices.py` -- a remembered-device mark is valid only when issued at or after `devices_valid_after`.
-- [ ] `accounts/profile.py` -- `start_contact_change`, `confirm_contact_change` (lock, duplicate re-check, write, emit once, forget devices for a mobile, notice) and the read helpers the pages need; remove `alternative_email` from `EDITABLE_FIELDS`.
-- [ ] `accounts/forms.py`, `accounts/views.py`, `accounts/urls.py`, templates -- routes `settings_mobile`, `settings_mobile_code`, `settings_email`, `settings_email_code` under `settings/`; start forms (password + new value, the signup phone widget), code forms on the existing `CodeForm`; send through `signup.steps.send_code` with the new purpose; resend and "send by SMS"; the per-account limit in `signup.limits`' style.
-- [ ] `accounts/templates/accounts/personal_data.html`, `PersonalDataForm` -- mobile and alternative email rows read-only with "Change" links; the form drops the alternative email.
-- [ ] `accounts/admin.py` -- the staff form refuses a mobile used by another account.
-- [ ] notice email -- plain-text templates (EN, ES) on the password-reset mail pattern, sent in the background to the login email.
-- [ ] `locale/es/LC_MESSAGES/django.po` -- Spanish for every new string.
-- [ ] Tests in `accounts/tests/` (and the URL-name lists in `mytp_publicsite/tests/`) -- every matrix row; update the 6.2 tests of the alternative email; one browser test of a mobile change with the fake provider.
-- [ ] `deploy/README.md` and `deferred-work.md` -- the flows, the duplicate migration's stop and how to resolve it, the staging recipe with the fake provider; deferred: which address future doctor messages use (epic-case-lifecycle).
+- [x] `accounts/models.py` + migrations -- `PendingContactChange` (user, kind mobile or email, encrypted value, blind index, created; one live row per user and kind); `User.devices_valid_after`; a partial unique constraint on `phone_index` (not blank) whose migration first stops with the account ids if duplicates exist.
+- [x] `accounts/devices.py` -- a remembered-device mark is valid only when issued at or after `devices_valid_after`.
+- [x] `accounts/profile.py` -- `start_contact_change`, `confirm_contact_change` (lock, duplicate re-check, write, emit once, forget devices for a mobile, notice) and the read helpers the pages need; remove `alternative_email` from `EDITABLE_FIELDS`.
+- [x] `accounts/forms.py`, `accounts/views.py`, `accounts/urls.py`, templates -- routes `settings_mobile`, `settings_mobile_code`, `settings_email`, `settings_email_code` under `settings/`; start forms (password + new value, the signup phone widget), code forms on the existing `CodeForm`; send through `signup.steps.send_code` with the new purpose; resend and "send by SMS"; the per-account limit in `signup.limits`' style.
+- [x] `accounts/templates/accounts/personal_data.html`, `PersonalDataForm` -- mobile and alternative email rows read-only with "Change" links; the form drops the alternative email.
+- [x] `accounts/admin.py` -- the staff form refuses a mobile used by another account.
+- [x] notice email -- plain-text templates (EN, ES) on the password-reset mail pattern, sent in the background to the login email.
+- [x] `locale/es/LC_MESSAGES/django.po` -- Spanish for every new string.
+- [x] Tests in `accounts/tests/` (and the URL-name lists in `mytp_publicsite/tests/`) -- every matrix row; update the 6.2 tests of the alternative email; one browser test of a mobile change with the fake provider.
+- [x] `deploy/README.md` and `deferred-work.md` -- the flows, the duplicate migration's stop and how to resolve it, the staging recipe with the fake provider; deferred: which address future doctor messages use (epic-case-lifecycle).
 
 **Acceptance Criteria:**
 - Given a doctor with the right password and a free new mobile, when the code is accepted, then the mobile is stored, one `client.updated` is in the outbox, a remembered-device mark issued before no longer skips the login code, and the session is still signed in.
@@ -109,3 +109,40 @@ Recommended shape (portal only, no core release): routes `settings/mobile/` and 
 ## Verification
 
 Full suite; `makemigrations --check`.
+
+## Implementation Notes
+
+- 2026-11-15, branch `story/6.3-contact-changes` (from master b2fc973), uncommitted.
+- Migrations: `accounts/0016_pending_contact_change` (the pending-change table, `User.devices_valid_after`), `accounts/0017_user_phone_index_unique` (RunPython that stops with the shared accounts' ids, then the partial unique constraint `accounts_user_phone_index_unique`, `phone_index <> ''`). Test: `accounts/tests/test_phone_unique_migration.py`.
+- Code purpose `change` (`accounts.profile.CHANGE_PURPOSE`): the vendored core accepts any purpose (its docstring: "Sites may use other purposes"); no core change.
+- Per-account limit: `signup.limits.ACCOUNT_CHANGE_SENDS = 8` change codes per account per hour (2 x `HOURLY_SENDS`), checked and counted in `signup.steps.send_code` (new `account_id` argument) under a per-account lock; over it the send answers HOURLY, so the page shows the existing hourly message.
+- The portal's staff admin shows `phone` read-only (`UserAdmin.readonly_fields`), so staff cannot set a mobile there today. Kept read-only; `UserChangeAdminForm.clean_phone` refuses a mobile in use wherever the form edits it, and the database rule is the last guard.
+- "Other sessions end" needs no code: the portal keeps one session per account (accounts.sessions).
+- A mark issued in the same second as `devices_valid_after` counts as before it (marks carry whole seconds).
+- The code page shows the new value in full (the doctor just typed it); the notice mail masks it.
+- Pages: `accounts/templates/accounts/settings_contact_change.html`, `settings_contact_code.html`; notice `accounts/templates/accounts/email/contact_changed*.txt`. Docs: `deploy/README.md` "Contact changes", three items in `deferred-work.md`.
+
+- The unique rule broke 7 older tests (plus 4 errors) that gave two accounts the same mobile: the `doctor()` helper in `accounts/tests/test_client_sync.py` and `_user()` in `accounts/tests/test_erasure.py` now give each other email a mobile of its own.
+- Verified (SQLite, 2026-11-15): full suite 3288 passed, 12 skipped, 0 failed (baseline 3241/12/0); `makemigrations --check` no changes; `compilemessages` clean; `npm run build:css` done. CI on PostgreSQL 17 not run yet.
+- Review fixes (coordinator, 2026-11-15):
+  1. `start_contact_change` locks the account's row first (`select_for_update`), so a double-submitted start replaces the first row instead of hitting `accounts_pending_contact_change_one_per_kind`. Tests: `test_a_double_submitted_start_ends_on_the_code_page`, `test_a_start_locks_the_account_row_first` (asserts `FOR UPDATE` on PostgreSQL). SQLite has no row locks; a truly parallel double submit there can still meet "database is locked" (development only).
+  2. `signup.views._create_account`: an IntegrityError naming `phone_index` (SQLite's column, PostgreSQL's constraint) is reported as the mobile (`phone exists`). Tests in `signup/tests/test_duplicates.py`.
+  3. `erase_user` deletes the account's pending contact changes (`profile.clear_contact_changes`); `_clear_expired`'s docstring corrected. Test: `test_erasure_deletes_the_pending_contact_changes`.
+  4. A double-clicked "Confirm": a 60-second cache marker (account, kind, row id; no value) of the change just written sends the second request quietly to the personal-data page. In the cache, not the session: the second request may have read the session before the first saved it. Tests: `test_a_double_clicked_confirm_lands_quietly_on_the_page`, `test_an_expired_change_still_says_so_after_an_earlier_change`.
+  5. The notice's time is in the profile's `time_zone` (else the site's) with the zone's name (`profile.notice_time`). Test: `test_notice_time_is_in_the_doctors_zone_with_its_name`.
+  6. A failing notice send is only reported (`test_a_failing_notice_leaves_the_change_and_is_only_reported`). The staff admin's change save writes only the form's changed fields (plus the indexes `User.save` derives): `test_a_stale_staff_save_keeps_the_doctors_new_mobile`, `test_staff_admin_change_page_still_saves_its_changes`.
+
+## Review Triage Log
+
+Quick lens with a security focus (Opus reviewer, 2026-11-15). Focus areas 1-8 (code tied to the new value, password re-check, send limits, uniqueness and races, device forgetting, data exposure, alternative email off the personal-data form, notice mail) all passed.
+
+| # | Severity | Finding | Verdict |
+|---|----------|---------|---------|
+| 1 | medium | Double-submitted start form: second request hits the one-row-per-kind constraint (500) | patched: the start locks the account row first; tests |
+| 2 | low | Signup losing a race on the mobile said "email already registered" | patched: `_lost_race_field` maps `phone_index` clashes to the mobile; tests |
+| 3 | low | Erasure left the pending (encrypted) new value | patched: `clear_contact_changes` in `erase_user`; docstring corrected; test |
+| 4 | low | Double-clicked Confirm showed "expired" next to the success | patched: 60-second cache marker (no contact value) sends the second request quietly to the page; tests |
+| 5 | low | Notice time in the server zone, unlabelled | patched: doctor's profile zone, zone name shown; test |
+| 6 | low | No test for a failing notice; a stale staff admin save could restore the old mobile and `devices_valid_after` | patched: failure test; admin change saves only the changed fields; tests |
+
+Suite after the patches (mine): 3299 passed, 12 skipped, 0 failed; `makemigrations --check` clean. PostgreSQL paths (migration stop, row lock, IntegrityError) are first run by CI.

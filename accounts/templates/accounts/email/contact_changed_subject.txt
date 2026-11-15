@@ -1,0 +1,1 @@
+{% load i18n %}{% if kind == "mobile" %}{% translate "Your MyTreatPlan mobile phone number has been changed" %}{% else %}{% translate "Your MyTreatPlan contact email has been changed" %}{% endif %}

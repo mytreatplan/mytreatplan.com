@@ -21,6 +21,11 @@ urlpatterns = [
     # The settings area (epic-doctor-profile entry 2): the personal-data page keeps the
     # name `settings`; the sections not built yet are "coming soon" inside the area.
     path('settings/', views.personal_data, name='settings'),
+    # The code-confirmed contact changes (entry 3): the mobile and the contact email.
+    path('settings/mobile/', views.settings_mobile, name='settings_mobile'),
+    path('settings/mobile/code/', views.settings_mobile_code, name='settings_mobile_code'),
+    path('settings/email/', views.settings_email, name='settings_email'),
+    path('settings/email/code/', views.settings_email_code, name='settings_email_code'),
     path('settings/maker/', views.settings_coming_soon, {'section': 'maker'},
          name='settings_maker'),
     path('settings/password/', views.settings_coming_soon, {'section': 'password'},

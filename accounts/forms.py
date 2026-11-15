@@ -4,16 +4,18 @@ import phonenumbers
 from django import forms
 from django.conf import settings
 from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth.hashers import check_password
 from django.core import signing
 from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
 from legal.models import LegalDocument
-from signup.forms import (BLANK_CHOICE, CHECKBOX_CLASSES, CodeForm, StyledForm,
+from signup.forms import (BLANK_CHOICE, CHECKBOX_CLASSES, CodeForm, StyledForm, parse_mobile,
                           phone_prefix_choices)
 from signup.verification import EMAIL, MOBILE, PURPOSE_LOGIN, SMS
 
 from .models import Profession, Title
+from .profile import CHANGE_PURPOSE, current_contact, mobile_in_use
 
 # The one error of every failed login (a wrong password, an unknown email, an inactive or
 # erased account): it never tells which.
@@ -159,10 +161,11 @@ class PersonalDataForm(StyledForm):
 
     Declares only what the doctor may change: language (only on a site with more than
     one), city, time zone, title, profession, names, landline (prefix and number, stored
-    in E.164), alternative email and the optional consents whose kind has a published
-    document (`consent_state`). Country, mobile and login email are not fields: whatever
-    a POST carries for them is ignored (and accounts.profile refuses them).
-    `login_email` is the account's, which the alternative email may not repeat.
+    in E.164) and the optional consents whose kind has a published document
+    (`consent_state`). Country, mobile, login email and the alternative (contact) email
+    are not fields: whatever a POST carries for them is ignored (and accounts.profile
+    refuses them). The mobile and the contact email change on pages of their own, after
+    a code (epic-doctor-profile entry 3, `MobileChangeForm`, `EmailChangeForm`).
 
     The hidden `consent_token` records what the page showed for each consent (document
     id, ticked), signed for this page and account. A missing or tampered token
@@ -173,7 +176,6 @@ class PersonalDataForm(StyledForm):
     error_messages = {
         'landline_invalid': _('Enter a valid phone number for the selected prefix.'),
         'landline_prefix': _('Select the prefix of the landline.'),
-        'alternative_is_login': _('Enter an email address other than your login email.'),
         'consents_stale': _('This page has expired. Please reload it and try again.'),
         'consents_changed': _('The consent texts have been updated. Please review them '
                               'again and save.'),
@@ -199,10 +201,6 @@ class PersonalDataForm(StyledForm):
     landline = forms.CharField(label=_('Landline'), max_length=30, required=False,
                                widget=forms.TextInput(attrs={'autocomplete': 'tel-national',
                                                              'inputmode': 'tel'}))
-    alternative_email = forms.EmailField(
-        label=_('Alternative email'), max_length=254, required=False,
-        widget=forms.EmailInput(attrs={'autocomplete': 'email'}))
-
     CONSENT_LABELS = {
         LegalDocument.Kind.WHATSAPP_CONTACT: _(
             'I agree to be contacted by MyTreatPlan via WhatsApp.'),
@@ -215,11 +213,10 @@ class PersonalDataForm(StyledForm):
     # kind, the document id shown and whether it was ticked.
     consent_token = forms.CharField(required=False, widget=forms.HiddenInput)
 
-    def __init__(self, *args, login_email, user_pk, consent_state=None, **kwargs):
+    def __init__(self, *args, user_pk, consent_state=None, **kwargs):
         """`consent_state`: {kind: (current document, accepted)} read now
         (accounts.profile.consents_of); `user_pk` binds the consent token to the account."""
         super().__init__(*args, **kwargs)
-        self.login_email = login_email
         if len(settings.LANGUAGES) > 1:
             self.fields['language'].choices = list(settings.LANGUAGES)
         else:
@@ -270,13 +267,6 @@ class PersonalDataForm(StyledForm):
         data['consent_token'] = self.current_token()
         self.data = data
 
-    def clean_alternative_email(self):
-        email = get_user_model().objects.normalize_email(self.cleaned_data['alternative_email'])
-        if email and email.casefold() == (self.login_email or '').casefold():
-            raise forms.ValidationError(self.error_messages['alternative_is_login'],
-                                        code='alternative_is_login')
-        return email
-
     def clean(self):
         cleaned = super().clean()
         number = (cleaned.get('landline') or '').strip()
@@ -314,7 +304,7 @@ class PersonalDataForm(StyledForm):
         form's initial one (an untouched default, e.g. the preselected time zone, is not
         stored). The landline counts as changed when its prefix or number did."""
         names = ('language', 'city', 'time_zone', 'title', 'profession', 'first_name',
-                 'middle_name', 'last_name', 'alternative_email')
+                 'middle_name', 'last_name')
         changed = {name: self.cleaned_data[name] for name in names
                    if name in self.fields and name in self.changed_data}
         if {'landline', 'landline_prefix'} & set(self.changed_data):
@@ -328,3 +318,133 @@ class PersonalDataForm(StyledForm):
         posted = {kind: bool(self.cleaned_data.get(kind)) for kind in self.consent_kinds}
         return {kind: ticked for kind, ticked in posted.items()
                 if ticked != self.shown_consents.get(kind)}
+
+
+# --- The contact changes (epic-doctor-profile entry 3) ------------------------------------
+
+class ContactChangeForm(StyledForm):
+    """The start of a contact change: the new value and the account's current password.
+    The value's checks that tell anything about other accounts (`check_value`) run only
+    after a right password. A wrong password is the `password` error `wrong_password`
+    (the view counts it on the login's password lockout). Checked with the hasher only:
+    the account is never saved here."""
+
+    error_messages = {
+        'wrong_password': _('The password is not correct.'),
+    }
+
+    password = forms.CharField(
+        label=_('Current password'),
+        strip=False,
+        widget=forms.PasswordInput(attrs={'autocomplete': 'current-password'}),
+    )
+
+    def __init__(self, *args, user, **kwargs):
+        self.user = user
+        super().__init__(*args, **kwargs)
+        # The password last: the new value is what the page is about.
+        self.order_fields([name for name in self.fields if name != 'password'] + ['password'])
+
+    def clean_password(self):
+        password = self.cleaned_data['password']
+        if not check_password(password, self.user.password):
+            raise forms.ValidationError(self.error_messages['wrong_password'],
+                                        code='wrong_password')
+        return password
+
+    def clean(self):
+        cleaned = super().clean()
+        if 'password' in cleaned and self.new_value():
+            self.check_value(self.new_value())
+        return cleaned
+
+    def new_value(self):
+        """The cleaned new value, or None."""
+        raise NotImplementedError
+
+    def check_value(self, value):
+        """Add the errors of a valid new value (after a right password)."""
+
+
+class MobileChangeForm(ContactChangeForm):
+    """A new mobile: the signup prefix and number (signup.forms.AccountForm's fields),
+    stored in E.164. Not the current one; not another account's (MOBILE_IN_USE)."""
+
+    error_messages = {
+        **ContactChangeForm.error_messages,
+        'phone_invalid': _('Enter a valid mobile phone number for the selected prefix.'),
+        'same_mobile': _('This is already your mobile phone number.'),
+        'phone_in_use': _('This mobile phone number is already used by another account.'),
+    }
+
+    phone_prefix = forms.ChoiceField(label=_('International prefix'),
+                                     choices=phone_prefix_choices)
+    phone = forms.CharField(
+        label=_('New mobile phone number'),
+        max_length=32,
+        widget=forms.TextInput(attrs={'type': 'tel', 'autocomplete': 'tel-national',
+                                      'inputmode': 'tel', 'autofocus': True}),
+    )
+
+    def clean_phone(self):
+        phone = self.cleaned_data['phone']
+        region = self.cleaned_data.get('phone_prefix')
+        if not region:
+            return None  # the prefix has its own error
+        e164 = parse_mobile(phone, region)
+        if e164 is None:
+            raise forms.ValidationError(self.error_messages['phone_invalid'],
+                                        code='phone_invalid')
+        return e164
+
+    def new_value(self):
+        return self.cleaned_data.get('phone')
+
+    def check_value(self, value):
+        if value == self.user.phone:
+            self.add_error('phone', forms.ValidationError(
+                self.error_messages['same_mobile'], code='same_mobile'))
+        elif mobile_in_use(value, self.user):
+            self.add_error('phone', forms.ValidationError(
+                self.error_messages['phone_in_use'], code='phone_in_use'))
+
+
+class EmailChangeForm(ContactChangeForm):
+    """A new contact (alternative) email: not the login email, not the current one."""
+
+    error_messages = {
+        **ContactChangeForm.error_messages,
+        'alternative_is_login': _('Enter an email address other than your login email.'),
+        'same_email': _('This is already your contact email.'),
+    }
+
+    email = forms.EmailField(
+        label=_('New contact email'), max_length=254,
+        widget=forms.EmailInput(attrs={'autocomplete': 'email', 'autofocus': True}))
+
+    def clean_email(self):
+        return get_user_model().objects.normalize_email(self.cleaned_data['email'])
+
+    def new_value(self):
+        return self.cleaned_data.get('email')
+
+    def check_value(self, value):
+        if value.casefold() == (self.user.email or '').casefold():
+            self.add_error('email', forms.ValidationError(
+                self.error_messages['alternative_is_login'], code='alternative_is_login'))
+        elif value.casefold() == current_contact(self.user, EMAIL).casefold():
+            self.add_error('email', forms.ValidationError(
+                self.error_messages['same_email'], code='same_email'))
+
+
+class ChangeCodeForm(CodeForm):
+    """The code of a contact change (purpose accounts.profile.CHANGE_PURPOSE), sent to the
+    new value: `channel` EMAIL for an email; a mobile's code is checked over SMS (the same
+    code as by WhatsApp). Wrong codes never count on the login lockout: after the
+    provider's 5th wrong attempt the code is no longer valid and a new one is needed."""
+
+    purpose = CHANGE_PURPOSE
+
+    def __init__(self, *args, kind, contact, **kwargs):
+        self.channel = EMAIL if kind == EMAIL else SMS
+        super().__init__(*args, contact=contact, **kwargs)

@@ -68,7 +68,8 @@ class User(AbstractUser):
     Email, names, mobile and the "Others" text are encrypted in the app (story 2.2,
     accounts.crypto). The email is found, and kept unique whatever its case, through
     `email_index`, its blind index, set on every save. The mobile (E.164) has its blind
-    index `phone_index`, indexed but not unique (uniqueness is checked by signup entry 5).
+    index `phone_index`, unique among the accounts that have one (signup entry 5 checks it
+    first; the database rule since epic-doctor-profile entry 3).
     Title, country and how-found-us are stored as codes.
 
     An erased account (accounts.erasure) keeps its email until `purge_after`, as evidence
@@ -126,12 +127,26 @@ class User(AbstractUser):
     # bumped in the transaction of every client write. 0: never sent. The database default
     # lets the previous release insert rows while a deploy migrates.
     sync_version = models.BigIntegerField(default=0, db_default=0, editable=False)
+    # The remembered devices (accounts.devices) given before this time are forgotten: set
+    # by a mobile change (accounts.profile.confirm_contact_change, epic-doctor-profile
+    # entry 3), since the mobile is a second-factor channel. None: none forgotten so far.
+    devices_valid_after = models.DateTimeField(null=True, blank=True, editable=False)
 
     USERNAME_FIELD = 'email'
     EMAIL_FIELD = 'email'
     REQUIRED_FIELDS = []
 
     objects = UserManager()
+
+    class Meta(AbstractUser.Meta):
+        constraints = [
+            # No two accounts share a mobile (epic-doctor-profile entry 3, decision of
+            # 2026-11-15); erased accounts and accounts without a mobile have a blank
+            # index and are left out. Migration 0017 stops, listing the account ids, when
+            # duplicates already exist.
+            models.UniqueConstraint(fields=('phone_index',), condition=~models.Q(phone_index=''),
+                                    name='accounts_user_phone_index_unique'),
+        ]
 
     def __str__(self):
         return self.email
@@ -224,3 +239,41 @@ class Profile(models.Model):
     def __str__(self):
         # Never a name or contact data.
         return f'Profile {self.pk}'
+
+
+class PendingContactChange(models.Model):
+    """A mobile or contact-email change waiting for its code (epic-doctor-profile entry 3,
+    accounts.profile): the new value, encrypted, and its blind index, for one account and
+    kind. One row per account and kind (a new start replaces it); it lives
+    PENDING_CHANGE_SECONDS (the code's validity) from `created_at`, and is deleted once
+    confirmed, refused or found expired. The session holds only the row's id; nothing
+    logs the value."""
+
+    MOBILE = 'mobile'
+    EMAIL = 'email'
+    KINDS = [(MOBILE, _('mobile phone number')), (EMAIL, _('contact email'))]
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                             related_name='pending_contact_changes')
+    kind = models.CharField(max_length=10, choices=KINDS)
+    value = EncryptedCharField(max_length=254)
+    value_index = models.CharField(max_length=BLIND_INDEX_LENGTH, editable=False)
+    created_at = models.DateTimeField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=('user', 'kind'),
+                                    name='accounts_pending_contact_change_one_per_kind'),
+        ]
+
+    def __str__(self):
+        # Never the value.
+        return f'Pending {self.kind} change {self.pk}'
+
+    def save(self, *args, **kwargs):
+        self.value_index = (phone_index(self.value) if self.kind == self.MOBILE
+                            else email_index(self.value))
+        update_fields = kwargs.get('update_fields')
+        if update_fields is not None and 'value' in update_fields:
+            kwargs['update_fields'] = {*update_fields, 'value_index'}
+        super().save(*args, **kwargs)

@@ -5,6 +5,7 @@ command `sync_clients`. Events land in the outbox (integration.outbox); no test 
 the network or a KMS (fixed, non-secret test seeds)."""
 import base64
 import io
+import itertools
 import logging
 import threading
 import uuid
@@ -57,10 +58,16 @@ def last_payload(user):
     return OutboxEvent.objects.filter(aggregate_id=user.uid).latest('id').payload
 
 
+_OTHER_PHONES = itertools.count(1000)
+
+
 def doctor(email='bea@example.com', **fields):
-    """A client account written outside the sync (as before this release), sync_version 0."""
+    """A client account written outside the sync (as before this release), sync_version 0.
+    Each other email gets a mobile of its own (no two accounts share one, 6.3)."""
+    phone = ('+33612345678' if email == 'bea@example.com'
+             else f'+3361234{next(_OTHER_PHONES):04d}')
     defaults = dict(title='dr', first_name='Bea', last_name='Lopez', country='FR',
-                    phone='+33612345678', how_found='others', how_found_other=OTHER_TEXT)
+                    phone=phone, how_found='others', how_found_other=OTHER_TEXT)
     return User.objects.create_user(email, PASSWORD, **{**defaults, **fields})
 
 

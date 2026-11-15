@@ -1,6 +1,7 @@
 """The registered area's entry and exit: login, logout, the welcome page, and the doctor
 area's home and "coming soon" pages (epic-doctor-profile entry 1) and its settings area
-(the personal-data page and the sections not built yet, entry 2).
+(the personal-data page and the sections not built yet, entry 2; the code-confirmed
+mobile and contact-email changes, entry 3).
 
 Login checks the CAPTCHA (signup.captcha) first, then the credentials (accounts.forms).
 A right password logs no one in: it starts a pending login (`start_pending_login`), and
@@ -37,6 +38,7 @@ from django.contrib.auth import REDIRECT_FIELD_NAME, get_user_model
 from django.contrib.auth import login as auth_login
 from django.contrib.auth import logout as auth_logout
 from django.contrib.auth.decorators import login_required
+from django.core.cache import cache
 from django.core.exceptions import NON_FIELD_ERRORS
 from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import redirect, render, resolve_url
@@ -60,9 +62,9 @@ from signup.steps import (CODE_STATE_SESSION_KEY, SENT, code_help_context, code_
 from signup.verification import (CODE_TTL_SECONDS, EMAIL, MOBILE, PURPOSE_LOGIN, SMS,
                                  WHATSAPP)
 
-from . import devices, doctor_area, login_guard, profile
-from .forms import (LoginCodeForm, LoginContactForm, LoginForm, PersonalDataForm, mask_email,
-                    mask_phone, split_landline)
+from . import devices, doctor_area, login_failures, login_guard, profile
+from .forms import (ChangeCodeForm, EmailChangeForm, LoginCodeForm, LoginContactForm, LoginForm,
+                    MobileChangeForm, PersonalDataForm, mask_email, mask_phone, split_landline)
 
 # Where a login lands without a safe `next`: the doctor area's home (signup still ends on
 # the upgrade screen or the welcome page).
@@ -467,12 +469,10 @@ def personal_data(request):
         'last_name': user.last_name,
         'landline_prefix': prefix,
         'landline': national,
-        'alternative_email': stored.alternative_email,
         **{kind: accepted for kind, (_document, accepted) in consents.items()},
     }
     form = PersonalDataForm(request.POST if request.method == 'POST' else None,
-                            initial=initial, login_email=user.email, user_pk=user.pk,
-                            consent_state=consents)
+                            initial=initial, user_pk=user.pk, consent_state=consents)
     if request.method == 'POST' and form.is_valid():
         changes = form.changes()
         profile.update_personal_data(user, changes, form.consents())
@@ -492,7 +492,193 @@ def personal_data(request):
         'terms_accepted_on': accepted_on,
         'country_name': doctor_area.country_name(user),
         'mobile': user.phone,
+        'contact_email': stored.alternative_email,
     })
+
+
+# --- The contact changes (epic-doctor-profile entry 3) ------------------------------------
+#
+# Each kind (the mobile, the contact email) has a start page (the new value and the current
+# password) and a code page. A valid start keeps the new value in a pending change
+# (accounts.profile.start_contact_change: encrypted, 10 minutes) and sends a code to it
+# (signup.steps.send_code: purpose profile.CHANGE_PURPOSE, the per-contact cooldown and
+# hourly limits, the per-IP limit and the account's own hourly limit; the mobile's by
+# WhatsApp, else SMS). The session holds only the pending row's id (CHANGE_SESSION_KEY)
+# and the code page's state (signup.steps, page CHANGE_PAGES[kind]): never the value or a
+# code. An accepted code writes the value through profile.confirm_contact_change. A wrong
+# password counts on the login's password lockout (and is refused while the account is
+# locked, with the lockout's own message); wrong codes never lock the account.
+
+CHANGE_SESSION_KEY = 'contact_change'  # {kind: pending change id}
+# A change just written (its account, kind and pending row id; no value), kept a minute in
+# the cache: a double-clicked "Confirm" whose second request comes after the first wrote
+# the change goes quietly to the personal-data page instead of "expired". In the cache, not
+# the session: the second request may have read the session before the first saved it.
+CHANGE_DONE_SECONDS = 60
+
+
+def _done_key(user, kind, change_id):
+    return f'contact-change-done:{user.pk}:{kind}:{change_id}'
+
+
+def _mark_done(user, kind, change_id):
+    cache.set(_done_key(user, kind, change_id), 1, timeout=CHANGE_DONE_SECONDS)
+
+
+def _just_done(user, kind, change_id):
+    return change_id is not None and bool(cache.get(_done_key(user, kind, change_id)))
+MOBILE_CHANGE, EMAIL_CHANGE = profile.MOBILE, profile.EMAIL
+# The code-state page names (and the event-log steps) of the two flows.
+CHANGE_PAGES = {MOBILE_CHANGE: 'settings-mobile', EMAIL_CHANGE: 'settings-email'}
+CHANGE_URLS = {MOBILE_CHANGE: ('settings_mobile', 'settings_mobile_code'),
+               EMAIL_CHANGE: ('settings_email', 'settings_email_code')}
+CHANGE_EXPIRED_MESSAGE = gettext_lazy('This change has expired. Please start again.')
+CHANGED_MESSAGES = {
+    MOBILE_CHANGE: gettext_lazy('Your mobile phone number has been changed.'),
+    EMAIL_CHANGE: gettext_lazy('Your contact email has been changed.'),
+}
+
+
+def _end_change(request, kind):
+    """Forget the session's pending change of `kind` and its code page's state."""
+    ids = dict(request.session.get(CHANGE_SESSION_KEY) or {})
+    if ids.pop(kind, None) is not None:
+        request.session[CHANGE_SESSION_KEY] = ids
+    states = request.session.get(CODE_STATE_SESSION_KEY)
+    if states and CHANGE_PAGES[kind] in states:
+        request.session[CODE_STATE_SESSION_KEY] = {
+            page: state for page, state in states.items() if page != CHANGE_PAGES[kind]}
+
+
+def _first_channel(kind):
+    return WHATSAPP if kind == MOBILE_CHANGE else EMAIL
+
+
+def _change_start(request, kind):
+    """The start page of a change of `kind` (see above)."""
+    user = request.user
+    page = CHANGE_PAGES[kind]
+    form_class = MobileChangeForm if kind == MOBILE_CHANGE else EmailChangeForm
+    if request.method == 'POST':
+        form = form_class(request.POST, user=user)
+        if login_guard.account_locked(account_id=user.pk):
+            # Refused before the password is checked (as the login); recorded, not counted.
+            login_guard.record_blocked(request, step=page, account_id=user.pk)
+            refuse(form, 'locked')
+        elif form.is_valid():
+            value = form.new_value()
+            change = profile.start_contact_change(user, kind, value)
+            _end_change(request, kind)
+            request.session[CHANGE_SESSION_KEY] = {
+                **(request.session.get(CHANGE_SESSION_KEY) or {}), kind: change.pk}
+            send_code(request, None, page, value, profile.CHANGE_PURPOSE, _first_channel(kind),
+                      account_id=user.pk)
+            return redirect(CHANGE_URLS[kind][1])
+        elif form.has_error('password', 'wrong_password'):
+            if login_guard.record_failure(request, login_failures.PASSWORD,
+                                          login_guard.WRONG_PASSWORD, step=page,
+                                          account_id=user.pk):
+                refuse(form, 'locked')
+    else:
+        initial = ({'phone_prefix': user.country.code if user.country else ''}
+                   if kind == MOBILE_CHANGE else {})
+        form = form_class(user=user, initial=initial)
+    return render(request, 'accounts/settings_contact_change.html', {
+        **_settings_context(request, 'settings'),
+        'form': form,
+        'kind': kind,
+        'current': profile.current_contact(user, kind),
+    })
+
+
+def _change_code(request, kind):
+    """The code page of a change of `kind`: check the code (an accepted one writes the
+    change), or send a new one (`action`: `resend` over the channel used last, `sms` for
+    the mobile), within the limits."""
+    user = request.user
+    page = CHANGE_PAGES[kind]
+    start = CHANGE_URLS[kind][0]
+    change_id = (request.session.get(CHANGE_SESSION_KEY) or {}).get(kind)
+    change = profile.pending_change(user, kind, change_id)
+    if change is None:
+        _end_change(request, kind)
+        if _just_done(user, kind, change_id):
+            return redirect('settings')  # the first click wrote it
+        if change_id is not None:
+            messages.error(request, CHANGE_EXPIRED_MESSAGE)
+        return redirect(start)
+    contact = change.value
+    action = request.POST.get('action') if request.method == 'POST' else None
+    if action is not None:
+        if action == 'sms' and kind == MOBILE_CHANGE:
+            channel, message = SMS, _('We have sent you the code again by SMS.')
+        elif action == 'resend':
+            last = code_state(request, page).get('channel')
+            channel = EMAIL if kind == EMAIL_CHANGE else (SMS if last == SMS else WHATSAPP)
+            message = _('We have sent you the code again.')
+        else:
+            return redirect(CHANGE_URLS[kind][1])  # an unknown action, or SMS for an email
+        outcome = send_code(request, None, page, contact, profile.CHANGE_PURPOSE, channel,
+                            resend=True, account_id=user.pk)
+        if outcome.status == SENT:
+            messages.success(request, message)
+        return redirect(CHANGE_URLS[kind][1])
+
+    if request.method == 'POST':
+        form = ChangeCodeForm(request.POST, kind=kind, contact=contact)
+        if form.is_valid():
+            result = profile.confirm_contact_change(user, kind, change.pk)
+            _end_change(request, kind)
+            if result.status == profile.CHANGED:
+                _mark_done(user, kind, change.pk)
+            elif _just_done(user, kind, change.pk):
+                return redirect('settings')  # a parallel click wrote it
+            if result.status == profile.EXPIRED:
+                messages.error(request, CHANGE_EXPIRED_MESSAGE)
+                return redirect(start)
+            if result.status == profile.IN_USE:
+                messages.error(request, MobileChangeForm.error_messages['phone_in_use'])
+                return redirect(start)
+            messages.success(request, CHANGED_MESSAGES[kind])
+            response = redirect('settings')
+            if kind == MOBILE_CHANGE:
+                # This browser's mark is forgotten too (it is no longer valid anyway).
+                response.delete_cookie(devices.cookie_name(user), samesite='Lax')
+            return response
+        elif _just_done(user, kind, change.pk):
+            # The code was used by a parallel click that wrote the change meanwhile.
+            _end_change(request, kind)
+            return redirect('settings')
+    else:
+        form = ChangeCodeForm(kind=kind, contact=contact)
+    code = code_help_context(request, page, form, contact, profile.CHANGE_PURPOSE,
+                             change_url=reverse(start), sms=kind == MOBILE_CHANGE)
+    return render(request, 'accounts/settings_contact_code.html', {
+        **_settings_context(request, 'settings'),
+        'form': form,
+        'kind': kind,
+        'contact': contact,
+        'code': code,
+    })
+
+
+def _change_view(kind, step):
+    """A signed-in page of the change of `kind`: the start, or the code (`step`)."""
+    @sensitive_post_parameters('password', 'code')
+    @csrf_protect
+    @never_cache
+    @require_http_methods(['GET', 'POST'])
+    @login_required
+    def view(request):
+        return (_change_start if step == 'start' else _change_code)(request, kind)
+    view.__name__ = f'settings_{kind}' + ('' if step == 'start' else '_code')
+    return view
+
+
+settings_mobile = _change_view(MOBILE_CHANGE, 'start')
+settings_mobile_code = _change_view(MOBILE_CHANGE, 'code')
+settings_email = _change_view(EMAIL_CHANGE, 'start')
+settings_email_code = _change_view(EMAIL_CHANGE, 'code')
 
 
 @login_required
