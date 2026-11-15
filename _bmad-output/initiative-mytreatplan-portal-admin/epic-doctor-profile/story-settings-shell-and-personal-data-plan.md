@@ -3,7 +3,7 @@ title: 'Settings shell and personal data'
 type: 'feature'
 ticket: '2'
 created: '2026-11-15'
-status: 'built'
+status: 'done'
 baseline_revision: '83ef699'
 route: 'full'
 route_source: 'auto'
@@ -172,3 +172,16 @@ Two reviewers: the portal diff (privacy and security focus) and the core + admin
 | 11 | low | core: no CHANGELOG file | rejected: the README holds the version history, as before |
 
 Session runs after the fixes, with master (8.3) merged in and the wheel built from the v0.26.0 tag: portal 3241 passed, 12 skipped; admin 1588 passed, 12 skipped; `makemigrations --check` clean in both. Core CI passed on master and on the tag.
+
+## Staging
+
+- mytp-core v0.26.0 (commit 3ea6598, CI passed on master and on the tag). mytp-admin PR #41, merge 52c723b, master run 43695968881 (test and deploy success). Portal PR #104, merge 744f59e, master run 43696479257 (test and both deploys success). Local suites: portal 3241 passed, 12 skipped; admin 1588 passed, 12 skipped.
+- 2026-11-15, checks run from the server side (the test client signed a test doctor in on dev: a session row and page records were written):
+  1. `/healthz` ok on dev, dev-ae and admindev. `accounts` 0015 and `legal` 0008 applied on both portals, `clients` 0002 on admindev (4 records intact, new fields blank). Each portal gained one published provisional WhatsApp document for its own region (dev 5 → 6 documents, dev-ae 4 → 5); choices unchanged (8 and 8).
+  2. The page renders in EN and ES on dev with the five tiles, the three read-only fields and the two consent boxes; on dev-ae without the language field. The four unbuilt sections answer.
+  3. dev: a save of title, city and time zone was stored, emitted one `client.updated`, and the admindev client record shows the three values at version 2.
+  4. dev: the same POST carried country, phone and email; all three unchanged.
+  5. dev: ticking and unticking the WhatsApp consent added one row each with its time; the terms rows untouched; no event.
+  6. dev: signup still offers the four kinds it offered before (no WhatsApp).
+  7. Visual check against the mockup (EN, ES, desktop, phone): left to the user, not reported yet.
+- The test doctor on dev keeps the check values (title Dr., city "Staging Check City", time zone Europe/Lisbon).
