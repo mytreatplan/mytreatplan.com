@@ -3,15 +3,15 @@ title: 'Included cases on subscriptions'
 type: 'feature'
 ticket: '17'
 created: '2026-11-15'
-status: 'ready-for-dev'
-baseline_revision: 'b2fc973'
+status: 'built'
+baseline_revision: 'd26fc1e'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
 review: 'quick'
 review_source: 'pinned'
-lenses_ran: []
-review_loop_iteration: 0
+lenses_ran: ['quick']
+review_loop_iteration: 1
 context: []
 ---
 
@@ -75,15 +75,15 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] mytp-core `contracts/catalogue.py` -- optional `included_cases` on `CatalogueSubscription` (category → whole number 1..1,000, zeros refused or dropped as discounts do), in `SUBSCRIPTION_OPTIONAL` and `_without_absent`; helper `included_cases(entry, category)` beside `subscription_discount` (legacy `tps` mapped; 0 for none); docstring "Since 0.27.0"; schema re-export; version 0.27.0 (`pyproject.toml`, `__init__.py`, `tests/test_hub.py`); README catalogue + compatibility paragraphs; tests (old snapshot signs identically, new field round-trips, bad values refused). Do NOT tag or push: I release.
-- [ ] mytp-admin `catalogue/models.py` + migration 0010 -- `included_cases` JSONField (default `{}`), `check_included_cases` (category in `SUBSCRIPTION_CATEGORIES`, whole number 0..1,000), in `clean()`; `included_cases_for`, `included_cases_text`.
-- [ ] mytp-admin `catalogue/service.py` -- in `SUBSCRIPTION_FIELDS`, normalised like `normal_discounts` (0 dropped), `create_subscription`/`update_subscription` keyword.
-- [ ] mytp-admin `catalogue/views.py` + `_form.html` -- an `included_cases` column in the category table, required, initial 0, edit initials from the row; details page and table show the numbers; Spanish where the admin translates.
-- [ ] mytp-admin `catalogue/snapshot.py` -- `subscription_entry` adds `included_cases` only when the map has an entry.
-- [ ] mytp-admin `catalogue/seed_staging.py` -- Advanced 12, Premium 25 on `tps_branded`, both regions; idempotent re-run.
-- [ ] mytp-admin tests and README -- the matrix rows on the admin side; the pinned field lists (`test_subscriptions.py`, `test_vendored_core.py` version + field set, audit tests); README subscriptions and seed paragraphs.
-- [ ] Portal `catalogue/models.py` + migration 0009 -- nullable `included_cases` JSON column; `catalogue/applier.py` stores it (absent → None); `catalogue/resolver.py` `included_cases(subscription, category)` (0 for none, legacy `tps` mapped) in `__all__`; tests incl. `integration/tests/test_vendored_core.py`; `deploy/README.md` paragraph.
-- [ ] Vendor the core wheel in both sites (a local build during the work; I rebuild from the tag before the PRs).
+- [x] mytp-core `contracts/catalogue.py` -- optional `included_cases` on `CatalogueSubscription` (category → whole number 1..1,000, zeros refused or dropped as discounts do), in `SUBSCRIPTION_OPTIONAL` and `_without_absent`; helper `included_cases(entry, category)` beside `subscription_discount` (legacy `tps` mapped; 0 for none); docstring "Since 0.27.0"; schema re-export; version 0.27.0 (`pyproject.toml`, `__init__.py`, `tests/test_hub.py`); README catalogue + compatibility paragraphs; tests (old snapshot signs identically, new field round-trips, bad values refused). Do NOT tag or push: I release.
+- [x] mytp-admin `catalogue/models.py` + migration 0010 -- `included_cases` JSONField (default `{}`), `check_included_cases` (category in `SUBSCRIPTION_CATEGORIES`, whole number 0..1,000), in `clean()`; `included_cases_for`, `included_cases_text`.
+- [x] mytp-admin `catalogue/service.py` -- in `SUBSCRIPTION_FIELDS`, normalised like `normal_discounts` (0 dropped), `create_subscription`/`update_subscription` keyword.
+- [x] mytp-admin `catalogue/views.py` + `_form.html` -- an `included_cases` column in the category table, required, initial 0, edit initials from the row; details page and table show the numbers; Spanish where the admin translates.
+- [x] mytp-admin `catalogue/snapshot.py` -- `subscription_entry` adds `included_cases` only when the map has an entry.
+- [x] mytp-admin `catalogue/seed_staging.py` -- Advanced 12, Premium 25 on `tps_branded`, both regions; idempotent re-run.
+- [x] mytp-admin tests and README -- the matrix rows on the admin side; the pinned field lists (`test_subscriptions.py`, `test_vendored_core.py` version + field set, audit tests); README subscriptions and seed paragraphs.
+- [x] Portal `catalogue/models.py` + migration 0009 -- nullable `included_cases` JSON column; `catalogue/applier.py` stores it (absent → None); `catalogue/resolver.py` `included_cases(subscription, category)` (0 for none, legacy `tps` mapped) in `__all__`; tests incl. `integration/tests/test_vendored_core.py`; `deploy/README.md` paragraph.
+- [x] Vendor the core wheel in both sites (a local build during the work; I rebuild from the tag before the PRs).
 
 **Acceptance Criteria:**
 - Given an Advanced subscription with 12 on branded TPS saved on admindev, when dev pulls the next snapshot, then dev's copy holds the map and `included_cases(sub, 'tps_branded')` returns 12.
@@ -98,3 +98,25 @@ Keep the helper name source-neutral (`included_cases`) and the map keyed by cate
 ## Verification
 
 Suites of the three repos; `makemigrations --check` in both sites; core schema export check.
+
+## Implementation Notes
+
+- Core: `included_cases: dict[Code, IncludedCases] | None` (StrictInt 1..`MAX_INCLUDED_CASES` = 1,000; a 0 is refused, the writer drops it); helper `included_cases(included, category)` takes the map (or None) and the category (the plan's "entry" read as the map, so the portal passes its stored column); `tps` is mapped in the category and in the map's keys (exact key first); it re-checks the value (whole 0..1,000). Method `CatalogueSubscription.included_cases_for(category)`. `SNAPSHOT_READER` unchanged.
+- Admin: the form field is an `IntegerField(required=True, initial=0, min 0, max 1,000)` per category, errors "A whole number is required (0 for none)" (empty, text, 2.5) and "Included cases are a whole number from 0 to 1,000 (0 for none)" (-1, 1001). The admin site does not translate its forms (English staff UI; its `LANGUAGES` are the public-text languages), so no Spanish strings were added. Test POSTs carry `conftest.ZERO_CASES`. The snapshot also filters a stored 0 defensively.
+- Local wheel: built from a copy of the core working tree's tracked files (`git ls-files | rsync`), `SOURCE_DATE_EPOCH` = core HEAD commit time, `pip wheel --no-deps`, copied to both sites' `vendor/` with the `requirements.txt` line moved to 0.27.0. Rebuild from the tag with `scripts/vendor-mytp-core.sh v0.27.0` before the PRs.
+- Deploy-order row: checked by hand with the shared `../.venv` (mytp-core 0.26.0) verifying and validating a signed snapshot that carries `included_cases`: accepted, field dropped.
+- Results: core 1598 passed, 4 skipped; admin 1608 passed, 12 skipped; portal 3307 passed, 12 skipped; `makemigrations --check` no changes in both sites; `export_contract_schemas --check` up to date.
+- Review fixes (2026-11-15): (1) the admin column has `db_default=models.Value({}, models.JSONField())` (model and migration 0010, edited in place: unreleased), so the previous release can still insert subscriptions during the migrate; test `test_a_row_written_without_the_column_gets_an_empty_map` inserts a row by raw SQL without the column (works on SQLite: the test database is built by the migrations, so the column has its DEFAULT). (2) Core test `test_a_reader_ignores_a_subscription_field_it_does_not_know` pins `extra == 'ignore'` on `CatalogueSubscription` and `CatalogueSection` (the deploy-order row). (3) `MAX_INCLUDED_CASES` sorted in core's `contracts/__init__.py` import and the line wrapped; the portal's `__all__` line and an admin service docstring line wrapped. The wheel was rebuilt (sha256 `c52bc146…c67c`) and re-vendored in both sites. Results after the fixes: core 1599 passed, 4 skipped; admin 1609 passed, 12 skipped; portal 3307 passed, 12 skipped; `makemigrations --check` no changes in both sites; schemas up to date.
+
+## Review Triage Log
+
+Quick lens (Opus reviewer, 2026-11-15) over the three repos: backward compatibility, admin form, seed, core helper and version bump all ok.
+
+| # | Severity | Finding | Verdict |
+|---|----------|---------|---------|
+| 1 | low | Admin column NOT NULL with only a Python default: the previous release, still serving during migrate, fails on a subscription INSERT | patched: `db_default` `{}` on the field and 0010; raw-INSERT test |
+| 2 | low | Admin snapshot entry drops only falsy values; a bad value written outside the service would block every snapshot build | rejected: same exposure as `discounts`/`call_extras`; form, service and model refuse bad values |
+| 3 | low | "A 0.26 reader ignores the field" had no automated test | patched: core test pins `extra='ignore'` on `CatalogueSubscription` and `CatalogueSection` |
+| 4 | low | Long lines / import order | patched |
+
+Suites after the patches, run by me on the tagged v0.27.0 wheel (sha256 e759698f…): core 1599 passed / 4 skipped (CI green on master and the tag); admin 1609 / 12; portal 3307 / 12; `makemigrations --check` clean in both sites.

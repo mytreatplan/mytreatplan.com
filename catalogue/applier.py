@@ -121,7 +121,8 @@ def _subscription(subscription, manual, foreign=frozenset()):
     sent, but the ids of `foreign` (products of another region) in its linked products;
     what is absent (an admin site before mytp-core 0.22.0) as None for the linked
     products and the discounts map (every product, the two former discounts), no code,
-    no texts, no price, no call extras."""
+    no texts, no price, no call extras; the included cases as sent (mytp-core 0.27.0),
+    None when absent."""
     price = subscription.price
     return Subscription(
         id=subscription.id, tier=subscription.tier,
@@ -142,6 +143,8 @@ def _subscription(subscription, manual, foreign=frozenset()):
             category: ({'extra_calls': extras.extra_calls} if extras.minutes is None
                        else {'extra_calls': extras.extra_calls, 'minutes': extras.minutes})
             for category, extras in (subscription.call_extras or {}).items()},
+        included_cases=(None if subscription.included_cases is None
+                        else dict(subscription.included_cases)),
         active=subscription.active)
 
 

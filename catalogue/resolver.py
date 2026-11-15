@@ -38,6 +38,10 @@ Subscriptions in full (epic-catalogue entry 8, user decisions 2026-11-11):
   product's calls plus the subscription's extra calls for its category, each of the
   subscription's length when it gives one (3 calls of 25 minutes are 4 of 35 under
   "+1 call, 35 minutes"); None for a product that grants no calls.
+- `included_cases(subscription, category)` (story 5.17): how many cases of `category` the
+  subscription includes free over its 12-month term; 0 for none (no map, or a category
+  not in it); `tps` reads as `tps_branded`. Only the number: counting and spending the
+  cases is epic-subscriptions 8.13.
 - A subscription's own price is on its row (`Subscription.monthly_price`,
   `upfront_price`, `free`): stored and readable here; charging it is epic-subscriptions.
 
@@ -136,7 +140,8 @@ from decimal import Decimal
 from django.utils import timezone
 
 from mytp_core.contracts import (AddOnRefused, QuantityRefused, add_on_applies,
-                                 billing_offers, calls_under, check_quantity, line_price,
+                                 billing_offers, calls_under, check_quantity,
+                                 included_cases as core_included_cases, line_price,
                                  link_labels, normalize_voucher_code,
                                  subscription_discount, subscription_offers, sum_costs)
 from mytp_core.money import Money
@@ -149,8 +154,8 @@ __all__ = ['AddOnRefused', 'ProductRefused', 'QuantityRefused', 'add_on', 'add_o
            'add_ons',
            'billing_company', 'billing_rule', 'billing_rule_by_id', 'billing_rule_for',
            'calls', 'cost', 'country_group', 'country_group_by_id', 'discount_percent',
-           'has_billing_rules', 'linked', 'normal_category', 'normal_country',
-           'normal_tier', 'offers', 'offers_under', 'price', 'product',
+           'has_billing_rules', 'included_cases', 'linked', 'normal_category',
+           'normal_country', 'normal_tier', 'offers', 'offers_under', 'price', 'product',
            'provider_product_by_id', 'subscription', 'subscription_by_code',
            'subscription_by_id', 'subscription_rule', 'today', 'unit_price',
            'voucher_by_code', 'voucher_state', 'voucher_usable', 'VOUCHER_STATES',
@@ -365,6 +370,14 @@ def calls(product, subscription):
     extras = (subscription.call_extras or {}).get(product.category) or {}
     return calls_under(product.calls, product.call_minutes, extras.get('extra_calls', 0),
                        extras.get('minutes'))
+
+
+def included_cases(subscription, category):
+    """How many cases of `category` the subscription includes free over its 12-month
+    term (story 5.17): its number for that category, 0 for none (a subscription without
+    the map, a snapshot of an admin site before mytp-core 0.27.0, or a category not in
+    it). `tps`, the code of an admin site before 0.20.0, reads as `tps_branded`."""
+    return core_included_cases(subscription.included_cases, category)
 
 
 def unit_price(product, subscription):

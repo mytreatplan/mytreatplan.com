@@ -7,7 +7,8 @@ provider costs section, epic-catalogue entry 4; the products' texts, code and va
 the in-house TPS discount, epic-catalogue entry 5; add-ons, sizes, per-unit quantities,
 calls and cost links, entry 6; subscriptions in full, entry 8; billing companies and
 billing rules, entry 9; voucher definitions, entry 10; the catalogue per region, entry
-16; the client's personal-data fields, epic-doctor-profile entry 2)."""
+16; the client's personal-data fields, epic-doctor-profile entry 2; the included cases of
+a subscription, epic-catalogue story 5.17)."""
 
 from decimal import Decimal
 
@@ -18,7 +19,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.26.0'
+    assert mytp_core.__version__ == '0.27.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -147,7 +148,7 @@ def test_vendored_mytp_core_has_subscriptions_in_full():
     assert CatalogueSubscription.model_fields.keys() == {
         'id', 'tier', 'country_group', 'tps_discount_percent',
         'tps_in_house_discount_percent', 'active', 'code', 'texts', 'products',
-        'discounts', 'price', 'call_extras'}
+        'discounts', 'price', 'call_extras', 'included_cases'}
     assert SubscriptionPrice.model_fields.keys() == {'currency', 'monthly', 'upfront'}
     assert CallExtras.model_fields.keys() == {'extra_calls', 'minutes'}
     assert subscription_discount('odb', discounts={'odb': Decimal('12.00')}) == Decimal('12.00')
@@ -176,3 +177,14 @@ def test_vendored_mytp_core_has_the_client_personal_data_fields():
                  'language'):
         assert ClientUpdated.model_fields[name].is_required() is False
         assert ClientUpdated.model_fields[name].default == ''
+
+
+def test_vendored_mytp_core_has_the_included_cases():
+    """Story 5.17 (0.27.0): a subscription's optional included cases per category and
+    the helper the resolver reads them with."""
+    from mytp_core.contracts import (MAX_INCLUDED_CASES, CatalogueSubscription,
+                                     included_cases)
+    assert CatalogueSubscription.model_fields['included_cases'].is_required() is False
+    assert MAX_INCLUDED_CASES == 1000
+    assert included_cases({'tps_branded': 12}, 'tps') == 12
+    assert included_cases(None, 'tps_branded') == 0

@@ -3220,6 +3220,30 @@ sudo -u mytp-dev ./venv/bin/python manage.py price_catalogue --subscription <id 
 #     the line under that subscription; "Refused: the product ... is not offered under the subscription ..."
 ```
 
+Included cases on subscriptions (epic-catalogue story 5.17, mytp-core 0.27.0; user
+decisions 2026-11-15):
+
+- A subscription, standard or manual, may include free cases per product category over
+  its 12-month term (`Subscription.included_cases`, `{"tps_branded": 12}`; migration
+  `catalogue.0009`, a nullable column). The admin site sends the map only when it has a
+  number above 0; without one the column is NULL. Read it with
+  `catalogue.resolver.included_cases(subscription, category)`: the number, 0 for none (no
+  map, or a category not in it); `tps` reads as `tps_branded`. The owner's numbers: 12
+  TPS branded cases on Advanced, 25 on Premium.
+- Only the number is stored. Nothing counts, reserves or spends the cases, nothing is
+  shown to a doctor and no price changes: the remaining count on the home and the
+  "paid subscriptions only" rule come with epic-subscriptions 8.13.
+- A snapshot of an admin site before 0.27.0 (or one where no number is set) applies as
+  before and stores NULL. A portal still on 0.26.0 applies a snapshot with the field and
+  ignores it, so the release order of the two sites does not matter. The first pull
+  after the deploy fills the column from the admin site's current snapshot (every deploy
+  applies it again; migration 0009 clears nothing).
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from catalogue import resolver; s = resolver.subscription('ES', 'advanced'); print(s.code, s.included_cases, resolver.included_cases(s, 'tps_branded'))"
+#   SEED-ADV-IBERIA {'tps_branded': 12} 12
+```
+
 Billing companies and billing rules (epic-catalogue entry 9, mytp-core 0.23.0; AD-6,
 AD-7, AD-16; user decisions 2026-11-11):
 
