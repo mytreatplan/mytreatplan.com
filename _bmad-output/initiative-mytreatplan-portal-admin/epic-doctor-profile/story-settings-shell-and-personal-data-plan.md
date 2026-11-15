@@ -3,14 +3,14 @@ title: 'Settings shell and personal data'
 type: 'feature'
 ticket: '2'
 created: '2026-11-15'
-status: 'in-progress'
+status: 'built'
 baseline_revision: '83ef699'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
 review: 'quick'
 review_source: 'pinned'
-lenses_ran: []
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -152,3 +152,23 @@ Full suites (portal, admin, core); `makemigrations --check` in both sites; `npm 
   8. `accounts/views.py` imports tidied.
   9. Rollback sentence (a portal rolled back before this release blanks the six fields on the admin record; re-sync after rolling forward) in mytp-admin's README "Client records" and the portal's deploy/README.md personal-data paragraph.
 - **Local venvs.** The suites ran in dedicated venvs (`/private/tmp/claude-501/portal-6.2-venv`, `/private/tmp/claude-501/admin-6.2-venv`) built from each site's requirements with the local 0.26.0 wheel. The shared `../.venv` was briefly given 0.26.0, then restored to the committed 0.25.0 wheel so the 8.3 worktree's pin test keeps passing.
+
+## Review Triage Log
+
+Two reviewers: the portal diff (privacy and security focus) and the core + admin diffs.
+
+| # | Severity | Finding | Verdict |
+|---|----------|---------|---------|
+| 1 | medium | A stale tab re-accepted a consent another tab had withdrawn (every shown checkbox was sent, compared with the stored state) | patched: a signed token carries what the page showed; a consent is written only when the tick differs from the shown one |
+| 2 | medium | A consent could be recorded on a text version the doctor did not see | patched: the save is refused when a shown document is no longer current. The carry-over of an earlier acceptance to a new version is left and recorded in deferred-work.md (legal decision) |
+| 3 | low | Delivered `client.updated` rows keep their encrypted payload after erasure until the outbox purge | documented in the README; behaviour unchanged (already true for email and phone); test asserts the pending rows are gone |
+| 4 | low | The language select could show a stored language different from the page and not switch on save | patched |
+| 5 | low | `aria-describedby` pointed at a missing element for an account with no accepted terms | patched |
+| 6 | low | A test compared a UTC date with a date rendered in the site zone | patched |
+| 7 | low | No tests for `legal` 0008, the one-language redirect, the outbox on erasure | patched |
+| 8 | nit | Import order in `accounts/views.py` | patched |
+| 9 | low | admin: an event from a rolled-back portal blanks the six fields | patched: rollback note in both READMEs |
+| 10 | low | core: the optional-email pattern is loose | rejected: deliberate, the portal validates before emitting and a strict pattern could block the queue |
+| 11 | low | core: no CHANGELOG file | rejected: the README holds the version history, as before |
+
+Session runs after the fixes, with master (8.3) merged in and the wheel built from the v0.26.0 tag: portal 3241 passed, 12 skipped; admin 1588 passed, 12 skipped; `makemigrations --check` clean in both. Core CI passed on master and on the tag.
