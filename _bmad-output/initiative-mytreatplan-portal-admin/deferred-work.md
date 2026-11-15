@@ -128,3 +128,15 @@
   summary: Tests that mix a fixed calendar day with today's date fail once that day has passed; three in `subscriptions/tests/test_service.py` did on 2026-11-15 and were given an explicit start date in 6.1's PR. The other fixed days in the test trees (`catalogue/tests` `DAY` constants, `subscriptions/tests/helpers.py` `DAY`) have not been audited for the same pattern: do it in epic-subscriptions' refactor sweep (entry 12).
   evidence: `subscriptions/tests/helpers.py:25` `DAY = date(2026, 11, 14)`; `service.change` defaults `started_on` to today and refuses an end date before it; the full suite on 2026-11-15 gave 3 failed, 3138 passed before the fix.
 
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-settings-shell-and-personal-data-plan.md`
+  summary: The settings area's "Change password" tile (6.2) opens a "coming soon" page and no story owns a password change for a signed-in doctor (user decision 2026-11-15): give it an owner (epic-login or epic-doctor-profile) or drop the tile.
+  evidence: `accounts/urls.py` (`settings_password` on `accounts.views.settings_coming_soon`), `accounts/views.py` `SETTINGS_SECTIONS`.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-settings-shell-and-personal-data-plan.md`
+  summary: The preferred language saved on the personal-data page (6.2) only switches the page after the save; a login does not land in it yet (the language still comes from the URL prefix). Land the doctor in `Profile.language` after login in a later story.
+  evidence: `accounts/models.py` `Profile.language`; `accounts/views.py` `personal_data` (the redirect) and `LOGIN_REDIRECT`.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-settings-shell-and-personal-data-plan.md`
+  summary: The time zone saved on the personal-data page (6.2) is stored and sent to the admin site only; every page keeps the site's zone (`TIME_ZONE = REGION_PROFILE.time_zone`). Activating the doctor's zone (dates and times shown in it) is for a later story.
+  evidence: `accounts/models.py` `Profile.time_zone`; `mytreatplan/settings.py` `TIME_ZONE`.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-settings-shell-and-personal-data-plan.md`
+  summary: Product/legal decision for when the final texts arrive: should a new version of an optional consent text (WhatsApp contact, commercial communications) require a fresh acceptance? Today (6.2) an acceptance given on an earlier version still shows as ticked on the personal-data page after a new version is published (the latest choice of the kind wins, whatever its version); only a save made on a page showing the older version is refused.
+  evidence: `accounts/profile.py` `consents_of` (latest choice per kind), `accounts/forms.py` `PersonalDataForm.clean` (`consents_changed`).

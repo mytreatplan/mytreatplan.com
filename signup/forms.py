@@ -384,7 +384,8 @@ def shown_document_ids(documents):
 
 class LegalForm(forms.Form):
     """The legal step: one checkbox per current document (`documents`, {kind: version},
-    legal.models.LegalDocument.objects.current_by_kind), named by its kind. Terms and
+    legal.models.LegalDocument.objects.current_for_signup), named by its kind; only the
+    kinds of LegalDocument.SIGNUP_KINDS (never the WhatsApp contact consent). Terms and
     Conditions must be ticked (error code `required`); the Ormco TPS contract and the
     commercial consent are optional. None starts ticked but by `initial`.
 
@@ -406,7 +407,7 @@ class LegalForm(forms.Form):
 
     def __init__(self, *args, documents, **kwargs):
         super().__init__(*args, **kwargs)
-        self.documents = {kind: documents[kind] for kind in LegalDocument.Kind.values
+        self.documents = {kind: documents[kind] for kind in LegalDocument.SIGNUP_KINDS
                           if kind in documents}
         self.shown_ids = shown_document_ids(self.documents.values())
         self.fields['shown'].initial = self.shown_ids

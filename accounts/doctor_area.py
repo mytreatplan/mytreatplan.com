@@ -40,6 +40,19 @@ def display_name(user):
 
 
 def country_name(user):
-    """The profile card's second line until entry 2 stores profession and city: the
-    country's name in the active language ('' when unset)."""
+    """The country's name in the active language ('' when unset)."""
     return str(user.country.name) if user.country else ''
+
+
+def profile_line(user):
+    """The profile card's second line (epic-doctor-profile entry 2): "Profession · City",
+    the profession in the active language, when both are set; otherwise the country's
+    name, as before."""
+    from .models import Profile
+
+    profile = Profile.objects.filter(user_id=user.pk).first() if user.pk else None
+    if profile is not None:
+        city = _clean(profile.city)
+        if profile.profession and city:
+            return f'{profile.get_profession_display()} · {city}'
+    return country_name(user)

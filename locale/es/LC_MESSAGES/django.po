@@ -1659,3 +1659,251 @@ msgstr "Volver al inicio"
 #: accounts/templates/accounts/welcome.html
 msgid "Go to your home page"
 msgstr "Ir a su página de inicio"
+
+#: accounts/models.py
+msgid "Orthodontist"
+msgstr "Ortodoncista"
+
+#: accounts/models.py
+msgid "General dentist"
+msgstr "Dentista general"
+
+#: accounts/models.py
+msgid "Paediatric dentist"
+msgstr "Odontopediatra"
+
+#: accounts/models.py
+msgid "Prosthodontist"
+msgstr "Prostodoncista"
+
+#: accounts/models.py
+msgid "Periodontist"
+msgstr "Periodoncista"
+
+#: accounts/models.py
+msgid "Implantologist"
+msgstr "Implantólogo"
+
+#: accounts/models.py
+msgid "Oral and maxillofacial surgeon"
+msgstr "Cirujano oral y maxilofacial"
+
+#: accounts/models.py
+msgid "Other"
+msgstr "Otra"
+
+#: accounts/models.py
+msgid "language"
+msgstr "idioma"
+
+#: accounts/models.py
+msgid "city"
+msgstr "población"
+
+#: accounts/models.py
+msgid "time zone"
+msgstr "franja horaria"
+
+#: accounts/models.py
+msgid "profession"
+msgstr "profesión"
+
+#: accounts/models.py
+msgid "landline"
+msgstr "teléfono fijo"
+
+#: accounts/models.py
+msgid "alternative email"
+msgstr "email alternativo"
+
+#: accounts/forms.py
+msgid "Enter a valid phone number for the selected prefix."
+msgstr "Introduzca un número de teléfono válido para el prefijo seleccionado."
+
+#: accounts/forms.py
+msgid "Select the prefix of the landline."
+msgstr "Seleccione el prefijo del teléfono fijo."
+
+#: accounts/forms.py
+msgid "Enter an email address other than your login email."
+msgstr "Introduzca una dirección de email distinta de su usuario de acceso."
+
+#: accounts/forms.py
+msgid "Location (city)"
+msgstr "Ubicación (población)"
+
+#: accounts/forms.py
+msgid "Time zone"
+msgstr "Franja horaria"
+
+#: accounts/forms.py
+msgid "Profession"
+msgstr "Profesión"
+
+#: accounts/forms.py
+msgid "Landline prefix"
+msgstr "Prefijo del teléfono fijo"
+
+#: accounts/forms.py
+msgid "Landline"
+msgstr "Teléfono fijo"
+
+#: accounts/forms.py
+msgid "Alternative email"
+msgstr "Email alternativo"
+
+#: accounts/forms.py
+msgid "I agree to be contacted by MyTreatPlan via WhatsApp."
+msgstr "Doy mi permiso para que contacten conmigo vía WhatsApp."
+
+#: accounts/forms.py
+msgid ""
+"Yes, I want to receive commercial information from MyTreatPlan and its "
+"partners."
+msgstr "Sí, deseo recibir información comercial de MyTreatPlan y sus asociados"
+
+#: accounts/views.py
+msgid "My details"
+msgstr "Mis datos"
+
+#: accounts/views.py
+msgctxt "settings tile: my details"
+msgid "My"
+msgstr "Mis"
+
+#: accounts/views.py
+msgctxt "settings tile: my details"
+msgid "Details"
+msgstr "Datos"
+
+#: accounts/views.py
+msgid "Maker data"
+msgstr "Datos fabricante"
+
+#: accounts/views.py
+msgctxt "settings tile: maker data"
+msgid "Maker"
+msgstr "Datos"
+
+#: accounts/views.py
+msgctxt "settings tile: maker data"
+msgid "Data"
+msgstr "Fabricante"
+
+#: accounts/views.py
+msgctxt "settings section"
+msgid "Change password"
+msgstr "Cambio de clave"
+
+#: accounts/views.py
+msgctxt "settings tile: change password"
+msgid "Change"
+msgstr "Cambio de"
+
+#: accounts/views.py
+msgctxt "settings tile: change password"
+msgid "Password"
+msgstr "Clave"
+
+#: accounts/views.py
+msgid "Fiscal data"
+msgstr "Datos fiscales"
+
+#: accounts/views.py
+msgctxt "settings tile: fiscal data"
+msgid "Fiscal"
+msgstr "Datos"
+
+#: accounts/views.py
+msgctxt "settings tile: fiscal data"
+msgid "Data"
+msgstr "Fiscales"
+
+#: accounts/views.py
+msgid "Shipping addresses"
+msgstr "Direcciones de envío"
+
+#: accounts/views.py
+msgctxt "settings tile: shipping addresses"
+msgid "Shipping"
+msgstr "Direcciones"
+
+#: accounts/views.py
+msgctxt "settings tile: shipping addresses"
+msgid "Addresses"
+msgstr "Envío"
+
+#: accounts/views.py
+msgid "Your details have been saved."
+msgstr "Sus datos se han guardado."
+
+#: accounts/templates/accounts/settings_base.html
+msgid "Member since"
+msgstr "Fecha de alta"
+
+#: accounts/templates/accounts/settings_base.html
+msgid "Back to Control Panel"
+msgstr "Volver a Panel de Control"
+
+#: accounts/templates/accounts/settings_base.html
+msgid "Settings sections"
+msgstr "Secciones de configuración"
+
+#: accounts/templates/accounts/personal_data.html
+msgid "Review and/or change your details"
+msgstr "Revise y/o modifique sus datos"
+
+#: accounts/templates/accounts/personal_data.html
+msgid "Location (country)"
+msgstr "Ubicación (país)"
+
+#: accounts/templates/accounts/personal_data.html
+msgid "Login user (email)"
+msgstr "Usuario (email) de acceso"
+
+#: accounts/templates/accounts/personal_data.html
+#, python-format
+msgid ""
+"If you need to change your login user, please request it by opening a ticket "
+"in the support area (<a href=\"%(support_url)s\" class=\"text-green-deep "
+"underline underline-offset-2 hover:text-ink\">click here</a>). Thank you."
+msgstr ""
+"Si necesita modificar su usuario de acceso, solicítelo abriendo un ticket en "
+"el área de soporte (<a href=\"%(support_url)s\" class=\"text-green-deep "
+"underline underline-offset-2 hover:text-ink\">haga clic aquí</a>). Gracias."
+
+#: accounts/templates/accounts/personal_data.html
+#, python-format
+msgid ""
+"I accept the <a href=\"%(privacy_url)s\" class=\"text-green-deep underline "
+"underline-offset-2 hover:text-ink\">Privacy Policy</a> and the <a href="
+"\"%(terms_url)s\" class=\"text-green-deep underline underline-offset-2 hover:"
+"text-ink\">Terms of Use</a> of MyTreatPlan"
+msgstr ""
+"Acepto la <a href=\"%(privacy_url)s\" class=\"text-green-deep underline "
+"underline-offset-2 hover:text-ink\">Política de privacidad</a> y los <a href="
+"\"%(terms_url)s\" class=\"text-green-deep underline underline-offset-2 hover:"
+"text-ink\">Términos de uso</a> de MyTreatPlan"
+
+#: accounts/templates/accounts/personal_data.html
+#, python-format
+msgid "accepted on %(date)s"
+msgstr "aceptado el %(date)s"
+
+#: accounts/templates/accounts/personal_data.html
+msgid "Cancel"
+msgstr "Cancelar"
+
+#: accounts/templates/accounts/personal_data.html
+msgid "Save"
+msgstr "Guardar"
+
+#: accounts/forms.py
+msgid "This page has expired. Please reload it and try again."
+msgstr "Esta página ha caducado. Vuelva a cargarla e inténtelo de nuevo."
+
+#: accounts/forms.py
+msgid "The consent texts have been updated. Please review them again and save."
+msgstr ""
+"Los textos de los consentimientos se han actualizado. Revíselos de nuevo y "
+"guarde."

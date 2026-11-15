@@ -18,7 +18,17 @@ urlpatterns = [
     path('patients/', views.coming_soon, {'area': 'patients'}, name='patients'),
     path('support/', views.coming_soon, {'area': 'support'}, name='support'),
     path('messages/', views.coming_soon, {'area': 'messages'}, name='messages'),
-    path('settings/', views.coming_soon, {'area': 'settings'}, name='settings'),
+    # The settings area (epic-doctor-profile entry 2): the personal-data page keeps the
+    # name `settings`; the sections not built yet are "coming soon" inside the area.
+    path('settings/', views.personal_data, name='settings'),
+    path('settings/maker/', views.settings_coming_soon, {'section': 'maker'},
+         name='settings_maker'),
+    path('settings/password/', views.settings_coming_soon, {'section': 'password'},
+         name='settings_password'),
+    path('settings/fiscal/', views.settings_coming_soon, {'section': 'fiscal'},
+         name='settings_fiscal'),
+    path('settings/shipping/', views.settings_coming_soon, {'section': 'shipping'},
+         name='settings_shipping'),
     path('cart/', views.coming_soon, {'area': 'cart'}, name='cart'),
     path('tutorials/', views.coming_soon, {'area': 'tutorials'}, name='tutorials'),
     path('virtuaortho/', views.coming_soon, {'area': 'virtuaortho'}, name='virtuaortho'),

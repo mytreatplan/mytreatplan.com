@@ -1,7 +1,8 @@
 """Legal documents and the choices made on them (CAP-4, CAP-13).
 
 A `LegalDocument` is one version of one kind of document (Terms, Conditions, the Ormco
-TPS contract, commercial consent), in English and Spanish, with a Markdown body
+TPS contract, commercial consent; the WhatsApp contact consent, epic-doctor-profile
+entry 2, offered on the personal-data page and not at signup), in English and Spanish, with a Markdown body
 (legal.rendering). The current version of a kind is the latest whose `published_at` has
 passed: publishing a new version in the admin applies at once, with no deploy. A
 published version is never changed; a change is a new version (legal.admin).
@@ -64,6 +65,12 @@ class LegalDocumentQuerySet(models.QuerySet):
             documents.setdefault(document.kind, document)
         return documents
 
+    def current_for_signup(self, now=None):
+        """`current_by_kind` limited to the kinds the signup legal step offers
+        (LegalDocument.SIGNUP_KINDS)."""
+        return {kind: document for kind, document in self.current_by_kind(now).items()
+                if kind in LegalDocument.SIGNUP_KINDS}
+
 
 class LegalDocument(models.Model):
     class Kind(models.TextChoices):
@@ -71,9 +78,16 @@ class LegalDocument(models.Model):
         CONDITIONS = 'conditions', 'Conditions'
         ORMCO_TPS = 'ormco_tps', 'Ormco TPS contract'
         COMMERCIAL_CONSENT = 'commercial_consent', 'Commercial consent'
+        # Epic-doctor-profile entry 2: chosen on the personal-data page only.
+        WHATSAPP_CONTACT = 'whatsapp_contact', 'WhatsApp contact consent'
 
     # Kinds that must be accepted to sign up; the others are optional.
     REQUIRED_KINDS = (Kind.TERMS, Kind.CONDITIONS)
+    # Kinds the signup legal step offers (in this order). The WhatsApp consent is not one:
+    # it is given on the personal-data page (accounts.profile).
+    SIGNUP_KINDS = (Kind.TERMS, Kind.CONDITIONS, Kind.ORMCO_TPS, Kind.COMMERCIAL_CONSENT)
+    # Optional consents a doctor ticks or unticks on the personal-data page.
+    PROFILE_CONSENT_KINDS = (Kind.WHATSAPP_CONTACT, Kind.COMMERCIAL_CONSENT)
     CROSSES_SITES = True
 
     # AD-5: the id other sites know this record by (the integer key never leaves the

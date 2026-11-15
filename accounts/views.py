@@ -1,5 +1,6 @@
 """The registered area's entry and exit: login, logout, the welcome page, and the doctor
-area's home and "coming soon" pages (epic-doctor-profile entry 1).
+area's home and "coming soon" pages (epic-doctor-profile entry 1) and its settings area
+(the personal-data page and the sections not built yet, entry 2).
 
 Login checks the CAPTCHA (signup.captcha) first, then the credentials (accounts.forms).
 A right password logs no one in: it starts a pending login (`start_pending_login`), and
@@ -30,6 +31,7 @@ changes meanwhile (deactivated, its password or its mobile changed).
 import functools
 import time
 
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import REDIRECT_FIELD_NAME, get_user_model
 from django.contrib.auth import login as auth_login
@@ -38,16 +40,19 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import NON_FIELD_ERRORS
 from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import redirect, render, resolve_url
+from django.urls import reverse
+from django.utils import translation
 from django.utils.crypto import constant_time_compare
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.utils.translation import gettext as _
-from django.utils.translation import gettext_lazy
+from django.utils.translation import gettext_lazy, pgettext_lazy
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_http_methods, require_POST
 
 from eventlog.service import client_ip
+from legal.rendering import render_markdown
 from signup import captcha, limits
 from signup.forms import BLOCKED_MESSAGE, refuse
 from signup.steps import (CODE_STATE_SESSION_KEY, SENT, code_help_context, code_state,
@@ -55,8 +60,9 @@ from signup.steps import (CODE_STATE_SESSION_KEY, SENT, code_help_context, code_
 from signup.verification import (CODE_TTL_SECONDS, EMAIL, MOBILE, PURPOSE_LOGIN, SMS,
                                  WHATSAPP)
 
-from . import devices, doctor_area, login_guard
-from .forms import LoginCodeForm, LoginContactForm, LoginForm, mask_email, mask_phone
+from . import devices, doctor_area, login_guard, profile
+from .forms import (LoginCodeForm, LoginContactForm, LoginForm, PersonalDataForm, mask_email,
+                    mask_phone, split_landline)
 
 # Where a login lands without a safe `next`: the doctor area's home (signup still ends on
 # the upgrade screen or the welcome page).
@@ -396,8 +402,110 @@ def home(request):
     return render(request, 'accounts/home.html', {
         'greeting_name': doctor_area.first_name(user),
         'profile_name': doctor_area.display_name(user),
-        'profile_line': doctor_area.country_name(user),
+        'profile_line': doctor_area.profile_line(user),
     })
+
+
+# The settings area's sections (epic-doctor-profile entry 2, Annex I), in the mockup's
+# order: the URL name, the section's name (the coming-soon heading, the tile's accessible
+# name), the tile's two lines (small, then bold: each with its own context, as the word
+# order differs between languages) and its icon (includes/_icon.html). Only the personal
+# data is built; the others show "coming soon" inside the area until their stories
+# ("Change password" has no owning story yet: deferred-work.md).
+SETTINGS_SECTIONS = [
+    ('settings', gettext_lazy('My details'),
+     pgettext_lazy('settings tile: my details', 'My'),
+     pgettext_lazy('settings tile: my details', 'Details'), 'user'),
+    ('settings_maker', gettext_lazy('Maker data'),
+     pgettext_lazy('settings tile: maker data', 'Maker'),
+     pgettext_lazy('settings tile: maker data', 'Data'), 'tag'),
+    ('settings_password', pgettext_lazy('settings section', 'Change password'),
+     pgettext_lazy('settings tile: change password', 'Change'),
+     pgettext_lazy('settings tile: change password', 'Password'), 'key'),
+    ('settings_fiscal', gettext_lazy('Fiscal data'),
+     pgettext_lazy('settings tile: fiscal data', 'Fiscal'),
+     pgettext_lazy('settings tile: fiscal data', 'Data'), 'dollar'),
+    ('settings_shipping', gettext_lazy('Shipping addresses'),
+     pgettext_lazy('settings tile: shipping addresses', 'Shipping'),
+     pgettext_lazy('settings tile: shipping addresses', 'Addresses'), 'truck'),
+]
+SETTINGS_COMING_SOON = {'maker', 'password', 'fiscal', 'shipping'}
+
+
+def _settings_context(request, current):
+    """The settings area's header: the profile card and the tiles (`current` is the URL
+    name of the page shown)."""
+    user = request.user
+    return {
+        'profile_name': doctor_area.display_name(user),
+        'profile_line': doctor_area.profile_line(user),
+        'sections': [{'url_name': url_name, 'name': name, 'line1': line1, 'line2': line2,
+                      'icon': icon, 'current': url_name == current}
+                     for url_name, name, line1, line2, icon in SETTINGS_SECTIONS],
+    }
+
+
+@login_required
+def personal_data(request):
+    """The settings area's personal-data page (URL name `settings`; Annex I): the form of
+    accounts.forms.PersonalDataForm, saved through accounts.profile.update_personal_data
+    (the only writer). A save that changes the language lands on the page in it."""
+    user = request.user
+    stored = profile.profile_of(user)
+    consents = profile.consents_of(user)
+    page_language = translation.get_language()
+    default_prefix = user.country.code if user.country else ''
+    prefix, national = split_landline(stored.landline, default_prefix)
+    initial = {
+        'language': stored.language or page_language,
+        'city': stored.city,
+        'time_zone': stored.time_zone or settings.TIME_ZONE,
+        'title': user.title,
+        'profession': stored.profession,
+        'first_name': user.first_name,
+        'middle_name': user.middle_name,
+        'last_name': user.last_name,
+        'landline_prefix': prefix,
+        'landline': national,
+        'alternative_email': stored.alternative_email,
+        **{kind: accepted for kind, (_document, accepted) in consents.items()},
+    }
+    form = PersonalDataForm(request.POST if request.method == 'POST' else None,
+                            initial=initial, login_email=user.email, user_pk=user.pk,
+                            consent_state=consents)
+    if request.method == 'POST' and form.is_valid():
+        changes = form.changes()
+        profile.update_personal_data(user, changes, form.consents())
+        # The page lands in the preferred language the form showed (changed or not; the
+        # page language on a one-language site). Only this redirect: landing in it after
+        # login comes later (deferred-work.md).
+        language = form.cleaned_data.get('language') or page_language
+        with translation.override(language):
+            messages.success(request, _('Your details have been saved.'))
+            return redirect(reverse('settings'))
+    accepted_on = profile.terms_accepted_on(user)
+    return render(request, 'accounts/personal_data.html', {
+        **_settings_context(request, 'settings'),
+        'form': form,
+        'consent_rows': [(form[kind], document, render_markdown(document.body))
+                         for kind, (document, _accepted) in consents.items()],
+        'terms_accepted_on': accepted_on,
+        'country_name': doctor_area.country_name(user),
+        'mobile': user.phone,
+    })
+
+
+@login_required
+def settings_coming_soon(request, section):
+    """A settings section not built yet: "coming soon" inside the settings area, its tile
+    current; an unknown section is 404."""
+    if section not in SETTINGS_COMING_SOON:
+        raise Http404
+    url_name = f'settings_{section}'
+    title = next(name for name_of_url, name, *_rest in SETTINGS_SECTIONS
+                 if name_of_url == url_name)
+    return render(request, 'accounts/settings_coming_soon.html', {
+        **_settings_context(request, url_name), 'section_title': title})
 
 
 # The doctor-area addresses not built yet, each served by `coming_soon` until its epic
@@ -407,7 +515,6 @@ COMING_SOON_AREAS = {
     'patients': gettext_lazy('Patients'),
     'support': gettext_lazy('Support'),
     'messages': gettext_lazy('Messages'),
-    'settings': gettext_lazy('Settings'),
     'cart': gettext_lazy('Cart'),
     'tutorials': gettext_lazy('Tutorials'),
     'virtuaortho': 'Virtua ORTHO',

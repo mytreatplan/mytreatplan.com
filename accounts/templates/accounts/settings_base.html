@@ -1,0 +1,39 @@
+{% extends "doctor_base.html" %}
+{% load i18n doctor_area %}
+{% comment %}
+The settings area (epic-doctor-profile entry 2, Annex I mockup): the profile card, the
+member-since date and the link back to the home, then the five section tiles (the page's
+own is current and bold), then the section's page (`settings_content`). Pages extend this:
+the personal-data page (accounts.views.personal_data) and the sections not built yet
+(accounts.views.settings_coming_soon). Below the tablet breakpoint everything stacks.
+{% endcomment %}
+
+{% block portal_width %}max-w-[880px]{% endblock %}
+
+{% block portal_content %}
+<div class="grid grid-cols-1 items-center gap-[clamp(12px,1.6vw,20px)] tablet:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+  <section class="flex items-center gap-[clamp(14px,1.8vw,22px)] rounded-[clamp(20px,2.4vw,32px)] bg-card-grey p-[clamp(14px,1.6vw,20px)]" aria-label="{% translate 'Your profile' %}" data-profile-card>
+    <span class="flex h-[clamp(72px,8vw,100px)] w-[clamp(56px,6vw,78px)] shrink-0 items-center justify-center rounded-[50%] bg-violet text-[clamp(22px,2.4vw,30px)] font-black tracking-[-0.02em] text-white" aria-hidden="true" data-profile-initials>{{ user|initials }}</span>
+    <span class="min-w-0">
+      <strong class="block break-words text-[clamp(15px,1.5vw,17px)] font-bold" data-profile-name>{{ profile_name }}</strong>
+      {% if profile_line %}<span class="block text-[clamp(14px,1.4vw,16px)]" data-profile-line>{{ profile_line }}</span>{% endif %}
+    </span>
+  </section>
+  <div class="flex flex-col gap-1">
+    <p class="text-[clamp(16px,1.6vw,19px)]" data-member-since><strong class="font-black">{% translate "Member since" %}</strong> <time datetime="{{ user.date_joined|date:'Y-m-d' }}">{{ user.date_joined|date:"Y·m·d" }}</time></p>
+    <a href="{% url 'home' %}" class="inline-flex items-center gap-2 text-[clamp(16px,1.6vw,19px)] font-black text-green hover:text-green-deep" data-back-home>{% translate "Back to Control Panel" %}{% include "includes/_icon.html" with name="arrow-right" class="size-6 text-ink" %}</a>
+  </div>
+</div>
+
+<nav class="mt-[clamp(12px,1.4vw,16px)]" aria-label="{% translate 'Settings sections' %}">
+  <ul class="grid grid-cols-2 gap-[clamp(10px,1.2vw,14px)] min-[480px]:grid-cols-3 tablet:grid-cols-5" data-settings-tiles>
+    {% for section in sections %}
+    <li><a href="{% url section.url_name %}" class="flex h-full min-h-[clamp(96px,10vw,116px)] flex-col items-center justify-center gap-2 rounded-[clamp(16px,2vw,24px)] bg-green-tint px-2 py-3 text-center text-[clamp(13px,1.2vw,15px)] leading-tight transition-shadow hover:shadow-card{% if section.current %} font-black ring-2 ring-green{% endif %}" aria-label="{{ section.name }}"{% if section.current %} aria-current="page"{% endif %} data-settings-tile="{{ section.url_name }}">{% include "includes/_icon.html" with name=section.icon class="size-[clamp(30px,3vw,40px)]" %}<span aria-hidden="true">{{ section.line1 }}<strong class="block font-black">{{ section.line2 }}</strong></span></a></li>
+    {% endfor %}
+  </ul>
+</nav>
+
+<div class="mt-[clamp(28px,4vw,48px)]">
+  {% block settings_content %}{% endblock %}
+</div>
+{% endblock %}

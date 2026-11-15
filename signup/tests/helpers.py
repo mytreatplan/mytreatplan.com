@@ -53,7 +53,7 @@ def _legal(client, lang='en', **fields):
     """Post the legal step with the Terms and the Conditions ticked, the optional ones
     not, as shown with the current versions, with any field added or replaced through
     `fields` (None leaves it out)."""
-    shown = shown_document_ids(LegalDocument.objects.current_by_kind().values())
+    shown = shown_document_ids(LegalDocument.objects.current_for_signup().values())
     data = {name: value for name, value in {**LEGAL, 'shown': shown, **fields}.items()
             if value is not None}
     return client.post(f'/{lang}/signup/legal/', data)

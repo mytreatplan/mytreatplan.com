@@ -111,7 +111,10 @@ def payload(label='x'):
     return {'title': 'dr', 'first_name': label, 'middle_name': '', 'last_name': 'Ruiz',
             'email': 'ana@example.com', 'phone': '+34600000000', 'country': 'ES',
             'home_region': 'eu', 'active': True, 'joined_at': '2026-11-05T10:00:00Z',
-            'how_found': ''}
+            'how_found': '',
+            # mytp-core 0.26.0: the personal-data fields (dumped empty when absent).
+            'city': '', 'time_zone': '', 'profession': '', 'landline': '',
+            'alternative_email': '', 'language': ''}
 
 
 def emit(aggregate=None, version=1, label='hello', **kwargs):
