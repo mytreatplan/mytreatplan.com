@@ -6,16 +6,11 @@ and only the object's UUID and the outcome code reach logs and Sentry."""
 import io
 import logging
 import os
-import shutil
-import socket
 import struct
-import tempfile
-import threading
 import uuid
 from datetime import timedelta
 
 import pytest
-from botocore.response import StreamingBody
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.utils import timezone
@@ -24,105 +19,14 @@ from django_tasks_db.models import DBTaskResult
 from storage import clamd, checks, s3, service, tasks
 from storage.models import DeletionTrace, StoredObject
 
-from .conftest import BUCKET, MiB, TEST_PURPOSE
+from conftest import expect_get, expect_promotion, expect_rejection
+from conftest import s3_body as body
+
+from .conftest import BUCKET, MiB, STAFF_PURPOSE, TEST_PURPOSE
 
 NAME = 'Ruiz implant plan.pdf'
 EICAR = (rb'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*')
 EICAR_SIGNATURE = 'Win.Test.EICAR_HDB-1'
-
-
-# --- A fake clamd ------------------------------------------------------------------------
-
-class FakeClamd:
-    """clamd on a unix socket in a thread: reads one INSTREAM (or VERSION) per connection
-    and answers `reply`. `reply` may be a callable of the received data; `close_after`
-    stops reading after that many data bytes, answers and closes (StreamMaxLength);
-    `reply=None` closes without an answer."""
-
-    def __init__(self, path):
-        self.path = path
-        self.reply = b'stream: OK\0'
-        self.close_after = None
-        self._raw = []          # per connection: the raw pieces read, before any answer
-        self.data = []          # the data each INSTREAM carried (before its answer)
-        self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.server.bind(path)
-        self.server.listen(5)
-        self.thread = threading.Thread(target=self._serve, daemon=True)
-        self.running = True
-        self.thread.start()
-
-    def _recv_exact(self, conn, n, raw):
-        buf = b''
-        while len(buf) < n:
-            part = conn.recv(n - len(buf))
-            if not part:
-                raise ConnectionError('client closed')
-            buf += part
-        raw.append(buf)
-        return buf
-
-    def _serve(self):
-        while self.running:
-            try:
-                conn, _ = self.server.accept()
-            except OSError:
-                return
-            with conn:
-                raw = []
-                self._raw.append(raw)
-                try:
-                    self._handle(conn, raw)
-                except (ConnectionError, OSError):
-                    pass
-
-    @property
-    def received(self):
-        """The raw bytes of each connection."""
-        return [b''.join(raw) for raw in self._raw]
-
-    def _answer(self, conn, data):
-        reply = self.reply(data) if callable(self.reply) else self.reply
-        if reply is not None:
-            conn.sendall(reply)
-
-    def _handle(self, conn, raw):
-        command = b''
-        while not command.endswith(b'\0'):
-            command += self._recv_exact(conn, 1, raw)
-        if command == b'zVERSION\0':
-            self._answer(conn, b'')
-            return
-        assert command == b'zINSTREAM\0', command
-        data = b''
-        while True:
-            (length,) = struct.unpack('!L', self._recv_exact(conn, 4, raw))
-            if length == 0:
-                break
-            data += self._recv_exact(conn, length, raw)
-            if self.close_after is not None and len(data) > self.close_after:
-                self.data.append(data)
-                self._answer(conn, data)
-                conn.shutdown(socket.SHUT_RDWR)
-                return
-        self.data.append(data)
-        self._answer(conn, data)
-
-    def stop(self):
-        self.running = False
-        self.server.close()
-
-
-@pytest.fixture
-def fake_clamd(settings):
-    # A short path: unix socket paths are limited to ~100 bytes (macOS's temp dir is long).
-    base = '/tmp' if os.access('/tmp', os.W_OK) else None
-    folder = tempfile.mkdtemp(prefix='clamd', dir=base)
-    fake = FakeClamd(os.path.join(folder, 'clamd.ctl'))
-    settings.STORAGE_CLAMD_SOCKET = fake.path
-    yield fake
-    fake.stop()
-    shutil.rmtree(folder, ignore_errors=True)
 
 
 # --- The INSTREAM client -----------------------------------------------------------------
@@ -236,32 +140,6 @@ def test_version_and_signature_date(fake_clamd):
 def stored(state=StoredObject.QUARANTINE, **kwargs):
     defaults = {'purpose': TEST_PURPOSE, 'size': 3, 'original_name': NAME, 'state': state}
     return StoredObject.objects.create(**{**defaults, **kwargs})
-
-
-def body(data):
-    return {'Body': StreamingBody(io.BytesIO(data), len(data)), 'ContentLength': len(data)}
-
-
-def expect_get(stubber, obj, data):
-    stubber.add_response('get_object', body(data),
-                         {'Bucket': BUCKET, 'Key': f'quarantine/{obj.pk}'})
-
-
-def expect_promotion(stubber, obj, *, clean_exists=False):
-    clean = {'Bucket': BUCKET, 'Key': f'clean/{obj.pk}'}
-    if clean_exists:
-        stubber.add_response('head_object', {'ContentLength': obj.size}, clean)
-    else:
-        stubber.add_client_error('head_object', service_error_code='404', http_status_code=404,
-                                 expected_params=clean)
-        stubber.add_response('copy_object', {}, {
-            **clean, 'CopySource': {'Bucket': BUCKET, 'Key': f'quarantine/{obj.pk}'}})
-    stubber.add_response('delete_object', {}, {'Bucket': BUCKET, 'Key': f'quarantine/{obj.pk}'})
-
-
-def expect_rejection(stubber, obj):
-    for key in (f'quarantine/{obj.pk}', f'clean/{obj.pk}'):
-        stubber.add_response('delete_object', {}, {'Bucket': BUCKET, 'Key': key})
 
 
 def assert_nothing_sensitive(text, obj):
@@ -680,7 +558,7 @@ def test_requeue_of_one_worker_leaves_the_others_tasks(fake_clamd):
 # --- Download before the scan ---------------------------------------------------------------
 
 @pytest.mark.django_db
-@pytest.mark.parametrize('purpose', [TEST_PURPOSE, 'sample'])
+@pytest.mark.parametrize('purpose', [TEST_PURPOSE, STAFF_PURPOSE])
 @pytest.mark.parametrize('state', [StoredObject.QUARANTINE, StoredObject.REJECTED])
 def test_nothing_unscanned_is_downloadable(staff, doctor, monkeypatch, purpose, state):
     user = doctor if purpose == TEST_PURPOSE else staff
@@ -778,7 +656,6 @@ def test_storage_without_a_clamd_socket_is_an_error(settings):
     settings.STORAGE_CLAMD_SOCKET = ''
     (error,) = checks.check_storage_settings()
     assert error.id == 'storage.E004' and 'STORAGE_CLAMD_SOCKET' in error.msg
-    settings.STORAGE_SAMPLE_UPLOADS = False
     settings.STORAGE_BUCKET = ''
     assert checks.check_storage_settings() == []
 

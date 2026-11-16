@@ -28,7 +28,7 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Scheduled jobs | `mytp-dev-job@<name>.timer` → `mytp-dev-job@<name>.service`, one per line of `jobs.conf` |
 | Background tasks | `mytp-dev-worker.service` (`manage.py db_worker`, django-tasks-db); heartbeat on Sentry monitor `mytp-dev-worker` ("Background tasks"); `mytp-dev-scan-worker.service` for the virus scans only, stopped and started with it ("Scanning") |
 | Health URL | `https://<site>.mytpdso.com/healthz` (no password), one UptimeRobot monitor per site (dev, dev-ae, admindev) |
-| Object storage | doctors' files in the region's bucket (`mytp-dev-files`, GRA), `STORAGE_*` in `shared/settings.env`; `storage_bucket --apply/--inspect`; staff sample page `/en/storage/sample/` ("Object storage"); every upload virus-scanned by ClamAV (host-wide `clamav-daemon`, `clamav-freshclam`; `STORAGE_CLAMD_SOCKET`) before it can be downloaded ("Scanning") |
+| Object storage | doctors' files in the region's bucket (`mytp-dev-files`, GRA), `STORAGE_*` in `shared/settings.env`; `storage_bucket --apply/--inspect`; the doctor's profile photo on "My details" ("Object storage" -> "Profile photo"); every upload virus-scanned by ClamAV (host-wide `clamav-daemon`, `clamav-freshclam`; `STORAGE_CLAMD_SOCKET`) before it can be downloaded ("Scanning") |
 | Off-region backups | nightly `backupdb` job → Object Storage SBG under `staging-<site>/` (`age`-encrypted); weekly `restoretest` job on the server; manual restore test: `restore-db.sh` |
 | Field keys | KMS-wrapped: `FIELD_KMS_KEYS`, `BLIND_INDEX_KMS_KEY` in `shared/settings.env` (`FIELD_KEY_PROVIDER=accounts.crypto.KMSKeyProvider`); password manager: key ids and wrapped values, never plain keys (step 12, "Keys (KMS)") |
 | Keys (KMS) | OVHcloud KMS (France), staging service key; access certificate in `/srv/mytp-dev/shared/kms-client.*`; daily `kmscheck` job |
@@ -1727,13 +1727,13 @@ deletes through a background task that leaves a `DeletionTrace` (kept for good).
 | Bucket | `mytp-dev-files`, OVHcloud Object Storage **GRA** (the database's region; never the backup bucket), owner `mytp-backup-admin` |
 | Keys | `STORAGE_*` in `shared/settings.env` (`deploy/staging.env.example`): the site's S3 user `mytp-dev-files`, limited to this bucket |
 | Object keys | `quarantine/<uuid>` on upload; `clean/<uuid>` once scanned clean (entry 12, "Scanning"); a rejected file is deleted. Server-made; never a file name |
-| Downloads | `clean` objects only, for every purpose (the sample page too, decision 2026-11-07); never one in quarantine or rejected |
+| Downloads | `clean` objects only, for every purpose (decision 2026-11-07); never one in quarantine or rejected |
 | Signed URLs | 15 minutes per upload request; downloads 5 minutes, each recorded first in the access log (`integration_remoteaccess`, resource `stored_object`: object UUID and purpose, reason, the user's UUID, IP and browser, never the name; see [Remote reads and the access log](#remote-reads-and-the-access-log)); eventlog kind `file` before entry 5 |
 | Uploads | multipart only, 16 MiB parts; 1 GiB limit per file by default (per purpose) |
 | Abandoned uploads | aborted by the bucket's lifecycle rule after `STORAGE_ABORT_INCOMPLETE_DAYS` (7) days |
-| Sweep | hourly `sweepstorage` job (`manage.py sweep_storage`, :20 UTC): deletes `quarantine/` objects with no `StoredObject` row older than a day (an upload whose recording never came) or over their purpose's limit, forgets expired pending uploads, enqueues again deletions not done yet (`delete_requested_at`) and scans of objects still in quarantine after an hour; prints counts only. Its timer reaches a site when `provision.sh` runs again; on a site without the bucket settings it skips the bucket step |
+| Sweep | hourly `sweepstorage` job (`manage.py sweep_storage`, :20 UTC): deletes `quarantine/` objects with no `StoredObject` row older than a day (an upload whose recording never came) or over their purpose's limit, forgets expired pending uploads, enqueues again deletions not done yet (`delete_requested_at`) and scans of objects still in quarantine after an hour, and deletes (as the system) the uploads a purpose never claimed (`unclaimed_after`: a profile photo not attached 6 hours after its upload); prints counts only. Its timer reaches a site when `provision.sh` runs again; on a site without the bucket settings it skips the bucket step |
 | Encryption at rest | SSE-S3 (AES256) by default on the bucket |
-| Sample page | `/en/storage/sample/`, staff only, with `STORAGE_SAMPLE_UPLOADS=True` (staging only: `check` refuses it without `ROBOTS_NOINDEX`) |
+| Purposes | `profile_photo` (the doctor's profile photo, epic-doctor-profile entry 4, "Profile photo" below). The staging-only sample purpose and its page `/en/storage/sample/` were retired with it (now 404); a leftover `STORAGE_SAMPLE_UPLOADS` line in `settings.env` is ignored, and its old `sample` objects are never served (no purpose); delete them with `manage.py shell` if wanted |
 | dev-ae | none yet: its own EU bucket and S3 user come later (`STORAGE_*` stay unset there) |
 
 No key, URL, file name or credential goes into a task argument, a log line or Sentry
@@ -1810,6 +1810,10 @@ If the site's user may not read the bucket configuration, those three lines show
 
 ### Staging checks (dev, with the sample page)
 
+> These checks (1.11, 1.12) ran on the staff sample page, retired with epic-doctor-profile
+> entry 4. To repeat one, upload through the profile photo (5 MiB, images only) instead;
+> the large-file checks need a purpose of up to 1 GiB, which only later stories bring.
+
 Log in at `https://dev.mytpdso.com/admin/` with a staff account, open
 `https://dev.mytpdso.com/en/storage/sample/` and copy the page's event log into the
 story's results after each test. Test files only, never patient data
@@ -1835,7 +1839,8 @@ story's results after each test. Test files only, never patient data
   `sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from integration.models import RemoteAccess; print(RemoteAccess.objects.filter(resource='stored_object').values_list('outcome', 'purpose', 'access_reason', 'at')[:5])"`.
 - **Sweep:** `sudo -u mytp-dev ./venv/bin/python manage.py sweep_storage` prints
   `sweep_storage: <n> pending uploads forgotten, orphan objects <n> deleted, <n> deletions
-  enqueued again, <n> scans enqueued again, <n> waiting for a scan over 6 hours`; after the merge, run `provision.sh dev` again
+  enqueued again, <n> scans enqueued again, <n> waiting for a scan over 6 hours, <n>
+  unclaimed objects deleted`; after the merge, run `provision.sh dev` again
   for its timer.
 - **Delete:** Delete an object; with the worker running, it disappears from the list and
   from `--inspect`'s bucket, and its trace is there:
@@ -1871,8 +1876,8 @@ object's UUID and the outcome code (`clean`, `infected`, `limit_exceeded`,
 signature name for a FOUND; never the file name, a key or a URL. When any object has
 waited more than 6 hours for its scan, each hourly sweep sends one Sentry message with
 their count only (`<n> stored object(s) waiting for their virus scan for more than 6
-hours`): the scan worker or clamd is down. No user is notified yet (the real
-purposes come later); the sample page shows each object's state.
+hours`): the scan worker or clamd is down. No user is notified; the profile
+photo's "My details" block shows its state ("Photo being checked", or the reject message).
 
 | What | Value |
 |------|-------|
@@ -1949,6 +1954,45 @@ log and the outcome in the story's results):
   more than an hour later, after `manage.py sweep_storage` reports `1 scans enqueued
   again`), the file is `clean`. Left down for more than 6 hours, the sweep's Sentry
   message (count only) appears.
+
+### Profile photo
+
+The first real purpose, `profile_photo` (accounts.photo, epic-doctor-profile entry 4): a
+doctor uploads one image from "My details" -> "Upload a photo" (`/en/settings/photo/`).
+
+| What | Value |
+|------|-------|
+| Files | JPEG, PNG or WebP only (declared type checked by the widget and again at sign; SVG, GIF, HEIC refused), at most 5 MiB, one file per upload |
+| Checks | the virus scan, then `accounts.photo.check_image` (Pillow): a real JPEG, PNG or WebP of its declared type, at most 6000 x 6000 px, fully decodable, decompression-bomb guard on. A refusal is a scan rejection with outcome `invalid_content` (`object <uuid> rejected (invalid_content)` in the scan worker's journal) |
+| Unclaimed | an upload never attached (the tab closed after it) is deleted by the hourly sweep 6 hours later, as the system |
+| One photo | a new upload waits as pending (the old photo or the initials stay); once clean it replaces the photo and the old one is deleted with its trace (actor: the doctor). A second pending upload replaces the first (deleted, traced) |
+| Shown | header avatar, home card, settings card, "My details": one presigned inline link per page request, owner only, no access-log row (AD-9 exception); the initials if the link cannot be made |
+| Delete | "Delete photo" asks for confirmation, then unlinks and deletes the photo and any pending upload (trace with a blank patient code). Account erasure deletes them too (actor: the staff member), and the purge detaches and deletes any object still owned |
+| Regional | never in `client.updated`, never on the admin site; no staff view yet (owner-only downloads) |
+
+Staging checks (dev; a test doctor, test images only):
+
+```bash
+cd /srv/mytp-dev/current
+# After each upload, the scan worker's verdict (UUID and outcome only):
+sudo journalctl -u mytp-dev-scan-worker -n 20 --no-pager
+# The object, its state and owner, and the photo links (no name, no key):
+sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from storage.models import StoredObject as S; print(list(S.objects.filter(purpose='profile_photo').values_list('pk', 'state', 'owner_id', 'delete_requested_at')[:5]))"
+sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from accounts.models import Profile as P; print(list(P.objects.exclude(photo=None, photo_pending=None).values_list('user_id', 'photo_id', 'photo_pending_id')))"
+sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from storage.models import DeletionTrace as T; print(list(T.objects.values_list('object_id', 'actor_type', 'patient_code', 'deleted_at')[:5]))"
+```
+
+- **Clean upload:** a small JPEG becomes `clean`, the profile's `photo_id`, and shows in
+  the header, the home card and "My details" (by eye in a browser).
+- **EICAR:** the EICAR string saved as `x.jpg` (declared `image/jpeg`): `rejected
+  (infected, ...)`, the initials stay, "My details" shows "The photo could not be
+  accepted; try another file." once.
+- **Not an image:** a text file renamed `.jpg`: `rejected (invalid_content)`, the same
+  message.
+- **Delete:** "Delete photo", confirm: the initials on the next page; after the worker
+  ran, the object is gone and its trace has `actor_type` `user` and a blank patient code.
+- **Regional:** on admindev, the doctor's client record has no photo field
+  (`client.updated` payload keys unchanged).
 
 ## Keys (KMS)
 
@@ -2291,7 +2335,7 @@ command yourself, in your own terminal. Nothing below prints a secret; never `ca
        BACKUP_PREFIX=staging-dev-ae/ SENTRY_ENVIRONMENT=dev-ae \
        KMS_CLIENT_CERT=/srv/mytp-dev-ae/shared/kms-client.crt \
        KMS_CLIENT_KEY=/srv/mytp-dev-ae/shared/kms-client.key \
-       FIELD_ENCRYPTION_KEYS= BLIND_INDEX_KEY= STORAGE_SAMPLE_UPLOADS=False \
+       FIELD_ENCRYPTION_KEYS= BLIND_INDEX_KEY= \
        REGION_SITE_URL_EU=https://dev.mytpdso.com \
        >> /srv/mytp-dev-ae/shared/settings.env'
    ```

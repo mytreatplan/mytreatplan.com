@@ -1,7 +1,8 @@
 """The registered area's entry and exit: login, logout, the welcome page, and the doctor
 area's home and "coming soon" pages (epic-doctor-profile entry 1) and its settings area
 (the personal-data page and the sections not built yet, entry 2; the code-confirmed
-mobile and contact-email changes, entry 3).
+mobile and contact-email changes, entry 3; the profile photo's upload page and its
+confirmed delete, entry 4).
 
 Login checks the CAPTCHA (signup.captcha) first, then the credentials (accounts.forms).
 A right password logs no one in: it starts a pending login (`start_pending_login`), and
@@ -31,6 +32,7 @@ changes meanwhile (deactivated, its password or its mobile changed).
 """
 import functools
 import time
+import uuid
 
 from django.conf import settings
 from django.contrib import messages
@@ -62,7 +64,7 @@ from signup.steps import (CODE_STATE_SESSION_KEY, SENT, code_help_context, code_
 from signup.verification import (CODE_TTL_SECONDS, EMAIL, MOBILE, PURPOSE_LOGIN, SMS,
                                  WHATSAPP)
 
-from . import devices, doctor_area, login_failures, login_guard, profile
+from . import devices, doctor_area, login_failures, login_guard, photo, profile
 from .forms import (ChangeCodeForm, EmailChangeForm, LoginCodeForm, LoginContactForm, LoginForm,
                     MobileChangeForm, PersonalDataForm, mask_email, mask_phone, split_landline)
 
@@ -484,6 +486,10 @@ def personal_data(request):
             messages.success(request, _('Your details have been saved.'))
             return redirect(reverse('settings'))
     accepted_on = profile.terms_accepted_on(user)
+    # The pending photo upload's outcome (entry 4): a clean one is promoted, a rejected
+    # one gives the reject message once.
+    photo_rejected = photo.settle(user)
+    photo.forget(request)
     return render(request, 'accounts/personal_data.html', {
         **_settings_context(request, 'settings'),
         'form': form,
@@ -493,7 +499,74 @@ def personal_data(request):
         'country_name': doctor_area.country_name(user),
         'mobile': user.phone,
         'contact_email': stored.alternative_email,
+        'photo_rejected': photo_rejected,
+        'photo_editable': photo.can_upload(user) and photo.storage_available(),
+        'photo_linked': photo.has_photo(user),
     })
+
+
+# --- The profile photo (epic-doctor-profile entry 4, accounts.photo) ----------------------
+#
+# The upload page shows the storage widget (one JPEG, PNG or WebP file, up to 5 MiB);
+# once the widget has stored the file, its script posts the new object's id here, and the
+# page links it as the doctor's pending photo (accounts.photo.attach; 404 for an object
+# that is not theirs to attach). The delete page asks for confirmation, then unlinks and
+# deletes the photo and any pending upload. Doctors only (a staff account gets 404). Only
+# the object's UUID is posted; no file name or key is logged.
+
+def _doctor_only(request):
+    """404 for a staff account, and on a site without file storage (dev-ae today)."""
+    if not (photo.can_upload(request.user) and photo.storage_available()):
+        raise Http404
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def settings_photo(request):
+    """The profile photo's upload page (GET) and the attach of an uploaded file (POST)."""
+    _doctor_only(request)
+    if request.method == 'POST':
+        try:
+            object_id = uuid.UUID(str(request.POST.get('object_id', '')))
+        except ValueError:
+            raise Http404
+        try:
+            outcome = photo.attach(request.user, object_id)
+        except photo.NotAttachable:
+            raise Http404
+        if outcome == photo.REJECTED:
+            messages.error(request, _('The photo could not be accepted; try another file.'))
+        elif outcome == photo.PROMOTED:
+            messages.success(request, _('Your photo has been saved.'))
+        else:
+            messages.success(request, _('Your photo is being checked. It will be shown '
+                                        'once the check is done.'))
+        return redirect(reverse('settings'))
+    return render(request, 'accounts/settings_photo.html', {
+        **_settings_context(request, 'settings'),
+        'purpose': photo.PURPOSE,
+        'max_size': photo.MAX_SIZE,
+        'allowed_types': ' '.join(photo.CONTENT_TYPES),
+    })
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def settings_photo_delete(request):
+    """The profile photo's delete: the confirmation (GET), then the delete (POST)."""
+    _doctor_only(request)
+    if request.method == 'POST':
+        if photo.remove(request.user):
+            messages.success(request, _('Your photo has been deleted.'))
+        return redirect(reverse('settings'))
+    if not photo.has_photo(request.user):
+        return redirect(reverse('settings'))
+    return render(request, 'accounts/settings_photo_delete.html',
+                  _settings_context(request, 'settings'))
 
 
 # --- The contact changes (epic-doctor-profile entry 3) ------------------------------------

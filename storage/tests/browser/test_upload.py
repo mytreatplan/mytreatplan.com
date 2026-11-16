@@ -1,5 +1,5 @@
-"""The sample page in Chromium against live_server, with the bucket emulated by Playwright
-routes (no network): the vendored Uppy 6 loads, every S3 request is signed by the site
+"""The upload widget in Chromium against live_server, on the tests' bare widget page
+(storage/tests/urls_storage.py), with the bucket emulated by Playwright routes (no network): the vendored Uppy 6 loads, every S3 request is signed by the site
 first, every file is S3 multipart in 16 MiB parts (a 20 MiB file has 2), the site records
 each completed upload as a StoredObject with its name, and a part refused once with 403
 is retried and resumed. No file name reaches the bucket or the sign endpoint."""
@@ -16,6 +16,7 @@ from playwright.sync_api import expect  # noqa: E402
 from accounts.models import User  # noqa: E402
 from storage import s3  # noqa: E402
 from storage.models import StoredObject  # noqa: E402
+from storage.tests.conftest import STAFF_PURPOSE  # noqa: E402
 
 pytestmark = [pytest.mark.browser, pytest.mark.django_db(transaction=True)]
 
@@ -97,7 +98,7 @@ def staff_page(live_server, page):
 
 
 def upload(page, live_server, file):
-    page.goto(f'{live_server.url}/en/storage/sample/')
+    page.goto(f'{live_server.url}/en/storage/test-widget/')
     log = page.locator('#storage-log')
     expect(log).to_contain_text('ready (Uppy 6.')
     page.locator('input.uppy-Dashboard-input').first.set_input_files([file])
@@ -138,7 +139,7 @@ def test_small_and_two_part_uploads_are_stored(live_server, staff_page, monkeypa
     stored = {str(o.pk): o for o in StoredObject.objects.all()}
     assert {f'quarantine/{pk}' for pk in stored} == keys
     assert sorted(o.original_name for o in stored.values()) == ['patient-scan.bin', 'small-note.txt']
-    assert {o.purpose for o in stored.values()} == {'sample'}
+    assert {o.purpose for o in stored.values()} == {STAFF_PURPOSE}
     # Starting declared purpose and size; the file name went only to /storage/complete/.
     starts = [b for b in bodies if b.get('method') == 'POST' and 'purpose' in b]
     assert sorted(b['size'] for b in starts) == [1024, 20 * MiB]

@@ -84,9 +84,9 @@ REGION_SITE_URLS = {
 # bucket, and the browser never sees its keys. STORAGE_CORS_ORIGINS lists the origins the
 # bucket's CORS allows (comma-separated; default SITE_URL), and
 # STORAGE_ABORT_INCOMPLETE_DAYS the days after which the bucket aborts an unfinished
-# upload; `manage.py storage_bucket --apply` sets both. STORAGE_SAMPLE_UPLOADS (staging
-# only; the check storage.E002 refuses it on a site without ROBOTS_NOINDEX) turns on the
-# staff-only sample purpose and its page at /<lang>/storage/sample/.
+# upload; `manage.py storage_bucket --apply` sets both. (The staging-only
+# STORAGE_SAMPLE_UPLOADS went with the sample purpose, epic-doctor-profile entry 4: a
+# leftover line in settings.env is ignored.)
 STORAGE_ENDPOINT = config('STORAGE_ENDPOINT', default=REGION_PROFILE.storage_endpoint)
 _ovh_storage_region = re.fullmatch(r'https://s3\.([a-z0-9-]+)\.io\.cloud\.ovh\.net/?',
                                    STORAGE_ENDPOINT)
@@ -97,7 +97,6 @@ STORAGE_ACCESS_KEY = config('STORAGE_ACCESS_KEY', default='')
 STORAGE_SECRET_KEY = config('STORAGE_SECRET_KEY', default='')
 STORAGE_CORS_ORIGINS = config('STORAGE_CORS_ORIGINS', default='', cast=Csv())
 STORAGE_ABORT_INCOMPLETE_DAYS = config('STORAGE_ABORT_INCOMPLETE_DAYS', default=7, cast=int)
-STORAGE_SAMPLE_UPLOADS = config('STORAGE_SAMPLE_UPLOADS', default=False, cast=bool)
 # The clamd unix socket the scan worker streams each upload to (epic-platform entry 12,
 # storage.tasks.scan_object_task; deploy/README.md "Object storage" -> "Scanning"):
 # /run/clamav/clamd.ctl on the staging host. The check storage.E004 requires it whenever

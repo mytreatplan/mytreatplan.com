@@ -17,7 +17,8 @@ from django_tasks_db.models import DBTaskResult
 from storage import s3
 from storage.models import PendingUpload, StoredObject
 
-from .conftest import (BUCKET, FAKE_ACCESS_KEY, FAKE_SECRET_KEY, GiB, TEST_MAX_SIZE,
+from .conftest import (BUCKET, FAKE_ACCESS_KEY, FAKE_SECRET_KEY, STAFF_GATE, STAFF_PURPOSE, GiB,
+                       TEST_MAX_SIZE,
                        TEST_PURPOSE)
 
 SIGN = '/storage/sign/'
@@ -48,7 +49,7 @@ def doctor_client(doctor):
     return logged_in(doctor)
 
 
-def start(client, purpose='sample', size=GiB, content_type='model/stl'):
+def start(client, purpose=STAFF_PURPOSE, size=GiB, content_type='model/stl'):
     body = {'method': 'POST', 'key': 'local-123', 'purpose': purpose, 'size': size}
     if content_type:
         body['contentType'] = content_type
@@ -95,7 +96,7 @@ def test_start_makes_a_server_key_and_a_pending_upload(staff_client, staff):
     assert 'local-123' not in response.content.decode()
     pending = PendingUpload.objects.get()
     assert (pending.pk, pending.user, pending.purpose, pending.size, pending.content_type,
-            pending.upload_id) == (object_id, staff, 'sample', GiB, 'model/stl', '')
+            pending.upload_id) == (object_id, staff, STAFF_PURPOSE, GiB, 'model/stl', '')
 
 
 def test_each_upload_gets_its_own_key(staff_client):
@@ -110,13 +111,13 @@ def test_each_upload_gets_its_own_key(staff_client):
     {'method': 'DELETE', 'key': 'x'},                               # DeleteObject: not signed here
     {'method': 'POST', 'purpose': 'nope', 'size': 10},
     {'method': 'POST', 'size': 10},
-    {'method': 'POST', 'purpose': 'sample'},
-    {'method': 'POST', 'purpose': 'sample', 'size': 0},
-    {'method': 'POST', 'purpose': 'sample', 'size': -1},
-    {'method': 'POST', 'purpose': 'sample', 'size': '10'},
-    {'method': 'POST', 'purpose': 'sample', 'size': True},
-    {'method': 'POST', 'purpose': 'sample', 'size': 10, 'contentType': 'text/html\r\nX-Evil: 1'},
-    {'method': 'POST', 'purpose': 'sample', 'size': 10, 'contentType': 42},
+    {'method': 'POST', 'purpose': STAFF_PURPOSE},
+    {'method': 'POST', 'purpose': STAFF_PURPOSE, 'size': 0},
+    {'method': 'POST', 'purpose': STAFF_PURPOSE, 'size': -1},
+    {'method': 'POST', 'purpose': STAFF_PURPOSE, 'size': '10'},
+    {'method': 'POST', 'purpose': STAFF_PURPOSE, 'size': True},
+    {'method': 'POST', 'purpose': STAFF_PURPOSE, 'size': 10, 'contentType': 'text/html\r\nX-Evil: 1'},
+    {'method': 'POST', 'purpose': STAFF_PURPOSE, 'size': 10, 'contentType': 42},
 ])
 def test_bad_start_is_400_and_signs_nothing(staff_client, monkeypatch, body):
     no_signing(monkeypatch)
@@ -148,7 +149,7 @@ def test_sign_needs_csrf(staff):
 @pytest.mark.parametrize('url', [SIGN, COMPLETE])
 def test_anonymous_is_403(client, monkeypatch, url):
     no_signing(monkeypatch)
-    response = post_json(client, url, {'method': 'POST', 'purpose': 'sample', 'size': 10})
+    response = post_json(client, url, {'method': 'POST', 'purpose': STAFF_PURPOSE, 'size': 10})
     assert response.status_code == 403
     assert response.json()['error']['code'] == 'forbidden'
 
@@ -164,20 +165,20 @@ def test_inactive_user_is_403(staff):
 def test_user_without_the_purposes_permission_is_403(other, doctor, monkeypatch):
     no_signing(monkeypatch)
     assert start(logged_in(other), purpose=TEST_PURPOSE, size=10).status_code == 403
-    # The sample purpose: staff only.
-    assert start(logged_in(doctor), purpose='sample').status_code == 403
+    # The staff purpose: staff only.
+    assert start(logged_in(doctor), purpose=STAFF_PURPOSE).status_code == 403
     assert not PendingUpload.objects.exists()
 
 
-def test_sample_purpose_off_is_403_even_for_staff(staff_client, settings, monkeypatch):
+def test_a_closed_purpose_is_403_even_for_staff(staff_client, monkeypatch):
     no_signing(monkeypatch)
-    settings.STORAGE_SAMPLE_UPLOADS = False
+    STAFF_GATE['open'] = False
     assert start(staff_client).status_code == 403
 
 
 def test_permission_is_asked_again_for_each_request(staff_client, settings):
     key = started(staff_client)
-    settings.STORAGE_SAMPLE_UPLOADS = False
+    STAFF_GATE['open'] = False
     response = post_json(staff_client, SIGN, {'method': 'PUT', 'key': key, 'uploadId': 'u',
                                               'partNumber': 1})
     assert response.status_code == 403
@@ -327,9 +328,9 @@ def test_sign_without_bucket_settings_is_503_naming_the_setting(staff_client, se
 
 
 def test_abandoned_pending_uploads_are_forgotten_after_the_lifecycle_period(staff_client, staff):
-    old = PendingUpload.objects.create(id=uuid.uuid4(), purpose='sample', user=staff, size=1,
+    old = PendingUpload.objects.create(id=uuid.uuid4(), purpose=STAFF_PURPOSE, user=staff, size=1,
                                        created_at=timezone.now() - timedelta(days=8))
-    recent = PendingUpload.objects.create(id=uuid.uuid4(), purpose='sample', user=staff,
+    recent = PendingUpload.objects.create(id=uuid.uuid4(), purpose=STAFF_PURPOSE, user=staff,
                                           size=1, created_at=timezone.now() - timedelta(days=6))
     started(staff_client)
     assert not PendingUpload.objects.filter(pk=old.pk).exists()
@@ -351,11 +352,11 @@ def test_upload_1_gib_ends_as_a_stored_object_with_an_encrypted_name(staff_clien
     response = post_json(staff_client, COMPLETE, {'key': key, 'name': f'/Users/x/{NAME}'})
     assert response.status_code == 200, response.content
     object_id = s3.object_id_from_key(key)
-    assert response.json() == {'id': str(object_id), 'size': GiB, 'purpose': 'sample'}
+    assert response.json() == {'id': str(object_id), 'size': GiB, 'purpose': STAFF_PURPOSE}
     stored = StoredObject.objects.get()
     assert (stored.pk, stored.purpose, stored.owner, stored.uploaded_by, stored.size,
             stored.content_type, stored.original_name, stored.state) == (
-        object_id, 'sample', None, staff, GiB, 'model/stl', NAME, StoredObject.QUARANTINE)
+        object_id, STAFF_PURPOSE, None, staff, GiB, 'model/stl', NAME, StoredObject.QUARANTINE)
     assert stored.key == key
     assert not PendingUpload.objects.exists()
     # The name is encrypted in the database and in no log line.
@@ -407,12 +408,12 @@ def test_concurrent_complete_answers_as_the_first(staff_client, staff, stubber,
     key = started(staff_client)
     object_id = s3.object_id_from_key(key)
     head(stubber, key, GiB)
-    StoredObject.objects.create(id=object_id, purpose='sample', uploaded_by=staff, size=GiB,
+    StoredObject.objects.create(id=object_id, purpose=STAFF_PURPOSE, uploaded_by=staff, size=GiB,
                                 original_name=NAME)  # the first call's row; pending still there
     with django_capture_on_commit_callbacks(execute=True):
         response = post_json(staff_client, COMPLETE, {'key': key, 'name': NAME})
     assert response.status_code == 200
-    assert response.json() == {'id': str(object_id), 'size': GiB, 'purpose': 'sample'}
+    assert response.json() == {'id': str(object_id), 'size': GiB, 'purpose': STAFF_PURPOSE}
     assert StoredObject.objects.count() == 1
     # The first call enqueued the scan; this one does not again.
     assert not DBTaskResult.objects.exists()

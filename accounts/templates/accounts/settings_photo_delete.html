@@ -1,0 +1,20 @@
+{% extends "accounts/settings_base.html" %}
+{% load i18n %}
+{% comment %}
+The profile photo's delete confirmation (accounts.views.settings_photo_delete,
+epic-doctor-profile entry 4): the POST unlinks the photo and any upload being checked at
+once and deletes both (accounts.photo.remove).
+{% endcomment %}
+
+{% block title %}{% translate "Delete photo" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block settings_content %}
+<h1 class="text-[clamp(28px,4.4vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Delete your profile photo?" %}</h1>
+<p class="mt-3 text-copy text-ink-muted">{% translate "Your initials will be shown instead. A photo being checked is deleted too." %}</p>
+
+<form method="post" class="mt-8 flex flex-wrap items-center gap-[clamp(16px,4vw,48px)]" data-photo-delete-form>
+  {% csrf_token %}
+  <a href="{% url 'settings' %}" class="inline-flex min-h-[52px] items-center rounded-pill bg-violet px-8 text-[18px] font-black text-white hover:bg-ink" data-cancel>{% translate "Cancel" %}</a>
+  <button type="submit" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-confirm-delete>{% translate "Delete photo" %}</button>
+</form>
+{% endblock %}

@@ -2045,3 +2045,51 @@ msgstr "El email de contacto de su cuenta de MyTreatPlan se cambió el %(date)s 
 #, python-format
 msgid "If you didn't make this change, please write to us at %(email)s right away."
 msgstr "Si no ha realizado este cambio, escríbanos de inmediato a %(email)s."
+
+#: accounts/templates/accounts/personal_data.html
+msgid "Photo being checked"
+msgstr "Foto en revisión"
+
+#: accounts/templates/accounts/personal_data.html accounts/views.py
+msgid "The photo could not be accepted; try another file."
+msgstr "No se ha podido aceptar la foto; pruebe con otro archivo."
+
+#: accounts/templates/accounts/personal_data.html
+msgid "Replace photo"
+msgstr "Reemplazar foto"
+
+#: accounts/templates/accounts/personal_data.html
+msgid "Upload a photo"
+msgstr "Subir una foto"
+
+#: accounts/templates/accounts/personal_data.html accounts/templates/accounts/settings_photo_delete.html
+msgid "Delete photo"
+msgstr "Eliminar foto"
+
+#: accounts/views.py
+msgid "Your photo is being checked. It will be shown once the check is done."
+msgstr "Su foto se está revisando. Se mostrará cuando termine la revisión."
+
+#: accounts/views.py
+msgid "Your photo has been deleted."
+msgstr "Su foto se ha eliminado."
+
+#: accounts/templates/accounts/settings_photo.html
+msgid "Profile photo"
+msgstr "Foto de perfil"
+
+#: accounts/templates/accounts/settings_photo.html
+msgid "Choose one JPEG, PNG or WebP image of up to 5 MB. It is shown as it is, inside the round frame. It appears once it has been checked, which can take a few minutes."
+msgstr "Elija una imagen JPEG, PNG o WebP de hasta 5 MB. Se muestra tal cual, dentro del marco redondo, y aparece una vez revisada, lo que puede tardar unos minutos."
+
+#: accounts/templates/accounts/settings_photo_delete.html
+msgid "Delete your profile photo?"
+msgstr "¿Desea eliminar su foto de perfil?"
+
+#: accounts/templates/accounts/settings_photo_delete.html
+msgid "Your initials will be shown instead. A photo being checked is deleted too."
+msgstr "En su lugar se mostrarán sus iniciales. También se eliminará la foto que esté en revisión."
+
+#: accounts/views.py
+msgid "Your photo has been saved."
+msgstr "Su foto se ha guardado."

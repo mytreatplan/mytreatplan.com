@@ -26,6 +26,9 @@ urlpatterns = [
     path('settings/mobile/code/', views.settings_mobile_code, name='settings_mobile_code'),
     path('settings/email/', views.settings_email, name='settings_email'),
     path('settings/email/code/', views.settings_email_code, name='settings_email_code'),
+    # The profile photo (entry 4): its upload page (and the attach), its confirmed delete.
+    path('settings/photo/', views.settings_photo, name='settings_photo'),
+    path('settings/photo/delete/', views.settings_photo_delete, name='settings_photo_delete'),
     path('settings/maker/', views.settings_coming_soon, {'section': 'maker'},
          name='settings_maker'),
     path('settings/password/', views.settings_coming_soon, {'section': 'password'},

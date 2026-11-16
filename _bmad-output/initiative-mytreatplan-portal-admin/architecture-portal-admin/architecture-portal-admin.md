@@ -85,6 +85,7 @@ flowchart TB
 | Entity | Owner | Central copy | Field-encrypted |
 | --- | --- | --- | --- |
 | Doctor account, profile, fiscal entities, shipping addresses | Region | Client record (encrypted with the admin's keys) | Names, contact data, fiscal ids |
+| Doctor profile photo | Region (object storage) | No | Original file name; object encrypted at rest |
 | Maker logins | Region | No | Username and password |
 | Patients (names, photo, comments) | Region | No (code only) | Names, comments; photo in object storage |
 | Work orders, stages, assignment, appointments | Region | Events without patient data (AD-21) | Free-text comments |
@@ -145,6 +146,7 @@ The admin site keeps no patient data anywhere (AD-23). **[ADOPTED]**
 - **Binds:** P9, P10, P13, P15
 - **Prevents:** large files through the web server; unscanned or unlogged downloads; files or file names outside their region.
 - **Rule:** Files live in the region's private S3-compatible bucket, encrypted at rest. Browsers upload straight to it with S3 multipart and presigned part URLs (Uppy `@uppy/aws-s3`); the bucket's CORS exposes `ETag`; a lifecycle rule aborts incomplete uploads after 7 days. New objects land under a quarantine prefix; a ClamAV scan task moves each to the clean prefix or rejects it, and a file the scanner cannot fully scan (size or archive limits) is rejected, never promoted. Downloads are presigned GET URLs valid ≤ 5 minutes, issued only after the permission check and logged in the region. Deleting a file deletes the object and keeps only the trace: object UUID, patient code, who, when — never the file name. The OVH presigned multipart flow is verified by the first story of epic-platform before any upload work starts. **[ADOPTED]**
+- **Exception (user, 2026-11-16, epic-doctor-profile entry 4):** a doctor viewing their own profile photo in their own pages gets a presigned inline GET (≤ 5 minutes, one per page request) after the owner check, with no access-log row (`storage.service.owner_inline_url`). Any other view of the photo (staff in a doctor's file or a support ticket, later stories) uses the logged download path.
 
 ### AD-10 — Shared code: mytp-core
 

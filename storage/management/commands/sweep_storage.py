@@ -1,6 +1,7 @@
 """Sweep the file bucket (storage.sweep): forget expired pending uploads, delete
 `quarantine/` objects with no StoredObject row (older than a day, or over their limit),
-and enqueue again the deletions still pending and the scans that never finished.
+enqueue again the deletions still pending and the scans that never finished, and delete
+the uploads a purpose never claimed (`unclaimed_after`).
 
     python manage.py sweep_storage
 
@@ -23,4 +24,5 @@ class Command(BaseCommand):
         self.stdout.write(f"sweep_storage: {counts['pending']} pending uploads forgotten, "
                           f"orphan objects {orphans}, {counts['redeletes']} deletions enqueued again, "
                           f"{counts['rescans']} scans enqueued again, "
-                          f"{counts['stale_scans']} waiting for a scan over 6 hours")
+                          f"{counts['stale_scans']} waiting for a scan over 6 hours, "
+                          f"{counts['unclaimed']} unclaimed objects deleted")

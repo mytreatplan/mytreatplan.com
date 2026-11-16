@@ -23,6 +23,11 @@
     var csrfToken = root.dataset.csrfToken;
     var purpose = root.dataset.purpose;
     var maxSize = parseInt(root.dataset.maxSize, 10) || null;
+    // Optional: the declared types the purpose allows (space-separated), one file only,
+    // and the dashboard's height in pixels. Without them: any type, any number of files.
+    var allowedTypes = root.dataset.allowedTypes ? root.dataset.allowedTypes.split(/\s+/).filter(Boolean) : null;
+    var singleFile = root.dataset.singleFile === 'true';
+    var height = parseInt(root.dataset.height, 10) || 360;
     var started = {};
     var retried = {};
     // Uppy's own (local) key for each file -> the file, so starting an upload can declare
@@ -68,16 +73,20 @@
         || request.method;
     }
 
+    var restrictions = { maxFileSize: maxSize, minFileSize: 1 };
+    if (allowedTypes && allowedTypes.length) restrictions.allowedFileTypes = allowedTypes;
+    if (singleFile) restrictions.maxNumberOfFiles = 1;
     var uppy = new window.Uppy.Uppy({
       autoProceed: false,
-      restrictions: { maxFileSize: maxSize, minFileSize: 1 },
+      allowMultipleUploadBatches: !singleFile,
+      restrictions: restrictions,
     });
 
     uppy.use(window.Uppy.Dashboard, {
       inline: true,
       target: root,
       width: '100%',
-      height: 360,
+      height: height,
       showProgressDetails: true,
       proudlyDisplayPoweredByUppy: false,
     });

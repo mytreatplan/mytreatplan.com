@@ -4,11 +4,13 @@
 and keeps only what the evidence needs (email, title, names, country, phone, date joined,
 and the legal choices) until `purge_after`, ACCOUNT_ERASURE_RETENTION_DAYS later; it
 clears the rest (the profile of the personal-data page and any pending contact change
-too) and records the commercial
+too; the profile photo and its pending upload are deleted through storage.service.delete,
+by the staff member erasing it, accounts.photo) and records the commercial
 and WhatsApp contact consents as withdrawn. Its `email_index` becomes a tombstone (accounts.models.User), so the same
 email can register again. `purge_erased` (the daily `purgeerased` job, `manage.py
 purge_erased_accounts`) then deletes each erased account with its legal choices once
-`purge_after` has passed. There is no undo. Before it is deleted, each account leaves one
+`purge_after` has passed (any stored object the account still owns is detached and
+deleted first, by the system: `StoredObject.owner` is PROTECT). There is no undo. Before it is deleted, each account leaves one
 activity record (kind `account`, event `account_purged`, QA A6), tied to its pk and holding
 only its email, encrypted in the event log (`Event.data`), kept 5 years with the other
 activity records (eventlog.retention), so they can still be tied to the person.
@@ -34,7 +36,10 @@ from eventlog.service import record_activity
 from integration.models import OutboxEvent
 from legal.models import LegalChoice, LegalDocument
 
-from . import client_sync, profile
+from storage import service as storage_service
+from storage.models import StoredObject
+
+from . import client_sync, photo, profile
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +100,9 @@ def erase_user(user, *, by, now=None):
         user.groups.clear()
         user.user_permissions.clear()
         _withdraw_optional_consents(user, now)
+        # The profile photo and its pending upload (entry 4), deleted with their traces
+        # before the profile row that links them goes.
+        photo.erase(user, by)
         # The personal data of the settings page (epic-doctor-profile entry 2), and any
         # contact change waiting for its code (entry 3): the row stays, so no CASCADE.
         profile.clear_profile(user)
@@ -125,9 +133,21 @@ def _record_purge(pk):
                            step=PURGE_STEP, data={'email': email}) is not None
 
 
+def _release_stored_objects(ids):
+    """The stored objects the accounts `ids` still own (StoredObject.owner is PROTECT):
+    each not marked yet is deleted through storage.service.delete (by the system, after
+    the batch commits; one marked earlier, by the erasure, is left to its task and the
+    sweep), and every one is detached from its owner now, so the accounts can go."""
+    owned = StoredObject.objects.filter(owner_id__in=ids)
+    for obj in owned.filter(delete_requested_at__isnull=True):
+        storage_service.delete(obj, None)
+    owned.update(owner=None)
+
+
 def purge_erased(now=None, batch_size=500):
     """Delete each erased account whose `purge_after` has passed, with its legal choices
-    (first: the user's are PROTECT), one transaction per batch, after its purge record
+    (first: the user's are PROTECT) and after detaching and deleting the stored objects
+    it still owns, one transaction per batch, after its purge record
     (`_record_purge`). An account whose email cannot be read or whose record could not be
     written is kept for the next run. Returns how many were deleted."""
     User = get_user_model()
@@ -145,6 +165,7 @@ def purge_erased(now=None, batch_size=500):
             for pk in pks:
                 (ids if _record_purge(pk) else unrecorded).append(pk)
             LegalChoice.objects.filter(user_id__in=ids).delete()
+            _release_stored_objects(ids)
             # Every outbox row of these accounts, whatever its state (decision 2026-11-06
             # after review): nothing of them stays in the outbox. Nothing is sent.
             uids = User.objects.filter(pk__in=ids).values_list('uid', flat=True)

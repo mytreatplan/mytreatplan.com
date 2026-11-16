@@ -40,7 +40,9 @@ epic builds it). Below the tablet breakpoint everything stacks in one column.
 
 <div class="mt-[clamp(14px,1.8vw,24px)] grid grid-cols-1 gap-[clamp(12px,1.4vw,16px)] tablet:grid-cols-2">
   <section class="flex items-center gap-[clamp(14px,1.8vw,22px)] rounded-[clamp(20px,2.4vw,32px)] bg-card-grey p-[clamp(14px,1.6vw,20px)]" aria-label="{% translate 'Your profile' %}" data-profile-card>
-    <span class="flex h-[clamp(84px,9vw,130px)] w-[clamp(64px,7vw,100px)] shrink-0 items-center justify-center rounded-[50%] bg-violet text-[clamp(24px,2.6vw,36px)] font-black tracking-[-0.02em] text-white" aria-hidden="true" data-profile-initials>{{ user|initials }}</span>
+    {% profile_photo as photo %}
+    {% if photo.url %}<span class="flex h-[clamp(84px,9vw,130px)] w-[clamp(64px,7vw,100px)] shrink-0 overflow-hidden rounded-[50%] bg-violet" aria-hidden="true" data-profile-photo><img src="{{ photo.url }}" alt="" class="size-full object-cover"></span>
+    {% else %}<span class="flex h-[clamp(84px,9vw,130px)] w-[clamp(64px,7vw,100px)] shrink-0 items-center justify-center rounded-[50%] bg-violet text-[clamp(24px,2.6vw,36px)] font-black tracking-[-0.02em] text-white" aria-hidden="true" data-profile-initials>{{ user|initials }}</span>{% endif %}
     <span class="min-w-0">
       <strong class="block break-words text-[clamp(15px,1.5vw,18px)] font-bold" data-profile-name>{{ profile_name }}</strong>
       {% if profile_line %}<span class="block text-[clamp(14px,1.4vw,17px)]" data-profile-line>{{ profile_line }}</span>{% endif %}

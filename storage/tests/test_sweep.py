@@ -16,7 +16,7 @@ from mytp_core import jobs
 from storage import service, sweep
 from storage.models import PendingUpload, StoredObject
 
-from .conftest import BUCKET, GiB, REPO_DEPLOY, TEST_MAX_SIZE, TEST_PURPOSE
+from .conftest import BUCKET, GiB, REPO_DEPLOY, STAFF_PURPOSE, TEST_MAX_SIZE, TEST_PURPOSE
 
 pytestmark = pytest.mark.django_db
 LIST = {'Bucket': BUCKET, 'Prefix': 'quarantine/'}
@@ -36,7 +36,7 @@ def run():
 def test_rowless_objects_older_than_a_day_are_deleted(stubber, staff, caplog):
     caplog.set_level(logging.DEBUG, logger='storage')
     orphan, recent, recorded = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
-    StoredObject.objects.create(id=recorded, purpose='sample', uploaded_by=staff, size=1)
+    StoredObject.objects.create(id=recorded, purpose=STAFF_PURPOSE, uploaded_by=staff, size=1)
     stubber.add_response('list_objects_v2', {'Contents': [
         item(orphan, age=timedelta(days=1, minutes=1)),
         item(recent, age=timedelta(hours=23)),          # its /complete/ may still come
@@ -74,9 +74,9 @@ def test_rowless_object_without_a_pending_upload_uses_the_largest_limit(stubber)
 
 def test_expired_pending_uploads_are_forgotten(stubber, staff):
     stubber.add_response('list_objects_v2', {}, LIST)
-    old = PendingUpload.objects.create(id=uuid.uuid4(), purpose='sample', user=staff, size=1,
+    old = PendingUpload.objects.create(id=uuid.uuid4(), purpose=STAFF_PURPOSE, user=staff, size=1,
                                        created_at=timezone.now() - timedelta(days=8))
-    kept = PendingUpload.objects.create(id=uuid.uuid4(), purpose='sample', user=staff, size=1,
+    kept = PendingUpload.objects.create(id=uuid.uuid4(), purpose=STAFF_PURPOSE, user=staff, size=1,
                                         created_at=timezone.now() - timedelta(days=6))
     assert '1 pending uploads forgotten' in run()
     assert not PendingUpload.objects.filter(pk=old.pk).exists()
@@ -85,11 +85,11 @@ def test_expired_pending_uploads_are_forgotten(stubber, staff):
 
 def test_pending_deletions_are_enqueued_again(stubber, staff):
     stubber.add_response('list_objects_v2', {}, LIST)
-    stuck = StoredObject.objects.create(purpose='sample', size=1,
+    stuck = StoredObject.objects.create(purpose=STAFF_PURPOSE, size=1,
                                         delete_requested_at=timezone.now() - timedelta(hours=1))
-    StoredObject.objects.create(purpose='sample', size=1,
+    StoredObject.objects.create(purpose=STAFF_PURPOSE, size=1,
                                 delete_requested_at=timezone.now() - timedelta(minutes=5))
-    StoredObject.objects.create(purpose='sample', size=1)
+    StoredObject.objects.create(purpose=STAFF_PURPOSE, size=1)
 
     assert '1 deletions enqueued again' in run()
 
@@ -114,7 +114,7 @@ def test_the_job_runs_hourly():
 @pytest.mark.django_db(transaction=True)
 def test_delete_marks_the_row_in_the_callers_transaction(staff):
     from django.db import transaction
-    obj = StoredObject.objects.create(purpose='sample', uploaded_by=staff, size=1)
+    obj = StoredObject.objects.create(purpose=STAFF_PURPOSE, uploaded_by=staff, size=1)
     with pytest.raises(RuntimeError):
         with transaction.atomic():
             service.delete(obj, staff)
@@ -128,8 +128,8 @@ def test_delete_marks_the_row_in_the_callers_transaction(staff):
 
 
 def test_no_download_once_deletion_is_asked(staff, monkeypatch):
-    obj = StoredObject.objects.create(purpose='sample', uploaded_by=staff, size=1)
+    obj = StoredObject.objects.create(purpose=STAFF_PURPOSE, uploaded_by=staff, size=1)
     service.delete(obj, staff)
     monkeypatch.setattr('storage.s3.presign_download', lambda *a, **k: pytest.fail('no URL'))
     with pytest.raises(service.DownloadRefused):
-        service.download_url(StoredObject.objects.get(pk=obj.pk), staff, 'sample_page')
+        service.download_url(StoredObject.objects.get(pk=obj.pk), staff, 'test_reason')

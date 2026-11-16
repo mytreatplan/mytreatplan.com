@@ -2,10 +2,13 @@
 The upload widget (storage/upload.js, Uppy 6 with @uppy/aws-s3 `signRequest`). Include it
 with the purpose and its size limit:
 
-    {% include "storage/_upload_widget.html" with purpose="sample" max_size=max_size log_id="storage-log" %}
+    {% include "storage/_upload_widget.html" with purpose="profile_photo" max_size=max_size log_id="storage-log" %}
 
-`log_id` (optional) names a <pre> the widget writes its event log to. After each stored
-upload the element fires `storage:uploaded` with `detail` {id, size, purpose}.
+Optional: `log_id` names a <pre> the widget writes its event log to; `allowed_types` (a
+space-separated list of declared types, e.g. "image/jpeg image/png") limits the files
+the widget offers (the site checks them again when signing); `single_file=True` takes
+one file only; `height` is the dashboard's height in pixels (360 by default). After each
+stored upload the element fires `storage:uploaded` with `detail` {id, size, purpose}.
 Every S3 request is signed by /storage/sign/; the browser never holds bucket keys, and the
 file name goes only to /storage/complete/ (stored encrypted).
 {% endcomment %}
@@ -18,4 +21,7 @@ file name goes only to /storage/complete/ (stored encrypted).
      data-csrf-token="{{ csrf_token }}"
      data-purpose="{{ purpose }}"
      data-max-size="{{ max_size }}"{% if log_id %}
-     data-log-id="{{ log_id }}"{% endif %}></div>
+     data-log-id="{{ log_id }}"{% endif %}{% if allowed_types %}
+     data-allowed-types="{{ allowed_types }}"{% endif %}{% if single_file %}
+     data-single-file="true"{% endif %}{% if height %}
+     data-height="{{ height }}"{% endif %}></div>

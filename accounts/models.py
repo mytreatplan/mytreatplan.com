@@ -218,7 +218,13 @@ class Profile(models.Model):
     by them). `language` is the preferred language code (one of the site's languages);
     `time_zone` an IANA zone name, stored only (pages keep the site's zone). All six
     travel to the admin site in `client.updated` (accounts.client_sync). Deleted with
-    the user; cleared when the account is erased (accounts.erasure)."""
+    the user; cleared when the account is erased (accounts.erasure).
+
+    `photo` and `photo_pending` (entry 4, accounts.photo) are the doctor's profile photo
+    and the upload waiting for its scan, stored objects (storage.StoredObject, purpose
+    `profile_photo`) in the region's bucket. They stay regional: never in SYNCED_FIELDS,
+    and a photo change emits no event. SET_NULL: the object's deletion (always through
+    storage.service.delete) unlinks it."""
 
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
                                 related_name='profile')
@@ -230,6 +236,10 @@ class Profile(models.Model):
     landline = EncryptedCharField(_('landline'), max_length=PHONE_MAX_LENGTH, blank=True)
     alternative_email = EncryptedEmailField(_('alternative email'), max_length=254,
                                             blank=True)
+    photo = models.ForeignKey('storage.StoredObject', on_delete=models.SET_NULL, null=True,
+                              blank=True, related_name='+')
+    photo_pending = models.ForeignKey('storage.StoredObject', on_delete=models.SET_NULL,
+                                      null=True, blank=True, related_name='+')
     updated_at = models.DateTimeField(auto_now=True)
 
     # The fields that travel in `client.updated`.

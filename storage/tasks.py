@@ -25,6 +25,13 @@ storage.clamd) outside any database transaction, then, inside
   prefixes), the row kept with state `rejected` and a DeletionTrace by the system
   (decision 2026-11-07).
 
+A purpose may check the content too (`validate`, storage.purposes): after clamd's OK
+and before the copy, the object is read again and handed to it; a refusal rejects the
+object as above, with the outcome code `invalid_content`. After a promotion has
+committed, the purpose's `on_clean(obj)` runs (a failure there is logged by UUID and
+leaves the object clean). A rerun that finds the clean copy already made skips the
+check: the copy is made only after the check passed.
+
 Any other clamd ERROR, an unknown or garbled answer (outcome `scan_error`; decision
 2026-11-08), clamd unreachable (or silent) or an S3 failure: nothing changes (the object stays in
 quarantine) and the task enqueues itself again like the deletion (MAX_ATTEMPTS, then one
@@ -43,12 +50,13 @@ from datetime import timedelta
 
 import sentry_sdk
 from django.conf import settings
+from django.db import transaction
 from django.tasks import task
 from django.utils import timezone
 
 from mytp_core.tasks import run_once
 
-from . import clamd, s3
+from . import clamd, purposes, s3
 from .models import DeletionTrace, StoredObject
 
 logger = logging.getLogger(__name__)
@@ -71,6 +79,8 @@ CLAMD_UNAVAILABLE = 'clamd_unavailable'
 S3_ERROR = 's3_error'
 # Outcome code of an object found neither in quarantine nor clean: rejected.
 MISSING = 'missing'
+# Outcome code of an object its purpose's `validate` refused: rejected.
+INVALID_CONTENT = 'invalid_content'
 
 
 def _delete(object_id, actor_type, actor_uuid):
@@ -197,6 +207,68 @@ def _reject(object_id):
     return True
 
 
+def _read_quarantined(object_id, limit):
+    """The bytes of `quarantine/<uuid>`, at most `limit` (the purpose's size limit; the
+    stored size was checked against it on completion)."""
+    data = bytearray()
+    for chunk in s3.open_stream(s3.quarantine_key(object_id)):
+        data += chunk
+        if len(data) > limit:
+            break
+    return bytes(data)
+
+
+def _content_valid(purpose, obj):
+    """The purpose's `validate` verdict on the clean-scanned object (True without one).
+    An S3 failure while reading is raised (the scan is retried); any other failure of the
+    check counts as a refusal."""
+    if purpose is None or purpose.validate is None:
+        return True
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    read_failed = []
+
+    def read():
+        try:
+            return _read_quarantined(obj.pk, purpose.max_size)
+        except (ClientError, BotoCoreError, OSError) as exc:
+            read_failed.append(exc)
+            raise
+
+    try:
+        valid = bool(purpose.validate(obj, read))
+    except Exception:  # noqa: BLE001 - a broken file must never pass the check
+        valid = False
+    if read_failed:
+        # The bucket failed, not the file: undecided, retried (even if the check caught it).
+        raise _Undecided(S3_ERROR) from read_failed[0]
+    return valid
+
+
+def _run_on_clean(purpose, object_id):
+    """The purpose's `on_clean` hook for a promoted object, after the promotion commits;
+    its failure is logged (UUID only) and reported, the object stays clean."""
+    if purpose is None or purpose.on_clean is None:
+        return
+
+    def run():
+        obj = StoredObject.objects.filter(pk=object_id).first()
+        if obj is None:
+            return
+        try:
+            purpose.on_clean(obj)
+        except Exception as exc:  # noqa: BLE001 - the scan's outcome stands
+            logger.warning('storage: on_clean of object %s failed (%s)', object_id,
+                           type(exc).__name__)
+            with sentry_sdk.new_scope() as scope:
+                scope.set_tag('storage.object', str(object_id))
+                sentry_sdk.capture_message(
+                    f'Stored object on_clean failed: {object_id} ({type(exc).__name__})',
+                    level='error')
+
+    transaction.on_commit(run)
+
+
 def _retry_or_report(object_id, code, attempt):
     logger.warning('storage: scan of object %s undecided (%s), attempt %d of %d',
                    object_id, code, attempt, MAX_ATTEMPTS)
@@ -217,7 +289,7 @@ def _retry_or_report(object_id, code, attempt):
 def scan_object_task(object_uuid, attempt=1):
     """Scan one stored object and promote or reject it (see the module docstring).
     Returns the outcome code ('clean', 'infected', 'limit_exceeded', 'unscannable',
-    'scan_error', 'missing'), 'already scanned', 'skipped' (the object is gone or being deleted),
+    'scan_error', 'missing', 'invalid_content'), 'already scanned', 'skipped' (the object is gone or being deleted),
     'retry' or 'failed'."""
     object_id = uuid.UUID(str(object_uuid))
     obj = StoredObject.objects.filter(pk=object_id).first()
@@ -225,9 +297,12 @@ def scan_object_task(object_uuid, attempt=1):
         return 'skipped'
     if obj.state != StoredObject.QUARANTINE:
         return 'already scanned'
+    purpose = purposes.get(obj.purpose)
     try:
         code, verdict = _verdict(object_id)
         promote = code == 'clean'
+        if promote and verdict is not None and not _content_valid(purpose, obj):
+            code, promote = INVALID_CONTENT, False
         if promote and verdict is not None:
             _copy_to_clean(object_id)
         applied = []
@@ -250,4 +325,5 @@ def scan_object_task(object_uuid, attempt=1):
         logger.warning('storage: object %s rejected (%s)', object_id, code)
     else:
         logger.info('storage: object %s scanned clean', object_id)
+        _run_on_clean(purpose, object_id)
     return code

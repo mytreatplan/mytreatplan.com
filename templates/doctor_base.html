@@ -46,10 +46,11 @@ portal_base); `doctor_band` may drop the handshake band. Not indexed (portal_bas
       {% if here != 'upgrade' and here != 'upgrade_purchase' %}{% upgrade_reminder as reminder %}{% if reminder %}
       <a href="{{ reminder.url }}" class="inline-flex items-center rounded-pill border-2 border-white px-[clamp(10px,1.2vw,16px)] py-1 text-[clamp(13px,1.4vw,15px)] font-bold whitespace-nowrap text-ink hover:bg-white max-tablet:[.js_&]:text-[20px] max-tablet:[.js_&]:text-white max-tablet:[.js_&]:hover:text-ink" data-upgrade-reminder="{{ reminder.tier }}">{% blocktranslate with level=reminder.name %}{{ level }} · Upgrade{% endblocktranslate %}</a>
       {% endif %}{% endif %}
-      {# The avatar: the doctor's initials until entry 4 brings the photo. #}
+      {# The avatar: the doctor's profile photo once it passed its checks (entry 4, accounts.photo), else the initials. #}
+      {% profile_photo as photo %}
       <span role="img" aria-label="{{ user|display_name }}" title="{{ user|display_name }}"
-            class="flex h-[clamp(56px,6.6vw,96px)] w-[clamp(44px,5.2vw,74px)] items-center justify-center rounded-[50%] bg-violet text-[clamp(17px,1.9vw,26px)] font-black tracking-[-0.02em] text-white"
-            data-avatar><span aria-hidden="true">{{ user|initials }}</span></span>
+            class="flex h-[clamp(56px,6.6vw,96px)] w-[clamp(44px,5.2vw,74px)] items-center justify-center overflow-hidden rounded-[50%] bg-violet text-[clamp(17px,1.9vw,26px)] font-black tracking-[-0.02em] text-white"
+            data-avatar>{% if photo.url %}<img src="{{ photo.url }}" alt="" class="size-full object-cover" data-avatar-photo>{% else %}<span aria-hidden="true">{{ user|initials }}</span>{% endif %}</span>
       <form method="post" action="{% url 'logout' %}">{% csrf_token %}
         <button type="submit" class="inline-flex cursor-pointer items-center gap-2 rounded-pill bg-violet px-[clamp(14px,1.6vw,22px)] py-2 font-bold text-white hover:bg-ink" data-portal-link="logout">{% include "includes/_icon.html" with name="logout" class="size-5" %}{% translate "Log out" %}</button>
       </form>

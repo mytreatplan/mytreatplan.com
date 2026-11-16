@@ -15,6 +15,10 @@
    scans backend (READY or RUNNING, its retries included), so a backlog is not doubled.
    When any object has waited more than STALE_SCAN_AFTER, one Sentry message per run
    gives their count (no UUID, no name): the scan worker or clamd is probably down.
+5. For each purpose with `unclaimed_after` (storage.purposes), its objects still without
+   an owner, not being deleted, recorded more than that long ago and not `in_use` are
+   deleted through storage.service.delete by the system (an upload whose claim never
+   came: the tab was closed after the upload).
 
 Returns counts only; nothing logs a key, URL or name (AD-23).
 """
@@ -138,13 +142,32 @@ def report_stale_scans(now):
     return stale
 
 
+def delete_unclaimed(now):
+    from . import service
+
+    deleted = 0
+    for name in purposes.names():
+        purpose = purposes.get(name)
+        if purpose.unclaimed_after is None:
+            continue
+        unclaimed = StoredObject.objects.filter(
+            purpose=name, owner__isnull=True, delete_requested_at__isnull=True,
+            created_at__lt=now - purpose.unclaimed_after)
+        for obj in unclaimed.iterator():
+            if purpose.in_use is not None and purpose.in_use(obj):
+                continue
+            service.delete(obj, None)
+            deleted += 1
+    return deleted
+
+
 def sweep(now=None, client=None):
     """Run the steps; returns their counts. Without the bucket settings (a site with
     no file storage yet) the bucket step is skipped (None)."""
     now = now or timezone.now()
     counts = {'pending': purge_pending(now), 'orphans': None,
               'redeletes': requeue_deletions(now), 'rescans': requeue_scans(now),
-              'stale_scans': report_stale_scans(now)}
+              'stale_scans': report_stale_scans(now), 'unclaimed': delete_unclaimed(now)}
     if s3.missing_setting() is None:
         counts['orphans'] = delete_orphans(now, client)
     return counts

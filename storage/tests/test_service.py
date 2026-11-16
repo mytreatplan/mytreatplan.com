@@ -13,7 +13,7 @@ from integration.models import RemoteAccess
 from storage import purposes, s3, service
 from storage.models import StoredObject
 
-from .conftest import BUCKET, GiB, TEST_PURPOSE
+from .conftest import BUCKET, STAFF_PURPOSE, GiB, TEST_PURPOSE
 
 pytestmark = pytest.mark.django_db
 
@@ -109,13 +109,13 @@ def test_real_purposes_download_only_clean_objects(doctor):
         service.download_url(obj, doctor, 'doctor_view')
 
 
-def test_the_sample_purpose_downloads_only_clean_objects_too(staff):
-    """Decision 2026-11-07: no quarantine downloads for the sample purpose any more."""
-    obj = stored(purpose='sample', uploaded_by=staff)
+def test_a_staff_purpose_downloads_only_clean_objects_too(staff):
+    """Decision 2026-11-07: no quarantine downloads for any purpose."""
+    obj = stored(purpose=STAFF_PURPOSE, uploaded_by=staff)
     with pytest.raises(service.DownloadRefused):
-        service.download_url(obj, staff, 'sample_page')
-    obj = stored(purpose='sample', uploaded_by=staff, state=StoredObject.CLEAN)
-    url = urlsplit(service.download_url(obj, staff, 'sample_page'))
+        service.download_url(obj, staff, 'test_reason')
+    obj = stored(purpose=STAFF_PURPOSE, uploaded_by=staff, state=StoredObject.CLEAN)
+    url = urlsplit(service.download_url(obj, staff, 'test_reason'))
     assert url.path == f'/clean/{obj.pk}'
 
 
@@ -179,7 +179,7 @@ def test_register_refuses_a_bad_or_duplicate_purpose():
 
 
 def test_default_size_limit_is_1_gib():
-    assert purposes.get('sample').max_size == purposes.DEFAULT_MAX_SIZE == 1024 ** 3
+    assert purposes.get(STAFF_PURPOSE).max_size == purposes.DEFAULT_MAX_SIZE == 1024 ** 3
     assert purposes.MAX_SCANNED_SIZE == 1024 ** 3
     # No purpose may serve unscanned files any more (decision 2026-11-07).
-    assert not hasattr(purposes.get('sample'), 'download_quarantine')
+    assert not hasattr(purposes.get(STAFF_PURPOSE), 'download_quarantine')
