@@ -281,13 +281,15 @@ def copy_object(src, dst, client=None):
                            CopySource={'Bucket': settings.STORAGE_BUCKET, 'Key': src})
 
 
-def presign_download(key, *, content_type='', filename='', client=None):
+def presign_download(key, *, content_type='', filename='', inline=False, client=None):
     """A presigned GET for `key`, valid DOWNLOAD_URL_EXPIRES (5 minutes at most), served
     as an attachment named `filename` (never the original file name: see
-    storage.service)."""
+    storage.service), or `inline` (shown in the page, as an <img>)."""
     client = client or make_client()
     params = {'Bucket': settings.STORAGE_BUCKET, 'Key': key}
-    if filename:
+    if inline:
+        params['ResponseContentDisposition'] = 'inline'
+    elif filename:
         params['ResponseContentDisposition'] = f'attachment; filename="{filename}"'
     if content_type:
         params['ResponseContentType'] = content_type

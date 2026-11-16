@@ -347,3 +347,186 @@ def _env_values(path):
     """The KEY=value lines of an env file (comments and blank lines skipped)."""
     return dict(line.split('=', 1) for line in path.read_text().splitlines()
                 if line.strip() and not line.startswith('#'))
+
+
+# --- The object storage fakes (storage, and accounts' profile photo) ----------------------
+#
+# Fake, non-secret bucket settings: a developer's settings.env must never carry real
+# bucket keys into a test. Nothing here reaches the network (presigning is local; the S3
+# calls go to a botocore Stubber; clamd is a fake on a unix socket).
+
+STORAGE_FAKE_ACCESS_KEY = 'STORAGEACCESSKEYTEST1'
+STORAGE_FAKE_SECRET_KEY = 'storage-secret-key-for-tests-only-0123456789'
+STORAGE_BUCKET = 'mytp-dev-files'
+
+
+def use_fake_bucket(settings):
+    """The fake bucket's STORAGE_* settings (clamd at a path where nothing listens: a
+    test that scans starts `fake_clamd`)."""
+    settings.STORAGE_ENDPOINT = 'https://s3.gra.io.cloud.ovh.net'
+    settings.STORAGE_REGION = 'gra'
+    settings.STORAGE_BUCKET = STORAGE_BUCKET
+    settings.STORAGE_ACCESS_KEY = STORAGE_FAKE_ACCESS_KEY
+    settings.STORAGE_SECRET_KEY = STORAGE_FAKE_SECRET_KEY
+    settings.STORAGE_CORS_ORIGINS = ['https://dev.mytpdso.com']
+    settings.STORAGE_ABORT_INCOMPLETE_DAYS = 7
+    settings.STORAGE_CLAMD_SOCKET = '/nonexistent/clamd.ctl'
+    return settings
+
+
+@pytest.fixture
+def fake_bucket(settings):
+    """The fake bucket's settings (autouse in the storage tests)."""
+    return use_fake_bucket(settings)
+
+
+@pytest.fixture
+def stubber(monkeypatch):
+    """The S3 client every storage call gets, with a botocore Stubber on it."""
+    from botocore.stub import Stubber
+
+    from storage import s3
+
+    client = s3.make_client()
+    stub = Stubber(client)
+    monkeypatch.setattr(s3, 'make_client', lambda **kwargs: client)
+    with stub:
+        yield stub
+    stub.assert_no_pending_responses()
+
+
+class FakeClamd:
+    """clamd on a unix socket in a thread: reads one INSTREAM (or VERSION) per connection
+    and answers `reply`. `reply` may be a callable of the received data; `close_after`
+    stops reading after that many data bytes, answers and closes (StreamMaxLength);
+    `reply=None` closes without an answer."""
+
+    def __init__(self, path):
+        import threading
+
+        self.path = path
+        self.reply = b'stream: OK\0'
+        self.close_after = None
+        self._raw = []          # per connection: the raw pieces read, before any answer
+        self.data = []          # the data each INSTREAM carried (before its answer)
+        self.server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.server.bind(path)
+        self.server.listen(5)
+        self.thread = threading.Thread(target=self._serve, daemon=True)
+        self.running = True
+        self.thread.start()
+
+    def _recv_exact(self, conn, n, raw):
+        buf = b''
+        while len(buf) < n:
+            part = conn.recv(n - len(buf))
+            if not part:
+                raise ConnectionError('client closed')
+            buf += part
+        raw.append(buf)
+        return buf
+
+    def _serve(self):
+        while self.running:
+            try:
+                conn, _ = self.server.accept()
+            except OSError:
+                return
+            with conn:
+                raw = []
+                self._raw.append(raw)
+                try:
+                    self._handle(conn, raw)
+                except (ConnectionError, OSError):
+                    pass
+
+    @property
+    def received(self):
+        """The raw bytes of each connection."""
+        return [b''.join(raw) for raw in self._raw]
+
+    def _answer(self, conn, data):
+        reply = self.reply(data) if callable(self.reply) else self.reply
+        if reply is not None:
+            conn.sendall(reply)
+
+    def _handle(self, conn, raw):
+        import struct
+
+        command = b''
+        while not command.endswith(b'\0'):
+            command += self._recv_exact(conn, 1, raw)
+        if command == b'zVERSION\0':
+            self._answer(conn, b'')
+            return
+        assert command == b'zINSTREAM\0', command
+        data = b''
+        while True:
+            (length,) = struct.unpack('!L', self._recv_exact(conn, 4, raw))
+            if length == 0:
+                break
+            data += self._recv_exact(conn, length, raw)
+            if self.close_after is not None and len(data) > self.close_after:
+                self.data.append(data)
+                self._answer(conn, data)
+                conn.shutdown(socket.SHUT_RDWR)
+                return
+        self.data.append(data)
+        self._answer(conn, data)
+
+    def stop(self):
+        self.running = False
+        self.server.close()
+
+
+@pytest.fixture
+def fake_clamd(settings):
+    """A FakeClamd, and STORAGE_CLAMD_SOCKET pointing at it."""
+    import os
+    import shutil
+    import tempfile
+
+    # A short path: unix socket paths are limited to ~100 bytes (macOS's temp dir is long).
+    base = '/tmp' if os.access('/tmp', os.W_OK) else None
+    folder = tempfile.mkdtemp(prefix='clamd', dir=base)
+    fake = FakeClamd(os.path.join(folder, 'clamd.ctl'))
+    settings.STORAGE_CLAMD_SOCKET = fake.path
+    yield fake
+    fake.stop()
+    shutil.rmtree(folder, ignore_errors=True)
+
+
+def s3_body(data):
+    """A GetObject answer carrying `data`."""
+    import io
+
+    from botocore.response import StreamingBody
+
+    return {'Body': StreamingBody(io.BytesIO(data), len(data)), 'ContentLength': len(data)}
+
+
+def expect_get(stubber, obj, data):
+    """The scan's (or the content check's) GetObject of `quarantine/<uuid>`."""
+    stubber.add_response('get_object', s3_body(data),
+                         {'Bucket': STORAGE_BUCKET, 'Key': f'quarantine/{obj.pk}'})
+
+
+def expect_promotion(stubber, obj, *, clean_exists=False):
+    """The promotion's HeadObject (and CopyObject) of `clean/<uuid>`, then the quarantine
+    object's deletion."""
+    clean = {'Bucket': STORAGE_BUCKET, 'Key': f'clean/{obj.pk}'}
+    if clean_exists:
+        stubber.add_response('head_object', {'ContentLength': obj.size}, clean)
+    else:
+        stubber.add_client_error('head_object', service_error_code='404', http_status_code=404,
+                                 expected_params=clean)
+        stubber.add_response('copy_object', {}, {
+            **clean, 'CopySource': {'Bucket': STORAGE_BUCKET, 'Key': f'quarantine/{obj.pk}'}})
+    stubber.add_response('delete_object', {},
+                         {'Bucket': STORAGE_BUCKET, 'Key': f'quarantine/{obj.pk}'})
+
+
+def expect_rejection(stubber, obj):
+    """A rejection's (or a deletion's) DeleteObject of both keys."""
+    for key in (f'quarantine/{obj.pk}', f'clean/{obj.pk}'):
+        stubber.add_response('delete_object', {}, {'Bucket': STORAGE_BUCKET, 'Key': key})

@@ -138,10 +138,38 @@ def test_home_without_names_greets_plainly_and_shows_the_email_initial():
 
 
 def test_avatar_shows_the_initials(doctor):
+    """Without a profile photo (entry 4: test_profile_photo.py) the header's avatar and the
+    profile card show the initials, and no photo link is made."""
     html = _html(_browser(doctor).get('/en/home/'))
 
     assert re.search(r'data-avatar><span aria-hidden="true">ME</span>', html)
     assert 'data-profile-initials>ME<' in html
+    assert 'data-avatar-photo' not in html and 'data-profile-photo' not in html
+
+
+def test_avatar_shows_the_clean_photo(doctor, settings, monkeypatch):
+    """With a clean profile photo (entry 4) both show it, through one inline link."""
+    from accounts.models import Profile
+    from conftest import use_fake_bucket
+    from storage import s3
+    from storage.models import StoredObject
+
+    use_fake_bucket(settings)
+    links = []
+    monkeypatch.setattr(s3, 'presign_download',
+                        lambda key, **kwargs: links.append(key) or f'https://bucket.test/{key}')
+    obj = StoredObject.objects.create(purpose='profile_photo', owner=doctor, uploaded_by=doctor,
+                                      size=10, content_type='image/png',
+                                      state=StoredObject.CLEAN)
+    Profile.objects.create(user=doctor, photo=obj)
+
+    html = _html(_browser(doctor).get('/en/home/'))
+
+    assert links == [f'clean/{obj.pk}']
+    assert re.search(r'data-avatar><img src="https://bucket.test/clean/[^"]+" alt="" '
+                     r'class="size-full object-cover" data-avatar-photo>', html)
+    assert 'data-profile-photo><img src="https://bucket.test/clean/' in html
+    assert 'data-profile-initials' not in html
 
 
 def test_staff_see_the_same_home():

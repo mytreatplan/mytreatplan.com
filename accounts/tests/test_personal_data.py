@@ -78,7 +78,7 @@ def _choices(user, kind):
 
 # --- Open the page ------------------------------------------------------------------------
 
-def test_page_shows_the_form_the_read_only_data_and_the_tiles(doctor):
+def test_page_shows_the_form_the_read_only_data_and_the_tiles(doctor, fake_bucket):
     response = _browser(doctor).get(PAGE)
 
     assert response.status_code == 200
@@ -107,10 +107,13 @@ def test_page_shows_the_form_the_read_only_data_and_the_tiles(doctor):
     assert doctor.date_joined.strftime('%Y·%m·%d') in html
     assert re.search(r'href="/en/home/"[^>]*data-back-home', html)
     assert 'data-cancel' in html and re.search(r'href="/en/home/"[^>]*data-cancel', html)
-    # The gear is current; no photo upload.
+    # The gear is current. The photo block (entry 4) shows the initials and links to the
+    # upload page (on a site with storage); the upload itself is not on this page.
     assert re.search(r'href="/en/settings/" class="[^"]*" aria-label="Settings" '
                      r'aria-current="page"', html)
     assert 'type="file"' not in html
+    assert re.search(r'href="/en/settings/photo/"[^>]*data-photo-upload>Upload a photo<', html)
+    assert 'data-photo-delete' not in html and 'data-photo-pending' not in html
     assert not Profile.objects.exists()
 
 

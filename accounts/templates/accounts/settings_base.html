@@ -13,7 +13,9 @@ the personal-data page (accounts.views.personal_data) and the sections not built
 {% block portal_content %}
 <div class="grid grid-cols-1 items-center gap-[clamp(12px,1.6vw,20px)] tablet:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
   <section class="flex items-center gap-[clamp(14px,1.8vw,22px)] rounded-[clamp(20px,2.4vw,32px)] bg-card-grey p-[clamp(14px,1.6vw,20px)]" aria-label="{% translate 'Your profile' %}" data-profile-card>
-    <span class="flex h-[clamp(72px,8vw,100px)] w-[clamp(56px,6vw,78px)] shrink-0 items-center justify-center rounded-[50%] bg-violet text-[clamp(22px,2.4vw,30px)] font-black tracking-[-0.02em] text-white" aria-hidden="true" data-profile-initials>{{ user|initials }}</span>
+    {% profile_photo as photo %}
+    {% if photo.url %}<span class="flex h-[clamp(72px,8vw,100px)] w-[clamp(56px,6vw,78px)] shrink-0 overflow-hidden rounded-[50%] bg-violet" aria-hidden="true" data-profile-photo><img src="{{ photo.url }}" alt="" class="size-full object-cover"></span>
+    {% else %}<span class="flex h-[clamp(72px,8vw,100px)] w-[clamp(56px,6vw,78px)] shrink-0 items-center justify-center rounded-[50%] bg-violet text-[clamp(22px,2.4vw,30px)] font-black tracking-[-0.02em] text-white" aria-hidden="true" data-profile-initials>{{ user|initials }}</span>{% endif %}
     <span class="min-w-0">
       <strong class="block break-words text-[clamp(15px,1.5vw,17px)] font-bold" data-profile-name>{{ profile_name }}</strong>
       {% if profile_line %}<span class="block text-[clamp(14px,1.4vw,16px)]" data-profile-line>{{ profile_line }}</span>{% endif %}

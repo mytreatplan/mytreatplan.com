@@ -1,17 +1,16 @@
+"""The storage tests' fixtures. The fake bucket settings, the S3 Stubber, the fake clamd
+and the S3 expectations are the root conftest's (shared with the accounts tests of the
+profile photo)."""
 from pathlib import Path
 
 import pytest
-from botocore.stub import Stubber
 
 from accounts.models import User
-from storage import purposes, s3
-
-# Fake, non-secret bucket settings: a developer's settings.env must never carry real
-# bucket keys into a test. Nothing here reaches the network (presigning is local; the
-# S3 calls go to a botocore Stubber).
-FAKE_ACCESS_KEY = 'STORAGEACCESSKEYTEST1'
-FAKE_SECRET_KEY = 'storage-secret-key-for-tests-only-0123456789'
-BUCKET = 'mytp-dev-files'
+from conftest import STORAGE_BUCKET as BUCKET
+from conftest import STORAGE_FAKE_ACCESS_KEY as FAKE_ACCESS_KEY
+from conftest import STORAGE_FAKE_SECRET_KEY as FAKE_SECRET_KEY
+from conftest import use_fake_bucket
+from storage import purposes
 PASSWORD = 'a-long-test-password-9'
 REPO_DEPLOY = Path(__file__).resolve().parents[2] / 'deploy'
 GiB = 1024 ** 3
@@ -21,21 +20,22 @@ MiB = 1024 ** 2
 # by the uploader only, 100 MiB at most.
 TEST_PURPOSE = 'test_files'
 TEST_MAX_SIZE = 100 * MiB
+# A staff-only purpose of the default size (1 GiB), as the staging sample purpose was:
+# uploads and downloads by active staff while STAFF_GATE['open'] (a test closes it to
+# take the permission away mid-upload).
+STAFF_PURPOSE = 'staff_files'
+STAFF_GATE = {'open': True}
+
+
+def _staff_allowed(user):
+    return bool(STAFF_GATE['open'] and user.is_staff)
 
 
 @pytest.fixture(autouse=True)
 def storage_settings(settings):
-    settings.STORAGE_SAMPLE_UPLOADS = True
     settings.ROBOTS_NOINDEX = True
-    settings.STORAGE_ENDPOINT = 'https://s3.gra.io.cloud.ovh.net'
-    settings.STORAGE_REGION = 'gra'
-    settings.STORAGE_BUCKET = BUCKET
-    settings.STORAGE_ACCESS_KEY = FAKE_ACCESS_KEY
-    settings.STORAGE_SECRET_KEY = FAKE_SECRET_KEY
-    settings.STORAGE_CORS_ORIGINS = ['https://dev.mytpdso.com']
-    settings.STORAGE_ABORT_INCOMPLETE_DAYS = 7
-    # Nothing listens there: the scan tests start a fake clamd and point at it.
-    settings.STORAGE_CLAMD_SOCKET = '/nonexistent/clamd.ctl'
+    # Nothing listens at its clamd socket: the scan tests start a fake clamd.
+    use_fake_bucket(settings)
     settings.ROOT_URLCONF = 'storage.tests.urls_storage'
     return settings
 
@@ -51,6 +51,16 @@ def test_purpose():
     purposes.unregister(TEST_PURPOSE)
 
 
+@pytest.fixture(autouse=True)
+def staff_purpose():
+    STAFF_GATE['open'] = True
+    purpose = purposes.register(STAFF_PURPOSE, _staff_allowed,
+                                lambda user, obj: _staff_allowed(user))
+    yield purpose
+    purposes.unregister(STAFF_PURPOSE)
+    STAFF_GATE['open'] = True
+
+
 @pytest.fixture
 def staff(db):
     return User.objects.create_user('staff@example.net', PASSWORD, is_staff=True)
@@ -64,14 +74,3 @@ def doctor(db):
 @pytest.fixture
 def other(db):
     return User.objects.create_user('other@example.net', PASSWORD)
-
-
-@pytest.fixture
-def stubber(monkeypatch):
-    """The S3 client every storage call gets, with a botocore Stubber on it."""
-    client = s3.make_client()
-    stub = Stubber(client)
-    monkeypatch.setattr(s3, 'make_client', lambda **kwargs: client)
-    with stub:
-        yield stub
-    stub.assert_no_pending_responses()

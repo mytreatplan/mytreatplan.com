@@ -20,6 +20,9 @@ Markdown==3.11
 maxminddb==3.2.0
 nh3==0.3.7
 phonenumbers==9.0.41
+# The profile photo's image check after the virus scan (accounts.photo, epic-doctor-profile
+# entry 4): decodes JPEG, PNG and WebP only.
+pillow==12.0.0
 psycopg==3.3.6
 pycparser==3.11
 # The interface contracts (mytp-core 0.7.0+, mytp_core.contracts): pinned with mytp-core, as its

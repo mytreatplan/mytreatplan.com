@@ -8,6 +8,11 @@
   a presigned GET (5 minutes at most) is made. A refusal is recorded too, best effort. If
   the record cannot be written there is no URL. (Before entry 5 these were eventlog
   activity records of kind `file`; the old ones stay there until their retention ends.)
+- `owner_inline_url(obj, user)`: the owner's own view of an object (AD-9 exception,
+  user decision 2026-11-16: a doctor's own profile photo, shown in their pages): only
+  when `obj.owner` is `user`, the object is clean and its deletion not asked; a
+  presigned inline GET (5 minutes at most) and no access record. Any other access goes
+  through `download_url`.
 - `delete(obj, actor)`: marks the row (`delete_requested_at`: no download URL from then
   on) and enqueues `delete_object_task` when the transaction commits; the task removes
   the S3 object, the row, and leaves a DeletionTrace. The `sweepstorage` job enqueues it
@@ -93,6 +98,21 @@ def download_url(obj, user, reason, *, request=None):
         raise AccessRecordFailed('the access record could not be written')
     return s3.presign_download(obj.key, content_type=obj.content_type,
                                filename=download_filename(obj))
+
+
+def owner_inline_url(obj, user):
+    """A presigned inline GET for `obj` for its owner `user` (see the module docstring),
+    valid at most 5 minutes, with no access record. Raises DownloadRefused (not
+    recorded) when `user` is not its owner or the object is not clean or is being
+    deleted, NotConfigured, or the S3 client's error."""
+    if (missing := s3.missing_setting()):
+        raise NotConfigured(f'{missing} is not set')
+    if (user is None or not getattr(user, 'is_authenticated', False) or not user.is_active
+            or obj.owner_id is None
+            or obj.owner_id != user.pk or obj.state != obj.CLEAN
+            or obj.delete_requested_at is not None):
+        raise DownloadRefused('this view is not allowed')
+    return s3.presign_download(obj.key, content_type=obj.content_type, inline=True)
 
 
 def actor_of(actor):

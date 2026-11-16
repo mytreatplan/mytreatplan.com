@@ -36,6 +36,7 @@
 - source_plan: `epic-platform/story-regional-object-storage-service-plan.md`
   summary: `StoredObject.owner` uses PROTECT, so once a real purpose sets an owner, `accounts.erasure.purge_erased` must delete (or detach) that user's objects first, or one owner blocks its whole purge batch.
   evidence: 1.11 review (2026-11-06): `purge_erased` deletes users in batches of 500 and clears only `LegalChoice`; a ProtectedError rolls the batch back on every run.
+  status: resolved by epic-doctor-profile entry 4 (6.4, 2026-11-16): `accounts.erasure.purge_erased` detaches every object an account still owns and deletes the ones not marked yet through `storage.service.delete` before the accounts go (`_release_stored_objects`); `accounts/tests/test_profile_photo.py::test_row15_purge_detaches_and_deletes_objects_still_owned`.
 - source_plan: `epic-catalogue/story-products-add-ons-quantities-calls-and-costs-plan.md`
   summary: Make the portal re-apply the current snapshot whenever its appliers change, without relying on a migration that clears the applied version.
   evidence: Entries 5 and 6 clear `ConfigState.version` in a migration; the previous release can pull between `migrate` and the switch (the `pullconfig` timer runs the previous release), or after a failed deploy that is retried, and record the current version without the new parts, after which the new release answers `unchanged` until the next admin write (review finding 7 of entry 6). A stored applier revision next to the applied version would close it.
@@ -69,6 +70,7 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
   summary: Status (1.15, 2026-11-14) of `StoredObject.owner` PROTECT against `accounts.erasure.purge_erased` (entry 11, review finding 5): still open; due with the first purpose that sets an owner.
   evidence: no purpose sets `owner` yet; a behaviour change, outside the sweep.
+  status: resolved by epic-doctor-profile entry 4 (6.4, 2026-11-16), the first purpose that sets an owner (`profile_photo`): see the entry above.
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-platform/story-refactor-sweep-plan.md`
   summary: Recorded and left (2026-11-14): run the portal's CI test job in the Playwright container image instead of `python -m playwright install --with-deps chromium` on every run (that step sometimes takes 8-15 minutes on a slow Ubuntu mirror); the database service host changes, Python stays 3.13.
   evidence: portal `.github/workflows/ci.yml:58-59`; a CI infrastructure change, excluded by the sweep.

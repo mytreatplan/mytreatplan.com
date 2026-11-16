@@ -14,7 +14,7 @@ from django_tasks_db.models import DBTaskResult
 from storage import s3, service, tasks
 from storage.models import DeletionTrace, StoredObject
 
-from .conftest import BUCKET, FAKE_SECRET_KEY, GiB
+from .conftest import BUCKET, FAKE_SECRET_KEY, STAFF_PURPOSE, GiB
 
 NAME = 'Ruiz implant plan.pdf'
 
@@ -25,7 +25,7 @@ def run_worker():
 
 
 def stored(uploaded_by=None):
-    return StoredObject.objects.create(purpose='sample', uploaded_by=uploaded_by, size=GiB,
+    return StoredObject.objects.create(purpose=STAFF_PURPOSE, uploaded_by=uploaded_by, size=GiB,
                                        original_name=NAME)
 
 

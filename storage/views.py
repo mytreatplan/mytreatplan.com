@@ -3,8 +3,8 @@
 user (403 otherwise) and a CSRF token.
 
 - `POST /storage/sign/`: presign one S3 multipart request (storage.s3). Starting an
-  upload names its purpose and size: the purpose's `can_upload` hook and size limit are
-  checked before anything is signed, and a PendingUpload remembers them. Every later
+  upload names its purpose, size and type: the purpose's allowed types (400), its
+  `can_upload` hook and size limit are checked before anything is signed, and a PendingUpload remembers them. Every later
   request must name the uploader's own pending key, and the S3 upload id the first of
   them bound to it (400 otherwise); the hook is asked again each time.
 - `POST /storage/complete/`: after S3 completed the upload, HeadObject must show the
@@ -86,6 +86,8 @@ def _start(request, body):
         content_type = s3.content_type_of(body)
     except s3.BadSignRequest as exc:
         return _error(400, 'bad_request', str(exc))
+    if not purpose.allows_type(content_type):
+        return _error(400, 'bad_request', 'contentType is not allowed for this purpose')
     if not purposes.may_upload(purpose, request.user):
         return _forbidden()
     if size > purpose.max_size:

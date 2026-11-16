@@ -61,22 +61,10 @@ def portal_urlpatterns():
     return list(portal_patterns) if settings.PORTAL_ENABLED else []
 
 
-# The staging sample uploads page (storage.sample; removed with the sample purpose):
-# served under the language prefixes only when STORAGE_SAMPLE_UPLOADS is True. The views
-# also answer 404 while the setting is off.
-def storage_sample_urlpatterns():
-    """The sample uploads page's routes when STORAGE_SAMPLE_UPLOADS is on, otherwise none."""
-    from storage.urls import sample_urlpatterns
-    if not settings.STORAGE_SAMPLE_UPLOADS:
-        return []
-    return [path('storage/sample/', include(sample_urlpatterns))]
-
-
 # Public pages live under /en/ and /es/. A bare / is redirected by LocaleMiddleware
 # to the visitor's language (Accept-Language), falling back to English.
 urlpatterns += i18n_patterns(
     path('', include('mytp_publicsite.urls')),
     *portal_urlpatterns(),
-    *storage_sample_urlpatterns(),
     prefix_default_language=True,
 )

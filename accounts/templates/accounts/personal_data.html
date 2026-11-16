@@ -2,7 +2,10 @@
 {% load i18n doctor_area %}
 {% comment %}
 The personal-data page (accounts.views.personal_data, Annex I mockup "Mis Datos"): the
-photo block (the initials until entry 4), then the form of accounts.forms.PersonalDataForm.
+photo block (entry 4, accounts.photo: the photo or the initials, "Photo being checked"
+while an upload waits for its checks, the reject message once, and the links to the
+upload page and the confirmed delete; no upload links for a staff account), then the
+form of accounts.forms.PersonalDataForm.
 Country, mobile, contact (alternative) email and login email are shown read-only (no
 name: never posted), with the note that a change of the login is asked for in the support
 area; the mobile and the contact email have a "Change" link to their code-confirmed
@@ -28,8 +31,16 @@ breakpoint, stacked on a phone. Cancel goes back to the home.
 
   <div class="grid grid-cols-1 gap-[clamp(16px,2.4vw,32px)] tablet:grid-cols-2">
     <div class="flex flex-col items-center gap-3 tablet:items-start" data-photo>
-      {# The photo arrives with entry 4 (6.4): the initials meanwhile, no upload. #}
-      <span class="flex h-[clamp(160px,22vw,250px)] w-[clamp(120px,16vw,186px)] items-center justify-center rounded-[50%] bg-violet text-[clamp(44px,6vw,72px)] font-black tracking-[-0.02em] text-white" role="img" aria-label="{{ user|display_name }}"><span aria-hidden="true">{{ user|initials }}</span></span>
+      {% profile_photo as photo %}
+      <span class="flex h-[clamp(160px,22vw,250px)] w-[clamp(120px,16vw,186px)] items-center justify-center overflow-hidden rounded-[50%] bg-violet text-[clamp(44px,6vw,72px)] font-black tracking-[-0.02em] text-white" role="img" aria-label="{{ user|display_name }}">{% if photo.url %}<img src="{{ photo.url }}" alt="" class="size-full object-cover" data-photo-image>{% else %}<span aria-hidden="true">{{ user|initials }}</span>{% endif %}</span>
+      {% if photo.pending %}<p class="text-[14px] font-semibold text-ink-muted" role="status" data-photo-pending>{% translate "Photo being checked" %}</p>{% endif %}
+      {% if photo_rejected %}<p class="rounded-12 border border-notice-border bg-notice-bg px-4 py-2 text-[14px] font-semibold text-notice-text" role="alert" data-photo-rejected>{% translate "The photo could not be accepted; try another file." %}</p>{% endif %}
+      {% if photo_editable %}
+      <div class="flex flex-wrap items-center gap-4">
+        <a href="{% url 'settings_photo' %}" class="text-[14px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-photo-upload>{% if photo.url %}{% translate "Replace photo" %}{% else %}{% translate "Upload a photo" %}{% endif %}</a>
+        {% if photo_linked %}<a href="{% url 'settings_photo_delete' %}" class="text-[14px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-photo-delete>{% translate "Delete photo" %}</a>{% endif %}
+      </div>
+      {% endif %}
     </div>
     <div class="flex flex-col gap-4">
       {% if form.language %}{% include "includes/_form_field.html" with field=form.language %}{% endif %}

@@ -8,8 +8,11 @@ class AccountsConfig(AppConfig):
     def ready(self):
         from django.contrib.auth.signals import user_logged_in
 
-        from . import login_guard
+        from . import login_guard, photo
         from .sessions import on_user_logged_in
+
+        # The profile photo's storage purpose (epic-doctor-profile entry 4).
+        photo.register()
 
         # The field key checks (mytp_core.E001, E002) are registered by the mytp_core app.
 
