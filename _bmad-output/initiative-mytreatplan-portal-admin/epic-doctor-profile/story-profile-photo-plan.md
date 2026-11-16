@@ -3,7 +3,7 @@ title: 'Profile photo'
 type: 'feature'
 ticket: '4'
 created: '2026-11-16'
-status: 'built'
+status: 'done'
 baseline_revision: 'b876169'
 route: 'full'
 route_source: 'auto'
@@ -151,3 +151,16 @@ Quick lens with a security focus (Opus reviewer, 2026-11-16). Nothing above low.
 After the patches, my own run: 3361 passed, 12 skipped, 0 failed (SQLite); `makemigrations --check` reports no changes.
 
 </frozen-after-approval>
+
+## Staging
+
+2026-11-16, run by Claude with the user's delegation and write-SSH OK for dev and dev-ae. Check 7 (by eye) is the user's.
+- Portal PR #107 merged (f3d8a85). The PR's `test` checks passed on PostgreSQL ×2, and master run 43877588475 passed test plus both deploys. Local suite: 3361 passed, 12 skipped, 0 failed.
+- 1: `/healthz` ok on dev and dev-ae; `accounts` 0018_profile_photo applied on both; Pillow 12.0.0 in both site venvs.
+- 2 (dev, test doctor 1c410768, server-side via sign, OVH, complete and attach): a 400×400 JPEG was scanned `clean` and promoted to the photo. "My details" rendered it with a presigned link, and 0 `RemoteAccess` rows were written.
+- 3: EICAR declared `image/jpeg` was rejected with a system trace. A text file declared `image/jpeg` was also rejected with a system trace. The clean photo stayed the photo, and the next "My details" render settled the rejected rows.
+- 4: Delete removed the object row. The trace has actor `user` and a blank `patient_code`, and the profile's photo and pending are both empty.
+- 5: The `client.updated` payload keys did not change, and there is no photo key. mytp-admin has no photo field.
+- 6: dev-ae has no storage settings (`storage_available()` False), so the upload links are hidden (covered by tests).
+- Nothing was left behind: 0 test objects remain, and the test session was logged out.
+- 7 (user): avatar by eye in the header, home and settings, in EN and ES, on desktop and phone. Not reported yet.
