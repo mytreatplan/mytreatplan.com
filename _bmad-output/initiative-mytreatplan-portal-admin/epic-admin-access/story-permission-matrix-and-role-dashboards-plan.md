@@ -3,7 +3,7 @@ title: 'Permission matrix and role dashboards'
 type: 'feature'
 ticket: '6'
 created: '2026-11-02'
-status: 'built'
+status: 'done'
 baseline_revision: '30c9392b98257911db37097b93debe6dfd63ea63'
 route: 'full'
 route_source: 'auto'
@@ -122,3 +122,10 @@ All in `mytp-admin/`:
 | 4 | The admindev acceptance check is not recorded | false | rejected | It is the manual post-deploy step (user), recorded at completion as for 3.1. |
 
 Verified after the patches: mytp-admin suite 272 passed (SQLite, CI env), `check` clean, `makemigrations --check` no changes.
+
+## Staging
+
+Recorded 2026-11-16 in the housekeeping pass, from the session notes and the user's reports. Marked done with the open checks below (user, 2026-11-16).
+- Merged in mytp-admin PR #2 (merge adebc3a, 2026-11-02); deploy green.
+- User, 2026-11-03: a Commercial Manager's menu has no Audit log entry. The suite's matrix test covers every role and area.
+- Open: typing `/audit-log/` as the Commercial Manager showed a blank page in Safari and the nginx log had no 403, so the refusal is not confirmed on the server (retry in another browser and check for the 403); the other five roles not checked by hand.

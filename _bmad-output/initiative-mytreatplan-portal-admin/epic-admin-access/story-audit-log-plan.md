@@ -3,7 +3,7 @@ title: 'Audit log'
 type: 'feature'
 ticket: '8'
 created: '2026-11-02'
-status: 'built'
+status: 'done'
 baseline_revision: '012c92244774772d5e361ff7fd9ec508c80b0fd9'
 route: 'full'
 route_source: 'auto'
@@ -151,3 +151,11 @@ All in `mytp-admin/`. Fetch, then branch from origin/master, which should hold 3
 | 9 | `QuerySet._raw_delete` deletes rows | low | rejected | A private Django API; not a supported path. |
 
 Verified after the patches: mytp-admin suite 468 passed (SQLite, CI env), `check` clean, `makemigrations --check` no changes (0001 regenerated before release).
+
+## Staging
+
+Recorded 2026-11-16 in the housekeeping pass, from the session notes and the user's reports. Marked done with the open checks below (user, 2026-11-16).
+- Merged in mytp-admin PR #5 (merge 2678de4, 2026-11-03); CI green on PostgreSQL; admindev re-provisioned with the `pruneaudit` timer, first run ok; its Sentry monitor disabled (user).
+- User, 2026-11-03: on List demo a create, a name edit, a deactivation and a reactivation each appear in the Audit log; session expiry works.
+- Later staging notes cite audit rows on admindev (e.g. epic-catalogue entry 2).
+- Open: the Commercial Manager's 403 on `/audit-log/` (blank page in Safari, no 403 in nginx); masked fields never showing their values, not checked on the server.

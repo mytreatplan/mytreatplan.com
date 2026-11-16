@@ -3,7 +3,7 @@ title: 'List conventions'
 type: 'feature'
 ticket: '7'
 created: '2026-11-02'
-status: 'built'
+status: 'done'
 baseline_revision: '854f337ba6ab3de38a71af7c8663fd190114f282'
 route: 'full'
 route_source: 'auto'
@@ -125,3 +125,10 @@ All in `mytp-admin/`. Branch from origin/master.
 | 7 | `csv_safe` let LF-leading and space-prefixed formula cells through | low | patch | Patched: prefix on leading tab/CR/LF or first non-blank `= + - @`; tests. |
 
 Verified after the patches: mytp-admin suite 409 passed (SQLite, CI env), `check` clean, `makemigrations --check` no changes.
+
+## Staging
+
+Recorded 2026-11-16 in the housekeeping pass, from the session notes and the user's reports. Marked done with the open checks below (user, 2026-11-16).
+- Merged in mytp-admin PR #4 (feat 1587c71, merge 012c922, 2026-11-02); CI green on PostgreSQL; deployed to admindev.
+- User, 2026-11-03 (during 3.8's checks): on List demo, create, edit, deactivate and reactivate went through the confirmation dialogs; the search box searches the name only.
+- Open: sorting; CSV export with the fixed columns and accents opening right in Excel; the eu-only Commercial Regional Manager seeing eu rows only.

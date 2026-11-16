@@ -3,7 +3,7 @@ title: 'Admin 2FA sign-in'
 type: 'feature'
 ticket: '4'
 created: '2026-11-02'
-status: 'built'
+status: 'done'
 baseline_revision: 'adebc3aab9d3eec89265e02028fdcb7186e7db2a'
 route: 'full'
 route_source: 'auto'
@@ -162,3 +162,10 @@ All in `mytp-admin/`. Branch from origin/master (adebc3a), because the local che
 | 5 | A failed account lookup in `password_rejected()` counted nothing | low | patch | Patched: counts by the email's blind index after reporting; test. |
 
 Verified after the patches: mytp-admin suite 321 passed (SQLite, CI env), `check` clean, `makemigrations --check` no changes.
+
+## Staging
+
+Recorded 2026-11-16 in the housekeeping pass, from the session notes and the user's reports. Marked done with the open checks below (user, 2026-11-16).
+- Merged in mytp-admin PR #3 (merge 854f337, 2026-11-02); CI green on PostgreSQL; deployed to admindev.
+- User, 2026-11-02: signed in with an SMS code and the dashboard showed; a remembered device skipped the code; a second admin user got an email code and signed in; logging out returns to the admin login page.
+- Open: the 10-minute lock after 5 failures (user skipped it then); the login page showing no signup or reset link; the 7-day expiry of a remembered device (seen on the same day only).
