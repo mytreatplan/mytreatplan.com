@@ -3,7 +3,7 @@ title: 'Admin user management'
 type: 'feature'
 ticket: '9'
 created: '2026-11-03'
-status: 'built'
+status: 'done'
 baseline_revision: 'b080e4228086ba872725fbb97cb04a20357fadd1'
 route: 'full'
 route_source: 'auto'
@@ -129,3 +129,10 @@ All in `mytp-admin/`:
 | 7 | `create` lacked `@sensitive_variables('password')` | low | patch | Added. |
 
 Verified after the patches: mytp-admin suite 562 passed (SQLite, CI env), `check` clean, `makemigrations --check` no changes.
+
+## Staging
+
+Recorded 2026-11-16 in the housekeeping pass, from the user's report of 2026-11-03.
+- Merged in mytp-admin PR #7 (merge 29e5205, 2026-11-03); CI green on PostgreSQL; deployed to admindev.
+- User, 2026-11-03: as the Sysadmin, created a user (a Commercial Manager, not a Clinical User), signed in as them with the temporary password and a code, and set a new password; reset the password (a code was asked) and deactivated the user (sign-in blocked); each step is in the Audit log.
+- Found: duplicate mobiles were allowed; fixed by plan-admin-unique-mobile (mytp-admin PR #9).

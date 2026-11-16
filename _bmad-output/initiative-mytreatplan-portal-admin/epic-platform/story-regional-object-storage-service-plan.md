@@ -3,7 +3,7 @@ title: 'Regional object storage service'
 type: 'feature'
 ticket: '11'
 created: '2026-11-06'
-status: 'built'
+status: 'done'
 baseline_revision: 'e8ba2d25506c8ed2a60f26b15f27f4ab616ea389'
 route: 'full'
 route_source: 'auto'
@@ -135,3 +135,12 @@ Pass 1 (quick lens, opus, 2026-11-06): 5 findings. intent_gap 3 (resolved by the
 **Manual checks (staging, dev; with the user):**
 - Rename dev's `UPLOAD_SPIKE_*` keys to `STORAGE_*`; `storage_bucket --apply` with the owner's keys (lifecycle 7 days); `--inspect`.
 - T1 (Chrome 1 GB, speed), T3 (network drop → retry), T4 (checksum of the download), T5 (abandoned upload gone after the lifecycle period), T7 (404 anonymous / non-staff / setting off); a download URL refused after 5 minutes and its access record present; delete → object gone, trace present.
+
+## Staging
+
+Recorded 2026-11-16 in the housekeeping pass, from the session notes and the user's reports.
+- Merged in portal PR #71 (merge 2912694, 2026-11-06), deployed green.
+- 2026-11-07 (Claude, delegated): dev keys renamed to `STORAGE_*`; a 6 MiB server-side upload through sign, OVH and complete was stored in quarantine under a UUID key; download with an access record; a link issued 09:14:05 UTC was refused as expired at 09:19:18; delete left only the trace; anonymous 404 on dev, staff 200, 404 on dev-ae.
+- 2026-11-08 (user): `storage_bucket --apply` (lifecycle 7 days, AES256); T1 1 GB upload at 6.4 MiB/s stored in quarantine under a UUID key; T4 checksum of the download matches.
+- 1.12's staging (2026-11-08) used sign, complete and delete again.
+- Not run (user: non-critical): T3 network drop, T5 abandoned upload cleared by the lifecycle, T7 for a non-staff user.

@@ -3,7 +3,7 @@ title: 'Remembered devices, lockout and single session in mytp-core'
 type: 'refactor'
 ticket: '3'
 created: '2026-11-02'
-status: 'built'
+status: 'done'
 baseline_revision: '64783fbb853bf93f552dcf689bed77b6556bb406'
 route: 'full'
 route_source: 'auto'
@@ -123,3 +123,9 @@ mytp-core (`mytp-core/`, master 879bd20 = v0.4.0):
 | 3 | `hash(PORTAL)` raised TypeError (`channels` MappingProxyType in a frozen dataclass) | low | patch | Patched: `channels = field(hash=False)`; hash test for both policies. |
 
 After the patches: core commit amended to `20d4a67`, local tag `v0.5.0` moved, portal re-vendored. Core 438 passed (SQLite); portal full suite 1612 passed, 3 known PostgreSQL-only failures; no file under any `tests/` changed; `makemigrations --check` clean.
+
+## Staging
+
+Recorded 2026-11-16 in the housekeeping pass, from the session notes.
+- Merged in portal PR #62 (merge 76d29c7, 2026-11-02) with mytp-core v0.5.0 (20d4a67); PR and core CI green. Portal suite equal to the baseline (1612 passed, 3 known PostgreSQL-only failures, no test file changed); core 438 passed.
+- The ticket's verify needs no server step. The plan's manual dev checks (a remembered device skips the code; a second sign-in ends the first): not reported. 6.3's staging confirmed in a server shell that a remembered-device mark issued before a mobile change is no longer valid.

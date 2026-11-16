@@ -3,7 +3,7 @@ title: 'Verification provider and codes in mytp-core'
 type: 'refactor'
 ticket: '2'
 created: '2026-11-02'
-status: 'built'
+status: 'done'
 baseline_revision: '4edd042f1f4562918ae4d484ff423dfbb274e28d'
 route: 'full'
 route_source: 'auto'
@@ -118,3 +118,10 @@ mytp-core (`mytp-core/`):
 | 5 | Shared local `../.venv` now has mytp-core 0.4.0 while mytp-admin pins 0.3.0 | low | rejected | Local environment only; 0.4.0 is additive and mytp-admin's CI installs its pinned wheel. |
 
 After the patches: commit amended to `879bd20`, local tag `v0.4.0` moved, portal re-vendored. Core 382 passed; portal full suite 1578 passed, 3 known PostgreSQL-only failures; no file under any `tests/` changed; `makemigrations --check` clean.
+
+## Staging
+
+Recorded 2026-11-16 in the housekeeping pass, from the session notes and the user's reports.
+- Merged in portal PR #61 (merge cb597b9, 2026-11-02) with mytp-core v0.4.0 (879bd20); PR CI green on PostgreSQL; deployed to dev and dev-ae at 64783fb. Portal suite unchanged (1578 passed, the 3 known PostgreSQL-only failures, no test file changed); core 382 passed.
+- Real code send and check on the servers: signups on dev-ae (2026-11-13, epic-regions entry 2) and dev (2026-11-14, epic-subscriptions entries 1-2).
+- A separate sign-in with a code on dev: not reported.
