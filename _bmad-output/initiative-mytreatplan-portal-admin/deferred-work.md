@@ -149,3 +149,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-code-confirmed-mobile-and-contact-email-changes-plan.md`
   summary: Change codes share Twilio Verify's one service with signup and login codes (as the open item above): a change code and a pending signup or login code to the same new contact are interchangeable at Twilio, and wrong tries count against both. Accepted as for login (control of the same contact); revisit with the provider-path item.
   evidence: `signup/twilio_verify.py` (module docstring), `accounts/profile.py` `CHANGE_PURPOSE`.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-profile-photo-plan.md`
+  summary: Staff will be able to see a doctor's profile photo later (user, 2026-11-16) in two places. The first is a doctor's file holding the rest of the doctor's personal and business data; no epic owns that file yet. The second is a support ticket (handoff in epic-support Notes). 6.4 keeps the photo owner-only and regional. A staff view must use the logged download path (AD-9) and serve the photo from the region, because AD-2 keeps it off the admin site.
+  evidence: 6.4 plan Decisions; the `profile_photo` purpose allows download by the owner only.
