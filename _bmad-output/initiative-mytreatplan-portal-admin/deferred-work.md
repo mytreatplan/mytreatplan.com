@@ -154,3 +154,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-profile-photo-plan.md`
   summary: Staff will be able to see a doctor's profile photo later (user, 2026-11-16) in two places. The first is a doctor's file holding the rest of the doctor's personal and business data; no epic owns that file yet. The second is a support ticket (handoff in epic-support Notes). 6.4 keeps the photo owner-only and regional. A staff view must use the logged download path (AD-9) and serve the photo from the region, because AD-2 keeps it off the admin site.
   evidence: 6.4 plan Decisions; the `profile_photo` purpose allows download by the owner only.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-fiscal-entities-plan.md`
+  summary: Should pricing and the subscription resolver use the default fiscal entity's billing country instead of the profile country? 6.5 left them on the profile country (user, 2026-11-16).
+  evidence: `subscriptions/service.py` `_country` and `catalogue/pricing.py` read `user.country`, as their comments say.

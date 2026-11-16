@@ -65,4 +65,9 @@ Paying and invoicing. Not what is bought (epic-subscriptions, epic-ordering). Th
 - Unknown: whether Redsys (Santander must enable it) and Revolut support recurring charges on our merchant accounts; the saved-card entry waits on it.
 - Waits on epic 4 because: it needs accounting feed.
 - Waits on epic 5 because: it needs billing rules: company, VAT, gateway.
+- Handoff (2026-11-16, epic-doctor-profile entry 5):
+  - Checkout refuses an order without a usable fiscal entity (`accounts.fiscal.usable_entities`, which re-checks the billing country's region and the banned list), and links to `settings_fiscal_add?next=…`.
+  - At order time, call `accounts.fiscal.mark_used(entity, at)` and keep the order's own snapshot of the buyer (AD-7). Reference the entity with SET_NULL, never PROTECT: account erasure deletes the entities.
+  - An entity is edited in place, and its `version` rises.
+  - Billing country AE carries an optional VAT id besides the tax id.
 - Waits on epic 6 because: it needs fiscal entity on the order.

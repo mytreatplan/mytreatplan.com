@@ -64,6 +64,7 @@ Choosing and buying cases. Not the case after purchase (epic-case-lifecycle).
 - Decision (2026-10-29, epic-platform inception): this epic builds the patient-code generator (AD-5), using the prefix from the region profile.
 - Handoff: epic-clinical-ops creates the manual pending-payment work orders this epic lists.
 - Waits on epic 5 because: it needs resolver and products.
+- Handoff (2026-11-16, epic-doctor-profile entry 5, user's decision): ordering is blocked until the doctor has a usable fiscal entity (`accounts.fiscal.has_usable_entity(user)`). The block shows a direct link to `settings_fiscal_add?next=<this page>`, which brings the doctor back after saving.
 - Waits on epic 6 because: it needs fiscal data and shipping addresses.
 - Waits on epic 7 because: it needs order model, checkout and invoices.
 - Waits on epic 8 because: it needs subscription discounts and voucher redemption.
