@@ -3,7 +3,7 @@ title: 'Tax id checks and VIES'
 type: 'feature'
 ticket: '6'
 created: '2026-11-17'
-status: 'built'
+status: 'done'
 baseline_revision: 'f9e4b2dba5f4a03ea9926fa4df4ea70e58b88f16'
 route: 'full'
 route_source: 'pinned'
@@ -203,3 +203,18 @@ After the patches, my own run: 3509 passed, 12 skipped, 0 failed (SQLite); `make
 **Commands:**
 - the full suite (see local-dev notes) -- expected: 0 failures
 - `python manage.py makemigrations --check` -- expected: no changes
+
+## Staging
+
+2026-11-17, run by Claude with the user's delegation and write-SSH OK for dev and dev-ae. The page and service checks ran in one transaction per site that was rolled back, so nothing was kept. Check 7 (by eye) is the user's.
+- Portal PR #109 merged (b157f4e). The PR's `test` checks passed on PostgreSQL ×2 (runs 44050693241, 44050734996). Master run 44055334524 passed test plus both deploys. Local suite: 3509 passed, 12 skipped, 0 failed.
+- 1: `/healthz` ok on dev and dev-ae; `accounts` 0020_fiscal_vies applied on both; python-stdnum 2.2 installed. Both sites were re-provisioned from merged `deploy/`, so the `mytp-<site>-job@viesretry` timers exist (every 15 minutes).
+- 2: a live VIES call from dev and from dev-ae answers (SAP SE's public DE VAT number: valid).
+- 3 (dev): an ES person with an invalid NIF is refused on the add page with the field error; nothing is stored.
+- 4 (dev): a DE company with SAP SE's VAT number was saved as `valid` with the check time set, and the card shows "VAT number verified (VIES)".
+- 5 (dev): the entity was forced to `pending` and due; `retry_due` checked it and set it `valid`.
+- 6 (dev, doctor country set to DE inside the transaction): `price_order_for` gave 0.00 % with the reverse-charge text for `valid`, and 23.00 % with no text for `invalid` and `pending`.
+- The migration found no EU rows to mark pending on either site.
+- 7 (user): the fiscal list card status lines by eye, EN and ES. Not reported yet.
+
+Decision (user, 2026-11-17, after the merge): a Spanish person may also give an NIF starting with K, L or M. This closes the deferred-work item, and the change ships with entry 7's PR.
