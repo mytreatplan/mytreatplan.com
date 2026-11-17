@@ -28,9 +28,7 @@ WHATSAPP = LegalDocument.Kind.WHATSAPP_CONTACT
 COMMERCIAL = LegalDocument.Kind.COMMERCIAL_CONSENT
 PAGE = '/en/settings/'
 SECTIONS = [('settings_maker', 'settings/maker/', 'Maker data', 'Datos fabricante'),
-            ('settings_password', 'settings/password/', 'Change password', 'Cambio de clave'),
-            ('settings_shipping', 'settings/shipping/', 'Shipping addresses',
-             'Direcciones de envío')]
+            ('settings_password', 'settings/password/', 'Change password', 'Cambio de clave')]
 
 
 @pytest.fixture

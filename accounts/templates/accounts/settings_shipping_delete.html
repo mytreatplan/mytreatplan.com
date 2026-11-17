@@ -1,0 +1,21 @@
+{% extends "accounts/settings_base.html" %}
+{% load i18n %}
+{% comment %}
+The shipping address's delete confirmation (accounts.views.settings_shipping_delete,
+epic-doctor-profile entry 7): the POST deletes the address, or archives it (hidden, not
+offered on orders) when an order has used it (accounts.shipping.remove).
+{% endcomment %}
+
+{% block title %}{% translate "Delete shipping address" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block settings_content %}
+<h1 class="text-[clamp(28px,4.4vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Delete this shipping address?" %}</h1>
+<p class="mt-3 text-copy text-ink-muted"><strong data-shipping-name>{{ address.display_name }}</strong> &middot; {{ address.city }}</p>
+<p class="mt-2 text-copy text-ink-muted">{% translate "Orders you already placed are not affected." %}</p>
+
+<form method="post" class="mt-8 flex flex-wrap items-center gap-[clamp(16px,4vw,48px)]" data-shipping-delete-form>
+  {% csrf_token %}
+  <a href="{% url 'settings_shipping' %}" class="inline-flex min-h-[52px] items-center rounded-pill bg-violet px-8 text-[18px] font-black text-white hover:bg-ink" data-cancel>{% translate "Cancel" %}</a>
+  <button type="submit" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-confirm-delete>{% translate "Delete" %}</button>
+</form>
+{% endblock %}

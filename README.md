@@ -199,7 +199,7 @@ usable). Ordering is blocked until `has_usable_entity`; send the doctor to
 ### Tax id checks and VIES (entry 6)
 
 `accounts.fiscal.problems` also checks the tax id (`accounts.taxid`, python-stdnum): Spain
-needs a DNI or NIE for a person and a CIF for a company (checksum and kind), Portugal the
+needs a DNI, an NIE or a K, L or M NIF for a person and a CIF for a company (checksum and kind), Portugal the
 NIF checksum, a country prefix of another country is refused (Greece may be typed `EL` or
 `GR`), and the AE VAT id is exactly 15 digits. Any other country's tax id is free text.
 
@@ -216,3 +216,29 @@ error with the entity id only. Hand `fiscal.vies_status(entity)` to
 `subscriptions.service.price_order_for(..., vies=...)`. An id saved before the checks that
 fails them stays usable; its card says "Please check the tax id" and the next edit must fix
 it. Tests use the autouse `fake_vies` fixture (`conftest.py`).
+
+## A doctor's shipping addresses (epic-doctor-profile entry 7)
+
+A doctor records where physical products are sent in settings, "Shipping addresses"
+(`accounts.ShippingAddress`, UUID primary key, region-owned, never in `client.updated` until
+entry 9). It reuses the `AddressFields` of the fiscal entities and adds an optional label, a
+required recipient name, an optional clinic name, a required contact phone (parsed with
+`phonenumbers`, the address country being the default region, stored in E.164) and optional
+delivery notes (300 characters at most). Every field but the country is field-encrypted. Up to
+10 active addresses per doctor, exactly one default among them (a database constraint, the
+first address takes it); `version` goes up on each change and a stale edit is refused.
+
+`accounts.shipping` is the only writer (atomic, the user row locked): `create`, `update`,
+`make_default`, `remove` (a hard delete, or an archive once an order used the address; a
+removed default passes to the most recently changed usable address), `mark_used(address, at)`
+and `erase(user)`. Required: line 1, city, postal code (not for AE), country, recipient and
+phone. The country must be in this site's region and not banned, checked at every save, with
+the fiscal pages' messages. The pages are the fiscal ones (list, add with a safe `next`,
+edit, make default, confirmed delete); the URL names are `settings_shipping` and
+`settings_shipping_add`, `_edit`, `_default`, `_delete`.
+
+What ordering reads: `usable_addresses(user)`, `has_usable_address(user)` and
+`default_address(user)` (non-archived, country allowed now: an address whose country was
+banned, or moved to the other region, stays listed as "cannot be used for new orders" but is
+not usable), and `mark_used`. Orders keep their own snapshot and reference the address with
+`SET_NULL`. See the epic-ordering Notes.

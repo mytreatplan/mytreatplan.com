@@ -16,7 +16,7 @@ from signup.forms import (BLANK_CHOICE, CHECKBOX_CLASSES, COUNTRY_BANNED_MESSAGE
                           StyledForm, country_choices, parse_mobile, phone_prefix_choices)
 from signup.verification import EMAIL, MOBILE, PURPOSE_LOGIN, SMS
 
-from . import fiscal
+from . import fiscal, shipping
 from .models import FiscalEntity, Profession, Title
 from .profile import CHANGE_PURPOSE, current_contact, mobile_in_use
 
@@ -579,6 +579,124 @@ class FiscalEntityForm(StyledForm):
                     self.cleaned_data.get('country', '')).site_url
             self.add_error(None if name == fiscal.ALL else name, forms.ValidationError(
                 self._message(code, site_url, self.cleaned_data.get('kind')), code=code))
+
+    def refuse_stale(self):
+        self.stale = True
+        self.add_error(None, forms.ValidationError(self.error_messages['changed_elsewhere'],
+                                                   code='changed_elsewhere'))
+
+
+# --- The shipping addresses (epic-doctor-profile entry 7) ----------------------------------
+
+class _NotesField(forms.CharField):
+    """A text area's value with its line breaks as \\n (a browser posts \\r\\n), so the
+    length limit counts a break as 1, as the browser's `maxlength` does."""
+
+    def to_python(self, value):
+        value = super().to_python(value)
+        return shipping.normalize_newlines(value) if value else value
+
+
+class ShippingAddressForm(StyledForm):
+    """The shipping address's add and edit form (accounts.shipping). Required fields, the
+    phone's parsing, the country's region and banned checks and the field limits are
+    accounts.shipping.problems, run here so the errors sit on their fields; the service
+    runs them again at the save. The country's refusals are the fiscal form's messages.
+    `version` (hidden) is the address's version the page showed, for the stale check."""
+
+    error_messages = {
+        'required': _('This field is required.'),
+        'invalid': _('Enter a valid value.'),
+        'too_long': _('This value is too long.'),
+        'phone_invalid': _('Enter a valid phone number, with the prefix if it is not from '
+                           'the address country.'),
+        'country_banned': COUNTRY_BANNED_MESSAGE,
+        'country_other_region': FiscalEntityForm.error_messages['country_other_region'],
+        'limit': _('You can have at most %(max)d shipping addresses. Delete one to add '
+                   'another.'),
+        'unusable': _('This address cannot be used for new orders.'),
+        'changed_elsewhere': _('This shipping address was changed elsewhere. Please '
+                               'reload the page and try again.'),
+    }
+
+    label = forms.CharField(
+        label=_('Label'), max_length=100, required=False,
+        help_text=_('Optional. For example, "Clinic Madrid".'),
+        widget=forms.TextInput(attrs={'autocomplete': 'off'}))
+    recipient_name = forms.CharField(
+        label=_('Recipient'), max_length=150, required=False,
+        widget=forms.TextInput(attrs={'autocomplete': 'name'}))
+    clinic_name = forms.CharField(
+        label=_('Clinic'), max_length=150, required=False,
+        widget=forms.TextInput(attrs={'autocomplete': 'organization'}))
+    contact_phone = forms.CharField(
+        label=_('Contact phone'), max_length=40, required=False,
+        widget=forms.TextInput(attrs={'autocomplete': 'tel'}))
+    address_line1 = forms.CharField(
+        label=_('Address (line 1)'), max_length=200, required=False,
+        widget=forms.TextInput(attrs={'autocomplete': 'address-line1'}))
+    address_line2 = forms.CharField(
+        label=_('Address (line 2)'), max_length=200, required=False,
+        widget=forms.TextInput(attrs={'autocomplete': 'address-line2'}))
+    city = forms.CharField(label=_('City'), max_length=150, required=False,
+                           widget=forms.TextInput(attrs={'autocomplete': 'address-level2'}))
+    postal_code = forms.CharField(label=_('Postal code'), max_length=30, required=False,
+                                  widget=forms.TextInput(attrs={'autocomplete': 'postal-code'}))
+    province = forms.CharField(label=_('Province'), max_length=150, required=False,
+                               widget=forms.TextInput(attrs={'autocomplete': 'address-level1'}))
+    country = forms.ChoiceField(label=_('Country'), choices=country_choices, required=False)
+    delivery_notes = _NotesField(
+        label=_('Delivery notes'), max_length=300, required=False,
+        help_text=_('Optional. At most 300 characters.'),
+        widget=forms.Textarea(attrs={'rows': 3}))
+    version = forms.IntegerField(required=False, min_value=0, widget=forms.HiddenInput)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.other_site_url = ''
+        self.stale = False
+
+    def _message(self, name, code, site_url=''):
+        if name == 'contact_phone' and code == 'invalid':
+            code = 'phone_invalid'
+        message = self.error_messages[code]
+        if code == 'country_other_region':
+            return message % {'site': urlsplit(site_url).netloc}
+        if code == 'limit':
+            return message % {'max': shipping.MAX_ADDRESSES}
+        return message
+
+    def clean(self):
+        cleaned = super().clean()
+        data = {name: cleaned[name] for name in shipping.FIELDS if name in cleaned}
+        data = shipping.clean_data(data)
+        for name in shipping.FIELDS:
+            data.setdefault(name, '')
+        for name, code in shipping.problems(data).items():
+            if name in self.errors:
+                continue
+            site_url = ''
+            if code == 'country_other_region':
+                site_url = self.other_site_url = lookup_country(data['country']).site_url
+            self.add_error(name, forms.ValidationError(
+                self._message(name, code, site_url), code=code))
+        return cleaned
+
+    def address_data(self):
+        """The cleaned values to give accounts.shipping (FIELDS only; normalised)."""
+        return shipping.clean_data({name: self.cleaned_data.get(name, '')
+                                    for name in shipping.FIELDS})
+
+    def add_service_problems(self, problems):
+        """Show a ShippingInvalid's problems the form did not find itself (the limit, a
+        race)."""
+        for name, code in problems.items():
+            site_url = ''
+            if code == 'country_other_region':
+                site_url = self.other_site_url = lookup_country(
+                    self.cleaned_data.get('country', '')).site_url
+            self.add_error(None if name == shipping.ALL else name, forms.ValidationError(
+                self._message(name, code, site_url), code=code))
 
     def refuse_stale(self):
         self.stale = True

@@ -2,7 +2,8 @@
 functions on python-stdnum. No network, no logging: a value never leaves a function except
 as its return value.
 
-- Spain: a person gives a DNI-NIF or an NIE, a company a CIF (checksum and kind);
+- Spain: a person gives a DNI-NIF, an NIE or a K, L or M NIF; a company a CIF (checksum
+  and kind);
 - Portugal: the NIF/NIPC mod-11 checksum;
 - the UAE: the VAT id is exactly 15 digits;
 - any other EU country: free text, never refused here; `vies_plan` says whether it is a
@@ -16,7 +17,7 @@ import re
 from collections import namedtuple
 
 from stdnum.eu import vat as eu_vat
-from stdnum.es import cif as es_cif, dni as es_dni, nie as es_nie
+from stdnum.es import cif as es_cif, dni as es_dni, nie as es_nie, nif as es_nif
 from stdnum.exceptions import ValidationError as StdnumError
 from stdnum.pt import nif as pt_nif
 
@@ -29,6 +30,10 @@ _VAT_PREFIX = {'GR': 'EL'}
 _PREFIXES = {(_VAT_PREFIX.get(code, code)) for code in EU_COUNTRIES} | {'GR'}
 
 VAT_ID_DIGITS = re.compile(r'[0-9]{15}')
+
+# Spanish person NIFs that are neither a DNI nor an NIE: K (minors under 14), L (Spaniards
+# living abroad), M (foreigners without an NIE) (user, 2026-11-17).
+PERSON_NIF_LETTERS = frozenset('KLM')
 
 # Offline problem codes (the keys of fiscal.problems' values).
 INVALID, KIND, PREFIX = 'tax_id_invalid', 'tax_id_kind', 'tax_id_prefix'
@@ -90,7 +95,8 @@ def tax_id_problem(tax_id, country, kind):
     if bad_prefix:
         return bad_prefix
     if country == 'ES':
-        person = _valid(es_dni, national) or _valid(es_nie, national)
+        person = (_valid(es_dni, national) or _valid(es_nie, national)
+                  or (national[:1] in PERSON_NIF_LETTERS and _valid(es_nif, national)))
         company = _valid(es_cif, national)
         if not person and not company:
             return INVALID
