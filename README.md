@@ -199,7 +199,7 @@ usable). Ordering is blocked until `has_usable_entity`; send the doctor to
 ### Tax id checks and VIES (entry 6)
 
 `accounts.fiscal.problems` also checks the tax id (`accounts.taxid`, python-stdnum): Spain
-needs a DNI or NIE for a person and a CIF for a company (checksum and kind), Portugal the
+needs a DNI, an NIE or a K, L or M NIF for a person and a CIF for a company (checksum and kind), Portugal the
 NIF checksum, a country prefix of another country is refused (Greece may be typed `EL` or
 `GR`), and the AE VAT id is exactly 15 digits. Any other country's tax id is free text.
 

@@ -17,6 +17,10 @@ DNI, NIE, CIF = '12345678Z', 'X1234567L', 'B12345674'
     ('B12345675', 'company', taxid.INVALID),
     ('', 'company', taxid.INVALID),
     ('FR' + CIF, 'company', taxid.INVALID),
+    # K, L and M person NIFs (user, 2026-11-17): valid for a person, not for a company.
+    ('K1234567L', 'person', None), ('L1234567L', 'person', None),
+    ('M1234567L', 'person', None), ('ESM1234567L', 'person', None),
+    ('M1234567L', 'company', taxid.KIND), ('M1234567A', 'person', taxid.INVALID),
 ])
 def test_spain(tax_id, kind, code):
     assert taxid.tax_id_problem(tax_id, 'ES', kind) == code
