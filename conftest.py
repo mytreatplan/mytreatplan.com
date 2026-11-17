@@ -148,6 +148,40 @@ def external_checks(monkeypatch):
     return fake
 
 
+class FakeVies:
+    """Stands in for the EU VIES REST API, at its HTTP fetch function (so the parsing and
+    the safe failure still run): every number is valid. Set `status` to 'valid', 'invalid'
+    or 'unavailable' (or `answer` to force a reply, `error` to raise an exception).
+    `calls` records the (country code, number) pairs sent."""
+
+    def __init__(self):
+        self.status = 'valid'
+        self.answer = None
+        self.error = None
+        self.calls = []
+
+    def post_check(self, payload):
+        self.calls.append((payload['countryCode'], payload['vatNumber']))
+        if self.error:
+            raise self.error
+        if self.answer is not None:
+            return self.answer
+        if self.status == 'unavailable':
+            return {'valid': False, 'userError': 'MS_UNAVAILABLE'}
+        return {'valid': self.status == 'valid', 'userError': self.status.upper()}
+
+
+@pytest.fixture(autouse=True)
+def fake_vies(monkeypatch):
+    """Every test gets the fake VIES: every number is valid."""
+    from accounts import vies
+
+    fake = FakeVies()
+    fake.real_post_check = vies.post_check
+    monkeypatch.setattr('accounts.vies.post_check', fake.post_check)
+    return fake
+
+
 class FakeTurnstile:
     """Stands in for Cloudflare's siteverify, at its HTTP fetch function (so the answer's
     parsing and the safe failure still run), as Cloudflare answers for its test secrets:

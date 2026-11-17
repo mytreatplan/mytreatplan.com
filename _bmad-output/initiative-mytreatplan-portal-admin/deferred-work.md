@@ -157,3 +157,9 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-fiscal-entities-plan.md`
   summary: Should pricing and the subscription resolver use the default fiscal entity's billing country instead of the profile country? 6.5 left them on the profile country (user, 2026-11-16).
   evidence: `subscriptions/service.py` `_country` and `catalogue/pricing.py` read `user.country`, as their comments say.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-tax-id-checks-and-vies-plan.md`
+  summary: Re-check VIES at checkout (epic-payments). 6.6 checks a VAT number when it is saved or changed and retries only while it is pending; there is no periodic re-check, so a `valid` status can be old when an order is priced with it. Decide whether checkout re-checks (and what to do when VIES is down).
+  evidence: `accounts/fiscal.py` `vies_status`, `retry_due`; `accounts/vies.py` `fetch_vies`.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-tax-id-checks-and-vies-plan.md`
+  summary: Spanish person NIFs starting with K, L or M (minors, Spaniards living abroad, foreigners without an NIE) are refused for a person, since 6.6 accepts only a DNI-NIF or an NIE as the plan's decision says; a non-resident Spanish doctor billed as a person cannot save. The user was asked on 2026-11-17 whether to accept them.
+  evidence: `accounts/taxid.py` (person ids: stdnum `es.dni`, `es.nie`); stdnum `es.nif` accepts `M1234567L`.

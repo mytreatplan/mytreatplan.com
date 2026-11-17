@@ -3,14 +3,14 @@ title: 'Tax id checks and VIES'
 type: 'feature'
 ticket: '6'
 created: '2026-11-17'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: 'f9e4b2dba5f4a03ea9926fa4df4ea70e58b88f16'
 route: 'full'
 route_source: 'pinned'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -160,9 +160,43 @@ ES labels:
 
 ## Implementation Notes
 
+Done as planned (Sonnet implementer, 2026-11-17).
+- **Dependency and settings:** `python-stdnum==2.2` pinned; `VIES_URL` added to settings.
+- **New modules:** `accounts/taxid.py` holds the offline checks and `vies_plan`. `accounts/vies.py` holds `fetch_vies`; `post_json` was added to `accounts/http.py`.
+- **Migration** `accounts` 0020 `fiscal_vies`: six `vies_*` fields, plus a data step with its own copy of the EU-27 list.
+- **Service:** `fiscal.py` has the new `problems` codes, VIES called outside the lock, and `vies_status` / `tax_id_problem` / `retry_due`.
+- **Job:** the `retry_vies` command, with `viesretry` every 15 minutes in `deploy/jobs.conf`.
+- **Pages:** the card status lines and 9 ES strings.
+- **Docs:** README; deferred-work (VIES re-check at checkout); epic-payments Notes handoff.
+
+Choices within the plan:
+- A malformed id on a pending row becomes `invalid` in the job without calling VIES (this covers pre-6.6 rows).
+- Any HTTP 4xx other than 429, and unknown error codes, count as unavailable (the module docstring says so). A wrong `VIES_URL` therefore surfaces as the 3-day alert.
+- `RETRY_BATCH = 100` per run, oldest due first.
+- "Please check the tax id" is computed at display time; no flag is stored.
+
+The real VIES REST answer shape was confirmed against the live service on 2026-11-17. A success is HTTP 200 with `valid: true/false`. A rejected input is HTTP 200 with `actionSucceed: false` and `errorWrappers[{error: INVALID_INPUT}]`. A server fault is HTTP 500 with `VOW-ERR-1`.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Quick lens with a security focus (Opus reviewer, 2026-11-17). 0 high, 1 medium, 7 low.
+
+Focus points 1-5 and 7-11 are ok: no ids in logs, no network call under a lock, stale answers discarded, the `vies_*` fields not writable, unavailability never `invalid`, the migration, backoff and alert, jobs.conf, stdnum licence (LGPL-2.1+, used unmodified), translations. Points 6 and 12 needed patches (findings 1 and 2).
+
+| # | Finding | Severity | Verdict | Resolution |
+|---|---|---|---|---|
+| 1 | A foreign-prefix refusal hit free-text EU ids, e.g. an Italian codice fiscale `PLLMRA85T10A562S` for IT | medium | patch | Refused only when the id is a well-formed VAT number of the other country; row 10 still refused; IT/NL examples tested |
+| 2 | The row 21 test went through `resolver.price_order`, not `price_order_for`, with an unsaved entity | low | patch | Moved to `subscriptions/tests/test_service.py` through `price_order_for` with a saved DE company entity |
+| 3 | 4xx answers and unknown error codes become `pending`. The live API answers `INVALID_INPUT` with HTTP 200 and no `valid` key, which retried for 3 days | low | patch | `INVALID_INPUT` maps to `invalid`; other 4xx stay unavailable, documented; tests for both bodies |
+| 4 | ES person NIFs starting with K, L or M (minors, non-residents) are refused | low | defer | The plan's decision says "DNI-NIF or NIE"; the user was asked whether to accept them |
+| 5 | VIES was called before the 10-entity limit check | low | patch | An unlocked count check runs first; the locked check stays |
+| 6 | The `RETRY_BATCH` limit was untested | low | patch | Test added |
+| 7 | The migration test was weaker than row 22 | low | patch | It now asserts due-now, `vies_pending_since` set, and archived untouched |
+| 8 | The `problems` docstring lacked the new codes | low | patch | Updated |
+
+After the patches, my own run: 3509 passed, 12 skipped, 0 failed (SQLite); `makemigrations --check` reports no changes.
 
 ## Verification
 

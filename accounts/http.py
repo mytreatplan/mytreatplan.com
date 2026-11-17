@@ -8,6 +8,7 @@ each socket operation (the connect, each read), not to the whole call, and the D
 has none. Callers catch `FETCH_ERRORS` and carry on without the check.
 """
 import http.client
+import json
 import urllib.parse
 import urllib.request
 
@@ -64,4 +65,15 @@ def post_form(url, data):
         url, data=urllib.parse.urlencode(data).encode('ascii'), method='POST', headers={
             'User-Agent': settings.EXTERNAL_CHECK_USER_AGENT,
             'Content-Type': 'application/x-www-form-urlencoded',
+        }))
+
+
+def post_json(url, payload):
+    """POST `payload` (a dict) as JSON to `url` and return the body as text; raises one of
+    FETCH_ERRORS on any failure (an HTTP 4xx/5xx is an urllib.error.HTTPError)."""
+    return _fetch_text(urllib.request.Request(
+        url, data=json.dumps(payload).encode('utf-8'), method='POST', headers={
+            'User-Agent': settings.EXTERNAL_CHECK_USER_AGENT,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
         }))

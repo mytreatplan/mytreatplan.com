@@ -817,7 +817,8 @@ def settings_fiscal(request):
     rows = list(fiscal.active(request.user))
     return render(request, 'accounts/settings_fiscal.html', {
         **_settings_context(request, 'settings_fiscal'),
-        'cards': [{'entity': entity, 'usable': fiscal.is_usable(entity)} for entity in rows],
+        'cards': [{'entity': entity, 'usable': fiscal.is_usable(entity),
+                   'check_tax_id': bool(fiscal.tax_id_problem(entity))} for entity in rows],
         'can_add': len(rows) < fiscal.MAX_ENTITIES,
         'max_entities': fiscal.MAX_ENTITIES,
     })

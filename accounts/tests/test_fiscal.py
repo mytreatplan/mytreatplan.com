@@ -10,9 +10,10 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, connection, transaction
 from django.test import Client
+from django.core.management import call_command
 from django.utils import timezone
 
-from accounts import fiscal
+from accounts import fiscal, vies
 from accounts.crypto import blind_index
 from accounts.erasure import erase_user, purge_erased
 from accounts.models import FiscalEntity
@@ -46,7 +47,8 @@ def _delete(entity):
 @pytest.fixture(autouse=True)
 def country_map():
     """The countries the tests use, in the map (a flushed map reads every country as eu)."""
-    for code, state in [('ES', 'eu'), ('PT', 'eu'), ('FR', 'eu'), ('AE', 'ae'),
+    for code, state in [('ES', 'eu'), ('PT', 'eu'), ('FR', 'eu'), ('DE', 'eu'), ('GR', 'eu'),
+                        ('GB', 'eu'), ('CH', 'eu'), ('US', 'eu'), ('AE', 'ae'),
                         ('SA', 'ae'), ('IR', BANNED)]:
         put_country(code, state)
 
@@ -80,7 +82,7 @@ def _browser(user):
 
 
 def _company(**changes):
-    data = {'kind': 'company', 'legal_name': 'Clínica Espuny S.L.', 'tax_id': 'es b-1234 5678',
+    data = {'kind': 'company', 'legal_name': 'Clínica Espuny S.L.', 'tax_id': 'es b-1234 5674',
             'country': 'ES', 'address_line1': 'Calle Mayor 1', 'city': 'Madrid',
             'postal_code': '28001'}
     data.update(changes)
@@ -117,8 +119,8 @@ def test_first_company_is_saved_as_the_default_and_listed_with_a_masked_tax_id(d
     html = _html(browser.get(LIST))
     assert 'data-fiscal-default' in html and 'Default' in html
     assert 'Clínica Espuny S.L.' in html
-    assert '••••5678' in html
-    assert 'ESB12345678' not in html and 'ESB1234' not in html
+    assert '••••5674' in html
+    assert 'ESB12345674' not in html and 'ESB1234' not in html
 
 
 # --- 2. Two entities, one default ----------------------------------------------------------
@@ -204,16 +206,16 @@ def test_ae_needs_only_the_names_the_tax_id_and_the_country_and_keeps_the_vat_id
     page = _html(browser.get(ADD + '?x=1'))
     assert 'data-fiscal-vat' in page
     response = browser.post(ADD, {'kind': 'company', 'legal_name': 'Dubai Dental LLC',
-                                  'tax_id': '100 2003-0040', 'vat_id': ' 10020030040003 ',
+                                  'tax_id': '100 2003-0040', 'vat_id': ' 100200300400031 ',
                                   'country': 'AE'})
     assert response['Location'] == LIST
     entity = FiscalEntity.objects.get()
-    assert (entity.tax_id, entity.vat_id) == ('10020030040', '10020030040003')
-    assert entity.vat_id_index == blind_index('10020030040003')
+    assert (entity.tax_id, entity.vat_id) == ('10020030040', '100200300400031')
+    assert entity.vat_id_index == blind_index('100200300400031')
     assert (entity.address_line1, entity.city, entity.postal_code) == ('', '', '')
     # It round-trips on the edit page.
     html = _html(browser.get(_edit(entity)))
-    assert 'value="10020030040003"' in html
+    assert 'value="100200300400031"' in html
     assert '<div data-fiscal-vat>' in html and '<div hidden data-fiscal-vat>' not in html
 
 
@@ -254,19 +256,19 @@ def test_the_vat_field_is_hidden_on_the_add_page_for_a_country_other_than_ae(doc
 def test_the_tax_id_is_normalised_indexed_and_encrypted_at_rest(doctor):
     entity = _make(doctor)
     entity.refresh_from_db()
-    assert entity.tax_id == 'ESB12345678'
-    assert entity.tax_id_index == blind_index('ESB12345678')
+    assert entity.tax_id == 'ESB12345674'
+    assert entity.tax_id_index == blind_index('ESB12345674')
     # The index is not unique: another doctor may have the same tax id.
     twin = User.objects.create_user('twin@example.net', PASSWORD)
     assert _make(twin).tax_id_index == entity.tax_id_index
-    assert FiscalEntity.objects.filter(tax_id_index=blind_index('ESB12345678')).count() == 2
+    assert FiscalEntity.objects.filter(tax_id_index=blind_index('ESB12345674')).count() == 2
     with connection.cursor() as cursor:
         cursor.execute('SELECT tax_id, legal_name, address_line1, city, postal_code '
                        'FROM accounts_fiscalentity')
         rows = cursor.fetchall()
     assert len(rows) == 2
     for raw in rows:
-        for column, plain in zip(raw, ['ESB12345678', 'Clínica', 'Calle Mayor', 'Madrid',
+        for column, plain in zip(raw, ['ESB12345674', 'Clínica', 'Calle Mayor', 'Madrid',
                                        '28001']):
             assert column and plain not in column
 
@@ -305,22 +307,22 @@ def test_a_value_too_long_is_refused_and_a_bad_billing_email_too(doctor):
 # --- 11. The limit -------------------------------------------------------------------------
 
 def test_the_eleventh_active_entity_is_refused_and_archived_ones_do_not_count(doctor):
-    created = [_make(doctor, _company(tax_id=f'B{n}')) for n in range(fiscal.MAX_ENTITIES)]
+    created = [_make(doctor, _company(tax_id=f'B{n}', country='FR')) for n in range(fiscal.MAX_ENTITIES)]
     browser = _browser(doctor)
     page = browser.get(ADD)
     assert page.status_code == 302 and page['Location'] == LIST
     assert 'at most 10 fiscal entities' in _html(browser.get(LIST))
     assert 'data-fiscal-add' not in _html(browser.get(LIST))
-    response = browser.post(ADD, _company(tax_id='B11'), follow=True)
+    response = browser.post(ADD, _company(tax_id='B11', country='FR'), follow=True)
     assert response.redirect_chain[-1][0] == LIST
     assert FiscalEntity.objects.count() == fiscal.MAX_ENTITIES
     with pytest.raises(fiscal.FiscalInvalid) as refused:
-        _make(doctor, _company(tax_id='B11'))
+        _make(doctor, _company(tax_id='B11', country='FR'))
     assert refused.value.problems == {fiscal.ALL: 'limit'}
     # An archived entity (used on an order) leaves room.
     fiscal.mark_used(created[3])
     assert fiscal.remove(doctor, created[3].pk) == fiscal.ARCHIVED
-    assert _make(doctor, _company(tax_id='B11')).tax_id == 'B11'
+    assert _make(doctor, _company(tax_id='B11', country='FR')).tax_id == 'B11'
     assert FiscalEntity.objects.count() == fiscal.MAX_ENTITIES + 1
     assert fiscal.active(doctor).count() == fiscal.MAX_ENTITIES
 
@@ -341,7 +343,7 @@ def test_delete_asks_first_then_deletes_an_unused_entity(doctor):
 def test_deleting_the_default_passes_it_to_the_most_recently_changed(doctor):
     default = _make(doctor)
     older = _make(doctor, _person())
-    newer = _make(doctor, _person(tax_id='987654321'))
+    newer = _make(doctor, _person(tax_id='999999990'))
     # `older` was changed last: the new default, not the newest created.
     fiscal.update(doctor, newer.pk, {'city': 'Porto'}, version=1)
     fiscal.update(doctor, older.pk, {'city': 'Faro'}, version=1)
@@ -418,7 +420,7 @@ def test_a_stale_version_is_refused(doctor):
 def test_a_change_of_kind_clears_the_other_kinds_names(doctor):
     entity = _make(doctor)
     fiscal.update(doctor, entity.pk, {'kind': 'person', 'first_name': 'Ana',
-                                      'last_name': 'López'}, version=1)
+                                      'last_name': 'López', 'tax_id': '12345678Z'}, version=1)
     entity.refresh_from_db()
     assert (entity.kind, entity.legal_name, entity.display_name) == ('person', '', 'Ana López')
 
@@ -456,7 +458,7 @@ def test_an_entity_whose_country_is_no_longer_allowed_stays_listed_but_unusable(
     assert response.status_code == 200 and _errors(response, 'country')
     entity.refresh_from_db()
     assert entity.version == 1 and entity.address_line1 == ''
-    response = browser.post(_edit(entity), {**data, 'country': 'ES'})
+    response = browser.post(_edit(entity), {**data, 'country': 'ES', 'tax_id': 'B12345674'})
     assert response['Location'] == LIST
     entity.refresh_from_db()
     assert entity.country.code == 'ES' and fiscal.is_usable(entity)
@@ -510,12 +512,12 @@ def test_the_add_page_returns_to_a_path_of_this_site_and_ignores_others(doctor):
                 '/\t/evil.com', '\n//evil.com'):
         page = _html(browser.get(ADD, {'next': bad}))
         assert 'name="next"' not in page
-        response = browser.post(ADD, {**_person(tax_id=str(uuid.uuid4().int)[:9]),
+        response = browser.post(ADD, {**_person(tax_id='500000018'),
                                       'next': bad})
         assert response['Location'] == LIST
         FiscalEntity.objects.all().delete()  # stay under the limit
     # Also from the query string of the post.
-    response = browser.post(ADD + '?next=/en/cart/', _person(tax_id='55555555'))
+    response = browser.post(ADD + '?next=/en/cart/', _person(tax_id='500000026'))
     assert response['Location'] == '/en/cart/'
 
 
@@ -524,7 +526,7 @@ def test_the_add_page_returns_to_a_path_of_this_site_and_ignores_others(doctor):
 def test_erasing_the_account_deletes_its_fiscal_entities(doctor, other, staff):
     _make(doctor), _make(doctor, _person())
     kept = _make(other)
-    archived = _make(doctor, _company(tax_id='ARCH'))
+    archived = _make(doctor, _company(tax_id='ARCH', country='FR'))
     fiscal.mark_used(archived)
     fiscal.remove(doctor, archived.pk)
     assert erase_user(doctor, by=staff)
@@ -560,7 +562,7 @@ def test_a_save_emits_no_client_event_and_logs_no_value(doctor, caplog):
     browser.post(_default(entity))
     browser.post(_delete(entity))
     assert not OutboxEvent.objects.exists()
-    secrets = ('ESB12345678', 'B12345678', 'Clínica Espuny', 'Calle Mayor', 'Getafe',
+    secrets = ('ESB12345674', 'B12345674', 'Clínica Espuny', 'Calle Mayor', 'Getafe',
                '28001', 'billing@example.net')
     lines = [record.getMessage() for record in caplog.records
              if not (record.name == 'signup.verification'
@@ -577,7 +579,7 @@ def test_the_model_never_shows_a_value_as_text(doctor):
     entity = _make(doctor)
     assert str(entity) == f'Fiscal entity {entity.pk}'
     assert 'Clínica' not in str(entity) and 'ESB' not in str(entity)
-    assert entity.masked_tax_id == '••••5678'
+    assert entity.masked_tax_id == '••••5674'
     assert FiscalEntity(tax_id='AB').masked_tax_id == '••'
 
 
@@ -719,3 +721,404 @@ def test_a_region_refusal_at_the_service_step_still_names_and_links_the_site(
     form.add_service_problems({'country': 'country_other_region'})
     assert 'MyTreatPlan dev-ae.example.org.' in str(form.errors['country'][0])
     assert form.other_site_url == 'https://dev-ae.example.org'
+
+
+# --- Entry 6: tax id checks and VIES (matrix rows 1-24 of its plan) -------------------------
+
+DE_VAT = 'DE136695976'
+CHECK_FIELDS = ('vies_status', 'vies_checked_at', 'vies_pending_since', 'vies_attempts',
+                'vies_next_try_at', 'vies_alerted_at')
+
+
+def _de(**changes):
+    return _company(country='DE', tax_id=DE_VAT, **changes)
+
+
+def _fresh(entity):
+    entity.refresh_from_db()
+    return entity
+
+
+def _post_errors(doctor, data):
+    response = _browser(doctor).post(ADD, data)
+    assert response.status_code == 200 and not FiscalEntity.objects.exists()
+    return response
+
+
+def test_an_es_person_with_a_wrong_dni_is_refused_without_asking_vies(doctor, fake_vies):
+    response = _post_errors(doctor, _company(kind='person', first_name='A', last_name='B',
+                                             tax_id='12345678A'))
+    assert _errors(response, 'tax_id') == ['The NIF is not valid.']
+    assert fake_vies.calls == []
+
+
+def test_es_kinds_of_id(doctor, fake_vies):
+    response = _post_errors(doctor, _company(tax_id='12345678Z'))
+    assert _errors(response, 'tax_id') == ['For a company, enter a CIF.']
+    response = _post_errors(doctor, _company(kind='person', first_name='A', last_name='B',
+                                             tax_id='B12345674'))
+    assert _errors(response, 'tax_id') == ['For a person, enter a DNI or NIE.']
+    assert fake_vies.calls == []
+
+
+@pytest.mark.parametrize('tax_id', ['B12345674', 'es b-12345674'])
+def test_an_es_company_cif_is_saved_and_vies_gets_es_and_the_national_part(
+        doctor, fake_vies, tax_id):
+    entity = _make(doctor, _company(tax_id=tax_id))
+    assert fake_vies.calls == [('ES', 'B12345674')]
+    assert (entity.vies_status, entity.vies_checked_at is not None) == ('valid', True)
+
+
+def test_a_pt_nif_with_a_bad_check_digit_is_refused(doctor):
+    response = _post_errors(doctor, _person(tax_id='123456788'))
+    assert _errors(response, 'tax_id') == ['The NIF is not valid.']
+
+
+def test_a_company_with_a_valid_vies_number_shows_verified(doctor, fake_vies):
+    browser = _browser(doctor)
+    assert browser.post(ADD, _de())['Location'] == LIST
+    entity = FiscalEntity.objects.get()
+    assert (entity.vies_status, entity.vies_attempts, entity.vies_next_try_at) == (
+        'valid', 0, None)
+    assert entity.vies_checked_at is not None and fake_vies.calls == [('DE', '136695976')]
+    assert 'VAT number verified (VIES)' in _html(browser.get(LIST))
+
+
+def test_vies_not_finding_the_number_saves_it_as_invalid(doctor, fake_vies):
+    fake_vies.status = 'invalid'
+    browser = _browser(doctor)
+    browser.post(ADD, _de())
+    assert FiscalEntity.objects.get().vies_status == 'invalid'
+    assert 'Not found in VIES – VAT will be charged' in _html(browser.get(LIST))
+
+
+@pytest.mark.parametrize('failure', [
+    {'error': TimeoutError()}, {'error': OSError('down')},
+    {'answer': {'valid': False, 'userError': 'MS_UNAVAILABLE'}},
+    {'answer': {'userError': 'SERVICE_UNAVAILABLE'}}, {'answer': {'userError': 'TIMEOUT'}},
+    {'answer': {'userError': 'MS_MAX_CONCURRENT_REQ'}},
+    {'answer': {'userError': 'GLOBAL_MAX_CONCURRENT_REQ'}},
+    {'error': __import__('urllib.error').error.HTTPError('u', 503, 'x', {}, None)},
+    {'error': __import__('urllib.error').error.HTTPError('u', 429, 'x', {}, None)},
+    {'answer': ['unreadable']}])
+def test_vies_unavailable_saves_the_entity_pending_with_a_retry_in_15_minutes(
+        doctor, fake_vies, failure):
+    for name, value in failure.items():
+        setattr(fake_vies, name, value)
+    before = timezone.now()
+    browser = _browser(doctor)
+    assert browser.post(ADD, _de())['Location'] == LIST
+    entity = FiscalEntity.objects.get()
+    assert (entity.vies_status, entity.vies_attempts) == ('pending', 1)
+    assert entity.vies_checked_at is None and entity.vies_pending_since >= before
+    assert timedelta(minutes=14) < entity.vies_next_try_at - entity.vies_pending_since <= (
+        timedelta(minutes=15))
+    assert 'VIES check pending' in _html(browser.get(LIST))
+
+
+def test_a_de_id_that_is_not_a_vat_number_is_invalid_and_vies_is_not_called(doctor, fake_vies):
+    entity = _make(doctor, _company(country='DE', tax_id='12345'))
+    assert entity.vies_status == 'invalid' and fake_vies.calls == []
+
+
+def test_greece_is_sent_as_el_and_gr_is_the_same_country(doctor, fake_vies):
+    for typed in ('EL094259216', '094259216', 'GR094259216'):
+        _make(doctor, _company(country='GR', tax_id=typed))
+    assert fake_vies.calls == [('EL', '094259216')] * 3
+    assert {entity.tax_id for entity in FiscalEntity.objects.all()} == {
+        'EL094259216', '094259216', 'GR094259216'}
+
+
+def test_an_id_with_the_prefix_of_another_country_is_refused(doctor, fake_vies):
+    response = _post_errors(doctor, _company(country='FR', tax_id='ESB12345674'))
+    assert _errors(response, 'tax_id') == [
+        'The tax id starts with the prefix of another country.']
+    assert fake_vies.calls == []
+
+
+@pytest.mark.parametrize('country', ['GB', 'CH', 'US'])
+def test_other_countries_are_not_applicable_and_vies_is_not_called(doctor, fake_vies, country):
+    entity = _make(doctor, _company(country=country, tax_id='DE136695976'))
+    assert entity.vies_status == 'not_applicable' and fake_vies.calls == []
+
+
+def test_the_ae_site_entity_is_not_applicable(doctor, ae_portal, fake_vies):
+    entity = _make(doctor, {'kind': 'company', 'legal_name': 'Dubai Dental LLC',
+                            'tax_id': '10020030040', 'vat_id': '100200300400031',
+                            'country': 'AE'})
+    assert entity.vies_status == 'not_applicable' and fake_vies.calls == []
+
+
+@pytest.mark.parametrize('vat_id', ['10012345678901', '1001234567890A1', '1001234567890123'])
+def test_an_ae_vat_id_must_be_15_digits(doctor, ae_portal, vat_id):
+    response = _browser(doctor).post(ADD, {
+        'kind': 'company', 'legal_name': 'Dubai Dental LLC', 'tax_id': '1', 'vat_id': vat_id,
+        'country': 'AE'})
+    assert response.status_code == 200 and not FiscalEntity.objects.exists()
+    assert _errors(response, 'vat_id') == ['The VAT id must have exactly 15 digits.']
+
+
+# --- The edit and the job ---
+
+def test_an_edit_of_the_tax_id_or_the_country_checks_again_and_another_edit_does_not(
+        doctor, fake_vies):
+    entity = _make(doctor, _de())
+    assert len(fake_vies.calls) == 1
+    fiscal.update(doctor, entity.pk, {'city': 'Bonn'}, version=1)
+    assert len(fake_vies.calls) == 1 and _fresh(entity).vies_status == 'valid'
+    fake_vies.status = 'invalid'
+    fiscal.update(doctor, entity.pk, {'tax_id': 'DE811128135'}, version=2)
+    assert fake_vies.calls[-1] == ('DE', '811128135') and _fresh(entity).vies_status == 'invalid'
+    fake_vies.status = 'unavailable'
+    fiscal.update(doctor, entity.pk, {'country': 'GB'}, version=3)
+    assert len(fake_vies.calls) == 2  # not applicable: no call
+    entity = _fresh(entity)
+    assert (entity.vies_status, entity.vies_checked_at, entity.vies_attempts) == (
+        'not_applicable', None, 0)
+    fiscal.update(doctor, entity.pk, {'country': 'DE'}, version=4)
+    assert _fresh(entity).vies_status == 'pending' and len(fake_vies.calls) == 3
+
+
+def test_an_edit_status_is_kept_when_only_the_address_changes(doctor, fake_vies):
+    fake_vies.status = 'unavailable'
+    entity = _make(doctor, _de())
+    fake_vies.status = 'valid'
+    fiscal.update(doctor, entity.pk, {'address_line1': 'Neue Str. 2'}, version=1)
+    assert _fresh(entity).vies_status == 'pending' and len(fake_vies.calls) == 1
+
+
+def test_a_forged_status_in_the_post_is_ignored(doctor, fake_vies):
+    fake_vies.status = 'invalid'
+    browser = _browser(doctor)
+    browser.post(ADD, {**_de(), 'vies_status': 'valid', 'vies_attempts': 9,
+                       'vies_checked_at': '2020-01-01'})
+    entity = FiscalEntity.objects.get()
+    assert (entity.vies_status, entity.vies_attempts) == ('invalid', 0)
+    with pytest.raises(ValueError):
+        fiscal.create(doctor, {**_de(), 'vies_status': 'valid'})
+    for name in CHECK_FIELDS:
+        assert name not in fiscal.FIELDS
+    data = {name: getattr(entity, name) for name in fiscal.FIELDS if name != 'country'}
+    browser.post(_edit(entity), {**data, 'country': 'DE', 'version': 1, 'vies_status': 'valid'})
+    assert _fresh(entity).vies_status == 'invalid'
+
+
+@pytest.fixture
+def pending(doctor, fake_vies):
+    fake_vies.status = 'unavailable'
+    entity = _make(doctor, _de())
+    fake_vies.calls.clear()
+    return entity
+
+
+def _later(entity, minutes):
+    return entity.vies_next_try_at + timedelta(minutes=minutes)
+
+
+def test_the_job_turns_a_pending_entity_into_valid(pending, fake_vies):
+    fake_vies.status = 'valid'
+    due = _later(pending, 0)
+    assert fiscal.retry_due(due - timedelta(minutes=1))['checked'] == 0  # not due yet
+    counts = fiscal.retry_due(due)
+    assert counts['answered'] == 1 and fake_vies.calls == [('DE', '136695976')]
+    entity = _fresh(pending)
+    assert (entity.vies_status, entity.vies_attempts, entity.vies_next_try_at,
+            entity.vies_pending_since) == ('valid', 0, None, None)
+    assert entity.vies_checked_at is not None
+    assert fiscal.retry_due(due + timedelta(days=1))['checked'] == 0  # done: never again
+
+
+def test_the_job_can_find_the_number_invalid(pending, fake_vies):
+    fake_vies.status = 'invalid'
+    fiscal.retry_due(_later(pending, 0))
+    assert _fresh(pending).vies_status == 'invalid'
+
+
+def test_the_backoff_is_15_minutes_then_1_hour_then_every_6_hours(pending, fake_vies):
+    assert pending.vies_attempts == 1
+    now = _later(pending, 0)
+    waits = []
+    for _ in range(4):
+        fiscal.retry_due(now)
+        entity = _fresh(pending)
+        waits.append((entity.vies_attempts, entity.vies_next_try_at - now))
+        now = entity.vies_next_try_at
+    assert waits == [(2, timedelta(hours=1)), (3, timedelta(hours=6)),
+                     (4, timedelta(hours=6)), (5, timedelta(hours=6))]
+
+
+def test_one_error_after_three_days_with_the_entity_id_only(pending, fake_vies, caplog):
+    caplog.set_level(logging.DEBUG)
+    start = pending.vies_pending_since
+    now = _later(pending, 0)
+    while now < start + timedelta(days=3, hours=1):
+        fiscal.retry_due(now)
+        now = _fresh(pending).vies_next_try_at
+    fiscal.retry_due(now)
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert len(errors) == 1 and str(pending.pk) in errors[0].getMessage()
+    fiscal.retry_due(now)
+    fiscal.retry_due(now + timedelta(days=1))
+    assert len([r for r in caplog.records if r.levelno == logging.ERROR]) == 1
+    assert _fresh(pending).vies_alerted_at is not None
+    for value in ('DE136695976', '136695976', 'Clínica'):
+        assert value not in caplog.text
+
+
+def test_a_stale_answer_is_discarded_when_the_tax_id_changed_meanwhile(
+        doctor, pending, fake_vies, monkeypatch):
+    real = fake_vies.post_check
+    seen = []
+
+    def edit_while_vies_answers(payload):
+        if not seen:
+            seen.append(payload)
+            fake_vies.status = 'unavailable'
+            fiscal.update(doctor, pending.pk, {'tax_id': 'DE811128135'}, version=1)
+            fake_vies.status = 'valid'
+        return real(payload)
+
+    monkeypatch.setattr('accounts.vies.post_check', edit_while_vies_answers)
+    fake_vies.status = 'valid'
+    counts = fiscal.retry_due(_later(pending, 0))
+    assert counts['discarded'] == 1
+    entity = _fresh(pending)
+    assert entity.tax_id == 'DE811128135' and entity.vies_status == 'pending'
+    assert entity.vies_attempts == 1  # the edit's own check (unavailable), not the stale one
+
+
+def test_the_job_skips_an_archived_pending_entity(pending, fake_vies):
+    fiscal.mark_used(pending)
+    fiscal.remove(pending.user, pending.pk)
+    assert _fresh(pending).archived_at is not None
+    assert fiscal.retry_due(_later(pending, 10_000)) == {
+        'checked': 0, 'answered': 0, 'still_pending': 0, 'discarded': 0, 'alerted': 0}
+    assert fake_vies.calls == []
+
+
+def test_the_job_marks_an_ill_formed_legacy_id_invalid_without_asking_vies(doctor, fake_vies):
+    now = timezone.now()
+    entity = FiscalEntity.objects.create(
+        user=doctor, kind='company', legal_name='Old', tax_id='NOT-A-VAT', country='DE',
+        vies_status='pending', vies_pending_since=now, vies_next_try_at=now)
+    fiscal.retry_due(now)
+    assert _fresh(entity).vies_status == 'invalid' and fake_vies.calls == []
+
+
+def test_the_retry_vies_command_runs_the_job_and_prints_counts_only(pending, fake_vies, capsys):
+    fake_vies.status = 'valid'
+    FiscalEntity.objects.filter(pk=pending.pk).update(vies_next_try_at=timezone.now())
+    call_command('retry_vies')
+    out = capsys.readouterr().out
+    assert 'retry_vies: checked 1, answered 1' in out and 'DE136695976' not in out
+    assert _fresh(pending).vies_status == 'valid'
+
+
+def test_jobs_conf_runs_the_job_every_15_minutes():
+    from mytp_core import jobs
+
+    job = jobs.load_jobs(jobs.release_jobs_file())['viesretry']
+    assert (job.command, job.args) == ('retry_vies', ())
+    assert job.crontab == '*/15 * * * *'
+
+
+# --- Existing rows, the status for the resolver, the card and the ES interface ---
+
+def test_the_migration_marks_eu_rows_pending_and_the_others_not_applicable(doctor):
+    import importlib
+
+    migration = importlib.import_module('accounts.migrations.0020_fiscal_vies')
+    from django.apps import apps
+
+    now = timezone.now()
+    rows = {code: FiscalEntity.objects.create(user=doctor, kind='company', legal_name='X',
+                                              tax_id='T', country=code)
+            for code in ('DE', 'ES', 'GR', 'GB', 'AE')}
+    archived = FiscalEntity.objects.create(user=doctor, kind='company', legal_name='X',
+                                           tax_id='T', country='DE', archived_at=now)
+    migration.mark_existing(apps, None)
+    for code in ('DE', 'ES', 'GR'):
+        row = _fresh(rows[code])
+        assert row.vies_status == 'pending', code
+        assert row.vies_next_try_at is not None and row.vies_next_try_at <= timezone.now()
+        assert row.vies_pending_since is not None
+    for code in ('GB', 'AE'):
+        assert _fresh(rows[code]).vies_status == 'not_applicable'
+    archived = _fresh(archived)
+    assert archived.vies_status == 'not_applicable' and archived.vies_next_try_at is None
+
+
+def test_an_old_id_failing_the_checks_stays_usable_marked_and_must_be_fixed(doctor):
+    entity = FiscalEntity.objects.create(
+        user=doctor, kind='company', legal_name='Old', tax_id='ESB12345678', country='ES',
+        address_line1='Calle 1', city='Madrid', postal_code='28001', is_default=True)
+    assert fiscal.is_usable(entity) and fiscal.tax_id_problem(entity) == 'tax_id_invalid'
+    browser = _browser(doctor)
+    html = _html(browser.get(LIST))
+    assert 'data-fiscal-check-tax-id' in html and 'Please check the tax id' in html
+    assert 'Revise la identificación fiscal' in _html(browser.get('/es/settings/fiscal/'))
+    data = {name: getattr(entity, name) for name in fiscal.FIELDS if name != 'country'}
+    response = browser.post(_edit(entity), {**data, 'country': 'ES', 'version': 1,
+                                            'city': 'Getafe'})
+    assert response.status_code == 200
+    assert _errors(response, 'tax_id') == ['The NIF is not valid.']
+    ok = _make(doctor, _company(tax_id='B12345674'))
+    assert fiscal.tax_id_problem(ok) is None
+
+
+def test_vies_status_hands_the_entitys_status_to_the_resolver(doctor):
+    entity = _make(doctor, _de())
+    assert fiscal.vies_status(entity) == 'valid' and fiscal.vies_status(None) == 'not_applicable'
+
+
+def test_the_spanish_card_lines_and_errors(doctor, fake_vies):
+    browser = _browser(doctor)
+    _make(doctor, _de())
+    assert 'Número de IVA verificado (VIES)' in _html(browser.get('/es/settings/fiscal/'))
+    FiscalEntity.objects.update(vies_status='invalid')
+    assert 'No encontrado en VIES: se aplicará el IVA' in _html(
+        browser.get('/es/settings/fiscal/'))
+    FiscalEntity.objects.update(vies_status='pending')
+    assert 'Verificación VIES pendiente' in _html(browser.get('/es/settings/fiscal/'))
+    FiscalEntity.objects.update(vies_status='not_applicable')
+    assert 'VIES' not in _html(browser.get('/es/settings/fiscal/'))
+    FiscalEntity.objects.all().delete()
+    page = '/es/settings/fiscal/add/'
+    response = browser.post(page, _company(tax_id='12345678Z'))
+    assert _errors(response, 'tax_id') == ['Para una empresa, indique un CIF.']
+    response = browser.post(page, _company(kind='person', first_name='A', last_name='B',
+                                           tax_id='B12345674'))
+    assert _errors(response, 'tax_id') == ['Para una persona, indique un DNI o NIE.']
+    response = browser.post(page, _company(tax_id='B12345675'))
+    assert _errors(response, 'tax_id') == ['El NIF no es válido.']
+
+
+def test_no_tax_id_in_logs_records_or_exception_text(doctor, fake_vies, caplog):
+    caplog.set_level(logging.DEBUG)
+    fake_vies.error = OSError('down for DE136695976')
+    entity = _make(doctor, _de())
+    fiscal.retry_due(_later(entity, 0))
+    with pytest.raises(fiscal.FiscalInvalid) as refused:
+        fiscal.create(doctor, _company(tax_id='12345678A', kind='person'))
+    assert '12345678A' not in str(refused.value) and DE_VAT not in str(entity)
+    assert '136695976' not in caplog.text and '12345678A' not in caplog.text
+
+
+def test_the_job_checks_at_most_a_batch_oldest_due_first(doctor, fake_vies, monkeypatch):
+    monkeypatch.setattr(fiscal, 'RETRY_BATCH', 2)
+    now = timezone.now()
+    rows = [FiscalEntity.objects.create(
+        user=doctor, kind='company', legal_name='X', tax_id=DE_VAT, country='DE',
+        vies_status='pending', vies_pending_since=now,
+        vies_next_try_at=now - timedelta(minutes=n)) for n in (1, 3, 2)]
+    assert fiscal.retry_due(now)['checked'] == 2
+    assert [_fresh(row).vies_status for row in rows] == ['pending', 'valid', 'valid']
+
+
+def test_the_eleventh_entity_is_refused_before_vies_is_asked(doctor, fake_vies):
+    for n in range(fiscal.MAX_ENTITIES):
+        _make(doctor, _company(tax_id=f'B{n}', country='FR'))
+    fake_vies.calls.clear()
+    with pytest.raises(fiscal.FiscalInvalid) as refused:
+        fiscal.create(doctor, _de())
+    assert refused.value.problems == {fiscal.ALL: 'limit'} and fake_vies.calls == []

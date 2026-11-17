@@ -555,6 +555,9 @@ PWNED_PASSWORDS_API_URL = config('PWNED_PASSWORDS_API_URL',
                                  default='https://api.pwnedpasswords.com/range/')
 DISPOSABLE_EMAIL_API_URL = config('DISPOSABLE_EMAIL_API_URL',
                                   default='https://disposable.debounce.io/')
+# The EU VIES REST API (accounts.vies, epic-doctor-profile entry 6): the VAT number check.
+VIES_URL = config('VIES_URL', default='https://ec.europa.eu/taxation_customs/vies/rest-api/'
+                                      'check-vat-number')
 EXTERNAL_CHECK_TIMEOUT = config('EXTERNAL_CHECK_TIMEOUT', default=3, cast=float)
 EXTERNAL_CHECK_USER_AGENT = 'MyTreatPlan-signup (+https://mytreatplan.com)'
 
