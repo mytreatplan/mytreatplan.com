@@ -3,7 +3,7 @@ title: 'Shipping addresses'
 type: 'feature'
 ticket: '7'
 created: '2026-11-17'
-status: 'built'
+status: 'done'
 baseline_revision: '0df4a25'
 route: 'full'
 route_source: 'pinned'
@@ -170,3 +170,17 @@ After the patches, my own run: 3553 passed, 12 skipped, 0 failed (SQLite); `make
 **Commands:**
 - the full suite (see local-dev notes) -- expected: 0 failures
 - `python manage.py makemigrations --check` -- expected: no changes
+
+## Staging
+
+2026-11-17, run by Claude while the user was travelling. The user had delegated the merge ("merge 6.7's PR when CI is green") and given the write-SSH OK for dev and dev-ae. Each site's checks ran in one transaction that was rolled back, so nothing was kept. Check 6 (by eye) is the user's.
+- Portal PR #110 merged (1ba54bb). It also carries 0df4a25: K, L and M Spanish person NIFs. The PR's `test` checks passed on PostgreSQL ×2 (runs 44060196170, 44060232833). Master run 44061756686 passed test plus both deploys. Local suite: 3553 passed, 12 skipped, 0 failed.
+- 1: `/healthz` ok on dev and dev-ae; `accounts` 0021_shipping_address applied on both.
+- 2 (dev, test doctor, through the pages):
+  - An ES address and a PT address were saved (302).
+  - "Make default" moved the default to the second, with exactly one default.
+  - `default_address` returns it.
+- 3 (dev): an AE address is refused with the other-region warning; nothing is stored.
+- 4 (dev): a raw SQL read shows line 1, the recipient and the phone as ciphertext, and the country in plain text. The phone decrypts to E.164 (+34…).
+- 5 (dev-ae): an AE address without a postal code is saved.
+- 6 (user): the shipping pages by eye, EN and ES, desktop and phone. Not reported yet.
