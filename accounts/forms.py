@@ -1,4 +1,5 @@
 import zoneinfo
+from urllib.parse import urlsplit
 
 import phonenumbers
 from django import forms
@@ -10,11 +11,13 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 
 from legal.models import LegalDocument
-from signup.forms import (BLANK_CHOICE, CHECKBOX_CLASSES, CodeForm, StyledForm, parse_mobile,
-                          phone_prefix_choices)
+from regions.countries import lookup_country
+from signup.forms import (BLANK_CHOICE, CHECKBOX_CLASSES, COUNTRY_BANNED_MESSAGE, CodeForm,
+                          StyledForm, country_choices, parse_mobile, phone_prefix_choices)
 from signup.verification import EMAIL, MOBILE, PURPOSE_LOGIN, SMS
 
-from .models import Profession, Title
+from . import fiscal
+from .models import FiscalEntity, Profession, Title
 from .profile import CHANGE_PURPOSE, current_contact, mobile_in_use
 
 # The one error of every failed login (a wrong password, an unknown email, an inactive or
@@ -448,3 +451,128 @@ class ChangeCodeForm(CodeForm):
     def __init__(self, *args, kind, contact, **kwargs):
         self.channel = EMAIL if kind == EMAIL else SMS
         super().__init__(*args, contact=contact, **kwargs)
+
+
+# --- The fiscal entities (epic-doctor-profile entry 5) -------------------------------------
+
+class FiscalEntityForm(StyledForm):
+    """One form for both kinds of fiscal entity (accounts.fiscal): the kind's radio buttons
+    and both kinds' name fields are always in the page (a small script only hides the other
+    kind's), and the server ignores the fields of the kind not chosen. The VAT id is read
+    only for billing country AE (the page shows it only then; any other country's is
+    dropped). Required fields, the country's region and banned checks and the field limits
+    are accounts.fiscal.problems, run here so the errors sit on their fields; the service
+    runs them again at the save. The tax id and the VAT id are normalised (`entity_data`).
+
+    A country of the other region is refused with the new message and `other_site_url`
+    (the other site's address, for the page's link); a banned one with signup's message.
+    `version` (hidden) is the entity's version the page showed, for the stale check."""
+
+    error_messages = {
+        'required': _('This field is required.'),
+        'invalid': _('Enter a valid value.'),
+        'invalid_email': _('Enter a valid email address.'),
+        'too_long': _('This value is too long.'),
+        'country_banned': COUNTRY_BANNED_MESSAGE,
+        'country_other_region': _('This billing country is served by MyTreatPlan %(site)s. '
+                                  'Billing data for it cannot be saved here.'),
+        'limit': _('You can have at most %(max)d fiscal entities. Delete one to add '
+                   'another.'),
+        'changed_elsewhere': _('This fiscal entity was changed elsewhere. Please reload '
+                               'the page and try again.'),
+    }
+
+    kind = forms.ChoiceField(label=_('Kind'), choices=FiscalEntity.KINDS,
+                             widget=forms.RadioSelect, initial=FiscalEntity.PERSON)
+    first_name = forms.CharField(label=_('Name'), max_length=150, required=False,
+                                 widget=forms.TextInput(attrs={'autocomplete': 'given-name'}))
+    last_name = forms.CharField(label=_('Surname(s)'), max_length=150, required=False,
+                                widget=forms.TextInput(attrs={'autocomplete': 'family-name'}))
+    legal_name = forms.CharField(label=_('Legal name'), max_length=200, required=False,
+                                 widget=forms.TextInput(attrs={'autocomplete': 'organization'}))
+    tax_id = forms.CharField(label=_('Tax id (NIF / CIF / VAT)'), max_length=60,
+                             required=False,
+                             widget=forms.TextInput(attrs={'autocomplete': 'off'}))
+    vat_id = forms.CharField(label=_('VAT id'), max_length=60, required=False,
+                             widget=forms.TextInput(attrs={'autocomplete': 'off'}))
+    address_line1 = forms.CharField(
+        label=_('Address (line 1)'), max_length=200, required=False,
+        widget=forms.TextInput(attrs={'autocomplete': 'address-line1'}))
+    address_line2 = forms.CharField(
+        label=_('Address (line 2)'), max_length=200, required=False,
+        widget=forms.TextInput(attrs={'autocomplete': 'address-line2'}))
+    city = forms.CharField(label=_('City'), max_length=150, required=False,
+                           widget=forms.TextInput(attrs={'autocomplete': 'address-level2'}))
+    postal_code = forms.CharField(label=_('Postal code'), max_length=30, required=False,
+                                  widget=forms.TextInput(attrs={'autocomplete': 'postal-code'}))
+    province = forms.CharField(label=_('Province'), max_length=150, required=False,
+                               widget=forms.TextInput(attrs={'autocomplete': 'address-level1'}))
+    country = forms.ChoiceField(label=_('Billing country'), choices=country_choices,
+                                required=False)
+    billing_email = forms.CharField(
+        label=_('Billing email'), max_length=254, required=False,
+        help_text=_('Optional. Without it, invoices are sent to your login email.'),
+        widget=forms.EmailInput(attrs={'autocomplete': 'off'}))
+    version = forms.IntegerField(required=False, min_value=0, widget=forms.HiddenInput)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.other_site_url = ''
+        self.stale = False
+        self.fields['kind'].widget.attrs.pop('class', None)
+
+    @property
+    def country_code(self):
+        """The billing country the page shows now: the posted one, else the initial."""
+        raw = self.data.get('country') if self.is_bound else self.initial.get('country')
+        return str(raw or '').strip().upper()
+
+    @property
+    def show_vat(self):
+        return fiscal.is_vat_country(self.country_code)
+
+    def _message(self, code, site_url=''):
+        message = self.error_messages[code]
+        if code == 'country_other_region':
+            return message % {'site': urlsplit(site_url).netloc}
+        if code == 'limit':
+            return message % {'max': fiscal.MAX_ENTITIES}
+        return message
+
+    def clean(self):
+        cleaned = super().clean()
+        data = {name: cleaned[name] for name in fiscal.FIELDS if name in cleaned}
+        data = fiscal.clean_data(data)
+        for name in fiscal.FIELDS:
+            data.setdefault(name, '')
+        for name, code in fiscal.problems(data).items():
+            if name in self.errors:
+                continue
+            site_url = ''
+            if code == 'country_other_region':
+                site_url = self.other_site_url = lookup_country(data['country']).site_url
+            if code == 'invalid' and name == 'billing_email':
+                code = 'invalid_email'
+            self.add_error(name, forms.ValidationError(self._message(code, site_url),
+                                                       code=code))
+        return cleaned
+
+    def entity_data(self):
+        """The cleaned values to give accounts.fiscal (FIELDS only; normalised)."""
+        return fiscal.clean_data({name: self.cleaned_data.get(name, '')
+                                  for name in fiscal.FIELDS})
+
+    def add_service_problems(self, problems):
+        """Show a FiscalInvalid's problems the form did not find itself (the limit, a race)."""
+        for name, code in problems.items():
+            site_url = ''
+            if code == 'country_other_region':
+                site_url = self.other_site_url = lookup_country(
+                    self.cleaned_data.get('country', '')).site_url
+            self.add_error(None if name == fiscal.ALL else name,
+                           forms.ValidationError(self._message(code, site_url), code=code))
+
+    def refuse_stale(self):
+        self.stale = True
+        self.add_error(None, forms.ValidationError(self.error_messages['changed_elsewhere'],
+                                                   code='changed_elsewhere'))

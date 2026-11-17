@@ -3,15 +3,15 @@ title: 'Fiscal entities'
 type: 'feature'
 ticket: '5'
 created: '2026-11-16'
-status: 'ready-for-dev'
+status: 'built'
 baseline_revision: 'c4f30ab'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
 review: 'quick'
 review_source: 'pinned'
-lenses_ran: []
-review_loop_iteration: 0
+lenses_ran: ['quick']
+review_loop_iteration: 1
 context: []
 ---
 
@@ -152,6 +152,41 @@ Layout follows the settings shell: a list of cards (name, tax id masked to its l
 
 ## Implementation Notes
 
+Done as planned (migration `accounts` 0019 `fiscal_entity`): abstract `AddressFields` and `FiscalEntity` in `accounts/models.py` (with `normalize_fiscal_id`, the blind indexes filled in `save()`, the one-default conditional constraint `accounts_fiscalentity_one_default`); `accounts/fiscal.py` (service); `FiscalEntityForm`; the list, add, edit, default and delete views and URLs (`settings_fiscal` replaces the coming-soon route; `fiscal` left `SETTINGS_COMING_SOON`); three templates and `static/js/fiscal-form.js`; `erase_user` calls `fiscal.erase`; ES `.po` entries; README section; `accounts/tests/test_fiscal.py` (matrix rows 1-22); `SECTIONS` in `test_personal_data.py` and the browser test (Shipping as the unbuilt example) updated.
+
+Choices within the plan:
+- Validation lives in `fiscal.problems(data)` (codes by field), shared by the form (messages, field errors) and the service (`FiscalInvalid`, `StaleVersion`), so a save is checked twice and the service never trusts a page.
+- The other-region message names the other site by its host (`MyTreatPlan dev-ae.example.org`), as signup's note does, with a link to the site's address.
+- The kind switch, and the VAT id for AE, work without JavaScript: both kinds' name fields are always in the page; the VAT id container is `hidden` for a country other than AE and shown by a `noscript` style; the script only hides and relabels (the tax id is "Tax id" for AE).
+- `update` raises the version only when a field changed; a change of kind clears the other kind's names. `make_default` and the default's passing on a delete do not touch `version` or `updated_at`; "most recently changed" is `updated_at`.
+- `default_entity(user)` returns the default only when it is usable now, else None. "Make default" is offered only for usable entities (the service itself allows any active one).
+- An add page with the limit reached redirects to the list with the limit message; the service also refuses (`__all__: limit`).
+- `mark_used` takes the user lock, then the entity row; it does not move `version`.
+- The add page's `next` is read from the query string or the POST (hidden field), and must start with one `/` and pass `url_has_allowed_host_and_scheme`.
+- Model `verbose_name`s are translated too, though no page shows them.
+
+Left out: no browser (Playwright) journey for the fiscal pages (the plan asks for tests of matrix rows 1-22, done at the Django-client level); the merge and staging checks are the delegated ones in Decisions. The handoff notes and the deferred-work entry were already on master and are not repeated.
+
+## Review follow-ups
+
+- `make_default` refuses an unusable entity (`FiscalInvalid`, `unusable`); the view answers 404.
+- A removed default passes to the most recently changed usable entity, falling back to any active one only when none is usable; `create` takes the default when the current one is unusable.
+- The tax-id status field is added by entry 6.
+- `add_service_problems` looks the country up again, so an other-region refusal at the service step carries the site's name and link.
+- The row-18 test also rejects `/\evil.com`, `/%2F%2Fevil.com` and values with a tab or newline.
+
 ## Review Triage Log
+
+Quick lens with a security focus (Opus reviewer, 2026-11-17); implementer Sonnet. Nothing above low. All twelve focus points were ok: IDOR, open redirect, region and banned checks, encryption, default invariants, version check, `mark_used` and archive, erasure, no sync, the migration, translations (the three Django default strings in our `.po` are correct and harmless), and the template and JS.
+
+| # | Finding | Severity | Verdict | Resolution |
+|---|---|---|---|---|
+| 1 | `make_default` accepted an unusable entity (banned or now other-region) through a forged POST | low | patch | Refused (`FiscalInvalid`); the view answers 404 and nothing changes |
+| 2 | Default promotion on delete, and `create`, could leave an unusable default | low | patch | The replacement is the most recently changed usable entity (any active one only if none is usable); `create` takes the default when the current one is unusable |
+| 3 | The Approach promises a status slot for 6.6, but there is no field | low | rejected | Entry 6 owns the tax-id/VIES status and adds the field (noted in Implementation Notes) |
+| 4 | The other-region message could name no site in a race at the service step | low | patch | The country is looked up again, so the message names the other site and links to it |
+| 5 | Missing open-redirect cases in the row-18 test | low | patch | Cases added. They exposed `/%2F%2Fevil.com`, `/\tevil.com` and a newline value, which crashed the redirect with a 500. `_safe_next` now refuses control characters, backslashes and a percent-decoded leading `//` |
+
+After the patches, my own run: 3410 passed, 12 skipped, 0 failed (SQLite); `makemigrations --check` reports no changes.
 
 </frozen-after-approval>

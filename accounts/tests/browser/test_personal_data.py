@@ -51,8 +51,8 @@ def test_doctor_changes_their_details_and_sees_them_on_the_home(live_server, pag
     assert Profile.objects.get().landline == ''
 
     # An unbuilt section, inside the area; Cancel goes home.
-    page.get_by_role('link', name='Fiscal data').click()
-    at(page, live_server, 'en', 'settings/fiscal/')
+    page.get_by_role('link', name='Shipping addresses').click()
+    at(page, live_server, 'en', 'settings/shipping/')
     expect(page.get_by_text('This section is coming soon.')).to_be_visible()
     page.goto(f'{live_server.url}/en/settings/')
     page.locator('[data-cancel]').click()

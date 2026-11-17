@@ -1,0 +1,21 @@
+{% extends "accounts/settings_base.html" %}
+{% load i18n %}
+{% comment %}
+The fiscal entity's delete confirmation (accounts.views.settings_fiscal_delete,
+epic-doctor-profile entry 5): the POST deletes the entity, or archives it (hidden, not
+selectable on orders) when an order has used it (accounts.fiscal.remove).
+{% endcomment %}
+
+{% block title %}{% translate "Delete fiscal entity" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block settings_content %}
+<h1 class="text-[clamp(28px,4.4vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Delete this fiscal entity?" %}</h1>
+<p class="mt-3 text-copy text-ink-muted"><strong data-fiscal-name>{{ entity.display_name }}</strong> &middot; {{ entity.masked_tax_id }}</p>
+<p class="mt-2 text-copy text-ink-muted">{% translate "Invoices you already have are not affected." %}</p>
+
+<form method="post" class="mt-8 flex flex-wrap items-center gap-[clamp(16px,4vw,48px)]" data-fiscal-delete-form>
+  {% csrf_token %}
+  <a href="{% url 'settings_fiscal' %}" class="inline-flex min-h-[52px] items-center rounded-pill bg-violet px-8 text-[18px] font-black text-white hover:bg-ink" data-cancel>{% translate "Cancel" %}</a>
+  <button type="submit" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-confirm-delete>{% translate "Delete" %}</button>
+</form>
+{% endblock %}

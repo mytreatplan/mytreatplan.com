@@ -1,0 +1,48 @@
+{% extends "accounts/settings_base.html" %}
+{% load i18n %}
+{% comment %}
+The fiscal data page (accounts.views.settings_fiscal, epic-doctor-profile entry 5): one
+card per fiscal entity (the default first): its name, the tax id masked to its last 4
+characters, the billing country, a "Default" badge, and "cannot be used for new orders"
+when its country is no longer one this site bills to. Edit, Make default (a POST) and
+Delete (the confirmation page) on each card, and the "Add a fiscal entity" button.
+{% endcomment %}
+
+{% block title %}{% translate "Fiscal data" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block settings_content %}
+<h1 class="text-[clamp(28px,4.4vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Fiscal data" %}</h1>
+<p class="mt-3 text-copy text-ink-muted">{% translate "The people or companies you bill as. Your invoices will carry the one you choose when you order." %}</p>
+
+{% if cards %}
+<ul class="mt-8 flex flex-col gap-4" data-fiscal-list>
+  {% for card in cards %}{% with entity=card.entity %}
+  <li class="flex flex-col gap-3 rounded-[clamp(16px,2vw,24px)] bg-card-grey p-[clamp(16px,2vw,24px)]" data-fiscal-entity="{{ entity.pk }}">
+    <div class="flex flex-wrap items-center gap-3">
+      <strong class="break-words text-[clamp(17px,1.8vw,20px)] font-black" data-fiscal-name>{{ entity.display_name }}</strong>
+      {% if entity.is_default %}<span class="rounded-pill bg-green-tint px-3 py-1 text-[13px] font-extrabold" data-fiscal-default>{% translate "Default" %}</span>{% endif %}
+      {% if not card.usable %}<span class="rounded-pill border border-notice-border bg-notice-bg px-3 py-1 text-[13px] font-semibold text-notice-text" data-fiscal-unusable>{% translate "Cannot be used for new orders" %}</span>{% endif %}
+    </div>
+    <p class="text-[15px] leading-[1.45]"><span class="text-ink-muted">{% translate "Tax id" %}</span> <span data-fiscal-tax-id>{{ entity.masked_tax_id }}</span> &middot; <span data-fiscal-country>{{ entity.country.name }}</span></p>
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+      <a href="{% url 'settings_fiscal_edit' entity.pk %}" class="text-[15px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-fiscal-edit>{% translate "Edit" %}</a>
+      {% if not entity.is_default and card.usable %}
+      <form method="post" action="{% url 'settings_fiscal_default' entity.pk %}">{% csrf_token %}<button type="submit" class="cursor-pointer text-[15px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-fiscal-make-default>{% translate "Make default" %}</button></form>
+      {% endif %}
+      <a href="{% url 'settings_fiscal_delete' entity.pk %}" class="text-[15px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-fiscal-delete>{% translate "Delete" %}</a>
+    </div>
+  </li>
+  {% endwith %}{% endfor %}
+</ul>
+{% else %}
+<p class="mt-8 text-copy text-ink-muted" data-fiscal-empty>{% translate "You have not added any fiscal data yet." %}</p>
+{% endif %}
+
+<div class="mt-8">
+  {% if can_add %}
+  <a href="{% url 'settings_fiscal_add' %}" class="inline-flex min-h-[52px] items-center rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-fiscal-add>{% translate "Add a fiscal entity" %}</a>
+  {% else %}
+  <p class="text-[15px] font-semibold text-notice-text" data-fiscal-limit>{% blocktranslate %}You can have at most {{ max_entities }} fiscal entities. Delete one to add another.{% endblocktranslate %}</p>
+  {% endif %}
+</div>
+{% endblock %}

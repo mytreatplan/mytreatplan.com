@@ -169,3 +169,29 @@ same URL name and path, and removes the area from `COMING_SOON_AREAS`; the heade
 home's links follow by themselves. A new doctor-area address also needs its first segment
 in `accounts.page_records.PORTAL_PREFIXES` (a test checks it) and its name in
 `mytp_publicsite/tests/test_settings_staging.py`'s `PORTAL_URL_NAMES`.
+
+## A doctor's fiscal entities (epic-doctor-profile entry 5)
+
+A doctor records who they bill as in settings, "Fiscal data" (`accounts.FiscalEntity`, UUID
+primary key, region-owned, never in `client.updated` until entry 9): a person (first and last
+name) or a company (legal name), with a tax id, an address and an optional billing email;
+billing country AE also has a VAT id. Names, ids, address and email are field-encrypted; the
+country is plain. The tax id and the VAT id are stored uppercase without spaces or dashes,
+each with a non-unique blind index (`tax_id_index`, `vat_id_index`). Up to 10 active entities
+per doctor, exactly one default among them (a database constraint); `version` goes up on each
+change, and a stale edit is refused.
+
+`accounts.fiscal` is the only writer (atomic, the user row locked): `create`, `update`,
+`make_default`, `remove` (a hard delete, or an archive once an order used the entity),
+`mark_used(entity, at)`, `erase(user)`. The rules depend on the billing country: the name(s),
+tax id and country are always required; the address line 1, city and postal code for every
+country but AE. The country must be in this site's region and not banned
+(`regions.countries.lookup_country`), checked at every save.
+
+What ordering and checkout read: `usable_entities(user)`, `has_usable_entity(user)` and
+`default_entity(user)` (non-archived, country allowed now: an entity whose country was banned,
+or moved to the other region, stays listed as "cannot be used for new orders" but is not
+usable). Ordering is blocked until `has_usable_entity`; send the doctor to
+`settings_fiscal_add?next=<this page>` (only a path of this site is honoured). Call
+`fiscal.mark_used` when an order uses an entity, and reference it from the order with
+`SET_NULL` plus the order's own snapshot, never `PROTECT`.
