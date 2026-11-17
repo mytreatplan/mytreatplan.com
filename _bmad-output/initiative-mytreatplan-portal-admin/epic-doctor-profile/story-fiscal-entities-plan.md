@@ -3,7 +3,7 @@ title: 'Fiscal entities'
 type: 'feature'
 ticket: '5'
 created: '2026-11-16'
-status: 'built'
+status: 'done'
 baseline_revision: 'c4f30ab'
 route: 'full'
 route_source: 'auto'
@@ -190,3 +190,14 @@ Quick lens with a security focus (Opus reviewer, 2026-11-17); implementer Sonnet
 After the patches, my own run: 3410 passed, 12 skipped, 0 failed (SQLite); `makemigrations --check` reports no changes.
 
 </frozen-after-approval>
+
+## Staging
+
+2026-11-17, run by Claude with the user's delegation and write-SSH OK for dev and dev-ae. Each site's checks ran in one transaction that was rolled back, so nothing was kept. Check 6 (by eye) is the user's.
+- Portal PR #108 merged (1802735). The PR's `test` checks passed on PostgreSQL ×2, and master run 44034112999 passed test plus both deploys. Local suite: 3410 passed, 12 skipped, 0 failed.
+- 1: `/healthz` ok on dev and dev-ae; `accounts` 0019_fiscal_entity applied on both.
+- 2 (dev, test doctor, through the pages): a Spanish company and a Portuguese person were saved, and the first became the default. "Make default" moved it to the PT entity, with exactly one default throughout. The list masks the tax ids.
+- 3 (dev): billing country AE was refused with the other-region warning and a link to the .ae site, and IR with the banned message. Nothing was stored.
+- 4 (dev): a raw SQL read shows the tax id as ciphertext, and the blind index is set.
+- 5 (dev-ae): an AE company with only the name, tax id and country was saved with no address. The VAT id round-trips normalised. A Spanish billing country is refused there with the other-region warning.
+- 6 (user): the fiscal pages by eye, EN and ES, desktop and phone. Not reported yet.
