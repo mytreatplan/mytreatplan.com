@@ -7,6 +7,7 @@ from django.db.models.functions import UUID4
 from django.utils.translation import gettext_lazy as _
 from django_countries.fields import CountryField
 
+from catalogue.pricing import VIES_NOT_APPLICABLE, VIES_STATUSES
 from regions.profiles import REGION_CHOICES
 
 from .crypto import (BLIND_INDEX_LENGTH, EncryptedCharField, EncryptedEmailField, blind_index,
@@ -355,6 +356,17 @@ class FiscalEntity(AddressFields):
     version = models.PositiveIntegerField(default=1)
     used_at = models.DateTimeField(null=True, blank=True)
     archived_at = models.DateTimeField(null=True, blank=True)
+    # The VIES check of an EU billing country (entry 6; accounts.fiscal is the only
+    # writer, never the editor): the status uses the pricing resolver's own values, and the
+    # retry fields drive the `retry_vies` job while it is `pending`.
+    vies_status = models.CharField(max_length=14, choices=[(v, v) for v in VIES_STATUSES],
+                                   default=VIES_NOT_APPLICABLE, editable=False)
+    vies_checked_at = models.DateTimeField(null=True, blank=True, editable=False)
+    vies_pending_since = models.DateTimeField(null=True, blank=True, editable=False)
+    vies_attempts = models.PositiveSmallIntegerField(default=0, editable=False)
+    vies_next_try_at = models.DateTimeField(null=True, blank=True, db_index=True,
+                                            editable=False)
+    vies_alerted_at = models.DateTimeField(null=True, blank=True, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

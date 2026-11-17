@@ -4,7 +4,9 @@
 The fiscal data page (accounts.views.settings_fiscal, epic-doctor-profile entry 5): one
 card per fiscal entity (the default first): its name, the tax id masked to its last 4
 characters, the billing country, a "Default" badge, and "cannot be used for new orders"
-when its country is no longer one this site bills to. Edit, Make default (a POST) and
+when its country is no longer one this site bills to, and (entry 6) its VIES status line
+(verified, not found, pending; nothing outside the EU) or "Please check the tax id" for an id
+saved before the checks that fails them. Edit, Make default (a POST) and
 Delete (the confirmation page) on each card, and the "Add a fiscal entity" button.
 {% endcomment %}
 
@@ -24,6 +26,11 @@ Delete (the confirmation page) on each card, and the "Add a fiscal entity" butto
       {% if not card.usable %}<span class="rounded-pill border border-notice-border bg-notice-bg px-3 py-1 text-[13px] font-semibold text-notice-text" data-fiscal-unusable>{% translate "Cannot be used for new orders" %}</span>{% endif %}
     </div>
     <p class="text-[15px] leading-[1.45]"><span class="text-ink-muted">{% translate "Tax id" %}</span> <span data-fiscal-tax-id>{{ entity.masked_tax_id }}</span> &middot; <span data-fiscal-country>{{ entity.country.name }}</span></p>
+    {% if card.check_tax_id %}<p class="text-[15px] font-semibold text-notice-text" data-fiscal-check-tax-id>{% translate "Please check the tax id" %}</p>
+    {% elif entity.vies_status == "valid" %}<p class="text-[15px] leading-[1.45]" data-fiscal-vies="valid">{% translate "VAT number verified (VIES)" %}</p>
+    {% elif entity.vies_status == "invalid" %}<p class="text-[15px] leading-[1.45]" data-fiscal-vies="invalid">{% translate "Not found in VIES – VAT will be charged" %}</p>
+    {% elif entity.vies_status == "pending" %}<p class="text-[15px] leading-[1.45] text-ink-muted" data-fiscal-vies="pending">{% translate "VIES check pending" %}</p>
+    {% endif %}
     <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
       <a href="{% url 'settings_fiscal_edit' entity.pk %}" class="text-[15px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-fiscal-edit>{% translate "Edit" %}</a>
       {% if not entity.is_default and card.usable %}

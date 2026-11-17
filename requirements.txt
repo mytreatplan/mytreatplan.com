@@ -33,6 +33,8 @@ python-dateutil==2.9.0.post0
 # The interface's request tokens (mytp-core 0.6.0, mytp_core.interface): JWT with EdDSA.
 PyJWT==2.15.1
 python-decouple==3.8
+# The per-country tax id checksums (accounts.taxid, epic-doctor-profile entry 6).
+python-stdnum==2.2
 s3transfer==0.19.2
 sentry-sdk==2.71.0
 six==1.17.0

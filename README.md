@@ -195,3 +195,24 @@ usable). Ordering is blocked until `has_usable_entity`; send the doctor to
 `settings_fiscal_add?next=<this page>` (only a path of this site is honoured). Call
 `fiscal.mark_used` when an order uses an entity, and reference it from the order with
 `SET_NULL` plus the order's own snapshot, never `PROTECT`.
+
+### Tax id checks and VIES (entry 6)
+
+`accounts.fiscal.problems` also checks the tax id (`accounts.taxid`, python-stdnum): Spain
+needs a DNI or NIE for a person and a CIF for a company (checksum and kind), Portugal the
+NIF checksum, a country prefix of another country is refused (Greece may be typed `EL` or
+`GR`), and the AE VAT id is exactly 15 digits. Any other country's tax id is free text.
+
+For a billing country in the EU-27 the entity has a service-owned `vies_status` (the pricing
+resolver's `catalogue.pricing.VIES_*` values; never in `FIELDS`, so a posted value is ignored)
+with `vies_checked_at` and the retry fields. `create` and `update` ask the EU VIES REST API
+(`accounts.vies`, `VIES_URL`, `EXTERNAL_CHECK_TIMEOUT`) after the offline checks and outside
+any lock, only when the tax id or country is new or changed: `valid`, `invalid` (not found,
+or not a well-formed VAT number for its country: VAT is charged, the save is never refused)
+or `pending` when VIES is unavailable. Every other country is `not_applicable`. The
+`retry_vies` job (`deploy/jobs.conf`, every 15 minutes) retries each pending entity 15 minutes
+after its first failure, 1 hour after the second, then every 6 hours; after 3 days it logs one
+error with the entity id only. Hand `fiscal.vies_status(entity)` to
+`subscriptions.service.price_order_for(..., vies=...)`. An id saved before the checks that
+fails them stays usable; its card says "Please check the tax id" and the next edit must fix
+it. Tests use the autouse `fake_vies` fixture (`conftest.py`).

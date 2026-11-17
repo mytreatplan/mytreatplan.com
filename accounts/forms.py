@@ -476,6 +476,11 @@ class FiscalEntityForm(StyledForm):
         'country_banned': COUNTRY_BANNED_MESSAGE,
         'country_other_region': _('This billing country is served by MyTreatPlan %(site)s. '
                                   'Billing data for it cannot be saved here.'),
+        'tax_id_invalid': _('The NIF is not valid.'),
+        'tax_id_kind_company': _('For a company, enter a CIF.'),
+        'tax_id_kind_person': _('For a person, enter a DNI or NIE.'),
+        'tax_id_prefix': _('The tax id starts with the prefix of another country.'),
+        'vat_id_invalid': _('The VAT id must have exactly 15 digits.'),
         'limit': _('You can have at most %(max)d fiscal entities. Delete one to add '
                    'another.'),
         'changed_elsewhere': _('This fiscal entity was changed elsewhere. Please reload '
@@ -531,7 +536,10 @@ class FiscalEntityForm(StyledForm):
     def show_vat(self):
         return fiscal.is_vat_country(self.country_code)
 
-    def _message(self, code, site_url=''):
+    def _message(self, code, site_url='', kind=''):
+        if code == 'tax_id_kind':
+            code = 'tax_id_kind_company' if kind == FiscalEntity.COMPANY else (
+                'tax_id_kind_person')
         message = self.error_messages[code]
         if code == 'country_other_region':
             return message % {'site': urlsplit(site_url).netloc}
@@ -553,8 +561,8 @@ class FiscalEntityForm(StyledForm):
                 site_url = self.other_site_url = lookup_country(data['country']).site_url
             if code == 'invalid' and name == 'billing_email':
                 code = 'invalid_email'
-            self.add_error(name, forms.ValidationError(self._message(code, site_url),
-                                                       code=code))
+            self.add_error(name, forms.ValidationError(
+                self._message(code, site_url, data.get('kind')), code=code))
         return cleaned
 
     def entity_data(self):
@@ -569,8 +577,8 @@ class FiscalEntityForm(StyledForm):
             if code == 'country_other_region':
                 site_url = self.other_site_url = lookup_country(
                     self.cleaned_data.get('country', '')).site_url
-            self.add_error(None if name == fiscal.ALL else name,
-                           forms.ValidationError(self._message(code, site_url), code=code))
+            self.add_error(None if name == fiscal.ALL else name, forms.ValidationError(
+                self._message(code, site_url, self.cleaned_data.get('kind')), code=code))
 
     def refuse_stale(self):
         self.stale = True

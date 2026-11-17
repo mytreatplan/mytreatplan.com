@@ -71,3 +71,4 @@ Paying and invoicing. Not what is bought (epic-subscriptions, epic-ordering). Th
   - An entity is edited in place, and its `version` rises.
   - Billing country AE carries an optional VAT id besides the tax id.
 - Waits on epic 6 because: it needs fiscal entity on the order.
+- Handoff (2026-11-17, epic-doctor-profile entry 6): pass `accounts.fiscal.vies_status(entity)` as `vies=` to `subscriptions.service.price_order_for` (`not_applicable` when there is no entity). The status is the resolver's own: `valid` gives reverse charge where the rule has the text; `invalid`, `pending` and `not_applicable` charge VAT. The `retry_vies` job turns `pending` into `valid` or `invalid`; re-checking at checkout is in deferred-work.

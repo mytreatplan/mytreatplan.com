@@ -2300,3 +2300,39 @@ msgstr "Introduzca un valor válido."
 #: accounts/forms.py
 msgid "Enter a valid email address."
 msgstr "Introduzca una dirección de correo electrónico válida."
+
+#: accounts/forms.py
+msgid "The NIF is not valid."
+msgstr "El NIF no es válido."
+
+#: accounts/forms.py
+msgid "For a company, enter a CIF."
+msgstr "Para una empresa, indique un CIF."
+
+#: accounts/forms.py
+msgid "For a person, enter a DNI or NIE."
+msgstr "Para una persona, indique un DNI o NIE."
+
+#: accounts/forms.py
+msgid "The tax id starts with the prefix of another country."
+msgstr "La identificación fiscal empieza por el prefijo de otro país."
+
+#: accounts/forms.py
+msgid "The VAT id must have exactly 15 digits."
+msgstr "El número de IVA debe tener exactamente 15 dígitos."
+
+#: accounts/templates/accounts/settings_fiscal.html
+msgid "Please check the tax id"
+msgstr "Revise la identificación fiscal"
+
+#: accounts/templates/accounts/settings_fiscal.html
+msgid "VAT number verified (VIES)"
+msgstr "Número de IVA verificado (VIES)"
+
+#: accounts/templates/accounts/settings_fiscal.html
+msgid "Not found in VIES – VAT will be charged"
+msgstr "No encontrado en VIES: se aplicará el IVA"
+
+#: accounts/templates/accounts/settings_fiscal.html
+msgid "VIES check pending"
+msgstr "Verificación VIES pendiente"

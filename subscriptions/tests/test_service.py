@@ -140,6 +140,34 @@ def test_a_change_of_country_moves_basic_to_the_new_group(admin):
     assert priced(user).company.code == 'IE'
 
 
+def test_the_fiscal_entitys_vies_status_feeds_price_order_for(admin):
+    """Epic-doctor-profile entry 6: an IE-billed DE company is reverse charged only when its
+    entity's VIES status is valid; no entity counts as not applicable."""
+    from accounts import fiscal
+    from accounts.models import FiscalEntity
+    from integration.tests.snapshot_rows import REVERSE
+
+    load(admin)
+    user = doctor(country='DE')
+    entity = FiscalEntity.objects.create(user=user, kind='company', legal_name='Zahn GmbH',
+                                         tax_id='DE136695976', country='DE')
+    lines = [resolver.OrderLine(resolver.product(TPS))]
+
+    def price(status):
+        return service.price_order_for(user, lines, vies=status, day=DAY)
+
+    for status in (resolver.VIES_VALID, resolver.VIES_INVALID, resolver.VIES_PENDING):
+        FiscalEntity.objects.filter(pk=entity.pk).update(vies_status=status)
+        entity.refresh_from_db()
+        line = price(fiscal.vies_status(entity)).lines[0]
+        if status == resolver.VIES_VALID:
+            assert (line.vat_percent, line.vat_text) == (Decimal('0.00'), REVERSE)
+        else:
+            assert line.vat_percent > 0 and line.vat_text != REVERSE
+    assert fiscal.vies_status(None) == resolver.VIES_NOT_APPLICABLE
+    assert price(fiscal.vies_status(None)).lines[0].vat_percent > 0
+
+
 # --- Staff, the Django admin ---------------------------------------------------------------
 
 def test_staff_and_superusers_get_no_record():
