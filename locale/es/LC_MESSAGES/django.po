@@ -2093,3 +2093,210 @@ msgstr "En su lugar se mostrarán sus iniciales. También se eliminará la foto 
 #: accounts/views.py
 msgid "Your photo has been saved."
 msgstr "Su foto se ha guardado."
+
+#: accounts/models.py
+msgid "address line 1"
+msgstr "dirección (línea 1)"
+
+#: accounts/models.py
+msgid "address line 2"
+msgstr "dirección (línea 2)"
+
+#: accounts/models.py
+msgid "postal code"
+msgstr "código postal"
+
+#: accounts/models.py
+msgid "province"
+msgstr "provincia"
+
+#: accounts/models.py
+msgid "kind"
+msgstr "tipo"
+
+#: accounts/models.py
+msgid "legal name"
+msgstr "razón social"
+
+#: accounts/models.py
+msgid "tax id"
+msgstr "identificación fiscal"
+
+#: accounts/models.py
+msgid "VAT id"
+msgstr "Número de IVA"
+
+#: accounts/models.py
+msgid "billing email"
+msgstr "email de facturación"
+
+#: accounts/models.py
+msgid "surname(s)"
+msgstr "apellido(s)"
+
+#: accounts/models.py
+msgid "name"
+msgstr "nombre"
+
+#: accounts/models.py
+msgid "Individual"
+msgstr "Persona física"
+
+#: accounts/models.py
+msgid "Company"
+msgstr "Empresa"
+
+#: accounts/forms.py
+msgid "Kind"
+msgstr "Tipo"
+
+#: accounts/forms.py
+msgid "Legal name"
+msgstr "Razón social"
+
+#: accounts/forms.py
+msgid "Tax id (NIF / CIF / VAT)"
+msgstr "NIF / CIF / VAT"
+
+#: accounts/forms.py
+msgid "Address (line 1)"
+msgstr "Dirección (línea 1)"
+
+#: accounts/forms.py
+msgid "Address (line 2)"
+msgstr "Dirección (línea 2)"
+
+#: accounts/forms.py
+msgid "City"
+msgstr "Ciudad"
+
+#: accounts/forms.py
+msgid "Postal code"
+msgstr "Código postal"
+
+#: accounts/forms.py
+msgid "Province"
+msgstr "Provincia"
+
+#: accounts/forms.py
+msgid "Billing country"
+msgstr "País de facturación"
+
+#: accounts/forms.py
+msgid "Billing email"
+msgstr "Email de facturación"
+
+#: accounts/forms.py
+msgid "Optional. Without it, invoices are sent to your login email."
+msgstr "Opcional. Sin él, las facturas se envían a su email de acceso."
+
+#: accounts/forms.py
+msgid "This value is too long."
+msgstr "Este valor es demasiado largo."
+
+#: accounts/forms.py
+#, python-format
+msgid "This billing country is served by MyTreatPlan %(site)s. Billing data for it cannot be saved here."
+msgstr "Este país de facturación está atendido por MyTreatPlan %(site)s. Los datos de facturación de ese país no se pueden guardar aquí."
+
+#: accounts/forms.py
+#, python-format
+msgid "You can have at most %(max)d fiscal entities. Delete one to add another."
+msgstr "Puede tener como máximo %(max)d entidades fiscales. Elimine una para añadir otra."
+
+#: accounts/forms.py
+msgid "This fiscal entity was changed elsewhere. Please reload the page and try again."
+msgstr "Esta entidad fiscal se ha modificado en otro lugar. Recargue la página e inténtelo de nuevo."
+
+#: accounts/views.py
+msgid "The fiscal entity has been saved."
+msgstr "La entidad fiscal se ha guardado."
+
+#: accounts/views.py
+msgid "The default fiscal entity has been changed."
+msgstr "Se ha cambiado la entidad fiscal predeterminada."
+
+#: accounts/views.py
+msgid "The fiscal entity has been deleted."
+msgstr "La entidad fiscal se ha eliminado."
+
+#: accounts/templates/accounts/settings_fiscal.html
+msgid "The people or companies you bill as. Your invoices will carry the one you choose when you order."
+msgstr "Las personas o empresas con las que factura. Sus facturas llevarán la que elija al hacer un pedido."
+
+#: accounts/templates/accounts/settings_fiscal.html
+msgid "Default"
+msgstr "Predeterminada"
+
+#: accounts/templates/accounts/settings_fiscal.html
+msgid "Cannot be used for new orders"
+msgstr "No se puede usar en nuevos pedidos"
+
+#: accounts/templates/accounts/settings_fiscal.html
+msgid "Tax id"
+msgstr "Identificación fiscal"
+
+#: accounts/templates/accounts/settings_fiscal.html
+msgid "Edit"
+msgstr "Editar"
+
+#: accounts/templates/accounts/settings_fiscal.html
+msgid "Make default"
+msgstr "Establecer como predeterminada"
+
+#: accounts/templates/accounts/settings_fiscal.html
+msgid "Delete"
+msgstr "Eliminar"
+
+#: accounts/templates/accounts/settings_fiscal.html
+msgid "You have not added any fiscal data yet."
+msgstr "Todavía no ha añadido ningún dato fiscal."
+
+#: accounts/templates/accounts/settings_fiscal.html
+msgid "Add a fiscal entity"
+msgstr "Añadir una entidad fiscal"
+
+#: accounts/templates/accounts/settings_fiscal.html
+#, python-format
+msgid "You can have at most %(max_entities)s fiscal entities. Delete one to add another."
+msgstr "Puede tener como máximo %(max_entities)s entidades fiscales. Elimine una para añadir otra."
+
+#: accounts/templates/accounts/settings_fiscal_delete.html
+msgid "Delete fiscal entity"
+msgstr "Eliminar entidad fiscal"
+
+#: accounts/templates/accounts/settings_fiscal_delete.html
+msgid "Delete this fiscal entity?"
+msgstr "¿Desea eliminar esta entidad fiscal?"
+
+#: accounts/templates/accounts/settings_fiscal_delete.html
+msgid "Invoices you already have are not affected."
+msgstr "Las facturas que ya tiene no se ven afectadas."
+
+#: accounts/templates/accounts/settings_fiscal_form.html
+msgid "Edit fiscal entity"
+msgstr "Editar entidad fiscal"
+
+#: accounts/templates/accounts/settings_fiscal_form.html
+msgid "This fiscal entity cannot be used for new orders: its billing country can no longer be billed from this site. Choose another billing country to save it."
+msgstr "Esta entidad fiscal no se puede usar en nuevos pedidos: su país de facturación ya no se puede facturar desde este sitio. Elija otro país de facturación para guardarla."
+
+#: accounts/templates/accounts/settings_fiscal_form.html
+msgid "Go to the other MyTreatPlan site"
+msgstr "Ir al otro sitio de MyTreatPlan"
+
+#: accounts/templates/accounts/settings_fiscal_form.html
+msgid "For the United Arab Emirates the address is optional."
+msgstr "Para los Emiratos Árabes Unidos la dirección es opcional."
+
+#: accounts/forms.py
+msgid "This field is required."
+msgstr "Este campo es obligatorio."
+
+#: accounts/forms.py
+msgid "Enter a valid value."
+msgstr "Introduzca un valor válido."
+
+#: accounts/forms.py
+msgid "Enter a valid email address."
+msgstr "Introduzca una dirección de correo electrónico válida."

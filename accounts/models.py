@@ -9,8 +9,8 @@ from django_countries.fields import CountryField
 
 from regions.profiles import REGION_CHOICES
 
-from .crypto import (BLIND_INDEX_LENGTH, EncryptedCharField, EncryptedEmailField, email_index,
-                     phone_index)
+from .crypto import (BLIND_INDEX_LENGTH, EncryptedCharField, EncryptedEmailField, blind_index,
+                     email_index, phone_index)
 from .managers import UserManager
 
 
@@ -286,4 +286,111 @@ class PendingContactChange(models.Model):
         update_fields = kwargs.get('update_fields')
         if update_fields is not None and 'value' in update_fields:
             kwargs['update_fields'] = {*update_fields, 'value_index'}
+        super().save(*args, **kwargs)
+
+
+class AddressFields(models.Model):
+    """A postal address (epic-doctor-profile entry 5): the lines, city, postal code and
+    province are encrypted (AD-2); the country is a plain `CountryField`, since queries and
+    the region and banned checks need it. Every part may be blank at the model level: the
+    rules of which are required depend on the country and live with the writers
+    (accounts.fiscal). The shipping addresses (entry 7) reuse it."""
+
+    address_line1 = EncryptedCharField(_('address line 1'), max_length=200, blank=True)
+    address_line2 = EncryptedCharField(_('address line 2'), max_length=200, blank=True)
+    city = EncryptedCharField(_('city'), max_length=150, blank=True)
+    postal_code = EncryptedCharField(_('postal code'), max_length=30, blank=True)
+    province = EncryptedCharField(_('province'), max_length=150, blank=True)
+    country = CountryField(_('country'), blank=True)
+
+    class Meta:
+        abstract = True
+
+
+def normalize_fiscal_id(value):
+    """A tax id or VAT id as stored and indexed: uppercase, without spaces or dashes."""
+    return ''.join(ch for ch in (value or '').upper() if not ch.isspace() and ch != '-')
+
+
+def fiscal_id_index_or_blank(value):
+    """The blind index of a fiscal id, or '' when there is none."""
+    normalized = normalize_fiscal_id(value)
+    return blind_index(normalized) if normalized else ''
+
+
+class FiscalEntity(AddressFields):
+    """Who a doctor bills as (epic-doctor-profile entry 5, accounts.fiscal, the only
+    writer): a person (first and last name) or a company (legal name), with a tax id, an
+    address and an optional billing email; for billing country AE also a VAT id. Several
+    per doctor, at most one default among the non-archived ones (a database rule).
+
+    The names, tax id, VAT id, billing email and the address parts are encrypted. The tax
+    id and the VAT id each have a non-unique blind index (`tax_id_index`, `vat_id_index`,
+    set in `save()`, of the normalised value) for the per-country checks (entry 6) and
+    staff search. `version` goes up on each change (AD-15; entry 9 copies the entity to
+    the admin client record). `used_at` is set by epic-payments (`fiscal.mark_used`) when
+    an order uses the entity; from then on "delete" archives (`archived_at`) instead.
+    Regional: never in `client.updated`. Deleted with the user and by the erasure.
+    """
+
+    PERSON = 'person'
+    COMPANY = 'company'
+    KINDS = [(PERSON, _('Individual')), (COMPANY, _('Company'))]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                             related_name='fiscal_entities')
+    kind = models.CharField(_('kind'), max_length=10, choices=KINDS)
+    first_name = EncryptedCharField(_('name'), max_length=150, blank=True)
+    last_name = EncryptedCharField(_('surname(s)'), max_length=150, blank=True)
+    legal_name = EncryptedCharField(_('legal name'), max_length=200, blank=True)
+    tax_id = EncryptedCharField(_('tax id'), max_length=40, blank=True)
+    tax_id_index = models.CharField(max_length=BLIND_INDEX_LENGTH, blank=True, db_index=True,
+                                    editable=False)
+    vat_id = EncryptedCharField(_('VAT id'), max_length=40, blank=True)
+    vat_id_index = models.CharField(max_length=BLIND_INDEX_LENGTH, blank=True, db_index=True,
+                                    editable=False)
+    billing_email = EncryptedEmailField(_('billing email'), max_length=254, blank=True)
+    is_default = models.BooleanField(default=False)
+    version = models.PositiveIntegerField(default=1)
+    used_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=('user',),
+                condition=models.Q(is_default=True, archived_at__isnull=True),
+                name='accounts_fiscalentity_one_default'),
+        ]
+
+    def __str__(self):
+        # Never a name or an id number.
+        return f'Fiscal entity {self.pk}'
+
+    @property
+    def display_name(self):
+        if self.kind == self.COMPANY:
+            return self.legal_name
+        return f'{self.first_name} {self.last_name}'.strip()
+
+    @property
+    def masked_tax_id(self):
+        """The tax id with all but its last 4 characters hidden."""
+        value = self.tax_id or ''
+        if len(value) <= 4:
+            return '•' * len(value)
+        return '••••' + value[-4:]
+
+    def save(self, *args, **kwargs):
+        self.tax_id_index = fiscal_id_index_or_blank(self.tax_id)
+        self.vat_id_index = fiscal_id_index_or_blank(self.vat_id)
+        update_fields = kwargs.get('update_fields')
+        if update_fields is not None:
+            extra = {'tax_id_index'} if 'tax_id' in update_fields else set()
+            if 'vat_id' in update_fields:
+                extra.add('vat_id_index')
+            kwargs['update_fields'] = {*update_fields, *extra}
         super().save(*args, **kwargs)

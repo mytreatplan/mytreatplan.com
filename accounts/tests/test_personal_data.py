@@ -29,7 +29,6 @@ COMMERCIAL = LegalDocument.Kind.COMMERCIAL_CONSENT
 PAGE = '/en/settings/'
 SECTIONS = [('settings_maker', 'settings/maker/', 'Maker data', 'Datos fabricante'),
             ('settings_password', 'settings/password/', 'Change password', 'Cambio de clave'),
-            ('settings_fiscal', 'settings/fiscal/', 'Fiscal data', 'Datos fiscales'),
             ('settings_shipping', 'settings/shipping/', 'Shipping addresses',
              'Direcciones de envío')]
 
@@ -140,7 +139,7 @@ def test_time_zone_offers_every_standard_zone_and_language_the_site_languages(do
 
 
 def test_anonymous_visitor_is_sent_to_login(client):
-    for path in ['settings/'] + [section[1] for section in SECTIONS]:
+    for path in ['settings/', 'settings/fiscal/'] + [section[1] for section in SECTIONS]:
         response = client.get(f'/en/{path}')
         assert response['Location'] == f'/en/login/?next=/en/{path}'
 

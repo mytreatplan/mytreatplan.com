@@ -2,7 +2,8 @@
 area's home and "coming soon" pages (epic-doctor-profile entry 1) and its settings area
 (the personal-data page and the sections not built yet, entry 2; the code-confirmed
 mobile and contact-email changes, entry 3; the profile photo's upload page and its
-confirmed delete, entry 4).
+confirmed delete, entry 4; the fiscal entities' list, add, edit, default and confirmed
+delete pages, entry 5).
 
 Login checks the CAPTCHA (signup.captcha) first, then the credentials (accounts.forms).
 A right password logs no one in: it starts a pending login (`start_pending_login`), and
@@ -33,6 +34,7 @@ changes meanwhile (deactivated, its password or its mobile changed).
 import functools
 import time
 import uuid
+from urllib.parse import unquote
 
 from django.conf import settings
 from django.contrib import messages
@@ -53,7 +55,7 @@ from django.utils.translation import gettext_lazy, pgettext_lazy
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.debug import sensitive_post_parameters
-from django.views.decorators.http import require_http_methods, require_POST
+from django.views.decorators.http import require_http_methods, require_POST, require_safe
 
 from eventlog.service import client_ip
 from legal.rendering import render_markdown
@@ -64,9 +66,11 @@ from signup.steps import (CODE_STATE_SESSION_KEY, SENT, code_help_context, code_
 from signup.verification import (CODE_TTL_SECONDS, EMAIL, MOBILE, PURPOSE_LOGIN, SMS,
                                  WHATSAPP)
 
-from . import devices, doctor_area, login_failures, login_guard, photo, profile
-from .forms import (ChangeCodeForm, EmailChangeForm, LoginCodeForm, LoginContactForm, LoginForm,
-                    MobileChangeForm, PersonalDataForm, mask_email, mask_phone, split_landline)
+from . import (client_sync, devices, doctor_area, fiscal, login_failures, login_guard, photo,
+               profile)
+from .forms import (ChangeCodeForm, EmailChangeForm, FiscalEntityForm, LoginCodeForm,
+                    LoginContactForm, LoginForm, MobileChangeForm, PersonalDataForm, mask_email,
+                    mask_phone, split_landline)
 
 # Where a login lands without a safe `next`: the doctor area's home (signup still ends on
 # the upgrade screen or the welcome page).
@@ -414,8 +418,8 @@ def home(request):
 # order: the URL name, the section's name (the coming-soon heading, the tile's accessible
 # name), the tile's two lines (small, then bold: each with its own context, as the word
 # order differs between languages) and its icon (includes/_icon.html). Only the personal
-# data is built; the others show "coming soon" inside the area until their stories
-# ("Change password" has no owning story yet: deferred-work.md).
+# data and the fiscal data are built; the others show "coming soon" inside the area until
+# their stories ("Change password" has no owning story yet: deferred-work.md).
 SETTINGS_SECTIONS = [
     ('settings', gettext_lazy('My details'),
      pgettext_lazy('settings tile: my details', 'My'),
@@ -433,7 +437,7 @@ SETTINGS_SECTIONS = [
      pgettext_lazy('settings tile: shipping addresses', 'Shipping'),
      pgettext_lazy('settings tile: shipping addresses', 'Addresses'), 'truck'),
 ]
-SETTINGS_COMING_SOON = {'maker', 'password', 'fiscal', 'shipping'}
+SETTINGS_COMING_SOON = {'maker', 'password', 'shipping'}
 
 
 def _settings_context(request, current):
@@ -752,6 +756,167 @@ settings_mobile = _change_view(MOBILE_CHANGE, 'start')
 settings_mobile_code = _change_view(MOBILE_CHANGE, 'code')
 settings_email = _change_view(EMAIL_CHANGE, 'start')
 settings_email_code = _change_view(EMAIL_CHANGE, 'code')
+
+
+# --- The fiscal entities (epic-doctor-profile entry 5, accounts.fiscal) ---------------------
+#
+# The settings area's "Fiscal data" section: the list (URL name `settings_fiscal`), the add
+# page (`settings_fiscal_add`, which honours a safe `next` for the ordering flow to come
+# back to), the edit page, the "make default" POST and the confirmed delete (which archives
+# an entity an order has used). Doctors only (a staff account, and another doctor's entity
+# id, are 404). Every write goes through accounts.fiscal; nothing here logs a value.
+
+def _fiscal_doctor(request):
+    """404 for a staff account (a fiscal entity belongs to a doctor)."""
+    if not client_sync.is_client(request.user) or request.user.is_erased:
+        raise Http404
+
+
+def _fiscal_entity(request, pk):
+    """The doctor's active entity `pk`, or 404 (another doctor's, archived, unknown)."""
+    entity = fiscal.active(request.user).filter(pk=pk).first()
+    if entity is None:
+        raise Http404
+    return entity
+
+
+def _safe_next(request):
+    """The `next` of the add page when it is a path of this site, else '' (the list)."""
+    target = request.POST.get('next') or request.GET.get('next') or ''
+    decoded = unquote(target)
+    if (target.startswith('/') and not decoded.startswith('//') and '\\' not in decoded
+            and not any(ord(ch) < 32 or ord(ch) == 127 for ch in decoded)
+            and url_has_allowed_host_and_scheme(target, allowed_hosts={request.get_host()},
+                                                require_https=request.is_secure())):
+        return target
+    return ''
+
+
+def _fiscal_initial(entity):
+    return {**{name: getattr(entity, name) for name in fiscal.FIELDS if name != 'country'},
+            'country': entity.country.code if entity.country else '',
+            'version': entity.version}
+
+
+def _fiscal_form_page(request, form, *, entity=None, next_url=''):
+    return render(request, 'accounts/settings_fiscal_form.html', {
+        **_settings_context(request, 'settings_fiscal'),
+        'form': form,
+        'entity': entity,
+        'usable': entity is None or fiscal.is_usable(entity),
+        'next_url': next_url,
+    })
+
+
+@login_required
+@never_cache
+@require_safe
+def settings_fiscal(request):
+    """The list of the doctor's fiscal entities (cards, the default first)."""
+    _fiscal_doctor(request)
+    rows = list(fiscal.active(request.user))
+    return render(request, 'accounts/settings_fiscal.html', {
+        **_settings_context(request, 'settings_fiscal'),
+        'cards': [{'entity': entity, 'usable': fiscal.is_usable(entity)} for entity in rows],
+        'can_add': len(rows) < fiscal.MAX_ENTITIES,
+        'max_entities': fiscal.MAX_ENTITIES,
+    })
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def settings_fiscal_add(request):
+    """Add a fiscal entity; afterwards, to the safe `next` or the list."""
+    _fiscal_doctor(request)
+    user = request.user
+    next_url = _safe_next(request)
+    if fiscal.active(user).count() >= fiscal.MAX_ENTITIES:
+        messages.error(request, FiscalEntityForm.error_messages['limit']
+                       % {'max': fiscal.MAX_ENTITIES})
+        return redirect(reverse('settings_fiscal'))
+    if request.method == 'POST':
+        form = FiscalEntityForm(request.POST)
+        if form.is_valid():
+            try:
+                fiscal.create(user, form.entity_data())
+            except fiscal.FiscalInvalid as refused:
+                form.add_service_problems(refused.problems)
+            else:
+                messages.success(request, _('The fiscal entity has been saved.'))
+                return redirect(next_url or reverse('settings_fiscal'))
+    else:
+        form = FiscalEntityForm(initial={
+            'kind': fiscal.FiscalEntity.PERSON,
+            'country': user.country.code if user.country else ''})
+    return _fiscal_form_page(request, form, next_url=next_url)
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def settings_fiscal_edit(request, pk):
+    """Edit a fiscal entity in place (its version is checked: two tabs never overwrite
+    each other)."""
+    _fiscal_doctor(request)
+    entity = _fiscal_entity(request, pk)
+    if request.method == 'POST':
+        form = FiscalEntityForm(request.POST)
+        if form.is_valid():
+            version = form.cleaned_data.get('version')
+            try:
+                if version is None:
+                    raise fiscal.StaleVersion(str(pk))
+                fiscal.update(request.user, pk, form.entity_data(), version=version)
+            except fiscal.FiscalInvalid as refused:
+                form.add_service_problems(refused.problems)
+            except fiscal.StaleVersion:
+                form.refuse_stale()
+            except fiscal.FiscalEntity.DoesNotExist:
+                raise Http404
+            else:
+                messages.success(request, _('The fiscal entity has been saved.'))
+                return redirect(reverse('settings_fiscal'))
+    else:
+        form = FiscalEntityForm(initial=_fiscal_initial(entity))
+    return _fiscal_form_page(request, form, entity=entity)
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_POST
+def settings_fiscal_default(request, pk):
+    """Make a fiscal entity the default."""
+    _fiscal_doctor(request)
+    try:
+        fiscal.make_default(request.user, pk)
+    except (fiscal.FiscalEntity.DoesNotExist, fiscal.FiscalInvalid):
+        raise Http404
+    messages.success(request, _('The default fiscal entity has been changed.'))
+    return redirect(reverse('settings_fiscal'))
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def settings_fiscal_delete(request, pk):
+    """The delete of a fiscal entity: the confirmation (GET), then the delete, or the
+    archive of one an order has used (POST)."""
+    _fiscal_doctor(request)
+    entity = _fiscal_entity(request, pk)
+    if request.method == 'POST':
+        try:
+            fiscal.remove(request.user, pk)
+        except fiscal.FiscalEntity.DoesNotExist:
+            raise Http404
+        messages.success(request, _('The fiscal entity has been deleted.'))
+        return redirect(reverse('settings_fiscal'))
+    return render(request, 'accounts/settings_fiscal_delete.html', {
+        **_settings_context(request, 'settings_fiscal'), 'entity': entity})
 
 
 @login_required

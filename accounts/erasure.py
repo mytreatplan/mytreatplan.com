@@ -3,8 +3,8 @@
 `erase_user` (the admin's "Erase account" action, accounts.admin) deactivates the account
 and keeps only what the evidence needs (email, title, names, country, phone, date joined,
 and the legal choices) until `purge_after`, ACCOUNT_ERASURE_RETENTION_DAYS later; it
-clears the rest (the profile of the personal-data page and any pending contact change
-too; the profile photo and its pending upload are deleted through storage.service.delete,
+clears the rest (the profile of the personal-data page, the fiscal entities and any pending
+contact change too; the profile photo and its pending upload are deleted through storage.service.delete,
 by the staff member erasing it, accounts.photo) and records the commercial
 and WhatsApp contact consents as withdrawn. Its `email_index` becomes a tombstone (accounts.models.User), so the same
 email can register again. `purge_erased` (the daily `purgeerased` job, `manage.py
@@ -39,7 +39,7 @@ from legal.models import LegalChoice, LegalDocument
 from storage import service as storage_service
 from storage.models import StoredObject
 
-from . import client_sync, photo, profile
+from . import client_sync, fiscal, photo, profile
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +107,9 @@ def erase_user(user, *, by, now=None):
         # contact change waiting for its code (entry 3): the row stays, so no CASCADE.
         profile.clear_profile(user)
         profile.clear_contact_changes(user)
+        # The fiscal entities (entry 5): the invoices' and the accounting's own snapshots
+        # are the legal record, so they all go.
+        fiscal.erase(user)
         # The admin site deletes its copy (client.erased, epic-admin-interface entry 8).
         client_sync.emit(user)
         LogEntry.objects.log_actions(user_id=by.pk, queryset=[_LoggedUser(user)],
