@@ -2336,3 +2336,141 @@ msgstr "No encontrado en VIES: se aplicará el IVA"
 #: accounts/templates/accounts/settings_fiscal.html
 msgid "VIES check pending"
 msgstr "Verificación VIES pendiente"
+
+# The shipping addresses (epic-doctor-profile entry 7).
+#: accounts/models.py
+msgid "label"
+msgstr "etiqueta"
+
+#: accounts/models.py
+msgid "recipient"
+msgstr "destinatario"
+
+#: accounts/models.py
+msgid "clinic"
+msgstr "clínica"
+
+#: accounts/models.py
+msgid "contact phone"
+msgstr "teléfono de contacto"
+
+#: accounts/models.py
+msgid "delivery notes"
+msgstr "instrucciones de entrega"
+
+#: accounts/forms.py
+msgid "Label"
+msgstr "Etiqueta"
+
+#: accounts/forms.py
+msgid "Optional. For example, \"Clinic Madrid\"."
+msgstr "Opcional. Por ejemplo, «Clínica Madrid»."
+
+#: accounts/forms.py
+msgid "Recipient"
+msgstr "Destinatario"
+
+#: accounts/forms.py
+msgid "Clinic"
+msgstr "Clínica"
+
+#: accounts/forms.py
+msgid "Contact phone"
+msgstr "Teléfono de contacto"
+
+#: accounts/forms.py
+msgid "Delivery notes"
+msgstr "Instrucciones de entrega"
+
+#: accounts/forms.py
+msgid "Optional. At most 300 characters."
+msgstr "Opcional. Como máximo 300 caracteres."
+
+#: accounts/forms.py
+msgid ""
+"Enter a valid phone number, with the prefix if it is not from the address "
+"country."
+msgstr ""
+"Introduzca un número de teléfono válido, con el prefijo si no es del país de "
+"la dirección."
+
+#: accounts/forms.py
+#, python-format
+msgid ""
+"You can have at most %(max)d shipping addresses. Delete one to add another."
+msgstr ""
+"Puede tener como máximo %(max)d direcciones de envío. Elimine una para "
+"añadir otra."
+
+#: accounts/forms.py
+msgid "This address cannot be used for new orders."
+msgstr "Esta dirección no se puede usar en nuevos pedidos."
+
+#: accounts/forms.py
+msgid ""
+"This shipping address was changed elsewhere. Please reload the page and try "
+"again."
+msgstr ""
+"Esta dirección de envío se ha modificado en otro lugar. Recargue la página e "
+"inténtelo de nuevo."
+
+#: accounts/views.py
+msgid "The shipping address has been saved."
+msgstr "La dirección de envío se ha guardado."
+
+#: accounts/views.py
+msgid "The default shipping address has been changed."
+msgstr "Se ha cambiado la dirección de envío predeterminada."
+
+#: accounts/views.py
+msgid "The shipping address has been deleted."
+msgstr "La dirección de envío se ha eliminado."
+
+#: accounts/templates/accounts/settings_shipping.html
+msgid ""
+"Where we send your physical products. When you order, we offer your default "
+"address first."
+msgstr ""
+"Adónde enviamos sus productos físicos. Al hacer un pedido, le ofrecemos "
+"primero su dirección predeterminada."
+
+#: accounts/templates/accounts/settings_shipping.html
+msgid "You have not added any shipping addresses yet."
+msgstr "Todavía no ha añadido ninguna dirección de envío."
+
+#: accounts/templates/accounts/settings_shipping.html
+msgid "Add a shipping address"
+msgstr "Añadir una dirección de envío"
+
+#: accounts/templates/accounts/settings_shipping.html
+#, python-format
+msgid ""
+"You can have at most %(max_addresses)s shipping addresses. Delete one to add "
+"another."
+msgstr ""
+"Puede tener como máximo %(max_addresses)s direcciones de envío. Elimine una "
+"para añadir otra."
+
+#: accounts/templates/accounts/settings_shipping_form.html
+msgid "Edit shipping address"
+msgstr "Editar dirección de envío"
+
+#: accounts/templates/accounts/settings_shipping_form.html
+msgid ""
+"This address cannot be used for new orders: its country can no longer be "
+"shipped to from this site. Choose another country to save it."
+msgstr ""
+"Esta dirección no se puede usar en nuevos pedidos: ya no se puede enviar a "
+"su país desde este sitio. Elija otro país para guardarla."
+
+#: accounts/templates/accounts/settings_shipping_delete.html
+msgid "Delete shipping address"
+msgstr "Eliminar dirección de envío"
+
+#: accounts/templates/accounts/settings_shipping_delete.html
+msgid "Delete this shipping address?"
+msgstr "¿Desea eliminar esta dirección de envío?"
+
+#: accounts/templates/accounts/settings_shipping_delete.html
+msgid "Orders you already placed are not affected."
+msgstr "Los pedidos que ya ha realizado no se ven afectados."

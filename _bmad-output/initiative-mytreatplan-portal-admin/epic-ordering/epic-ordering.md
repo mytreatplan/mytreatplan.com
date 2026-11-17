@@ -60,6 +60,7 @@ Choosing and buying cases. Not the case after purchase (epic-case-lifecycle).
 - Decision (2026-10-30): one service per patient per order; the one-live rule is checked again at payment; a pending-payment manual work order does not block other services until paid.
 - Decision (2026-10-30): this epic sends the order confirmation and payment receipt emails; epic-payments sends none of its own besides the bank-transfer reminder.
 - Assumption: retainers can be ordered only after a finished treatment for that patient (tested with a fixture until epic-case-lifecycle finishes cases).
+- Handoff (2026-11-17, shipping addresses, epic-doctor-profile entry 7): the VirtuaOrtho wizard requires `accounts.shipping.has_usable_address(user)` and, when there is none, links to `settings_shipping_add?next=<this page>` (only a path of this site is honoured). It offers `default_address(user)` first, then the rest of `usable_addresses(user)`. When an order uses an address it calls `shipping.mark_used(address)` (from then on Delete archives it). Orders keep their own snapshot of the address and reference it with `SET_NULL`, never `PROTECT`.
 - Handoff (2026-10-30, epic-subscriptions inception): pending-payment work orders are priced with the doctor's effective tier when they are added to an order (entry 1's rule).
 - Decision (2026-10-29, epic-platform inception): this epic builds the patient-code generator (AD-5), using the prefix from the region profile.
 - Handoff: epic-clinical-ops creates the manual pending-payment work orders this epic lists.

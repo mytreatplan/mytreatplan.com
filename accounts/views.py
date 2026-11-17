@@ -67,10 +67,10 @@ from signup.verification import (CODE_TTL_SECONDS, EMAIL, MOBILE, PURPOSE_LOGIN,
                                  WHATSAPP)
 
 from . import (client_sync, devices, doctor_area, fiscal, login_failures, login_guard, photo,
-               profile)
+               profile, shipping)
 from .forms import (ChangeCodeForm, EmailChangeForm, FiscalEntityForm, LoginCodeForm,
-                    LoginContactForm, LoginForm, MobileChangeForm, PersonalDataForm, mask_email,
-                    mask_phone, split_landline)
+                    LoginContactForm, LoginForm, MobileChangeForm, PersonalDataForm,
+                    ShippingAddressForm, mask_email, mask_phone, split_landline)
 
 # Where a login lands without a safe `next`: the doctor area's home (signup still ends on
 # the upgrade screen or the welcome page).
@@ -437,7 +437,7 @@ SETTINGS_SECTIONS = [
      pgettext_lazy('settings tile: shipping addresses', 'Shipping'),
      pgettext_lazy('settings tile: shipping addresses', 'Addresses'), 'truck'),
 ]
-SETTINGS_COMING_SOON = {'maker', 'password', 'shipping'}
+SETTINGS_COMING_SOON = {'maker', 'password'}
 
 
 def _settings_context(request, current):
@@ -918,6 +918,150 @@ def settings_fiscal_delete(request, pk):
         return redirect(reverse('settings_fiscal'))
     return render(request, 'accounts/settings_fiscal_delete.html', {
         **_settings_context(request, 'settings_fiscal'), 'entity': entity})
+
+
+# --- The shipping addresses (epic-doctor-profile entry 7, accounts.shipping) ----------------
+#
+# The settings area's "Shipping addresses" section, the same pages as the fiscal ones: the
+# list (URL name `settings_shipping`), the add page (`settings_shipping_add`, which honours
+# a safe `next` for the ordering flow to come back to), the edit page, the "make default"
+# POST and the confirmed delete (which archives an address an order has used). Doctors only
+# (a staff account, and another doctor's address id, are 404). Every write goes through
+# accounts.shipping; nothing here logs a value.
+
+def _shipping_address(request, pk):
+    """The doctor's active address `pk`, or 404 (another doctor's, archived, unknown)."""
+    address = shipping.active(request.user).filter(pk=pk).first()
+    if address is None:
+        raise Http404
+    return address
+
+
+def _shipping_initial(address):
+    return {**{name: getattr(address, name) for name in shipping.FIELDS if name != 'country'},
+            'country': address.country.code if address.country else '',
+            'version': address.version}
+
+
+def _shipping_form_page(request, form, *, address=None, next_url=''):
+    return render(request, 'accounts/settings_shipping_form.html', {
+        **_settings_context(request, 'settings_shipping'),
+        'form': form,
+        'address': address,
+        'usable': address is None or shipping.is_usable(address),
+        'next_url': next_url,
+    })
+
+
+@login_required
+@never_cache
+@require_safe
+def settings_shipping(request):
+    """The list of the doctor's shipping addresses (cards, the default first)."""
+    _fiscal_doctor(request)
+    rows = list(shipping.active(request.user))
+    return render(request, 'accounts/settings_shipping.html', {
+        **_settings_context(request, 'settings_shipping'),
+        'cards': [{'address': address, 'usable': shipping.is_usable(address)}
+                  for address in rows],
+        'can_add': len(rows) < shipping.MAX_ADDRESSES,
+        'max_addresses': shipping.MAX_ADDRESSES,
+    })
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def settings_shipping_add(request):
+    """Add a shipping address; afterwards, to the safe `next` or the list."""
+    _fiscal_doctor(request)
+    user = request.user
+    next_url = _safe_next(request)
+    if shipping.active(user).count() >= shipping.MAX_ADDRESSES:
+        messages.error(request, ShippingAddressForm.error_messages['limit']
+                       % {'max': shipping.MAX_ADDRESSES})
+        return redirect(reverse('settings_shipping'))
+    if request.method == 'POST':
+        form = ShippingAddressForm(request.POST)
+        if form.is_valid():
+            try:
+                shipping.create(user, form.address_data())
+            except shipping.ShippingInvalid as refused:
+                form.add_service_problems(refused.problems)
+            else:
+                messages.success(request, _('The shipping address has been saved.'))
+                return redirect(next_url or reverse('settings_shipping'))
+    else:
+        form = ShippingAddressForm(initial={
+            'country': user.country.code if user.country else ''})
+    return _shipping_form_page(request, form, next_url=next_url)
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def settings_shipping_edit(request, pk):
+    """Edit a shipping address in place (its version is checked: two tabs never overwrite
+    each other)."""
+    _fiscal_doctor(request)
+    address = _shipping_address(request, pk)
+    if request.method == 'POST':
+        form = ShippingAddressForm(request.POST)
+        if form.is_valid():
+            version = form.cleaned_data.get('version')
+            try:
+                if version is None:
+                    raise shipping.StaleVersion(str(pk))
+                shipping.update(request.user, pk, form.address_data(), version=version)
+            except shipping.ShippingInvalid as refused:
+                form.add_service_problems(refused.problems)
+            except shipping.StaleVersion:
+                form.refuse_stale()
+            except shipping.ShippingAddress.DoesNotExist:
+                raise Http404
+            else:
+                messages.success(request, _('The shipping address has been saved.'))
+                return redirect(reverse('settings_shipping'))
+    else:
+        form = ShippingAddressForm(initial=_shipping_initial(address))
+    return _shipping_form_page(request, form, address=address)
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_POST
+def settings_shipping_default(request, pk):
+    """Make a shipping address the default."""
+    _fiscal_doctor(request)
+    try:
+        shipping.make_default(request.user, pk)
+    except (shipping.ShippingAddress.DoesNotExist, shipping.ShippingInvalid):
+        raise Http404
+    messages.success(request, _('The default shipping address has been changed.'))
+    return redirect(reverse('settings_shipping'))
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def settings_shipping_delete(request, pk):
+    """The delete of a shipping address: the confirmation (GET), then the delete, or the
+    archive of one an order has used (POST)."""
+    _fiscal_doctor(request)
+    address = _shipping_address(request, pk)
+    if request.method == 'POST':
+        try:
+            shipping.remove(request.user, pk)
+        except shipping.ShippingAddress.DoesNotExist:
+            raise Http404
+        messages.success(request, _('The shipping address has been deleted.'))
+        return redirect(reverse('settings_shipping'))
+    return render(request, 'accounts/settings_shipping_delete.html', {
+        **_settings_context(request, 'settings_shipping'), 'address': address})
 
 
 @login_required

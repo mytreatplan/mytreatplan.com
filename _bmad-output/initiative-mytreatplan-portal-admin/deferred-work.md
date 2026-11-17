@@ -163,3 +163,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-tax-id-checks-and-vies-plan.md`
   summary: Spanish person NIFs starting with K, L or M (minors, Spaniards living abroad, foreigners without an NIE) are refused for a person, since 6.6 accepts only a DNI-NIF or an NIE as the plan's decision says; a non-resident Spanish doctor billed as a person cannot save. The user was asked on 2026-11-17 whether to accept them.
   evidence: `accounts/taxid.py` (person ids: stdnum `es.dni`, `es.nie`); stdnum `es.nif` accepts `M1234567L`.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-shipping-addresses-plan.md`
+  summary: A "Use my fiscal address" button on the shipping address form, to copy the default fiscal entity's address into a new shipping address. Deferred by the user (2026-11-17): not built in 6.7.
+  evidence: `accounts/views.py` `settings_shipping_add`; `accounts/fiscal.py` `default_entity`.

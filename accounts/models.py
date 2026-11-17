@@ -406,3 +406,49 @@ class FiscalEntity(AddressFields):
                 extra.add('vat_id_index')
             kwargs['update_fields'] = {*update_fields, *extra}
         super().save(*args, **kwargs)
+
+
+class ShippingAddress(AddressFields):
+    """Where a doctor has physical products shipped (epic-doctor-profile entry 7,
+    accounts.shipping, the only writer): the `AddressFields` plus an optional label, a
+    required recipient name, an optional clinic name, a required contact phone (E.164) and
+    optional delivery notes. Several per doctor, at most one default among the non-archived
+    ones (a database rule).
+
+    Every field but the country is encrypted (AD-2). `version` goes up on each change
+    (AD-15). `used_at` is set by epic-ordering (`shipping.mark_used`) when an order uses
+    the address; from then on "delete" archives (`archived_at`) instead. Regional: never in
+    `client.updated`. Deleted with the user and by the erasure.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                             related_name='shipping_addresses')
+    label = EncryptedCharField(_('label'), max_length=100, blank=True)
+    recipient_name = EncryptedCharField(_('recipient'), max_length=150, blank=True)
+    clinic_name = EncryptedCharField(_('clinic'), max_length=150, blank=True)
+    contact_phone = EncryptedCharField(_('contact phone'), max_length=PHONE_MAX_LENGTH,
+                                       blank=True)
+    delivery_notes = EncryptedCharField(_('delivery notes'), max_length=300, blank=True)
+    is_default = models.BooleanField(default=False)
+    version = models.PositiveIntegerField(default=1)
+    used_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=('user',),
+                condition=models.Q(is_default=True, archived_at__isnull=True),
+                name='accounts_shippingaddress_one_default'),
+        ]
+
+    def __str__(self):
+        # Never an address, a name or a phone.
+        return f'Shipping address {self.pk}'
+
+    @property
+    def display_name(self):
+        return self.label or self.recipient_name

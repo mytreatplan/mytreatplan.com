@@ -3,14 +3,14 @@ title: 'Shipping addresses'
 type: 'feature'
 ticket: '7'
 created: '2026-11-17'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: '0df4a25'
 route: 'full'
 route_source: 'pinned'
 risk: 'low'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -137,9 +137,33 @@ The layout follows the fiscal pages: cards, then the form, then the delete confi
 
 ## Implementation Notes
 
+Done as planned (Sonnet implementer, 2026-11-17):
+- `ShippingAddress` model with migration `accounts` 0021 `shipping_address` (depends on 0020), and the `accounts_shippingaddress_one_default` constraint.
+- `accounts/shipping.py` mirrors fiscal without VIES. `parse_phone` takes the address country as the default region and stores E.164. `NO_POSTAL_COUNTRY = 'AE'`.
+- For epic-ordering: `usable_addresses`, `default_address`, `has_usable_address`, `mark_used`.
+- `ShippingAddressForm`, five routes reusing `_safe_next`, three templates, ES `.po`, erasure, README, the epic-ordering handoff note, and the deferred-work entry (fiscal-address shortcut).
+- `accounts/tests/test_shipping.py` covers matrix rows 1-18. The "unbuilt example" is now Maker in the personal-data tests.
+
+Choices within the plan:
+- A blank country skips phone parsing. The save is refused for the country anyway.
+- A phone in another country's format must carry its prefix.
+- `mytp_publicsite/tests/urls_with_portal.py` and `test_settings_staging.py` needed no change. They only list route names, and the reviewer confirmed this.
+- Delivery-note line breaks are normalised to `\n`, both in the form field and in `clean_data`, before the 300-character check.
+
+The PR also carries commit 0df4a25: Spanish K, L and M NIFs are accepted for a person (user, 2026-11-17, after 6.6). It sits outside this plan's diff, since the baseline is 0df4a25.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Quick lens with a security focus (Opus reviewer, 2026-11-17). 0 high, 0 medium, 2 low. All acceptance criteria were met, and focus points 1-13 were ok: IDOR, open redirect, region and banned country, encryption and no values logged, one default, version, `mark_used` and the limit, erasure, phone, AE postal code, translations, the migration, and the two test files the plan named.
+
+| # | Finding | Severity | Verdict | Resolution |
+|---|---|---|---|---|
+| 1 | Textarea line breaks arrive as `\r\n`, so notes the browser allowed under its 300-character limit were refused by the server and stored with `\r\n` | low | patch | Normalised to `\n` in the form field and in `clean_data` before the length check. A test posts 299 characters with two `\r\n` breaks |
+| 2 | Removing the default with no usable successor made an unusable address the default (a "Default" badge on a "cannot be used" card), against the decision | low | patch | The fallback is dropped, so there is no default when none is usable. `create` takes the default whenever none is usable (tested) |
+
+After the patches, my own run: 3553 passed, 12 skipped, 0 failed (SQLite); `makemigrations --check` reports no changes.
 
 ## Verification
 
