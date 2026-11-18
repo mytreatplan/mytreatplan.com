@@ -16,8 +16,8 @@ from signup.forms import (BLANK_CHOICE, CHECKBOX_CLASSES, COUNTRY_BANNED_MESSAGE
                           StyledForm, country_choices, parse_mobile, phone_prefix_choices)
 from signup.verification import EMAIL, MOBILE, PURPOSE_LOGIN, SMS
 
-from . import fiscal, shipping
-from .models import FiscalEntity, Profession, Title
+from . import fiscal, makers, shipping
+from .models import FiscalEntity, MakerLogin, Profession, Title
 from .profile import CHANGE_PURPOSE, current_contact, mobile_in_use
 
 # The one error of every failed login (a wrong password, an unknown email, an inactive or
@@ -702,3 +702,72 @@ class ShippingAddressForm(StyledForm):
         self.stale = True
         self.add_error(None, forms.ValidationError(self.error_messages['changed_elsewhere'],
                                                    code='changed_elsewhere'))
+
+
+class _NoValueTextInput(forms.TextInput):
+    """A text input that never renders a value (a maker username comes back empty after an
+    error, like the password)."""
+
+    def format_value(self, value):
+        return None
+
+
+class MakerLoginForm(StyledForm):
+    """The maker login's save, replace and add page (accounts.makers): the username (or
+    e-mail) and the password, always entered afresh and never rendered with a value (an
+    error page clears both), and, with `ask_name`, the "other" maker's name (kept on an
+    error). Both secret inputs ask the browser neither to fill in nor to save a password."""
+
+    error_messages = {
+        'required': _('This field is required.'),
+        'too_long': _('This value is too long.'),
+        'duplicate': _('You already have a login saved for a maker with this name.'),
+        'limit': _('You can have at most %(max)d logins for other makers. Delete one to '
+                   'add another.'),
+    }
+
+    other_name = forms.CharField(
+        label=_('Maker name'), max_length=MakerLogin.OTHER_NAME_MAX_LENGTH, required=False,
+        widget=forms.TextInput(attrs={'autocomplete': 'off'}))
+    username = forms.CharField(
+        label=_('Username or email'), max_length=254, required=False,
+        widget=_NoValueTextInput(attrs={'autocomplete': 'off', 'autocapitalize': 'off',
+                                        'spellcheck': 'false'}))
+    password = forms.CharField(
+        label=_('Password'), max_length=200, required=False, strip=False,
+        widget=forms.PasswordInput(render_value=False,
+                                   attrs={'autocomplete': 'new-password'}))
+
+    def __init__(self, *args, ask_name=False, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.ask_name = ask_name
+        if not ask_name:
+            del self.fields['other_name']
+
+    def _message(self, code):
+        message = self.error_messages[code]
+        return message % {'max': makers.MAX_OTHER} if code == 'limit' else message
+
+    def clean(self):
+        cleaned = super().clean()
+        data = makers.clean_data({name: cleaned.get(name, '')
+                                  for name in ('username', 'password')})
+        name = (cleaned.get('other_name') or '').strip() if self.ask_name else None
+        for field, code in makers.problems(data, name).items():
+            if field not in self.errors:
+                self.add_error(field, forms.ValidationError(self._message(code), code=code))
+        return cleaned
+
+    def login_data(self):
+        """The cleaned {'username', 'password'} to give accounts.makers."""
+        return makers.clean_data({name: self.cleaned_data.get(name, '')
+                                  for name in ('username', 'password')})
+
+    def maker_name(self):
+        return (self.cleaned_data.get('other_name') or '').strip()
+
+    def add_service_problems(self, problems):
+        """Show a MakerInvalid's problems (a duplicate name, the limit, a race)."""
+        for name, code in problems.items():
+            self.add_error(None if name == makers.ALL else name,
+                           forms.ValidationError(self._message(code), code=code))

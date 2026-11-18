@@ -242,3 +242,27 @@ What ordering reads: `usable_addresses(user)`, `has_usable_address(user)` and
 banned, or moved to the other region, stays listed as "cannot be used for new orders" but is
 not usable), and `mark_used`. Orders keep their own snapshot and reference the address with
 `SET_NULL`. See the epic-ordering Notes.
+
+## A doctor's maker logins (epic-doctor-profile entry 8)
+
+A doctor gives the login (username or e-mail, and password) for an aligner maker's platform in
+settings, "Maker data" (`accounts.MakerLogin`, UUID primary key, region-owned, never in
+`client.updated`, never on the admin site). Both values are field-encrypted
+(`mytp_core.crypto`). One login per named maker (Invisalign, Ormco Spark, Angel Aligner,
+Solventum, Smartee) and up to 5 "other" logins, each with a maker name (60 characters at most,
+unique per doctor ignoring case). The page shows only "Saved on {date}" or "Not saved": no value,
+and no part of one, is ever rendered. Both inputs come back empty after an error and ask the
+browser neither to fill in nor to save a password. A doctor can replace (both fields again) or
+delete a login; a hint recommends an auxiliary profile on the maker's platform.
+
+`accounts.makers` is the only writer (atomic, the user row locked): `save`, `add_other`,
+`remove` and `erase`. What epic-ordering reads: `has_login(user, maker)` and `saved_makers(user)`
+(named makers only: "other" never blocks); the save page `settings_maker_save` honours a safe
+`next`. URL names: `settings_maker`, `settings_maker_save`, `settings_maker_delete`,
+`settings_maker_other_add`, `_other_replace`, `_other_delete`.
+
+The only way a value leaves the database is the regional reveal seam `accounts/makers_remote.py`
+(`RESOURCE = 'maker_login'`, `load`, `assignee` (None until epic-clinical-ops has assignments),
+`version`, `build(record, fields)`), shaped like `integration/sample.py` and tested by direct
+calls. There is no core resource, route or admin screen yet: epic-clinical-ops adds them (see
+its Notes). The erasure deletes all of an account's logins.

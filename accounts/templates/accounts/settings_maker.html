@@ -1,0 +1,59 @@
+{% extends "accounts/settings_base.html" %}
+{% load i18n %}
+{% comment %}
+The maker logins page (accounts.views.settings_maker, epic-doctor-profile entry 8): each
+named maker with "Saved on {date}" or "Not saved", Save or Replace, and Delete; then the
+doctor's logins for other makers (name and date), and "Add another maker". It never
+renders a username or a password, or any part of one: the view hands it metadata only.
+{% endcomment %}
+
+{% block title %}{% translate "Maker data" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block settings_content %}
+<h1 class="text-[clamp(28px,4.4vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Maker data" %}</h1>
+<p class="mt-3 text-copy text-ink-muted">{% translate "Your logins for the aligner makers' platforms, so your specialist can work there for you. Once saved, they are never shown here again: you can only replace or delete them." %}</p>
+
+<ul class="mt-8 flex flex-col gap-4" data-maker-list>
+  {% for item in named %}
+  <li class="flex flex-col gap-3 rounded-[clamp(16px,2vw,24px)] bg-card-grey p-[clamp(16px,2vw,24px)]" data-maker="{{ item.code }}">
+    <div class="flex flex-wrap items-center gap-3">
+      <strong class="break-words text-[clamp(17px,1.8vw,20px)] font-black">{{ item.name }}</strong>
+      {% if item.login %}<span class="rounded-pill bg-green-tint px-3 py-1 text-[13px] font-extrabold" data-maker-status="saved">{% blocktranslate with date=item.login.saved_at|date:"DATE_FORMAT" %}Saved on {{ date }}{% endblocktranslate %}</span>
+      {% else %}<span class="rounded-pill border border-line px-3 py-1 text-[13px] font-semibold text-ink-muted" data-maker-status="not-saved">{% translate "Not saved" %}</span>{% endif %}
+    </div>
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+      <a href="{% url 'settings_maker_save' item.code %}" class="text-[15px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-maker-save>{% if item.login %}{% translate "Replace" %}{% else %}{% translate "Save" %}{% endif %}</a>
+      {% if item.login %}<a href="{% url 'settings_maker_delete' item.code %}" class="text-[15px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-maker-delete>{% translate "Delete" %}</a>{% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+
+<h2 class="mt-10 text-[clamp(20px,2.4vw,26px)] font-black leading-[1.2]">{% translate "Other makers" %}</h2>
+{% if others %}
+<ul class="mt-4 flex flex-col gap-4" data-maker-other-list>
+  {% for login in others %}
+  <li class="flex flex-col gap-3 rounded-[clamp(16px,2vw,24px)] bg-card-grey p-[clamp(16px,2vw,24px)]" data-maker-other="{{ login.id }}">
+    <div class="flex flex-wrap items-center gap-3">
+      <strong class="break-words text-[clamp(17px,1.8vw,20px)] font-black" data-maker-name>{{ login.other_name }}</strong>
+      <span class="rounded-pill bg-green-tint px-3 py-1 text-[13px] font-extrabold" data-maker-status="saved">{% blocktranslate with date=login.saved_at|date:"DATE_FORMAT" %}Saved on {{ date }}{% endblocktranslate %}</span>
+    </div>
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+      <a href="{% url 'settings_maker_other_replace' login.id %}" class="text-[15px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-maker-save>{% translate "Replace" %}</a>
+      <a href="{% url 'settings_maker_other_delete' login.id %}" class="text-[15px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-maker-delete>{% translate "Delete" %}</a>
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="mt-4 text-copy text-ink-muted" data-maker-other-empty>{% translate "You have not saved a login for another maker." %}</p>
+{% endif %}
+
+<div class="mt-8">
+  {% if can_add %}
+  <a href="{% url 'settings_maker_other_add' %}" class="inline-flex min-h-[52px] items-center rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-maker-other-add>{% translate "Add another maker" %}</a>
+  {% else %}
+  <p class="text-[15px] font-semibold text-notice-text" data-maker-other-limit>{% blocktranslate %}You can have at most {{ max_other }} logins for other makers. Delete one to add another.{% endblocktranslate %}</p>
+  {% endif %}
+</div>
+{% endblock %}

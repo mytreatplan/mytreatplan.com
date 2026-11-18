@@ -166,3 +166,9 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-shipping-addresses-plan.md`
   summary: A "Use my fiscal address" button on the shipping address form, to copy the default fiscal entity's address into a new shipping address. Deferred by the user (2026-11-17): not built in 6.7.
   evidence: `accounts/views.py` `settings_shipping_add`; `accounts/fiscal.py` `default_entity`.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-maker-logins-plan.md`
+  summary: A doctor cannot see who revealed their maker login, or when. 6.8 records each reveal for staff in the region's `RemoteAccess` log only (actor, role, site, IP, resource, object, field names); a doctor-facing history on the maker-data page was deferred by the user (2026-11-18).
+  evidence: `accounts/makers_remote.py`; `integration/models.py` `RemoteAccess`.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-maker-logins-plan.md`
+  summary: Field encryption's associated data binds only `<app>.<model>.<field>`, not the row (pk/user), so someone with database write access could move a maker-login ciphertext to another doctor's row and it would still decrypt; binding the pk (or user) needs a mytp-core crypto change and a re-encryption.
+  evidence: 6.8 review finding 4; `mytp_core/crypto.py` `EncryptedFieldMixin.associated_data`. Low: needs DB write access, which already defeats most controls.

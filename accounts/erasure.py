@@ -39,7 +39,7 @@ from legal.models import LegalChoice, LegalDocument
 from storage import service as storage_service
 from storage.models import StoredObject
 
-from . import client_sync, fiscal, photo, profile, shipping
+from . import client_sync, fiscal, makers, photo, profile, shipping
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +112,8 @@ def erase_user(user, *, by, now=None):
         fiscal.erase(user)
         # The shipping addresses (entry 7) go too.
         shipping.erase(user)
+        # The maker logins (entry 8) go too.
+        makers.erase(user)
         # The admin site deletes its copy (client.erased, epic-admin-interface entry 8).
         client_sync.emit(user)
         LogEntry.objects.log_actions(user_id=by.pk, queryset=[_LoggedUser(user)],

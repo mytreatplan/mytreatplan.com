@@ -66,10 +66,10 @@ from signup.steps import (CODE_STATE_SESSION_KEY, SENT, code_help_context, code_
 from signup.verification import (CODE_TTL_SECONDS, EMAIL, MOBILE, PURPOSE_LOGIN, SMS,
                                  WHATSAPP)
 
-from . import (client_sync, devices, doctor_area, fiscal, login_failures, login_guard, photo,
-               profile, shipping)
+from . import (client_sync, devices, doctor_area, fiscal, login_failures, login_guard, makers,
+               photo, profile, shipping)
 from .forms import (ChangeCodeForm, EmailChangeForm, FiscalEntityForm, LoginCodeForm,
-                    LoginContactForm, LoginForm, MobileChangeForm, PersonalDataForm,
+                    LoginContactForm, LoginForm, MakerLoginForm, MobileChangeForm, PersonalDataForm,
                     ShippingAddressForm, mask_email, mask_phone, split_landline)
 
 # Where a login lands without a safe `next`: the doctor area's home (signup still ends on
@@ -417,9 +417,9 @@ def home(request):
 # The settings area's sections (epic-doctor-profile entry 2, Annex I), in the mockup's
 # order: the URL name, the section's name (the coming-soon heading, the tile's accessible
 # name), the tile's two lines (small, then bold: each with its own context, as the word
-# order differs between languages) and its icon (includes/_icon.html). Only the personal
-# data and the fiscal data are built; the others show "coming soon" inside the area until
-# their stories ("Change password" has no owning story yet: deferred-work.md).
+# order differs between languages) and its icon (includes/_icon.html). Only "Change
+# password" is not built: it shows "coming soon" inside the area ("Change password" has no
+# owning story yet: deferred-work.md).
 SETTINGS_SECTIONS = [
     ('settings', gettext_lazy('My details'),
      pgettext_lazy('settings tile: my details', 'My'),
@@ -437,7 +437,7 @@ SETTINGS_SECTIONS = [
      pgettext_lazy('settings tile: shipping addresses', 'Shipping'),
      pgettext_lazy('settings tile: shipping addresses', 'Addresses'), 'truck'),
 ]
-SETTINGS_COMING_SOON = {'maker', 'password'}
+SETTINGS_COMING_SOON = {'password'}
 
 
 def _settings_context(request, current):
@@ -1062,6 +1062,181 @@ def settings_shipping_delete(request, pk):
         return redirect(reverse('settings_shipping'))
     return render(request, 'accounts/settings_shipping_delete.html', {
         **_settings_context(request, 'settings_shipping'), 'address': address})
+
+
+# --- The maker logins (epic-doctor-profile entry 8, accounts.makers) ------------------------
+#
+# The settings area's "Maker data" section: the list (URL name `settings_maker`: each named
+# maker "Saved on {date}" or "Not saved", the other logins by name), the save/replace page
+# of a named maker (`settings_maker_save`, which honours a safe `next`), the add, replace
+# and delete pages of an "other" login, and the confirmed delete of a named one. Doctors
+# only (a staff account, an unknown maker and another doctor's login id are 404). No page
+# ever renders a username or a password, and the POST parameters are kept out of error
+# reports. Every write goes through accounts.makers; nothing here logs a value.
+
+def _maker_login(request, maker=None, pk=None):
+    """The metadata of the doctor's login for the named `maker`, or of the `other` login
+    `pk`, else 404."""
+    if pk is not None:
+        row = makers.login_meta(request.user, pk)
+        if row is None or row['maker'] != makers.OTHER:
+            raise Http404
+        return row
+    if maker not in makers.NAMED:
+        raise Http404
+    return next((row for row in makers.logins(request.user) if row['maker'] == maker), None)
+
+
+def _maker_form_page(request, form, *, title, next_url='', replacing=False, other=None):
+    return render(request, 'accounts/settings_maker_form.html', {
+        **_settings_context(request, 'settings_maker'),
+        'form': form, 'title': title, 'next_url': next_url, 'replacing': replacing,
+        'other': other,
+    })
+
+
+@login_required
+@never_cache
+@require_safe
+def settings_maker(request):
+    """The maker logins page: the five named makers and the other logins, metadata only."""
+    _fiscal_doctor(request)
+    rows = makers.logins(request.user)
+    by_maker = {row['maker']: row for row in rows}
+    others = [row for row in rows if row['maker'] == makers.OTHER]
+    return render(request, 'accounts/settings_maker.html', {
+        **_settings_context(request, 'settings_maker'),
+        'named': [{'code': code, 'name': name, 'login': by_maker.get(code)}
+                  for code, name in makers.MAKER_NAMES.items()],
+        'others': others,
+        'can_add': len(others) < makers.MAX_OTHER,
+        'max_other': makers.MAX_OTHER,
+    })
+
+
+@login_required
+@csrf_protect
+@never_cache
+@sensitive_post_parameters('username', 'password')
+@require_http_methods(['GET', 'POST'])
+def settings_maker_save(request, maker):
+    """Save, or replace, the login of a named maker; afterwards to the safe `next` or the
+    list."""
+    _fiscal_doctor(request)
+    existing = _maker_login(request, maker=maker)
+    next_url = _safe_next(request)
+    if request.method == 'POST':
+        form = MakerLoginForm(request.POST)
+        if form.is_valid():
+            try:
+                makers.save(request.user, maker, form.login_data())
+            except makers.MakerInvalid as refused:
+                form.add_service_problems(refused.problems)
+            else:
+                messages.success(request, _('The maker login has been saved.'))
+                return redirect(next_url or reverse('settings_maker'))
+    else:
+        form = MakerLoginForm()
+    return _maker_form_page(request, form, title=makers.MAKER_NAMES[maker],
+                            next_url=next_url, replacing=existing is not None)
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def settings_maker_delete(request, maker):
+    """The delete of a named maker's login: the confirmation (GET), then the delete (POST)."""
+    _fiscal_doctor(request)
+    row = _maker_login(request, maker=maker)
+    if row is None:
+        raise Http404
+    if request.method == 'POST':
+        try:
+            makers.remove(request.user, row['id'])
+        except makers.MakerLogin.DoesNotExist:
+            raise Http404
+        messages.success(request, _('The maker login has been deleted.'))
+        return redirect(reverse('settings_maker'))
+    return render(request, 'accounts/settings_maker_delete.html', {
+        **_settings_context(request, 'settings_maker'), 'title': makers.MAKER_NAMES[maker],
+        'login': row})
+
+
+@login_required
+@csrf_protect
+@never_cache
+@sensitive_post_parameters('username', 'password')
+@require_http_methods(['GET', 'POST'])
+def settings_maker_other_add(request):
+    """Add a login for another maker (its name, the username and the password)."""
+    _fiscal_doctor(request)
+    user = request.user
+    next_url = _safe_next(request)
+    if len([row for row in makers.logins(user) if row['maker'] == makers.OTHER]
+           ) >= makers.MAX_OTHER:
+        messages.error(request, MakerLoginForm.error_messages['limit']
+                       % {'max': makers.MAX_OTHER})
+        return redirect(reverse('settings_maker'))
+    if request.method == 'POST':
+        form = MakerLoginForm(request.POST, ask_name=True)
+        if form.is_valid():
+            try:
+                makers.add_other(user, form.maker_name(), form.login_data())
+            except makers.MakerInvalid as refused:
+                form.add_service_problems(refused.problems)
+            else:
+                messages.success(request, _('The maker login has been saved.'))
+                return redirect(next_url or reverse('settings_maker'))
+    else:
+        form = MakerLoginForm(ask_name=True)
+    return _maker_form_page(request, form, title=_('Other maker'), next_url=next_url)
+
+
+@login_required
+@csrf_protect
+@never_cache
+@sensitive_post_parameters('username', 'password')
+@require_http_methods(['GET', 'POST'])
+def settings_maker_other_replace(request, pk):
+    """Replace the username and the password of an "other" login (its name stays)."""
+    _fiscal_doctor(request)
+    row = _maker_login(request, pk=pk)
+    if request.method == 'POST':
+        form = MakerLoginForm(request.POST)
+        if form.is_valid():
+            try:
+                makers.save(request.user, makers.OTHER, form.login_data(),
+                            other_name=row['other_name'])
+            except makers.MakerInvalid as refused:
+                form.add_service_problems(refused.problems)
+            else:
+                messages.success(request, _('The maker login has been saved.'))
+                return redirect(reverse('settings_maker'))
+    else:
+        form = MakerLoginForm()
+    return _maker_form_page(request, form, title=row['other_name'], replacing=True,
+                            other=row)
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def settings_maker_other_delete(request, pk):
+    """The delete of an "other" login: the confirmation (GET), then the delete (POST)."""
+    _fiscal_doctor(request)
+    row = _maker_login(request, pk=pk)
+    if request.method == 'POST':
+        try:
+            makers.remove(request.user, pk)
+        except makers.MakerLogin.DoesNotExist:
+            raise Http404
+        messages.success(request, _('The maker login has been deleted.'))
+        return redirect(reverse('settings_maker'))
+    return render(request, 'accounts/settings_maker_delete.html', {
+        **_settings_context(request, 'settings_maker'), 'title': row['other_name'],
+        'login': row})
 
 
 @login_required
