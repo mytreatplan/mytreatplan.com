@@ -3,7 +3,7 @@ title: 'Profile data in the admin client record'
 type: 'feature'
 ticket: '9'
 created: '2026-11-17'
-status: 'built'
+status: 'done'
 baseline_revision: 'fe494d179302750eda4d6c2600d50f252dedd356'
 route: 'full'
 route_source: 'pinned'
@@ -166,3 +166,19 @@ Quick lens (Opus, security focus), 2026-11-18. No AGENTS.md/CLAUDE.md in the thr
 **Commands:**
 - core, admin and portal full suites -- expected: 0 failures each
 - `makemigrations --check` in admin and portal -- expected: no changes
+
+## Staging
+
+- mytp-core v0.28.0: commit cf21dea and tag pushed by the user. CI passed on master and the tag (runs 44305692624, 44305692962).
+- Admin PR mytp-admin#43 merged as c6132c9. PR CI `test` passed twice. Master run 44308039124 passed, including the admindev deploy. `/healthz` is ok. Migration `clients` 0003 applied.
+- Portal PR #112 merged as 27085c5. PR CI `test` passed twice (runs 44305298190, 44305312566). Master run 44309119708 passed: test plus deploys to dev and dev-ae.
+- `sync_clients --all`:
+  - dev: 2 `client.updated`, 1 skipped (staff);
+  - dev-ae: 2 `client.updated`.
+- Checks on dev with real writes, using the test doctor 1c410768 and test rows named "Staging69", read on admindev after each step:
+  1. Two fiscal entities and two addresses created. All four arrived on admindev with ciphertext in the encrypted columns.
+  2. An edit, a default change and `mark_used` updated the admin rows: version 2, the default moved, `used_at` set.
+  3. Deleting the used rows archived them on both sides; deleting the unused ones removed them on both sides.
+  4. Clean-up deleted the test rows on dev, and admindev followed to zero child rows.
+- No new FailedEvent on admindev. The only one is from 2026-11-05 (`sample.recorded`, region mismatch) and is unrelated.
+- Check 6 (the user's look at the new form error in EN and ES) has not been reported yet.
