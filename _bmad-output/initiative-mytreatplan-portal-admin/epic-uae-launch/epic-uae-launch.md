@@ -42,5 +42,6 @@ The UAE region's launch. The preparation entries (hosting comparison, TDRA, Meta
 ## Notes
 
 - Decision (user, 2026-10-29): EU first, then UAE quickly; preparation runs during EU development.
+- Decision (user, 2026-11-18): the UAE company banks with Wio Bank. At inception, the first entry is "choose the UAE gateway": check Wio against the adapter needs (online card acquiring API, hosted page, signed webhooks, refunds, sandbox, saved cards with repeat charges) and compare UAE providers that settle into the Wio account; record the choice; the adapter entry follows it on epic-payments entry 2's interface. Tabby/Tamara/Amazon Pay (initiative Notes, 2026-10-26) would be extra gateways next to the card one.
 - Waits on epic 7 because: it needs gateway interface and invoicing.
 - Waits on epic 15 because: it needs EU go-live, for the production step only.
