@@ -3,7 +3,7 @@ title: 'Maker logins'
 type: 'feature'
 ticket: '8'
 created: '2026-11-17'
-status: 'built'
+status: 'done'
 baseline_revision: 'bd13bf098c2db63878107fdc02d3d5f0c6b2fb1f'
 route: 'full'
 route_source: 'pinned'
@@ -169,3 +169,15 @@ Quick lens (Opus, security focus), 2026-11-18. No AGENTS.md/CLAUDE.md in the rep
 **Commands:**
 - the full suite (see local-dev notes) -- expected: 0 failures
 - `python manage.py makemigrations --check` -- expected: no changes
+
+## Staging
+
+- PR #111 merged as 2bcdb84 on 2026-11-18. PR CI `test` passed on PostgreSQL (runs 44291298813, 44291311437). Master run 44293157725 passed: test plus deploys to dev and dev-ae.
+- Checks 1-6 passed on both dev (eu) and dev-ae (ae), run in one rolled-back transaction per site, with nothing kept:
+  1. Migration 0022 applied.
+  2. Save works; the list and form pages show only the date, with no value or part of one.
+  3. The raw columns hold ciphertext, and it decrypts.
+  4. A replace changes both ciphertexts, keeps one row, and decrypts to the new values.
+  5. No outbox event and a clean `payload_of`.
+  6. PostgreSQL refuses a case-insensitive duplicate "other" name.
+- Check 7 (the user's look at the page in EN/ES, desktop and phone) has not been reported yet.
