@@ -53,6 +53,8 @@ portal_patterns = [
     path('', include('accounts.urls')),
     # The upgrade screen (epic-subscriptions entry 2).
     path('', include('subscriptions.urls')),
+    # Checkout and the order pages (epic-payments entry 1).
+    path('', include('payments.urls')),
 ]
 
 

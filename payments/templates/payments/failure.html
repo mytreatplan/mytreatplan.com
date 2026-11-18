@@ -1,0 +1,35 @@
+{% extends "doctor_base.html" %}
+{% load i18n %}
+{% comment %}
+A payment that did not go through (payments.views.checkout_failure): retry with a payment
+method, or cancel. The order stays `pending_payment` until then.
+{% endcomment %}
+
+{% block title %}{% translate "Payment not completed" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Payment not completed" %}</h1>
+<p class="mt-3 text-copy text-ink-muted">{% blocktranslate with reference=order.reference %}Order reference <strong class="text-ink" data-order-reference>{{ reference }}</strong>{% endblocktranslate %}</p>
+{% if order.state == "pending_payment" %}
+<p class="mt-6 text-copy" data-order-state="pending_payment">{% translate "Your payment did not go through. You have not been charged." %}</p>
+<form method="post" class="mt-6 space-y-6" data-failure-form>
+  {% csrf_token %}
+  <input type="hidden" name="version" value="{{ order.version }}">
+  {% if gateway_choices %}
+  <ul class="space-y-2" data-gateways>
+    {% for gateway in gateway_choices %}
+    <li><label class="flex items-center gap-3 text-copy"><input type="radio" name="gateway" value="{{ gateway.name }}" {% if gateway.name == order.gateway %}checked{% endif %} required> {{ gateway.label }}</label></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <div class="flex flex-wrap items-center gap-[clamp(16px,4vw,48px)]">
+    <button type="submit" name="action" value="retry" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-retry>{% translate "Try again" %}</button>
+    <button type="submit" name="action" value="cancel" formnovalidate class="cursor-pointer text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink" data-cancel-order>{% translate "Cancel order" %}</button>
+  </div>
+</form>
+{% elif order.state == "cancelled" %}
+<p class="mt-6 text-copy" data-order-state="cancelled">{% translate "This order was cancelled." %}</p>
+{% else %}
+<p class="mt-6 text-copy" data-order-state="{{ order.state }}">{% translate "This order can no longer be paid." %}</p>
+{% endif %}
+{% endblock %}

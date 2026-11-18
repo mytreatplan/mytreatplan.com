@@ -290,3 +290,41 @@ The only way a value leaves the database is the regional reveal seam `accounts/m
 `version`, `build(record, fields)`), shaped like `integration/sample.py` and tested by direct
 calls. There is no core resource, route or admin screen yet: epic-clinical-ops adds them (see
 its Notes). The erasure deletes all of an account's logins.
+
+## Orders and checkout (epic-payments entry 1)
+
+The `payments` app is the one place a purchase is recorded. `payments.models.Order` (UUID key,
+a typed reference such as `KM-482915`, `payments.reference`) holds the lines
+(`OrderLine`: the inputs to re-price it plus the priced values, the provider cost and its
+`cost_complete` flag), the totals and VAT groups copied from `catalogue.pricing.PricedOrder`
+(nothing in `payments` does price arithmetic), the company and currency, the gateways the
+pricing offered and the one chosen, and the buyer's fiscal entity copied into encrypted
+`bill_*` fields (entity id, version and VIES status kept; the link goes to NULL when the entity
+is erased). `OrderChange` is the append-only change row (who, what, state before and after,
+version).
+
+`payments.service` is the only writer: `create_order` / `create_subscription_order` (priced by
+`subscriptions.service.price_order_for` / `catalogue.pricing.price_subscription`; born in
+`checkout`; a 0.00 order with an entity is paid at creation), `choose_entity` (checkout only;
+copies the entity again and re-prices from the stored inputs), `start_payment` (freezes the order
+as `pending_payment` and `accounts.fiscal.mark_used` the entity in the same transaction),
+`mark_paid`, `cancel`, `expire` and `expire_stale`. Each locks the order, checks
+`expected_version`, raises the version, stores the actor (doctor, admin or system, AD-22) and
+fires its hook once; a replay on an order already in the target state does nothing.
+
+Other apps plug in with `payments.hooks.register(event, name, receiver)` (events `created`,
+`paid`, `cancelled`, `expired`; the receiver gets the locked order, runs inside the transition's
+transaction, must be idempotent by `order.id`, and a raise rolls the transition back) and
+`payments.gateways.register(name, start, enabled=None)` (`start(order, request)` returns the
+redirect URL). The `expire_orders` job (`deploy/jobs.conf`, every 15 minutes) expires orders left
+in `checkout` or `pending_payment` for more than 24 hours.
+
+Pages (portal prefix `checkout/`): the checkout, the return and failure pages, the fake gateway's
+page and the test-order page. A doctor sees only their own orders (404 otherwise). Two flags,
+both off by default and refused by `manage.py check` on a public site (DEBUG and ROBOTS_NOINDEX
+off; `payments.E001`, `payments.E002`): `PAYMENTS_FAKE_GATEWAY` offers the fake gateway (a portal
+page with Pay and Fail) next to the real ones, and `PAYMENTS_TEST_ORDERS` serves
+`/<lang>/checkout/test-order/`, where a doctor account picks a product it is offered and goes
+through the real checkout (set both on dev and dev-ae in `settings.env`). Not here yet: real
+gateways, webhooks and refunds (entries 2-4), the invoice (6), the bank-transfer page (5), the
+admin pages and the order event to the admin site (8).

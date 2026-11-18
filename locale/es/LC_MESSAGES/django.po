@@ -2563,3 +2563,259 @@ msgstr "usuario o email"
 #: accounts/models.py
 msgid "password"
 msgstr "contraseña"
+
+#: payments/views.py
+msgid "Test payment (fake gateway)"
+msgstr "Pago de prueba (pasarela simulada)"
+
+#: payments/views.py
+msgid "Card"
+msgstr "Tarjeta"
+
+#: payments/views.py
+msgid "Revolut"
+msgstr "Revolut"
+
+#: payments/views.py
+msgid "Bank transfer"
+msgstr "Transferencia bancaria"
+
+#: payments/views.py
+msgid "The order has nothing in it."
+msgstr "El pedido está vacío."
+
+#: payments/views.py
+msgid "We do not sell to your country yet."
+msgstr "Todavía no vendemos en su país."
+
+#: payments/views.py
+msgid "Orders cannot be billed yet."
+msgstr "Todavía no se pueden facturar pedidos."
+
+#: payments/views.py
+msgid "This product is not offered to you."
+msgstr "Este producto no se le ofrece."
+
+#: payments/views.py
+msgid "This quantity cannot be ordered."
+msgstr "No se puede pedir esta cantidad."
+
+#: payments/views.py
+msgid "This option cannot be ordered with the product."
+msgstr "Esta opción no se puede pedir con el producto."
+
+#: payments/views.py
+msgid "These items are billed by different companies; order them separately."
+msgstr "Estos artículos los facturan empresas distintas; pídalos por separado."
+
+#: payments/views.py
+msgid "These items are in different currencies; order them separately."
+msgstr "Estos artículos están en monedas distintas; pídalos por separado."
+
+#: payments/views.py
+msgid "Only one item can take the ICE credit."
+msgstr "Solo un artículo puede llevar el crédito ICE."
+
+#: payments/views.py
+msgid "The ICE credit applies to planning items only."
+msgstr "El crédito ICE solo se aplica a artículos de planificación."
+
+#: payments/views.py
+msgid "The ICE credit is in another currency."
+msgstr "El crédito ICE está en otra moneda."
+
+#: payments/views.py
+msgid "This voucher cannot be used."
+msgstr "Este cupón no se puede usar."
+
+#: payments/views.py
+msgid "This voucher is not for this kind of order."
+msgstr "Este cupón no es para este tipo de pedido."
+
+#: payments/views.py
+msgid "This voucher is in another currency."
+msgstr "Este cupón está en otra moneda."
+
+#: payments/views.py
+msgid "This voucher is for another account."
+msgstr "Este cupón es de otra cuenta."
+
+#: payments/views.py
+msgid "This subscription is not offered to you."
+msgstr "Esta suscripción no se le ofrece."
+
+#: payments/views.py
+msgid "This subscription is not sold for that period."
+msgstr "Esta suscripción no se vende para ese periodo."
+
+#: payments/views.py
+msgid "This order cannot be started."
+msgstr "No se puede iniciar este pedido."
+
+#: payments/views.py
+msgid "The order changed in the meantime. Please check it and try again."
+msgstr "El pedido ha cambiado entretanto. Revíselo e inténtelo de nuevo."
+
+#: payments/views.py
+msgid "Choose a fiscal entity you can bill to for this order."
+msgstr "Elija una entidad fiscal a la que se pueda facturar este pedido."
+
+#: payments/views.py
+msgid "Choose one of the payment methods offered."
+msgstr "Elija uno de los métodos de pago ofrecidos."
+
+#: payments/views.py
+msgid "There is no payment method for this order yet."
+msgstr "Todavía no hay método de pago para este pedido."
+
+#: payments/views.py
+msgid "This order can no longer be changed."
+msgstr "Este pedido ya no se puede modificar."
+
+#: payments/views.py
+msgid "Something went wrong. Please try again in a moment."
+msgstr "Algo ha salido mal. Inténtelo de nuevo en un momento."
+
+#: payments/views.py
+msgid "The order has been cancelled."
+msgstr "El pedido se ha cancelado."
+
+#: payments/views.py
+msgid "The price was updated for this fiscal entity. Please review it."
+msgstr "El precio se ha actualizado para esta entidad fiscal. Revíselo."
+
+#: payments/views.py
+msgid "Your fiscal entity changed. Please review the order."
+msgstr "Su entidad fiscal ha cambiado. Revise el pedido."
+
+#: payments/views.py
+msgid "Choose one of the products offered."
+msgstr "Elija uno de los productos ofrecidos."
+
+#: payments/templates
+msgid "Checkout"
+msgstr "Pago"
+
+#: payments/templates
+msgid "Order reference <strong class=\"text-ink\" data-order-reference>%(reference)s</strong>"
+msgstr "Referencia del pedido <strong class=\"text-ink\" data-order-reference>%(reference)s</strong>"
+
+#: payments/templates
+msgid "This order was cancelled."
+msgstr "Este pedido se ha cancelado."
+
+#: payments/templates
+msgid "This order expired. Please start it again."
+msgstr "Este pedido ha caducado. Empiécelo de nuevo."
+
+#: payments/templates
+msgid "Item"
+msgstr "Artículo"
+
+#: payments/templates
+msgid "Net"
+msgstr "Neto"
+
+#: payments/templates
+msgid "Net total"
+msgstr "Total neto"
+
+#: payments/templates
+msgid "VAT %(percent)s%%"
+msgstr "IVA %(percent)s%%"
+
+#: payments/templates
+msgid "Total"
+msgstr "Total"
+
+#: payments/templates
+msgid "Bill to"
+msgstr "Facturar a"
+
+#: payments/templates
+msgid "Choose a fiscal entity"
+msgstr "Elija una entidad fiscal"
+
+#: payments/templates
+msgid "Update the price for this entity"
+msgstr "Actualizar el precio para esta entidad"
+
+#: payments/templates
+msgid "You need a fiscal entity to order."
+msgstr "Necesita una entidad fiscal para pedir."
+
+#: payments/templates
+msgid "Billed to %(name)s."
+msgstr "Se facturará a %(name)s."
+
+#: payments/templates
+msgid "Payment method"
+msgstr "Método de pago"
+
+#: payments/templates
+msgid "Pay"
+msgstr "Pagar"
+
+#: payments/templates
+msgid "Cancel order"
+msgstr "Cancelar el pedido"
+
+#: payments/templates
+msgid "Your order"
+msgstr "Su pedido"
+
+#: payments/templates
+msgid "Payment received: %(total)s %(currency)s. Thank you."
+msgstr "Pago recibido: %(total)s %(currency)s. Gracias."
+
+#: payments/templates
+msgid "We have not received your payment yet."
+msgstr "Todavía no hemos recibido su pago."
+
+#: payments/templates
+msgid "Continue to checkout"
+msgstr "Continuar con el pago"
+
+#: payments/templates
+msgid "Payment not completed"
+msgstr "Pago no completado"
+
+#: payments/templates
+msgid "Your payment did not go through. You have not been charged."
+msgstr "Su pago no se ha completado. No se le ha cobrado."
+
+#: payments/templates
+msgid "This order can no longer be paid."
+msgstr "Este pedido ya no se puede pagar."
+
+#: payments/templates
+msgid "Test payment"
+msgstr "Pago de prueba"
+
+#: payments/templates
+msgid "This is a fake payment page for testing. No money moves."
+msgstr "Esta es una página de pago simulada para pruebas. No se mueve dinero."
+
+#: payments/templates
+msgid "Order %(reference)s: %(total)s %(currency)s"
+msgstr "Pedido %(reference)s: %(total)s %(currency)s"
+
+#: payments/templates
+msgid "Fail"
+msgstr "Fallar"
+
+#: payments/templates
+msgid "Test order"
+msgstr "Pedido de prueba"
+
+#: payments/templates
+msgid "Development only: choose a product to go through the checkout."
+msgstr "Solo para desarrollo: elija un producto para pasar por el pago."
+
+#: payments/templates
+msgid "Start the order"
+msgstr "Iniciar el pedido"
+
+#: payments/templates
+msgid "No products are offered to you."
+msgstr "No se le ofrece ningún producto."

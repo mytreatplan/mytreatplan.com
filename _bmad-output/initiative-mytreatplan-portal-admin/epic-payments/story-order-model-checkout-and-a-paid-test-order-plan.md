@@ -3,14 +3,14 @@ title: 'Order model, checkout and a paid test order'
 type: 'feature'
 ticket: '1'
 created: '2026-11-18'
-status: 'ready-for-dev'
+status: 'built'
 baseline_revision: 'edbff829bda7f096a06fec8ce89c5eb29cbfd2b9'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -117,9 +117,32 @@ All paths in the portal repo; mytp-core 0.28.0 vendored (no change).
 
 ## Implementation Notes
 
+- New app `payments` (`payments` 0001): `Order`, `OrderLine`, append-only `OrderChange` (PROTECT from both; the queryset refuses update and delete); `reference.py`, `hooks.py`, `gateways.py`, `fake.py`, `checks.py` (E001/E002), `service.py`, views and five templates under `checkout/`, `expire_orders` + `jobs.conf` line `expireorders`; wiring in settings, urls, `PORTAL_PREFIXES`, staging URL test, pytest.ini, `settings.env.example`, ES .po, README "Orders and checkout".
+- "Production site" = DEBUG off and ROBOTS_NOINDEX off (the `regions/checks.py` precedent; staging sets ROBOTS_NOINDEX=True). With a flag on there: the system check fails, `PaymentsConfig.ready()` raises `ImproperlyConfigured` (the process does not start), and the fake page and test page 404.
+- Choices where the plan was silent: a 0.00 order is paid at creation only when it has an entity (else it waits in `checkout`); with the fake flag on, `fake` is offered even where the region has no gateway (dev-ae); `expected_version` is required on every move and a replay to the same state is a no-op; Pay stops to show a new total when changing the entity changed it; Pay with an entity edited since it was chosen re-copies it and asks for review (`EntityChanged`).
+- Expiry: `checkout` by `created_at`, `pending_payment` by `pending_at`, both 24 h.
+- The concurrent `mark_paid` test runs on PostgreSQL only (CI); skipped on SQLite.
+- After the review patches: full suite (SQLite) 3673 passed, 13 skipped, 0 failed; `makemigrations --check` clean.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Opus security review, one pass (2026-11-18): 11 findings, 0 high, 6 medium, 5 low, 0 false; 10 patched by the implementer, 1 deferred into the 7.2 plan.
+
+| # | Finding | Verdict | Route / action |
+|---|---------|---------|----------------|
+| 1 | `_checkout_post` EntityChanged handler calls `choose_entity` unguarded → 500 on StaleVersion, OrderRefused, EntityRefused | medium | patch: routed through `_failed`; test |
+| 2 | Public-site guard only a system check; gunicorn never runs it (AC3) | medium | patch: `ready()` raises `ImproperlyConfigured`; fake and test page 404 on a public site; tests |
+| 3 | Expiry counted from `created_at`: an order paying at 23 h 55 expires on the gateway page | medium | patch: `pending_payment` by `pending_at`; test |
+| 4 | A retry may switch gateway; a late success from the first gateway (or a second success) marks paid / goes unrecorded | medium | defer: needs the per-attempt payment record; written into the 7.2 plan's Always |
+| 5 | Retry from `pending_payment` requires a usable entity although the snapshot is frozen | medium | patch: usable entity only in `checkout`; test |
+| 6 | Re-pricing silently drops a removed add-on or voucher | medium | patch: `OrderRefused` (ADD_ON_REFUSED / VOUCHER_NOT_USABLE); tests |
+| 7 | `choose_entity` crashes (AttributeError) for an erased account | low | patch: `InvalidTransition`; test |
+| 8 | Lines and change rows CASCADE; change queryset `delete()` bypasses append-only | low | patch: PROTECT + `delete()` raises; test |
+| 9 | Planned concurrent `mark_paid` test missing | low | patch: two-thread test, PostgreSQL only |
+| 10 | Flags-off startup tested only via `check` | low | patch: covered by 2's tests |
+| 11 | Failure page POST pays an order still in `checkout`; no EntityChanged message | low | patch: acts only on `pending_payment`; `_failed` branch; test |
 
 ## Verification
 

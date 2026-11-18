@@ -1,0 +1,20 @@
+{% extends "doctor_base.html" %}
+{% load i18n %}
+{% comment %}
+The fake gateway's "hosted page" (payments.views.fake_gateway; development and staging
+only, PAYMENTS_FAKE_GATEWAY): Pay marks the order paid, Fail leaves it pending.
+{% endcomment %}
+
+{% block title %}{% translate "Test payment" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Test payment" %}</h1>
+<p class="mt-3 text-copy text-ink-muted">{% translate "This is a fake payment page for testing. No money moves." %}</p>
+<p class="mt-4 text-copy">{% blocktranslate with reference=order.reference total=order.total currency=order.currency %}Order {{ reference }}: {{ total }} {{ currency }}{% endblocktranslate %}</p>
+<form method="post" class="mt-8 flex flex-wrap items-center gap-[clamp(16px,4vw,48px)]" data-fake-form>
+  {% csrf_token %}
+  <input type="hidden" name="version" value="{{ order.version }}">
+  <button type="submit" name="action" value="pay" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-fake-pay>{% translate "Pay" %}</button>
+  <button type="submit" name="action" value="fail" class="cursor-pointer text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink" data-fake-fail>{% translate "Fail" %}</button>
+</form>
+{% endblock %}
