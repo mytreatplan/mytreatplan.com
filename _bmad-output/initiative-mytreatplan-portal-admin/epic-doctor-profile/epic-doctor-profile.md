@@ -62,5 +62,6 @@ The doctor's own data. Not subscriptions, orders or the case pages.
 - Handoff (2026-10-30, epic-catalogue inception): the fiscal entity's VIES status is passed to epic-catalogue's resolver (entry 12) as an input.
 - Handoff (2026-10-30, epic-admin-interface inception): profile changes keep going through the write path that emits client.updated (epic-admin-interface entry 8); this epic extends that payload with fiscal entities and shipping addresses.
 - Handoff: epic-clinical-ops reveals maker logins to the assigned clinical user and logs each view.
+- Production checks (entry 10, 2026-11-18): in epic-eu-golive Done when 3, sub-list "epic-doctor-profile (entry 10)", checks 3aa–3ah.
 - Source conflict: The Admin Site, Clients — Ormco contract acceptance; ignored by the user's decision, 2026-10-29.
 - Waits on epics 2, 3, 4 and 5 because: country map and home region; mytp-core codes; client record sync and contract; the resolver's VIES input.

@@ -175,3 +175,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-profile-data-in-the-admin-client-record-plan.md`
   summary: Tax-id search on the admin site. 6.9 stores the fiscal entities encrypted with no blind index (user, 2026-11-18). Searching by tax id or VAT id comes with the client page in epic-sales-finance: add blind-index columns to `ClientFiscalEntity` (and an admin-side `BLIND_INDEX_KEY` index), then run a re-sync (`sync_clients --all` on each portal) to fill them.
   evidence: `clients/models.py` `ClientFiscalEntity`; the portal's `FiscalEntity.tax_id_index`.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-production-checks-for-the-eu-go-live-plan.md`
+  summary: The scan worker's "object <uuid> scanned clean" INFO line probably never reaches the journal (no `storage` logger in `LOGGING`, so the default WARNING level drops it); deploy/README.md's staging recipe expects the UUID and outcome there. Check on dev and add a `storage` logger at INFO if the verdict should be visible.
+  evidence: 6.10 review finding 4; `storage/tasks.py:327` logger.info, `mytreatplan/settings.py` LOGGING. Unverified: a journal read on dev settles it.
