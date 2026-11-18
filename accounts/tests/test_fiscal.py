@@ -544,9 +544,9 @@ def test_the_database_cascades_with_the_user(doctor):
     assert not FiscalEntity.objects.exists()
 
 
-# --- 20. No event, no value in logs, page records or the event log -------------------------
+# --- 20. Client events, no value in logs, page records or the event log -------------------------
 
-def test_a_save_emits_no_client_event_and_logs_no_value(doctor, caplog):
+def test_a_save_emits_client_updated_only_and_logs_no_value(doctor, caplog):
     caplog.set_level(logging.DEBUG)
     OutboxEvent.objects.all().delete()
     before = Event.objects.order_by('-id').values_list('id', flat=True).first() or 0
@@ -561,7 +561,9 @@ def test_a_save_emits_no_client_event_and_logs_no_value(doctor, caplog):
     browser.post(_edit(entity), {**data, 'country': 'ES', 'version': 1, 'city': 'Getafe'})
     browser.post(_default(entity))
     browser.post(_delete(entity))
-    assert not OutboxEvent.objects.exists()
+    # Epic-doctor-profile 6.9: every write emits client.updated, and nothing else.
+    assert OutboxEvent.objects.count() >= 4
+    assert set(OutboxEvent.objects.values_list('type', flat=True)) == {'client.updated'}
     secrets = ('ESB12345674', 'B12345674', 'Clínica Espuny', 'Calle Mayor', 'Getafe',
                '28001', 'billing@example.net')
     lines = [record.getMessage() for record in caplog.records

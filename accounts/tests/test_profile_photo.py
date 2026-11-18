@@ -623,7 +623,8 @@ def test_row15_purge_detaches_and_deletes_objects_still_owned(doctor, staff, stu
 
 PAYLOAD_KEYS = {'title', 'first_name', 'middle_name', 'last_name', 'email', 'phone', 'country',
                 'home_region', 'active', 'joined_at', 'how_found', 'city', 'time_zone',
-                'profession', 'landline', 'alternative_email', 'language'}
+                'profession', 'landline', 'alternative_email', 'language',
+                'fiscal_entities', 'shipping_addresses'}
 
 
 def test_row16_the_sync_payload_keys_are_unchanged(doctor):

@@ -409,9 +409,9 @@ def test_the_database_cascades_with_the_user(doctor):
     assert not ShippingAddress.objects.exists()
 
 
-# --- 14. No event, no value in logs, page records or the event log -------------------------
+# --- 14. Client events, no value in logs, page records or the event log -------------------------
 
-def test_a_save_emits_no_client_event_and_logs_no_value(doctor, caplog):
+def test_a_save_emits_client_updated_only_and_logs_no_value(doctor, caplog):
     caplog.set_level(logging.DEBUG)
     OutboxEvent.objects.all().delete()
     before = Event.objects.order_by('-id').values_list('id', flat=True).first() or 0
@@ -426,7 +426,9 @@ def test_a_save_emits_no_client_event_and_logs_no_value(doctor, caplog):
                                   'version': 1, 'city': 'Getafe'})
     browser.post(_default(address))
     browser.post(_delete(address))
-    assert not OutboxEvent.objects.exists()
+    # Epic-doctor-profile 6.9: every write emits client.updated, and nothing else.
+    assert OutboxEvent.objects.count() >= 4
+    assert set(OutboxEvent.objects.values_list('type', flat=True)) == {'client.updated'}
     secrets = ('Rosa Vidal', 'Clínica Vidal', '612345678', 'Calle Mayor', 'Getafe', '28001',
                'timbre', '612 34 56 78')
     lines = [record.getMessage() for record in caplog.records
@@ -473,13 +475,13 @@ def test_the_tile_and_the_page_replace_coming_soon(doctor):
 # --- 16. Delivery notes --------------------------------------------------------------------
 
 def test_delivery_notes_are_limited_to_300_characters(doctor):
-    response = _browser(doctor).post(ADD, _address(delivery_notes='x' * 301))
+    response = _browser(doctor).post(ADD, _address(delivery_notes='é' * 301))
     assert response.status_code == 200 and not ShippingAddress.objects.exists()
     assert _errors(response, 'delivery_notes')
     with pytest.raises(shipping.ShippingInvalid) as refused:
-        _make(doctor, delivery_notes='x' * 301)
+        _make(doctor, delivery_notes='é' * 301)
     assert refused.value.problems == {'delivery_notes': 'too_long'}
-    assert _make(doctor, delivery_notes='x' * 300).delivery_notes == 'x' * 300
+    assert _make(doctor, delivery_notes='é' * 300).delivery_notes == 'é' * 300
 
 
 # --- 17. Encrypted at rest -----------------------------------------------------------------
@@ -537,7 +539,7 @@ def test_the_service_refuses_unknown_fields_and_non_doctors(doctor, staff):
 
 
 def test_delivery_notes_line_breaks_count_as_one_and_are_stored_as_newlines(doctor):
-    notes = 'a' * 100 + '\r\n' + 'b' * 98 + '\r\n' + 'c' * 99  # 299 once normalised
+    notes = 'é' * 100 + '\r\n' + 'ü' * 98 + '\r\n' + 'ñ' * 99  # 299 once normalised
     assert len(notes) == 301
     response = _browser(doctor).post(ADD, _address(delivery_notes=notes))
     assert response.status_code == 302

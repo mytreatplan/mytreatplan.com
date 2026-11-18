@@ -2195,6 +2195,11 @@ msgid "This value is too long."
 msgstr "Este valor es demasiado largo."
 
 #: accounts/forms.py
+msgid "This text cannot be saved. Please remove links or encoded content."
+msgstr ""
+"Este texto no se puede guardar. Elimine los enlaces o el contenido codificado."
+
+#: accounts/forms.py
 #, python-format
 msgid "This billing country is served by MyTreatPlan %(site)s. Billing data for it cannot be saved here."
 msgstr "Este país de facturación está atendido por MyTreatPlan %(site)s. Los datos de facturación de ese país no se pueden guardar aquí."

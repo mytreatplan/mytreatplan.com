@@ -473,6 +473,7 @@ class FiscalEntityForm(StyledForm):
         'invalid': _('Enter a valid value.'),
         'invalid_email': _('Enter a valid email address.'),
         'too_long': _('This value is too long.'),
+        'not_allowed': _('This text cannot be saved. Please remove links or encoded content.'),
         'country_banned': COUNTRY_BANNED_MESSAGE,
         'country_other_region': _('This billing country is served by MyTreatPlan %(site)s. '
                                   'Billing data for it cannot be saved here.'),
@@ -608,6 +609,7 @@ class ShippingAddressForm(StyledForm):
         'required': _('This field is required.'),
         'invalid': _('Enter a valid value.'),
         'too_long': _('This value is too long.'),
+        'not_allowed': _('This text cannot be saved. Please remove links or encoded content.'),
         'phone_invalid': _('Enter a valid phone number, with the prefix if it is not from '
                            'the address country.'),
         'country_banned': COUNTRY_BANNED_MESSAGE,
@@ -721,6 +723,7 @@ class MakerLoginForm(StyledForm):
     error_messages = {
         'required': _('This field is required.'),
         'too_long': _('This value is too long.'),
+        'not_allowed': _('This text cannot be saved. Please remove links or encoded content.'),
         'duplicate': _('You already have a login saved for a maker with this name.'),
         'limit': _('You can have at most %(max)d logins for other makers. Delete one to '
                    'add another.'),

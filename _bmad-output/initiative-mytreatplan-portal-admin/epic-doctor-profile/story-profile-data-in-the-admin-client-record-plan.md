@@ -3,15 +3,15 @@ title: 'Profile data in the admin client record'
 type: 'feature'
 ticket: '9'
 created: '2026-11-17'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: 'fe494d179302750eda4d6c2600d50f252dedd356'
 route: 'full'
 route_source: 'pinned'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
-review_loop_iteration: 0
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
+review_loop_iteration: 1
 context: []
 ---
 
@@ -29,13 +29,14 @@ context: []
 **Decisions (user, 2026-11-18):**
 - **Admin page:** 6.9 stores the rows only; it builds no client page. The ticket's "appears in the client record" is checked on admindev from the stored rows. A handoff note in epic-sales-finance says what its client record page shows, and how it masks per role (the tax id masked to its last 4 characters for roles without fiscal duties).
 - **Entities sent, and recovering archived ones for auditing:**
-  - The snapshot carries the active entities and addresses, plus the archived ones with their `archived_at`, at most the 100 most recently archived per list.
+  - The snapshot carries the active entities and addresses, plus the archived ones with their `archived_at`, at most the 25 most recently archived per list (Decision (user, 2026-11-18, review): 100 → 25, so a field-maximal snapshot fits; orders keep their own snapshots).
   - The admin stores them all, and its `ClientRecord` exposes `active_*` and `archived_*` querysets.
   - The epic-sales-finance handoff asks its page to show active ones by default, with a "Show archived" filter for auditing.
   - (Claude's reading of "a, but with an option to recover the archived ones": the data must already be on the admin side for a future filter. Orders keep their own snapshots, so they do not depend on this.)
 - **Fields:**
   - Fiscal: id, kind, first and last name, legal name, tax id, VAT id, the address lines, city, postal code, province, country, billing email, `is_default`, `used_at`, `archived_at`, `version`, `vies_status`, `vies_checked_at`.
   - Shipping: id, label, recipient name, clinic name, contact phone, delivery notes, the address fields, country, `is_default`, `used_at`, `archived_at`, `version`.
+- **Text the central checks refuse (Decision (user, 2026-11-18, review)):** a fiscal or shipping field whose text the mytp-core payload checks refuse (`find_violations`: e.g. 200+ base64-like characters, a data: URI, an object-storage link) is refused at the form/service with a field error, as the personal-data page effectively does. Nothing is blanked or withheld in the payload.
 - **Tax-id search on the admin site:** not now (deferred-work entry). Admin-side blind indexes come with the search page, and a re-sync fills them.
 - **Which writes emit:**
   - every fiscal and shipping create, edit, default change, delete or archive, and `mark_used`;
@@ -57,7 +58,7 @@ context: []
 - The new fields default to `None`, meaning "not sent" (an older portal), which leaves the stored rows untouched. An empty list means "none".
 - The admin syncs children by id: it upserts what is sent and deletes what is missing, inside the event's transaction.
 - Encrypted on the admin side: names, ids, address lines, city, postal code, province, emails, label, recipient, clinic, phone and notes. Plain: country, kind, flags, status, version and timestamps.
-- No key starts with `patient` (`contracts/checks.py`). A full snapshot (10 + 10 active, 100 + 100 archived) stays below `MAX_EVENT_BYTES`; a test proves it.
+- No key starts with `patient` (`contracts/checks.py`). A full snapshot (10 + 10 active, 25 + 25 archived), every field at its maximum length with 2-byte characters, stays below `MAX_EVENT_BYTES`; a test proves it.
 - A contract test proves that no maker-login or photo field can appear in the payload.
 
 **Never:**
@@ -73,7 +74,7 @@ context: []
 | 2 | Edit, make default, `mark_used` | New event; the admin row is updated (version, default flag, used date) |
 | 3 | Delete an unused entity | The next snapshot lacks it; the admin row is deleted |
 | 4 | Delete a used entity (archived) | Sent with `archived_at`; the admin keeps the row, archived |
-| 5 | 101 archived addresses | Only the 100 most recently archived are sent; the oldest admin row is deleted |
+| 5 | 26 archived addresses | Only the 25 most recently archived are sent; the oldest admin row is deleted |
 | 6 | Same rows 1-5 for shipping addresses | Same behaviour |
 | 7 | VIES job turns pending into valid | Event emitted; the admin row shows `valid` and the check time |
 | 8 | Event from an older portal without the lists (field absent) | Stored children untouched |
@@ -111,12 +112,20 @@ context: []
     - `accounts/tests/test_client_sync.py`.
   - The fiscal and shipping module docstrings that say "entry 9 does".
 - **Architecture:** AD-2 :87; AD-18 :204.
+- **Build setup (as for 5.17):**
+  - Branch `story/6.9-client-record-profile-data` is already checked out in all three repos (portal = this repo; `../mytp-core`; `../mytp-admin`). Commit nothing, push nothing, tag nothing: the release is the main session's.
+  - Core venv: `/private/tmp/claude-501/core-5.17-venv`, admin venv: `/private/tmp/claude-501/admin-5.17-venv` (reinstall the editable/vendored core into them as needed). Portal venv: `../.venv`, but do not install the local wheel there (it is shared); make `/private/tmp/claude-501/portal-6.9-venv` (copy of the portal requirements) for the portal suite with the local wheel.
+  - Local wheel: copy the core working tree's tracked files (`git ls-files | rsync --files-from=-`) to a temp dir, `SOURCE_DATE_EPOCH` = core HEAD commit time, `pip wheel --no-deps`, put it in both sites' `vendor/` and move each `requirements.txt` line to 0.28.0 (remove the 0.27.0 wheel). The main session re-vendors from the tag with `scripts/vendor-mytp-core.sh v0.28.0` before the PRs.
+  - Portal suite (repo root, sandbox off): `FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" DATABASE_URL="sqlite:///$TMPDIR/p69.sqlite3" <venv>/bin/python -m pytest -q -p no:cacheprovider --tb=line` (expected 0 failures; 12 skipped are PostgreSQL-only).
+  - Admin suite (in `../mytp-admin`): `SECRET_KEY=ci-only-not-a-secret DEBUG=False SECURE_SSL_REDIRECT=False ALLOWED_HOSTS=localhost,127.0.0.1,testserver DATABASE_URL=sqlite:///$TMPDIR/a69.sqlite3 FIELD_ENCRYPTION_KEYS=<the portal test key above> BLIND_INDEX_KEY=<the portal test key above> ALLOW_FAKE_VERIFICATION=True <venv>/bin/python -m pytest -q -p no:cacheprovider`.
+  - Core suite (in `../mytp-core`): `<venv>/bin/python -m pytest -q -p no:cacheprovider`; regenerate schemas with the core's own script/test that checks them.
+  - Previous baselines: core 1599 passed / 4 skipped, admin 1609 / 12, portal 3582 / 12.
 
 ## Tasks & Acceptance
 
 1. **Core 0.28.0:** the item models, the optional lists on writer and reader, the schema, tests (parity; no maker or photo keys; the size of the largest snapshot), README and changelog.
 2. **Admin:** the child models and migration, the sync in `_apply_client_updated`, the erasure cascade test, `active_*` and `archived_*` querysets, and tests for matrix rows 1-11 and 13 with crafted events. Vendor 0.28.0.
-3. **Portal:** `payload_of` lists (active, plus the last 100 archived each); emits at every write point listed, including the VIES job with the user lock; test updates; and tests for rows 1-7, 12, 15 and 16. Vendor 0.28.0.
+3. **Portal:** `payload_of` lists (active, plus the last 25 archived each); emits at every write point listed, including the VIES job with the user lock; test updates; and tests for rows 1-7, 12, 15 and 16. Vendor 0.28.0.
 4. **Docs:**
    - handoff in the epic-sales-finance Notes (the page shows these lists, active by default with a "Show archived" filter, the tax id masked per role);
    - deferred-work entry for admin tax-id search;
@@ -127,9 +136,30 @@ context: []
 
 ## Implementation Notes
 
+- Only real changes emit: an update or default change that changes nothing, and a repeat `mark_used`, send no event; a VIES retry that stays pending sends nothing (only status or check-time changes do).
+- The admin refuses a whole event whose item id belongs to another client (`invalid_payload`), so ids can't be taken over; since snapshots are full, later events of that doctor are refused too (documented in the admin README).
+- The VIES job catches a failing entity (id and exception class logged), counts it as discarded and goes on, so one doctor can't block the others.
+- Text the central checks refuse is a field error (`not_allowed`) in `fiscal.problems` / `shipping.problems` (user decision 2a); two old shipping tests changed their filler text from ASCII runs to accented letters.
+- Release: mytp-core commit cf21dea, tag v0.28.0 (local until pushed); both sites vendored from the tag (wheel sha256 fa72481c…734c).
+- Verified 2026-11-18 on the tagged wheel: core 1606 passed / 4 skipped; admin 1623 / 12; portal 3605 / 12; 0 failures; `makemigrations --check` clean in admin and portal; the new ES message renders.
+
 ## Plan Change Log
 
+- 2026-11-18, review loop 1 (findings 1 and 3, intent_gap): the user chose 1a and 2a. Amended inside the frozen block with the user's decision: archived cap 100 → 25 per list (`MAX_ARCHIVED_SENT`, core 0.28.0 unreleased, so changed in place); the size test uses field-maximal 2-byte text; text refused by the central checks is a field error at the fiscal/shipping form and service, and `client_sync._central_text` (blanking) is removed. Known-bad state avoided: a snapshot over `MAX_EVENT_BYTES` that blocks every save of a doctor; silently blank fields on the admin copy. KEEP: everything else of the build and the patches for findings 2, 4, 5, 7 (code kept, not reverted, as the change is local).
+
 ## Review Triage Log
+
+Quick lens (Opus, security focus), 2026-11-18. No AGENTS.md/CLAUDE.md in the three repos.
+
+| # | Finding | Verdict | Evidence | Route |
+|---|---|---|---|---|
+| 1 | A field-maximal snapshot (10+10 active, 100+100 archived) is ~413 KB ASCII / ~732 KB with 2-byte text, over `MAX_EVENT_BYTES` (256 KiB); the tests use typical values; when it happens every emitting write for that doctor fails (500) with no way out | medium | `integration/outbox.py` `record` raises `OutboxError` over the limit; the frozen Boundaries require the full snapshot to fit and a test to prove it; the 100 cap was Claude's reading of Q2 | intent_gap → user chose a (2026-11-18); patched per the amended plan |
+| 2 | One failing emit in the VIES job aborts `retry_due`; the entity stays first in the due order, so retries and alerts stop for everyone | medium | `_write_check` now emits; `retry_due` has no per-entity handling; due order `vies_next_try_at, pk` | patch |
+| 3 | Unplanned `client_sync._central_text` sends text refused by the central checks as `''`, so the admin copy looks genuinely empty | medium | not in the plan; the profile fields make the save fail instead; finance would audit a silently blank field | intent_gap → user chose a (2026-11-18); patched per the amended plan |
+| 4 | `MAX_ACTIVE_SENT` not tied to `fiscal.MAX_ENTITIES` / `shipping.MAX_ADDRESSES` | low | contract caps a list at 110; raising a portal limit past 10 would break every save; fix is one test | patch |
+| 5 | An id owned by another client refuses every later full snapshot for that doctor | low | by design (prevents a takeover); reachable only with a UUID collision or a faulty portal; fix is a docs sentence | patch (docs) |
+| 6 | Concurrent insert of the same new child id by two clients' events → IntegrityError (500) instead of Refused | low | needs a UUID collision across clients at the same moment; the portal retries; fix adds a guard | reject |
+| 7 | Admin children ordered by UUID after the default, not creation order; handoff silent | low | Meta ordering `['client', '-is_default', 'id']`; fix is a handoff sentence | patch (docs) |
 
 ## Verification
 

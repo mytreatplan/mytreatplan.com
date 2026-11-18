@@ -41,8 +41,12 @@ job): 15 minutes after the first failure, 1 hour after the second, then every 6 
 error is logged (the entity id only) once it has been pending for 3 days. `vies_status`
 gives the status to hand to `subscriptions.service.price_order_for(..., vies=...)`.
 
-Nothing here logs a value, and nothing emits `client.updated` (entry 9 does, with the
-core release). Only ids appear in exceptions and logs.
+Every write that changes what the admin site's client record copies (create, a changed
+update, a changed default, remove, `mark_used` when it sets the date, and the VIES job's
+change of status or check time) emits `client.updated` (accounts.client_sync, epic-doctor-
+profile entry 9), inside the write's transaction with the user's row locked (the job takes
+the user's lock first, then the entity's). Nothing here logs a value. Only ids appear in
+exceptions and logs.
 """
 import logging
 from datetime import timedelta
@@ -54,6 +58,7 @@ from django.db import transaction
 from django.utils import timezone
 from django_countries import countries
 
+from mytp_core.contracts import find_violations
 from regions.countries import lookup_country
 
 from catalogue.pricing import (VIES_INVALID, VIES_NOT_APPLICABLE, VIES_PENDING,
@@ -143,6 +148,11 @@ def problems(data):
     for name in _TEXT_FIELDS:
         if name not in found and len(data.get(name) or '') > _max_length(name):
             found[name] = 'too_long'
+    # Text the central payload rules refuse (a link to object storage, a data: URI, 200+
+    # base64-like characters) could not go to the admin site (client.updated).
+    for name in _TEXT_FIELDS:
+        if name not in found and data.get(name) and find_violations({'value': data[name]}):
+            found[name] = 'not_allowed'
     if data.get('billing_email') and 'billing_email' not in found:
         try:
             validate_email(data['billing_email'])
@@ -217,8 +227,10 @@ def create(user, data):
         takes_default = current is None or not is_usable(current)
         if takes_default and current is not None:
             FiscalEntity.objects.filter(pk=current.pk).update(is_default=False)
-        return FiscalEntity.objects.create(user=locked, is_default=takes_default, **values,
-                                           **check)
+        entity = FiscalEntity.objects.create(user=locked, is_default=takes_default,
+                                             **values, **check)
+        client_sync.emit(locked)
+        return entity
 
 
 def update(user, entity_id, data, *, version):
@@ -262,6 +274,7 @@ def update(user, entity_id, data, *, version):
         if changed:
             entity.version += 1
             entity.save()
+            client_sync.emit(locked)
         return entity
 
 
@@ -329,6 +342,11 @@ def _write_check(entity, fields):
     were checked (an edit meanwhile discards the answer). Under the row lock; returns
     whether it was written."""
     with transaction.atomic():
+        # The user's lock first, then the entity's (as every other write).
+        user = (get_user_model().objects.select_for_update()
+                .filter(pk=entity.user_id).first())
+        if user is None:
+            return False
         row = (FiscalEntity.objects.select_for_update()
                .filter(pk=entity.pk, archived_at__isnull=True, vies_status=VIES_PENDING,
                        tax_id_index=entity.tax_id_index, country=entity.country.code)
@@ -336,6 +354,11 @@ def _write_check(entity, fields):
         if row is None:
             return False
         FiscalEntity.objects.filter(pk=row.pk).update(**fields)
+        # What the admin site copies is the status and the check time; another retry of a
+        # still pending entity changes only the retry fields, which stay here.
+        if (fields['vies_status'], fields['vies_checked_at']) != (row.vies_status,
+                                                                    row.vies_checked_at):
+            client_sync.emit(user)
         return True
 
 
@@ -353,8 +376,17 @@ def retry_due(now=None):
         counts['checked'] += 1
         values = {'tax_id': entity.tax_id,
                   'country': entity.country.code if entity.country else ''}
-        fields = _check_fields(values, now, entity)
-        if not _write_check(entity, fields):
+        try:
+            fields = _check_fields(values, now, entity)
+            written = _write_check(entity, fields)
+        except Exception as exc:
+            # One entity's failure (e.g. its client event cannot be recorded) never stops
+            # the run: the others are retried and the alert loop still runs. Id only.
+            logger.error('VIES retry failed for fiscal entity %s (%s)', entity.pk,
+                         type(exc).__name__)
+            counts['discarded'] += 1
+            continue
+        if not written:
             counts['discarded'] += 1
         elif fields['vies_status'] == VIES_PENDING:
             counts['still_pending'] += 1
@@ -387,6 +419,7 @@ def make_default(user, entity_id):
             active(locked).filter(is_default=True).update(is_default=False)
             FiscalEntity.objects.filter(pk=entity.pk).update(is_default=True)
             entity.is_default = True
+            client_sync.emit(locked)
         return entity
 
 
@@ -419,6 +452,7 @@ def remove(user, entity_id, *, now=None):
                          or active(locked).order_by(*newest).first())
             if successor is not None:
                 FiscalEntity.objects.filter(pk=successor.pk).update(is_default=True)
+        client_sync.emit(locked)
         return outcome
 
 
@@ -426,12 +460,13 @@ def mark_used(entity, at=None):
     """Record that an order used `entity` (epic-payments): sets `used_at` to `at` (now by
     default) unless it is already set. Idempotent; returns whether it was set now."""
     with transaction.atomic():
-        _lock(entity.user)
+        locked = _lock(entity.user)
         current = FiscalEntity.objects.select_for_update().get(pk=entity.pk)
         if current.used_at is None:
             current.used_at = at or timezone.now()
             FiscalEntity.objects.filter(pk=current.pk).update(used_at=current.used_at)
             entity.used_at = current.used_at
+            client_sync.emit(locked)
             return True
         entity.used_at = current.used_at
         return False

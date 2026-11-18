@@ -329,9 +329,10 @@ class FiscalEntity(AddressFields):
     id and the VAT id each have a non-unique blind index (`tax_id_index`, `vat_id_index`,
     set in `save()`, of the normalised value) for the per-country checks (entry 6) and
     staff search. `version` goes up on each change (AD-15; entry 9 copies the entity to
-    the admin client record). `used_at` is set by epic-payments (`fiscal.mark_used`) when
+    the admin client record, accounts.client_sync). `used_at` is set by epic-payments (`fiscal.mark_used`) when
     an order uses the entity; from then on "delete" archives (`archived_at`) instead.
-    Regional: never in `client.updated`. Deleted with the user and by the erasure.
+    Region-owned: copied to the admin site in `client.updated` (entry 9; never the VIES retry
+    fields). Deleted with the user and by the erasure.
     """
 
     PERSON = 'person'
@@ -417,8 +418,8 @@ class ShippingAddress(AddressFields):
 
     Every field but the country is encrypted (AD-2). `version` goes up on each change
     (AD-15). `used_at` is set by epic-ordering (`shipping.mark_used`) when an order uses
-    the address; from then on "delete" archives (`archived_at`) instead. Regional: never in
-    `client.updated`. Deleted with the user and by the erasure.
+    the address; from then on "delete" archives (`archived_at`) instead. Region-owned: copied
+    to the admin site in `client.updated` (entry 9). Deleted with the user and by the erasure.
     """
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
