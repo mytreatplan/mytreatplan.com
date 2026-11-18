@@ -29,8 +29,19 @@ urlpatterns = [
     # The profile photo (entry 4): its upload page (and the attach), its confirmed delete.
     path('settings/photo/', views.settings_photo, name='settings_photo'),
     path('settings/photo/delete/', views.settings_photo_delete, name='settings_photo_delete'),
-    path('settings/maker/', views.settings_coming_soon, {'section': 'maker'},
-         name='settings_maker'),
+    # The maker logins (entry 8): the list, the other makers' pages (before the named
+    # maker's own), the named maker's save/replace and confirmed delete.
+    path('settings/maker/', views.settings_maker, name='settings_maker'),
+    path('settings/maker/other/add/', views.settings_maker_other_add,
+         name='settings_maker_other_add'),
+    path('settings/maker/other/<uuid:pk>/', views.settings_maker_other_replace,
+         name='settings_maker_other_replace'),
+    path('settings/maker/other/<uuid:pk>/delete/', views.settings_maker_other_delete,
+         name='settings_maker_other_delete'),
+    path('settings/maker/<slug:maker>/', views.settings_maker_save,
+         name='settings_maker_save'),
+    path('settings/maker/<slug:maker>/delete/', views.settings_maker_delete,
+         name='settings_maker_delete'),
     path('settings/password/', views.settings_coming_soon, {'section': 'password'},
          name='settings_password'),
     # The fiscal entities (entry 5): the list, add, edit, make default, confirmed delete.

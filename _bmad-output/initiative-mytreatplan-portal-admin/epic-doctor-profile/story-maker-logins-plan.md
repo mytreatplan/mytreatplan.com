@@ -3,14 +3,14 @@ title: 'Maker logins'
 type: 'feature'
 ticket: '8'
 created: '2026-11-17'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: 'bd13bf098c2db63878107fdc02d3d5f0c6b2fb1f'
 route: 'full'
 route_source: 'pinned'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -144,9 +144,25 @@ ES: "Datos de fabricantes"; "Guardado el {date}"; "No guardado"; "Usuario o emai
 
 ## Implementation Notes
 
+- `version()` is `saved_at` in microseconds (no version column in the plan).
+- The username input never renders a value either (a custom widget), like the password.
+- Review patches: writes re-check the locked user row (erasure race); the "other" name lookup uses the constraint's `Lower()` expression; the epic-clinical-ops handoff corrected (`remote_read` calls `build(record)`; framework change or a `FIELDS` wrapper).
+- Verified 2026-11-18: full suite 3582 passed / 12 skipped / 0 failed (SQLite); `makemigrations --check` clean. Case-insensitive other names on PostgreSQL: checked in staging.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Quick lens (Opus, security focus), 2026-11-18. No AGENTS.md/CLAUDE.md in the repo.
+
+| # | Finding | Verdict | Evidence | Route |
+|---|---|---|---|---|
+| 1 | `makers._write`/`remove` check the user before the lock; a save queued behind `erase_user`'s user-row lock inserts a login for the erased account | medium | `_check_user` reads the caller's object; `erase_user` (`accounts/erasure.py`) locks the same row, then `makers.erase`; nothing re-checks `locked.is_erased` | patch |
+| 2 | Other-name lookup uses `iexact` (UPPER on PostgreSQL) while the constraint uses `Lower`; e.g. Kelvin sign vs "k" → uncaught IntegrityError (500) | low | Django's PostgreSQL `iexact` is `UPPER(x) = UPPER(y)`; constraint `Lower('other_name')`; fix is a direct swap of the lookup expression | patch |
+| 3 | epic-clinical-ops handoff suggests `lambda record: makers_remote.build(record, decision.fields)`, which cannot work | low | `integration/remote.py` `remote_read` calls `build(record)` with one argument; `decision` is local to it | patch (docs) |
+| 4 | Ciphertext associated data binds model and field, not the row/user; a DB writer could move a ciphertext between rows | low | `mytp_core.crypto` `associated_data` = `<app>.<model>.<field>`; pre-existing library design, accepted by the plan | defer |
+| 5 | Other-login replace re-finds the row by name; a concurrent delete makes the replace re-create it | low | real but needs a delete in another tab mid-submit; result is the values the doctor just typed; the claimed 500 needs an `other_name` problem, which only `add_other` (`must_be_new`) raises; fix adds a service entry point | reject |
+| 6 | Row-4 raw-SQL check compares against plaintext, so it cannot show the old ciphertext is gone | low | ciphertext never contains the plaintext; fix is a direct test change | patch |
 
 ## Verification
 

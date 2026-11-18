@@ -190,6 +190,19 @@ def test_an_admin_change_sends_the_next_version(staff_client):
     assert payload['how_found'] == 'others'
 
 
+def test_a_maker_login_never_reaches_client_updated():
+    from accounts import makers
+    user = doctor()
+    makers.save(user, 'invisalign', {'username': 'maker-user-77', 'password': 'maker-pass-88'})
+    makers.add_other(user, 'Clear Aligner X', {'username': 'x-user-99', 'password': 'x-pass'})
+    emit(user)
+    payload = last_payload(user)
+    assert not any('maker' in key or 'login' in key or 'password' in key for key in payload)
+    text = str([row.payload for row in OutboxEvent.objects.all()])
+    for value in ('maker-user-77', 'maker-pass-88', 'x-user-99', 'x-pass', 'Clear Aligner'):
+        assert value not in text
+
+
 def test_an_admin_add_sends_client_updated(staff_client):
     response = staff_client.post('/admin/accounts/user/add/', {
         'email': 'new@example.com', 'usable_password': 'true',

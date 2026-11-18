@@ -1793,7 +1793,7 @@ msgstr "Datos"
 
 #: accounts/views.py
 msgid "Maker data"
-msgstr "Datos fabricante"
+msgstr "Datos de fabricantes"
 
 #: accounts/views.py
 msgctxt "settings tile: maker data"
@@ -2474,3 +2474,87 @@ msgstr "¿Desea eliminar esta dirección de envío?"
 #: accounts/templates/accounts/settings_shipping_delete.html
 msgid "Orders you already placed are not affected."
 msgstr "Los pedidos que ya ha realizado no se ven afectados."
+
+#: accounts/templates/accounts/settings_maker.html
+msgid "Your logins for the aligner makers' platforms, so your specialist can work there for you. Once saved, they are never shown here again: you can only replace or delete them."
+msgstr "Sus accesos a las plataformas de los fabricantes de alineadores, para que su especialista pueda trabajar en ellas por usted. Una vez guardados, no se vuelven a mostrar aquí: solo puede sustituirlos o eliminarlos."
+
+#: accounts/templates/accounts/settings_maker.html
+msgid "Saved on %(date)s"
+msgstr "Guardado el %(date)s"
+
+#: accounts/templates/accounts/settings_maker.html
+msgid "Not saved"
+msgstr "No guardado"
+
+#: accounts/templates/accounts/settings_maker.html
+msgid "Replace"
+msgstr "Sustituir"
+
+#: accounts/templates/accounts/settings_maker.html
+msgid "Other makers"
+msgstr "Otros fabricantes"
+
+#: accounts/templates/accounts/settings_maker.html
+msgid "You have not saved a login for another maker."
+msgstr "No ha guardado ningún acceso de otro fabricante."
+
+#: accounts/templates/accounts/settings_maker.html
+msgid "Add another maker"
+msgstr "Añadir otro fabricante"
+
+#: accounts/templates/accounts/settings_maker.html
+msgid "You can have at most %(max_other)s logins for other makers. Delete one to add another."
+msgstr "Puede tener como máximo %(max_other)s accesos de otros fabricantes. Elimine uno para añadir otro."
+
+#: accounts/templates/accounts/settings_maker_form.html
+msgid "Enter the username and the password again. The saved ones will be replaced."
+msgstr "Introduzca de nuevo el usuario y la contraseña. Los guardados se sustituirán."
+
+#: accounts/templates/accounts/settings_maker_form.html
+msgid "We recommend creating an auxiliary profile for MyTreatPlan on the maker's platform instead of sharing your main login, without two-step codes where the maker allows it."
+msgstr "Le recomendamos crear un perfil auxiliar para MyTreatPlan en la plataforma del fabricante, en lugar de compartir su acceso principal, sin códigos de verificación en dos pasos cuando el fabricante lo permita."
+
+#: accounts/templates/accounts/settings_maker_delete.html
+msgid "Delete maker login"
+msgstr "Eliminar acceso de fabricante"
+
+#: accounts/templates/accounts/settings_maker_delete.html
+msgid "Delete this maker login?"
+msgstr "¿Desea eliminar este acceso de fabricante?"
+
+#: accounts/forms.py
+msgid "Maker name"
+msgstr "Nombre del fabricante"
+
+#: accounts/forms.py
+msgid "Username or email"
+msgstr "Usuario o email"
+
+#: accounts/forms.py
+msgid "You already have a login saved for a maker with this name."
+msgstr "Ya tiene guardado un acceso de un fabricante con este nombre."
+
+#: accounts/forms.py
+msgid "You can have at most %(max)d logins for other makers. Delete one to add another."
+msgstr "Puede tener como máximo %(max)d accesos de otros fabricantes. Elimine uno para añadir otro."
+
+#: accounts/views.py
+msgid "Other maker"
+msgstr "Otro fabricante"
+
+#: accounts/views.py
+msgid "The maker login has been saved."
+msgstr "El acceso del fabricante se ha guardado."
+
+#: accounts/views.py
+msgid "The maker login has been deleted."
+msgstr "El acceso del fabricante se ha eliminado."
+
+#: accounts/models.py
+msgid "username or email"
+msgstr "usuario o email"
+
+#: accounts/models.py
+msgid "password"
+msgstr "contraseña"

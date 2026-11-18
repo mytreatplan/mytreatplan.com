@@ -3,7 +3,7 @@ import uuid
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
-from django.db.models.functions import UUID4
+from django.db.models.functions import UUID4, Lower
 from django.utils.translation import gettext_lazy as _
 from django_countries.fields import CountryField
 
@@ -452,3 +452,48 @@ class ShippingAddress(AddressFields):
     @property
     def display_name(self):
         return self.label or self.recipient_name
+
+
+class MakerLogin(models.Model):
+    """A doctor's login to an aligner maker's platform (epic-doctor-profile entry 8,
+    accounts.makers, the only writer): the username (or e-mail) and the password, both
+    field-encrypted (AD-2: regional, never on the admin site, never in `client.updated`).
+    One row per named maker; up to five `other` rows, each with a maker name unique per
+    doctor (case-insensitive). No page shows a value: the settings pages show only the
+    maker and the date. Revealed only through `accounts.makers_remote`. Deleted with the
+    user and by the erasure.
+    """
+
+    class Maker(models.TextChoices):
+        INVISALIGN = 'invisalign', 'Invisalign'
+        SPARK = 'spark', 'Ormco Spark'
+        ANGEL = 'angel', 'Angel Aligner'
+        SOLVENTUM = 'solventum', 'Solventum'
+        SMARTEE = 'smartee', 'Smartee'
+        OTHER = 'other', 'Other'
+
+    OTHER_NAME_MAX_LENGTH = 60
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                             related_name='maker_logins')
+    maker = models.CharField(max_length=20, choices=Maker.choices)
+    other_name = models.CharField(max_length=OTHER_NAME_MAX_LENGTH, blank=True)
+    username = EncryptedCharField(_('username or email'), max_length=254)
+    password = EncryptedCharField(_('password'), max_length=200)
+    saved_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=('user', 'maker'), condition=~models.Q(maker='other'),
+                name='accounts_makerlogin_one_per_named_maker'),
+            models.UniqueConstraint(
+                Lower('other_name'), 'user', condition=models.Q(maker='other'),
+                name='accounts_makerlogin_other_name_unique'),
+        ]
+
+    def __str__(self):
+        # Never the username or the password.
+        return f'Maker login {self.pk}'

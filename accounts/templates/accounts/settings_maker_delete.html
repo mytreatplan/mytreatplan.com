@@ -1,0 +1,20 @@
+{% extends "accounts/settings_base.html" %}
+{% load i18n %}
+{% comment %}
+The maker login's delete confirmation (accounts.views.settings_maker_delete and
+settings_maker_other_delete, epic-doctor-profile entry 8): the POST deletes the login.
+Shows the maker and the date only.
+{% endcomment %}
+
+{% block title %}{% translate "Delete maker login" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block settings_content %}
+<h1 class="text-[clamp(28px,4.4vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Delete this maker login?" %}</h1>
+<p class="mt-3 text-copy text-ink-muted"><strong data-maker-name>{{ title }}</strong> &middot; {% blocktranslate with date=login.saved_at|date:"DATE_FORMAT" %}Saved on {{ date }}{% endblocktranslate %}</p>
+
+<form method="post" class="mt-8 flex flex-wrap items-center gap-[clamp(16px,4vw,48px)]" data-maker-delete-form>
+  {% csrf_token %}
+  <a href="{% url 'settings_maker' %}" class="inline-flex min-h-[52px] items-center rounded-pill bg-violet px-8 text-[18px] font-black text-white hover:bg-ink" data-cancel>{% translate "Cancel" %}</a>
+  <button type="submit" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-confirm-delete>{% translate "Delete" %}</button>
+</form>
+{% endblock %}
