@@ -172,3 +172,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-maker-logins-plan.md`
   summary: Field encryption's associated data binds only `<app>.<model>.<field>`, not the row (pk/user), so someone with database write access could move a maker-login ciphertext to another doctor's row and it would still decrypt; binding the pk (or user) needs a mytp-core crypto change and a re-encryption.
   evidence: 6.8 review finding 4; `mytp_core/crypto.py` `EncryptedFieldMixin.associated_data`. Low: needs DB write access, which already defeats most controls.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-profile-data-in-the-admin-client-record-plan.md`
+  summary: Tax-id search on the admin site. 6.9 stores the fiscal entities encrypted with no blind index (user, 2026-11-18). Searching by tax id or VAT id comes with the client page in epic-sales-finance: add blind-index columns to `ClientFiscalEntity` (and an admin-side `BLIND_INDEX_KEY` index), then run a re-sync (`sync_clients --all` on each portal) to fill them.
+  evidence: `clients/models.py` `ClientFiscalEntity`; the portal's `FiscalEntity.tax_id_index`.

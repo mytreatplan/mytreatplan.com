@@ -27,8 +27,10 @@ are `usable_addresses`. At most MAX_ADDRESSES active (not archived) addresses pe
 What epic-ordering reads: `usable_addresses(user)`, `default_address(user)`,
 `has_usable_address(user)` and `mark_used(address)`.
 
-Nothing here logs a value, and nothing emits `client.updated` (entry 9 does, with the core
-release). Only ids appear in exceptions and logs.
+Every write that changes what the admin site's client record copies (create, a changed
+update, a changed default, remove, `mark_used` when it sets the date) emits `client.updated`
+(accounts.client_sync, epic-doctor-profile entry 9), inside the write's transaction with
+the user's row locked. Nothing here logs a value. Only ids appear in exceptions and logs.
 """
 import phonenumbers
 from django.contrib.auth import get_user_model
@@ -36,6 +38,7 @@ from django.db import transaction
 from django.utils import timezone
 from django_countries import countries
 
+from mytp_core.contracts import find_violations
 from regions.countries import lookup_country
 
 from . import client_sync
@@ -125,6 +128,11 @@ def problems(data):
     for name in _TEXT_FIELDS:
         if name not in found and len(data.get(name) or '') > _max_length(name):
             found[name] = 'too_long'
+    # Text the central payload rules refuse (a link to object storage, a data: URI, 200+
+    # base64-like characters) could not go to the admin site (client.updated).
+    for name in _TEXT_FIELDS:
+        if name not in found and data.get(name) and find_violations({'value': data[name]}):
+            found[name] = 'not_allowed'
     # Without a country a local number cannot be read; the country's own error shows.
     if data.get('contact_phone') and 'contact_phone' not in found and country:
         if parse_phone(data['contact_phone'], country) != data['contact_phone']:
@@ -186,8 +194,10 @@ def create(user, data):
         takes_default = current is None or not is_usable(current)
         if takes_default and current is not None:
             ShippingAddress.objects.filter(pk=current.pk).update(is_default=False)
-        return ShippingAddress.objects.create(user=locked, is_default=takes_default,
-                                              **values)
+        address = ShippingAddress.objects.create(user=locked, is_default=takes_default,
+                                                 **values)
+        client_sync.emit(locked)
+        return address
 
 
 def update(user, address_id, data, *, version):
@@ -214,6 +224,7 @@ def update(user, address_id, data, *, version):
         if changed:
             address.version += 1
             address.save()
+            client_sync.emit(locked)
         return address
 
 
@@ -233,6 +244,7 @@ def make_default(user, address_id):
             active(locked).filter(is_default=True).update(is_default=False)
             ShippingAddress.objects.filter(pk=address.pk).update(is_default=True)
             address.is_default = True
+            client_sync.emit(locked)
         return address
 
 
@@ -264,6 +276,7 @@ def remove(user, address_id, *, now=None):
             successor = usable_addresses(locked).order_by(*newest).first()
             if successor is not None:
                 ShippingAddress.objects.filter(pk=successor.pk).update(is_default=True)
+        client_sync.emit(locked)
         return outcome
 
 
@@ -271,12 +284,13 @@ def mark_used(address, at=None):
     """Record that an order used `address` (epic-ordering): sets `used_at` to `at` (now by
     default) unless it is already set. Idempotent; returns whether it was set now."""
     with transaction.atomic():
-        _lock(address.user)
+        locked = _lock(address.user)
         current = ShippingAddress.objects.select_for_update().get(pk=address.pk)
         if current.used_at is None:
             current.used_at = at or timezone.now()
             ShippingAddress.objects.filter(pk=current.pk).update(used_at=current.used_at)
             address.used_at = current.used_at
+            client_sync.emit(locked)
             return True
         address.used_at = current.used_at
         return False

@@ -173,7 +173,7 @@ in `accounts.page_records.PORTAL_PREFIXES` (a test checks it) and its name in
 ## A doctor's fiscal entities (epic-doctor-profile entry 5)
 
 A doctor records who they bill as in settings, "Fiscal data" (`accounts.FiscalEntity`, UUID
-primary key, region-owned, never in `client.updated` until entry 9): a person (first and last
+primary key, region-owned; copied to the admin site by `client.updated` since entry 9, see below): a person (first and last
 name) or a company (legal name), with a tax id, an address and an optional billing email;
 billing country AE also has a VAT id. Names, ids, address and email are field-encrypted; the
 country is plain. The tax id and the VAT id are stored uppercase without spaces or dashes,
@@ -217,11 +217,35 @@ error with the entity id only. Hand `fiscal.vies_status(entity)` to
 fails them stays usable; its card says "Please check the tax id" and the next edit must fix
 it. Tests use the autouse `fake_vies` fixture (`conftest.py`).
 
+## Fiscal entities and shipping addresses on the admin site (epic-doctor-profile entry 9)
+
+`client.updated` (mytp-core 0.28.0) carries two lists, `fiscal_entities` and
+`shipping_addresses`, so the admin site's client record (AD-2) has a copy of each, encrypted
+with its own keys. The event stays a full snapshot with the per-client `sync_version`
+(`accounts.client_sync.payload_of`): the active entries, plus the 25 most recently archived
+of each list with their `archived_at` (so the admin site can show archived ones for auditing).
+Fiscal items carry the VIES status and check time; never the retry fields (attempts, next try,
+pending since, alerted). Maker logins and the photo are never sent.
+
+Every write that changes a copied value emits inside its own transaction, with the user's row
+locked: `fiscal` and `shipping` `create`, a changed `update`, a changed `make_default`,
+`remove` (a delete or an archive) and `mark_used` when it sets the date; and the `retry_vies`
+job's write when the status or the check time changes (it takes the user's lock first, then
+the entity's; a retry that stays pending sends nothing). If the event cannot be recorded the
+write rolls back. A text value that breaks mytp-core's central payload rules (a link to object storage, a
+data: URI, 200 or more base64-like characters) is refused at save with the field error
+`not_allowed`, so the payload is never altered. The erasure sends `client.erased` as before.
+
+After deploying, run `sync_clients --all` on each portal so every existing doctor's lists reach
+the admin site (the admin site deploys first and leaves its rows alone for an event without the
+lists). Check on the admin site that a test doctor's rows are ciphertext in
+`clients_clientfiscalentity` and `clients_clientshippingaddress`.
+
 ## A doctor's shipping addresses (epic-doctor-profile entry 7)
 
 A doctor records where physical products are sent in settings, "Shipping addresses"
-(`accounts.ShippingAddress`, UUID primary key, region-owned, never in `client.updated` until
-entry 9). It reuses the `AddressFields` of the fiscal entities and adds an optional label, a
+(`accounts.ShippingAddress`, UUID primary key, region-owned; copied to the admin site by `client.updated` since
+entry 9, see "Fiscal entities and shipping addresses on the admin site"). It reuses the `AddressFields` of the fiscal entities and adds an optional label, a
 required recipient name, an optional clinic name, a required contact phone (parsed with
 `phonenumbers`, the address country being the default region, stored in E.164) and optional
 delivery notes (300 characters at most). Every field but the country is field-encrypted. Up to
