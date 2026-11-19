@@ -15,12 +15,14 @@ User=mytp-__SITE__
 Group=mytp-__SITE__
 # `current` is resolved when the service starts, so a restart picks up a new release.
 WorkingDirectory=/srv/mytp-__SITE__/current
+# No gunicorn access log on purpose: nginx logs every request (without query strings, and
+# escaped); gunicorn's %(U)s is percent-decoded and unescaped, so a %0A in a path would
+# forge journal lines, and its default request line carries the query string.
 # __WSGI_MODULE__ is the site's WSGI module, set at provision time (WSGI_MODULE, default
 # mytreatplan.wsgi for the portal; mytp_admin.wsgi for the admin site).
 ExecStart=/srv/mytp-__SITE__/current/venv/bin/gunicorn __WSGI_MODULE__:application \
     --workers 3 \
     --timeout 30 \
-    --access-logfile - \
     --error-logfile -
 ExecReload=/bin/kill -s HUP $MAINPID
 KillMode=mixed

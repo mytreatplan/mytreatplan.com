@@ -199,6 +199,12 @@ PGDG_SOURCES=/etc/apt/sources.list.d/mytp-pgdg.sources
 PGDG_PREFERENCES=/etc/apt/preferences.d/mytp-pgdg
 PGDG_URI=https://apt.postgresql.org/pub/repos/apt
 OS_RELEASE=/etc/os-release
+# NGINX2Root (Xint, 2026-11; CVE-2026-123007, -123633, -123634, -121810, -113425; Debian
+# DSA-6642-1): an nginx older than this Debian 13 package is exposed (our sites use
+# `http2 on`). Provision upgrades it to at least this version and restarts nginx.
+NGINX_MIN_VERSION=1.26.3-3+deb13u11
+# The chain ends in an unfixed Linux kernel SCTP use-after-free; nothing here uses SCTP.
+SCTP_MODPROBE=/etc/modprobe.d/disable-sctp.conf
 # The virus scanner (host-wide, deploy/clamav/): clamd reads its own configuration file
 # through a systemd drop-in; Debian's /etc/clamav/clamd.conf is left as it is.
 CLAMD_CONF=/etc/clamav/clamd-mytp.conf
@@ -465,6 +471,56 @@ EOF
 if install_file "$WORK/ssh.conf" /etc/ssh/sshd_config.d/00-mytp-hardening.conf 0644 root:root; then
     sudo sshd -t
     sudo systemctl reload ssh
+fi
+
+# --- nginx at least NGINX_MIN_VERSION (NGINX2Root, DSA-6642-1) ---------------------------
+# A package upgrade only replaces the binary on disk; the Nginx step restarts nginx when
+# the running master still executes a replaced binary (nginx_binary_replaced), whether
+# this run or an earlier one upgraded it (a reload keeps the old binary).
+nginx_version() { dpkg-query -W -f='${Version}' nginx; }
+nginx_binary_replaced() {
+    local pid exe
+    pid=$(sudo cat /run/nginx.pid 2>/dev/null) || return 1
+    [[ $pid =~ ^[0-9]+$ ]] || return 1
+    exe=$(sudo readlink "/proc/$pid/exe" 2>/dev/null) || return 1
+    [[ $exe == *" (deleted)" ]]
+}
+if dpkg --compare-versions "$(nginx_version)" lt "$NGINX_MIN_VERSION"; then
+    if ((!APT_UPDATED)); then
+        sudo apt-get update -q
+        APT_UPDATED=1
+    fi
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install --only-upgrade -y -q \
+        -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold nginx nginx-common
+    if dpkg --compare-versions "$(nginx_version)" lt "$NGINX_MIN_VERSION"; then
+        echo "ERROR: nginx $(nginx_version) is older than $NGINX_MIN_VERSION (NGINX2Root," \
+            "DSA-6642-1) and apt offers no newer one; check the apt sources and run this" \
+            "script again." >&2
+        exit 1
+    fi
+    changed "nginx upgraded to $(nginx_version)"
+fi
+
+# --- Kernel: no SCTP (NGINX2Root chain) ---------------------------------------------
+# Xint's NGINX2Root chain (2026-11-18) ends in a Linux kernel SCTP use-after-free with no
+# Debian kernel fix yet; nothing here uses SCTP, so the module can never load. Remove this
+# step, and the file on each host, once Debian ships a fixed kernel and the host is
+# rebooted into it (deploy/README.md "NGINX2Root (2026-11)").
+step "SCTP disabled"
+cat >"$WORK/disable-sctp.conf" <<'EOF'
+# NGINX2Root chain (Xint, 2026-11-18): SCTP use-after-free, no Debian kernel fix yet; not used here.
+install sctp /bin/false
+blacklist sctp
+EOF
+if install_file "$WORK/disable-sctp.conf" "$SCTP_MODPROBE" 0644 root:root \
+    || lsmod | grep -q '^sctp '; then
+    # A loaded module stays until it is removed or the host reboots.
+    if lsmod | grep -q '^sctp '; then
+        sudo modprobe -r sctp || true
+        if lsmod | grep -q '^sctp '; then
+            echo "  note: the sctp module is still loaded; it goes at the next reboot."
+        fi
+    fi
 fi
 
 # --- Firewall: 22, 80, 443 only ---------------------------------------------
@@ -786,7 +842,8 @@ cert_missing_names() {
 render_nginx() {
     local extra_sed=(-e 's/ __EXTRA_DOMAINS__//g')
     [[ -n $EXTRA_DOMAINS ]] && extra_sed=(-e "s/__EXTRA_DOMAINS__/$EXTRA_DOMAINS/g")
-    sed "${extra_sed[@]}" -e "s/__DOMAIN__/$DOMAIN/g" -e "s/__SITE__/$SITE/g" \
+    sed "${extra_sed[@]}" -e "s/__DOMAIN__/$DOMAIN/g" -e "s/__SITE_VAR__/${SITE//-/_}/g" \
+        -e "s/__SITE__/$SITE/g" \
         "$DEPLOY_DIR/nginx/site.conf.template" >"$WORK/site.conf"
     if [[ -n $API_PEER_IPS ]]; then
         awk -v peers="$API_PEER_IPS" '
@@ -855,7 +912,12 @@ if sudo test -f "$CERT_FILE"; then
 else
     render_nginx 0
 fi
-if ! systemctl is-active --quiet nginx; then
+if nginx_binary_replaced; then
+    # After the site is rendered and tested: a restart (not a reload) runs the new binary.
+    sudo nginx -t -q
+    sudo systemctl restart nginx
+    changed "nginx restarted (it ran a replaced binary)"
+elif ! systemctl is-active --quiet nginx; then
     sudo systemctl start nginx
     changed "nginx started"
 fi

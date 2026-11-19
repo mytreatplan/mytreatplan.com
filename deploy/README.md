@@ -3837,6 +3837,44 @@ Redsys's settings (`REDSYS_MERCHANT_CODE`, `REDSYS_TERMINAL`, `REDSYS_SECRET_KEY
 use Redsys's public test terminal until the company's own test credentials arrive (the
 repo README, "Payments: Redsys"). Restart the site's gunicorn and worker after a change.
 
+## NGINX2Root (2026-11)
+
+Xint's NGINX2Root (2026-11-18: CVE-2026-123007, -123633, -123634, -121810, -113425; Debian
+DSA-6642-1, nginx 1.26.3-3+deb13u11 on Debian 13) chains an nginx flaw (our sites use
+`http2 on`) with an unfixed Linux kernel SCTP use-after-free to reach root. `provision.sh`
+(host-wide, every run) now:
+
+- upgrades nginx and nginx-common to at least `NGINX_MIN_VERSION` (an `apt-get update`
+  first; the run stops with an error when apt offers nothing newer) and then restarts nginx
+  once the site is rendered and tested, whenever the running master still executes a replaced
+  binary (`/proc/<pid>/exe` ends in "(deleted)"; also on a later run, and never twice);
+- installs `/etc/modprobe.d/disable-sctp.conf` (`install sctp /bin/false`, `blacklist
+  sctp`), so the SCTP module cannot load; nothing here uses SCTP. A loaded module is
+  removed with `modprobe -r sctp` when possible (else a note: reboot).
+
+A host that is already running (dev, dev-ae, admindev) needs one `provision.sh` run per
+site from a copy of the merged `deploy/`; the module stays loaded until the next reboot
+unless it was never loaded (`lsmod | grep sctp` prints nothing).
+
+Remove the SCTP block once Debian ships a kernel with the fix and the host has been
+rebooted into it (`uname -r`, then the Debian security tracker for the SCTP CVE): delete
+the "Kernel: no SCTP" step and `SCTP_MODPROBE` from `provision.sh`, and
+`sudo rm /etc/modprobe.d/disable-sctp.conf` on each host.
+
+Access logs keep no query strings. Redsys's browser return
+(`/<lang>/checkout/<uuid>/redsys/ok/?Ds_MerchantParameters=...`, and `/redsys/ko/`)
+carries payment data (masked card number, authorisation code) in the query, and both logs
+recorded the whole URL. Nginx now logs with `log_format mytp-<site>-noquery`
+(`$request_method <raw path> $server_protocol`, the path taken from `$request_uri` up to the
+`?`, and the referer without its query, through per-site `map`s) in every server block of
+`nginx/site.conf.template`. gunicorn has no access log any more (`--access-logfile` is
+gone): nginx already logs every request, with escaping, while gunicorn's path field is
+percent-decoded and unescaped (a `%0A` in a URL would forge journal lines). Nginx's error log can still quote the request line of a
+failed request; read it as sensitive. Lines written before the change keep their query:
+rotate or delete the old logs (`/var/log/nginx/access.log*`, `journalctl -u
+mytp-<site>-gunicorn`) as the retention policy allows. Re-run `provision.sh` for each site
+to apply both.
+
 ## Rollback
 
 A release built before the `deploy/release-ready` marker (epic-platform entry 10) cannot
