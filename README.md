@@ -328,3 +328,46 @@ page with Pay and Fail) next to the real ones, and `PAYMENTS_TEST_ORDERS` serves
 through the real checkout (set both on dev and dev-ae in `settings.env`). Not here yet: real
 gateways, webhooks and refunds (entries 2-4), the invoice (6), the bank-transfer page (5), the
 admin pages and the order event to the admin site (8).
+
+## Payments: webhooks (epic-payments entry 2)
+
+`payments.gateways` is the full adapter interface: `register(name, start, enabled=None, ...)` with
+the optional operations `verify_webhook(request)`, `fetch_payment(payment)`, `cancel_attempt`,
+`refund`, `save_card`, `charge_saved_card`, the `session_lifetime` (30 minutes), the
+`timestamp_tolerance` (5 minutes) and `required_settings`; `Adapter.supports(op)` says what an
+adapter does. `start(payment, request)` now gets the `Payment` and records the gateway's own id
+(`payments.service.set_gateway_payment_id`). The fake adapter implements every operation (its
+records live in the cache, shared by the web workers, the task worker and the commands).
+
+`payments.models.Payment` is one attempt at one gateway (order, gateway, the gateway's payment id
+unique per gateway, amount, currency, state `open` / `confirmed` / `failed` / `closed` /
+`needs_attention`, `session_expires_at`). One attempt is open per order (a database constraint): a
+retry or a second tab first closes the previous one at the gateway (`cancel_attempt`); a gateway
+without it waits for the session to time out (`service.AttemptOpen`). While an attempt is open the
+order is frozen: the doctor cannot cancel it and `expire_orders` skips it until the session timed
+out. `payments.models.WebhookLog` has one row per webhook, accepted or refused (result `accepted`,
+`duplicate`, `bad_signature`, `stale`, `amount_mismatch`, `unknown`, `not_payable`, plus
+`too_large` and `rate_limited`), with the IP, the gateway's event and payment ids, the amount, the
+SHA-256 and size of the body (never the body); kept 180 days (`purge_webhook_logs`, job
+`purgewebhooklogs`).
+
+`POST /payments/webhook/<gateway>/` (public, csrf-exempt, outside the language prefixes and
+`/api/`): the adapter checks the signature and timestamp, the payment is looked up by the
+gateway's id, the event is taken in once (unique (gateway, event id) in the database), a log row is
+written, a `django.tasks` task (`payments.tasks.confirm_webhook`) is queued and the answer is 200
+at once. The task re-reads the payment from the gateway and calls `payments.service.confirm_payment`,
+the one way an order is paid: the payment must be the order's open attempt, the order
+`pending_payment`, and the re-read amount and currency equal the order's. Otherwise (paid already,
+cancelled, expired, a late success of an earlier attempt, another amount) the order is left alone,
+the payment is `needs_attention`, an error goes to Sentry by order UUID and the doctor's return page
+shows an error message. A failed re-read is retried with backoff on the log row (`attempts`,
+`next_try_at`); after the last try an error goes to Sentry. Bodies over 64 KB get 413, an IP with 20
+failed signatures in 10 minutes gets 429. The return page re-reads the payment once through the same
+path. Logs, Sentry and URLs carry no signature, secret, body or personal data.
+
+`PAYMENTS_FAKE_WEBHOOK_SECRET` (settings.env; unset: derived from `SECRET_KEY`) signs the fake
+gateway's webhooks. On dev and dev-ae, `manage.py fake_webhook <reference>` sends a valid one for
+the order's open fake attempt; `--bad-signature`, `--stale`, `--amount X` and `--replay` send each
+refusal on purpose. `payments.E003` fails `check` on a public site when an available gateway's
+`required_settings` secret is missing. Real gateways' webhooks reach a staging site only if Nginx
+lets `/payments/webhook/` past its basic auth (not done: staging uses the fake gateway).

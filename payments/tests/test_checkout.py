@@ -10,7 +10,7 @@ from django.test import Client
 from accounts import fiscal
 from accounts.models import FiscalEntity
 from payments import checks, hooks, service
-from payments.models import Order
+from payments.models import Order, WebhookLog
 from payments.tests.conftest import COMPANY
 from payments.tests.test_service import line
 from subscriptions.tests.helpers import doctor as make_doctor
@@ -60,9 +60,14 @@ def test_a_doctor_pays_a_test_order_through_the_fake_page(doctor, entity, fake_o
     assert 'data-fake-pay' in html(client.get(response['Location']))
     done = client.post(response['Location'], {'action': 'pay', 'version': order.version})
     assert done['Location'].endswith('/return/')
+    # The webhook was accepted and logged; the task has not run: the return page re-reads
+    # the payment once and pays the order through the same path.
+    assert WebhookLog.objects.get().result == 'accepted'
+    order.refresh_from_db()
+    assert order.state == 'pending_payment'
+    assert 'data-order-state="paid"' in html(client.get(done['Location']))
     order.refresh_from_db()
     assert order.state == 'paid'
-    assert 'data-order-state="paid"' in html(client.get(done['Location']))
     assert FiscalEntity.objects.get(pk=entity.pk).used_at is not None
     assert [e for e, *_ in events] == ['created', 'paid']
 
@@ -91,7 +96,8 @@ def test_a_replayed_pay_on_the_fake_page_pays_once(doctor, entity, fake_on, even
     checkout = start(client)
     order = Order.objects.get()
     fake = pay(client, checkout, entity, order)['Location']
-    client.post(fake, {'action': 'pay', 'version': 2})
+    done = client.post(fake, {'action': 'pay', 'version': 2})
+    client.get(done['Location'])
     again = client.post(fake, {'action': 'pay', 'version': 2})
     assert again['Location'].endswith('/return/')
     assert Order.objects.get().version == 3
@@ -191,7 +197,7 @@ def test_the_fake_page_is_a_404_when_its_flag_is_off(doctor, entity, fake_on):
     assert client.get(fake).status_code == 404
 
 
-def test_a_paid_hook_failure_on_the_fake_page_leaves_the_order_pending(
+def test_a_paid_hook_failure_in_the_return_pages_reread_leaves_the_order_pending(
         doctor, entity, fake_on):
     client = browser(doctor)
     checkout = start(client)
@@ -202,6 +208,8 @@ def test_a_paid_hook_failure_on_the_fake_page_leaves_the_order_pending(
 
     hooks.register('paid', 'test_boom', boom)
     try:
+        # Pay sends the webhook; the return page's re-read pays the order, the hook raises
+        # (HookFailed): the page shows the message and the order stays pending.
         response = client.post(fake, {'action': 'pay', 'version': 2}, follow=True)
     finally:
         hooks.unregister('paid', 'test_boom')

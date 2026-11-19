@@ -2,7 +2,8 @@
 {% load i18n money %}
 {% comment %}
 Where a gateway sends the doctor back (payments.views.checkout_return): the order as it is
-now (paid, waiting for the payment, or closed).
+now (paid, waiting for the payment's confirmation, or closed). `needs_attention`: a payment
+confirmed by the gateway that could not pay the order (staff check it).
 {% endcomment %}
 
 {% block title %}{% translate "Your order" %} &mdash; MyTreatPlan{% endblock %}
@@ -10,8 +11,14 @@ now (paid, waiting for the payment, or closed).
 {% block portal_content %}
 <h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Your order" %}</h1>
 <p class="mt-3 text-copy text-ink-muted">{% blocktranslate with reference=order.reference %}Order reference <strong class="text-ink" data-order-reference>{{ reference }}</strong>{% endblocktranslate %}</p>
+{% if needs_attention %}
+<p class="mt-6 rounded-md border border-red-600 p-4 text-copy font-semibold" role="alert" data-needs-attention>{% translate "We received a payment for this order but could not apply it to the order. We have been told and will contact you. Please do not pay again." %}</p>
+{% endif %}
 {% if order.state == "paid" %}
 <p class="mt-6 text-copy font-semibold" data-order-state="paid">{% blocktranslate with total=order.total currency=order.currency %}Payment received: {{ total }} {{ currency }}. Thank you.{% endblocktranslate %}</p>
+{% elif order.state == "pending_payment" and waiting %}
+<p class="mt-6 text-copy" data-order-state="pending_payment" data-waiting>{% translate "Waiting for confirmation of your payment. This usually takes a few seconds." %}</p>
+<p class="mt-4"><a href="{% url 'checkout_return' order.pk %}" class="font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-refresh>{% translate "Refresh" %}</a></p>
 {% elif order.state == "pending_payment" %}
 <p class="mt-6 text-copy" data-order-state="pending_payment">{% translate "We have not received your payment yet." %}</p>
 <p class="mt-4"><a href="{% url 'checkout_failure' order.pk %}" class="font-semibold text-green-deep underline underline-offset-2 hover:text-ink">{% translate "Try again" %}</a></p>

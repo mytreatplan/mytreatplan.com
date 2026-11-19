@@ -134,6 +134,9 @@ ROBOTS_NOINDEX = config('ROBOTS_NOINDEX', default=False, cast=bool)
 # serves the hidden test-order page (/checkout/test-order/) of dev and dev-ae.
 PAYMENTS_FAKE_GATEWAY = config('PAYMENTS_FAKE_GATEWAY', default=False, cast=bool)
 PAYMENTS_TEST_ORDERS = config('PAYMENTS_TEST_ORDERS', default=False, cast=bool)
+# The secret the fake gateway signs its webhooks with (epic-payments entry 2; dev and
+# dev-ae only). Unset: a key derived from SECRET_KEY. Gateway secrets are never logged.
+PAYMENTS_FAKE_WEBHOOK_SECRET = config('PAYMENTS_FAKE_WEBHOOK_SECRET', default='')
 
 # Portal features (signup, login, ...) are routed only when this is True. See
 # `portal_patterns` in mytreatplan/urls.py.
@@ -245,7 +248,7 @@ SENTRY_RELEASE = config(
     'RELEASE_SHA',
     default=_revision_file.read_text().strip() if _revision_file.is_file() else '')
 MYTP_SENTRY_IGNORED_LOGGERS = ('signup.verification',)
-MYTP_SENTRY_SENSITIVE_FIELDS = ()
+MYTP_SENTRY_SENSITIVE_FIELDS = ('signature', 'webhook_secret')
 # Keys that keep their value although they contain a field name (the reset step's tag).
 MYTP_SENTRY_SAFE_KEYS = ('password_reset.action',)
 if SENTRY_DSN:

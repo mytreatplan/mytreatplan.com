@@ -14,7 +14,7 @@ class PaymentsConfig(AppConfig):
     verbose_name = 'Payments'
 
     def ready(self):
-        from . import checks, fake  # noqa: F401  (registers payments.E001, E002)
+        from . import checks, fake  # noqa: F401  (registers payments.E001-E003)
 
         # `check` is not run by the web server: refuse to start with a flag on a public site.
         from django.conf import settings

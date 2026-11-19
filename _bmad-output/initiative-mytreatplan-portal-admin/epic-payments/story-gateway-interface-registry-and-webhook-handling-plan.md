@@ -3,14 +3,14 @@ title: 'Gateway interface, registry and webhook handling'
 type: 'feature'
 ticket: '2'
 created: '2026-11-18'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: '56b4870edeaf945aa0b71e5d0388199fd497bdde'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -108,3 +108,20 @@ Portal; 7.1's `payments` app (branch `story/7.1-order-checkout`, PR pending) is 
 ## Plan Change Log
 
 ## Review Triage Log
+
+Quick lens (Opus), iteration 0, 12 findings. Patches went back to the same implementer.
+
+| # | Finding | Verdict | Route | Evidence |
+|---|---------|---------|-------|----------|
+| 1 | `process()` locks the log row with `select_related('payment')`: FOR UPDATE on the nullable side of an outer join (PostgreSQL refuses it), and locks payment before order | high | patch | Known PostgreSQL refusal on a nullable FK join; the query is outside the try, so the task crashes and the webhook never pays on PG (SQLite hides it). |
+| 2 | `process()` re-reads the gateway inside the transaction holding the log-row lock | medium | patch | `reread_and_confirm` runs inside `transaction.atomic()`; real adapters (7.3/7.4) would hold a DB transaction across an HTTP call. |
+| 3 | `start_payment` calls `cancel_attempt` under the order/payment locks; a rollback after a successful cancel leaves the attempt `open` | medium | patch | `_close_attempts` runs inside `start_payment`'s atomic block after `_lock`. |
+| 4 | A re-read that is still pending is never retried | medium | patch | `STILL_PENDING` takes the not-failed branch and sets `processed_at`; the order stays pending until the doctor reloads. |
+| 5 | Fake `verify_webhook`: a non-ASCII signature raises TypeError → 500, no log row, counter skipped | medium | patch | Checked: `hmac.compare_digest('t=1,v1=é','abc')` → TypeError; `handle()` catches only BadSignature/Stale/Malformed. |
+| 6 | The failed-signature counter's `incr` on DatabaseCache is not atomic | low | reject | Concurrent bursts lose a few increments; the limit still applies; making it atomic needs a new mechanism. |
+| 7 | Fake `cancel_attempt` turns a paid payment into `cancelled` | low | patch | `set_state(..., 'cancelled')` runs whatever the status; a direct one-line refusal. |
+| 8 | `fake_webhook` sets the fake payment paid even for `--bad-signature`/`--stale`; `--amount` unvalidated | medium | patch | The next return-page re-read pays the order after a "refused" webhook, against the first AC's "no state change". |
+| 9 | 20 bad fake webhooks from 127.0.0.1 make the fake Pay button 429 for everyone | low | reject | Staging-only, needs 20 bad runs in 10 minutes; the return page's re-read still pays. |
+| 10 | `report_attention` sends two Sentry events | low | patch | `mytp_core.sentry` keeps the SDK's default logging integration (only ignores listed loggers), so `logger.error` is its own event next to `capture_message`. |
+| 11 | `checkout_return` calls the gateway on every GET; `except Exception: pass` hides failures with no log | low | patch (log only) | Doctor-only, own order; no throttle added. The bare pass is fixed with a warning log (order UUID + exception type). |
+| 12 | Dead steps in the edited test `test_a_paid_hook_failure_on_the_fake_page_leaves_the_order_pending` | low | patch | Unregister/re-register of the same receiver does nothing; the assertion now tests the return page. |

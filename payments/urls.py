@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import views, webhooks
 
 # Not namespaced, as accounts.urls. Under accounts.page_records' PORTAL_PREFIXES
 # ('checkout/'). The doctor sees only their own orders (any other id is a 404).
@@ -10,4 +10,10 @@ urlpatterns = [
     path('checkout/<uuid:pk>/return/', views.checkout_return, name='checkout_return'),
     path('checkout/<uuid:pk>/failed/', views.checkout_failure, name='checkout_failure'),
     path('checkout/<uuid:pk>/fake/', views.fake_gateway, name='checkout_fake'),
+]
+
+# The gateways' webhooks (epic-payments entry 2): public, outside the language prefixes and
+# `/api/` (included from mytreatplan.urls with the site's own routes).
+webhook_urlpatterns = [
+    path('payments/webhook/<slug:gateway>/', webhooks.webhook, name='payments_webhook'),
 ]
