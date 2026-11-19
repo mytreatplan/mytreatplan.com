@@ -9,6 +9,24 @@
 # The /api/ allowlist (provision.sh API_PEER_IPS, production only) replaces the
 # API_ALLOW placeholder with a line per address; unset, the section between the
 # API_ALLOW_BEGIN and API_ALLOW_END markers is dropped.
+# __SITE_VAR__ is the site name with '-' as '_' (Nginx variable names allow no '-').
+
+# Access log without query strings (NGINX2Root follow-up, 2026-11): the Redsys browser
+# return (/<lang>/checkout/<uuid>/redsys/ok/?Ds_MerchantParameters=...) carries payment
+# data in the query, so the log keeps the raw path (from $request_uri, up to the "?"; nginx escapes it in the log) and the referer without its query.
+# Every server block below uses this format. This file is included inside http{}, and
+# several sites share one host, hence the per-site names.
+map $http_referer $mytp___SITE_VAR___referer {
+    default $http_referer;
+    "~^(?<mytp___SITE_VAR___refpath>[^?]*)\?" $mytp___SITE_VAR___refpath;
+}
+map $request_uri $mytp___SITE_VAR___path {
+    default "-";
+    "~^(?<mytp___SITE_VAR___reqpath>[^?]*)" $mytp___SITE_VAR___reqpath;
+}
+log_format mytp-__SITE__-noquery '$remote_addr - $remote_user [$time_local] '
+    '"$request_method $mytp___SITE_VAR___path $server_protocol" $status $body_bytes_sent '
+    '"$mytp___SITE_VAR___referer" "$http_user_agent"';
 
 upstream mytp-__SITE__-gunicorn {
     server unix:/run/mytp-__SITE__-gunicorn.sock fail_timeout=0;
@@ -16,6 +34,7 @@ upstream mytp-__SITE__-gunicorn {
 
 # HTTP: ACME challenges only; everything else goes to HTTPS.
 server {
+    access_log /var/log/nginx/access.log mytp-__SITE__-noquery;
     listen 80;
     listen [::]:80;
     server_name __DOMAIN__ __EXTRA_DOMAINS__;
@@ -32,6 +51,7 @@ server {
 
 # __HTTPS_BEGIN__
 server {
+    access_log /var/log/nginx/access.log mytp-__SITE__-noquery;
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;
@@ -120,6 +140,7 @@ server {
 # Redirect-only names: one hop to the main domain, path and query kept. No password, no
 # app. Installed only once the certificate covers these names.
 server {
+    access_log /var/log/nginx/access.log mytp-__SITE__-noquery;
     listen 443 ssl;
     listen [::]:443 ssl;
     http2 on;

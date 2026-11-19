@@ -652,7 +652,7 @@ def test_without_extra_domains_the_site_renders_as_before(tmp_path, full):
     old = re.sub(r'\n# __EXTRA_BEGIN__\n.*?# __EXTRA_END__\n', '\n', old, flags=re.S)
     old = re.sub(r'\n# __API_ALLOW_BEGIN__\n.*?# __API_ALLOW_END__\n', '\n', old, flags=re.S)
     old = old.replace(' __EXTRA_DOMAINS__', '').replace('__DOMAIN__', 'mytreatplan.com')
-    old = old.replace('__SITE__', 'prod')
+    old = old.replace('__SITE_VAR__', 'prod').replace('__SITE__', 'prod')
     if not full:
         old = old[:old.index('\n# __HTTPS_BEGIN__\n') + 1]
     strip = lambda text: [line for line in text.splitlines() if not line.startswith('#')]  # noqa: E731
@@ -1221,3 +1221,177 @@ def test_pgdg_without_a_key_and_no_download_stops(tmp_path):
     assert 'ERROR: could not download' in result.stderr
     assert _apt(calls) == []
     assert not (tmp_path / 'root' / 'mytp-pgdg.sources').exists()
+
+
+# --- NGINX2Root hardening (2026-11) ------------------------------------------------------
+
+def test_provision_blocks_sctp_with_a_modprobe_file():
+    script = (DEPLOY / 'provision.sh').read_text()
+    assert 'SCTP_MODPROBE=/etc/modprobe.d/disable-sctp.conf' in script
+    assert ('# NGINX2Root chain (Xint, 2026-11-18): SCTP use-after-free, no Debian kernel fix'
+            ' yet; not used here.\ninstall sctp /bin/false\nblacklist sctp\nEOF\n') in script
+    assert 'install_file "$WORK/disable-sctp.conf" "$SCTP_MODPROBE" 0644 root:root' in script
+    # Said where to take it out again.
+    assert 'once Debian ships a fixed kernel' in script
+
+
+def test_provision_upgrades_nginx_to_the_fixed_package_and_restarts_it():
+    script = (DEPLOY / 'provision.sh').read_text()
+    assert 'NGINX_MIN_VERSION=1.26.3-3+deb13u11' in script
+    assert ('dpkg --compare-versions "$(nginx_version)" lt "$NGINX_MIN_VERSION"') in script
+    assert 'apt-get install --only-upgrade -y -q' in script
+    assert '-o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold' in script
+    # A version still too low after the upgrade stops the run.
+    assert script.count('lt "$NGINX_MIN_VERSION"') == 2
+    assert 'is older than $NGINX_MIN_VERSION' in script
+    # nginx is restarted (a reload keeps the old binary) whenever the running master
+    # executes a replaced binary, once the site is rendered and tested.
+    assert 'NGINX_UPGRADED' not in script
+    nginx_step = script[script.index('step "Nginx ($SITE)"'):script.index('# --- TLS certificate')]
+    assert 'if nginx_binary_replaced; then' in nginx_step
+    assert 'sudo systemctl restart nginx' in nginx_step
+    assert nginx_step.index('render_nginx 0') < nginx_step.index('sudo systemctl restart nginx')
+
+
+def _nginx_version_check(tmp_path, installed, after_upgrade, apt_updated=0):
+    """Runs provision.sh's version-check block with sudo, dpkg-query, dpkg and apt-get as
+    stubs: dpkg-query reports `installed`, `after_upgrade` once apt-get install ran."""
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    state, calls = tmp_path / 'version', tmp_path / 'calls.log'
+    state.write_text(installed)
+    calls.write_text('')
+    q = shlex.quote
+    stubs = {
+        'sudo': 'exec env "$@"',
+        'dpkg-query': f'printf %s "$(cat {q(str(state))})"',
+        'apt-get': (f'echo "apt-get $*" >>{q(str(calls))}\n'
+                    f'[ "$1" = install ] && printf %s {q(after_upgrade)} >{q(str(state))}; exit 0'),
+        'dpkg': ('[ "$1" = --compare-versions ] || exit 2\n'
+                 'python3 - "$2" "$3" "$4" <<"PY"\n'
+                 'import re, sys\n'
+                 'key = lambda v: [int(x) for x in re.findall(r"\\d+", v)]\n'
+                 'sys.exit(0 if key(sys.argv[1]) < key(sys.argv[3]) else 1)\n'
+                 'PY'),
+    }
+    for name, body in stubs.items():
+        stub = bin_dir / name
+        stub.write_text(f'#!/bin/bash\n{body}\n')
+        stub.chmod(0o755)
+    block = _provision_slice('# A package upgrade only replaces', '# --- Kernel: no SCTP')
+    script = f"""set -euo pipefail
+export PATH={q(str(bin_dir))}:"$PATH"
+changed() {{ echo "  changed: $*"; }}
+APT_UPDATED={apt_updated}
+NGINX_MIN_VERSION={_provision_setting('NGINX_MIN_VERSION')}
+{block}"""
+    result = subprocess.run(['bash', '-c', script], capture_output=True, text=True)
+    return result, calls.read_text()
+
+
+@bash_only
+def test_an_old_nginx_is_upgraded_once_and_a_fixed_one_left_alone(tmp_path):
+    result, calls = _nginx_version_check(tmp_path, '1.26.3-3+deb13u10', '1.26.3-3+deb13u11')
+    assert result.returncode == 0, result.stderr
+    assert 'changed: nginx upgraded to 1.26.3-3+deb13u11' in result.stdout
+    assert 'apt-get update' in calls and 'install --only-upgrade' in calls
+    assert 'nginx nginx-common' in calls
+    # No second apt-get update when this run already did one.
+    second = tmp_path / 'b'
+    second.mkdir()
+    result, calls = _nginx_version_check(second, '1.26.3-3+deb13u10', '1.26.3-3+deb13u11',
+                                         apt_updated=1)
+    assert result.returncode == 0, result.stderr
+    assert 'apt-get update' not in calls and 'install --only-upgrade' in calls
+    # Already fixed: nothing runs.
+    fixed = tmp_path / 'c'
+    fixed.mkdir()
+    result, calls = _nginx_version_check(fixed, '1.26.3-3+deb13u12', 'x')
+    assert result.returncode == 0 and calls == '' and result.stdout == ''
+
+
+@bash_only
+def test_an_nginx_still_too_old_after_the_upgrade_stops_the_run(tmp_path):
+    result, calls = _nginx_version_check(tmp_path, '1.26.3-3+deb13u10', '1.26.3-3+deb13u10')
+    assert result.returncode == 1
+    assert 'ERROR: nginx 1.26.3-3+deb13u10 is older than 1.26.3-3+deb13u11' in result.stderr
+    assert 'nginx upgraded' not in result.stdout
+
+
+@bash_only
+@pytest.mark.parametrize('pidfile, exe, replaced', [
+    ('123', '/usr/sbin/nginx (deleted)', True),
+    ('123', '/usr/sbin/nginx', False),
+    (None, '', False),
+    ('junk', '/usr/sbin/nginx (deleted)', False),
+])
+def test_nginx_is_restarted_only_when_it_runs_a_replaced_binary(tmp_path, pidfile, exe, replaced):
+    bin_dir = tmp_path / 'bin'
+    bin_dir.mkdir()
+    pid = tmp_path / 'nginx.pid'
+    if pidfile is not None:
+        pid.write_text(pidfile + '\n')
+    q = shlex.quote
+    stubs = {'sudo': 'exec env "$@"', 'readlink': f'printf %s {q(exe)}'}
+    for name, body in stubs.items():
+        stub = bin_dir / name
+        stub.write_text(f'#!/bin/bash\n{body}\n')
+        stub.chmod(0o755)
+    script = (DEPLOY / 'provision.sh').read_text()
+    function = script[script.index('nginx_binary_replaced() {'):script.index('if dpkg --compare-versions')]
+    function = function.replace('/run/nginx.pid', str(pid))
+    out = subprocess.run(['bash', '-c', f'set -euo pipefail\nexport PATH={q(str(bin_dir))}:"$PATH"\n'
+                          f'{function}\nif nginx_binary_replaced; then echo yes; else echo no; fi'],
+                         capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == ('yes' if replaced else 'no')
+
+
+def test_provision_removes_a_loaded_sctp_module():
+    script = (DEPLOY / 'provision.sh').read_text()
+    assert "lsmod | grep -q '^sctp '" in script
+    assert 'sudo modprobe -r sctp || true' in script
+    assert 'still loaded' in script
+
+
+def test_every_nginx_server_block_logs_without_the_query_string():
+    conf = (DEPLOY / 'nginx' / 'site.conf.template').read_text()
+    blocks = _server_blocks(conf)
+    assert len(blocks) == 3
+    for block in blocks:
+        assert 'access_log /var/log/nginx/access.log mytp-__SITE__-noquery;' in block
+    fmt = re.search(r'^log_format mytp-__SITE__-noquery (.*?);$', conf, re.S | re.M).group(1)
+    assert '$request_method $mytp___SITE_VAR___path $server_protocol' in fmt
+    for raw in ('$request ', '$request"', '$request_uri', '$uri', '$args', '$query_string',
+                '$http_referer'):
+        assert raw not in fmt, raw
+    # The path and the referer are cut at the '?' by per-site maps (several sites share one
+    # host; no '-' in a variable name); the path map's default has no query.
+    assert '$mytp___SITE_VAR___referer' in fmt
+    assert conf.count('map $http_referer $mytp___SITE_VAR___referer {') == 1
+    path_map = re.search(r'map \$request_uri \$mytp___SITE_VAR___path \{(.*?)\}', conf, re.S).group(1)
+    assert 'default "-";' in path_map and '[^?]*' in path_map
+
+
+@bash_only
+@pytest.mark.parametrize('site', ['dev', 'dev-ae'])
+def test_rendered_log_format_is_per_site_and_valid(tmp_path, site):
+    var = site.replace('-', '_')
+    block = _provision_slice(*NGINX_FUNCTIONS) + f'SITE={site}\nrender_nginx 1\n'
+    result, conf, _ = _run_provision_steps(tmp_path, block, cert=True)
+    assert result.returncode == 0, result.stderr
+    assert f'log_format mytp-{site}-noquery ' in conf
+    assert f'access_log /var/log/nginx/access.log mytp-{site}-noquery;' in conf
+    for name in ('referer', 'path'):
+        assert f'$mytp_{var}_{name}' in conf
+    assert f'?<mytp_{var}_refpath>' in conf and f'?<mytp_{var}_reqpath>' in conf
+    assert '__SITE' not in conf
+    assert not re.search(r'\$mytp_\w*-', conf), 'no "-" in a variable name'
+
+
+def test_gunicorn_has_no_access_log():
+    unit = (DEPLOY / 'systemd' / 'gunicorn.service.template').read_text()
+    command = unit[unit.index('ExecStart='):unit.index('ExecReload=')]
+    assert '--access-logfile' not in command and '--access-logformat' not in command
+    assert '%(r)s' not in command and '%%(r)s' not in command
+    assert '--error-logfile -' in command
