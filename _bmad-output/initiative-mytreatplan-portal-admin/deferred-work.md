@@ -184,3 +184,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-regions/story-production-checks-for-the-eu-go-live-plan.md`
   summary: www.mytreatplan.com should answer a 301 to https://mytreatplan.com/ (check 3ai), but `deploy/nginx/site.conf.template` names only the apex in server_name and EXTRA_DOMAINS holds the other EU domains; add www.mytreatplan.com to the redirect before the go-live: its DNS record, its name on the certificate (provision.sh issues it for `$DOMAIN $EXTRA_DOMAINS` only) and a redirect server block for ports 80 and 443.
   evidence: 2.8 investigation of the nginx template; the eu profile's domains list www.mytreatplan.com.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-redsys-adapter-plan.md`
+  summary: `redsys_refund` (and `redsys.refund`) do not record refunds, so repeated partial refunds can add up past the payment and a timeout after Redsys refunded invites a re-run; entry 7 (credit notes and refunds) must record each refund and subtract it before the next.
+  evidence: 7.3 review finding 7b. Unverified whether Redsys refuses a cumulative over-refund itself: a second partial refund on the test terminal settles it.
