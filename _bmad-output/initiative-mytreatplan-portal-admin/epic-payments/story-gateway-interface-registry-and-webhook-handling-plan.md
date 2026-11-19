@@ -3,7 +3,7 @@ title: 'Gateway interface, registry and webhook handling'
 type: 'feature'
 ticket: '2'
 created: '2026-11-18'
-status: 'built'
+status: 'done'
 baseline_revision: '56b4870edeaf945aa0b71e5d0388199fd497bdde'
 route: 'full'
 route_source: 'auto'
@@ -125,3 +125,10 @@ Quick lens (Opus), iteration 0, 12 findings. Patches went back to the same imple
 | 10 | `report_attention` sends two Sentry events | low | patch | `mytp_core.sentry` keeps the SDK's default logging integration (only ignores listed loggers), so `logger.error` is its own event next to `capture_message`. |
 | 11 | `checkout_return` calls the gateway on every GET; `except Exception: pass` hides failures with no log | low | patch (log only) | Doctor-only, own order; no throttle added. The bare pass is fixed with a warning log (order UUID + exception type). |
 | 12 | Dead steps in the edited test `test_a_paid_hook_failure_on_the_fake_page_leaves_the_order_pending` | low | patch | Unregister/re-register of the same receiver does nothing; the assertion now tests the return page. |
+
+## Staging
+
+- Merged in #114 as e01ff20 (2026-11-19). The PR run needed two re-runs only for the Ubuntu apt mirror (Chromium, gettext); the push run of d369d40 and the master run 44529261891 passed and deployed dev and dev-ae (both at c87c4de). Local suite: 3716 passed, 13 skipped.
+- dev and dev-ae re-provisioned: `mytp-<site>-job@purgewebhooklogs.timer` listed on both (daily 04:40 UTC) (check 1).
+- Checks 2–7 on both sites by a script run in one rolled-back transaction (nothing kept): fake Pay → one accepted row, return page pays once, the task marks the row processed with no second paid; `--bad-signature` 401 and `--stale` 400 each one log row, order pending, the fake gateway not holding it paid; `fake_webhook` pays once and `--replay` gives a duplicate; `--amount 1.00` → order unchanged, payment `needs_attention`, row `amount_mismatch`, one Sentry error by order UUID per site; Cancel refused with "A payment for this order is in progress"; `purge_webhook_logs` deleted 0 rows.
+- Not reported yet: the user seeing the two Sentry errors (check 5).
