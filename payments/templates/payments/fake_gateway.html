@@ -2,7 +2,8 @@
 {% load i18n %}
 {% comment %}
 The fake gateway's "hosted page" (payments.views.fake_gateway; development and staging
-only, PAYMENTS_FAKE_GATEWAY): Pay marks the order paid, Fail leaves it pending.
+only, PAYMENTS_FAKE_GATEWAY): Pay sends the signed webhook through the real handler, Fail
+fails the attempt (the order stays pending).
 {% endcomment %}
 
 {% block title %}{% translate "Test payment" %} &mdash; MyTreatPlan{% endblock %}

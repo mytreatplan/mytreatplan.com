@@ -17,6 +17,15 @@ Each locks the order (`select_for_update`), checks `expected_version`, raises th
 one, stores the actor and adds an `OrderChange`; each state change fires its hook inside the
 transaction, exactly once (a replay on an order already in the target state does nothing and
 fires nothing; a hook that raises rolls the transition back: `HookFailed`).
+
+Payments (entry 2): `start_payment` also opens a `Payment` (one attempt at the gateway; one
+open attempt per order: a retry first closes the previous one at the gateway, or is refused
+while its session may still be live: `AttemptOpen`). While an attempt is open the order is
+frozen: `cancel` is refused and `expire` / `expire_stale` skip it until the attempt's
+session timed out. `confirm_payment` is the one way a gateway's payment pays an order (the
+webhook task and the return page): the payment was re-read from the gateway, its amount and
+currency equal the order's, and it is the order's open attempt; anything else is a payment
+that needs staff attention.
 """
 import logging
 import uuid
@@ -35,7 +44,7 @@ from mytp_core.money import Money
 from subscriptions import service as subscriptions_service
 
 from . import gateways, hooks, reference
-from .models import Order, OrderChange, OrderLine
+from .models import Order, OrderChange, OrderLine, Payment
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +101,11 @@ class NoPaymentMethod(OrderError):
 
 class GatewayRefused(OrderError):
     """The gateway is not one of the order's offered gateways."""
+
+
+class AttemptOpen(OrderError):
+    """A payment attempt of the order is open: its gateway session may still be live, so
+    the order cannot be cancelled or expired and another attempt cannot be started yet."""
 
 
 class HookFailed(OrderError):
@@ -378,6 +392,7 @@ def start_payment(order, gateway, *, expected_version, actor):
     after a failure) only the gateway may change. A 0.00 order needs no gateway
     (`gateway` ''): it is paid here. Returns the order."""
     _check_actor(actor)
+    _cancel_live_attempts(getattr(order, 'pk', order))  # gateway calls, outside the lock
     with transaction.atomic():
         locked = _lock(order)
         _check_version(locked, expected_version)
@@ -401,6 +416,8 @@ def start_payment(order, gateway, *, expected_version, actor):
             return locked
         if gateway not in gateways.offered(locked):
             raise GatewayRefused(f'the gateway {gateway!r} is not offered for this order')
+        if _live_attempts(locked, now):  # one opened since: nothing changed
+            raise AttemptOpen('a payment attempt of the order is open')
         before = locked.state
         if before == Order.CHECKOUT:
             fiscal.mark_used(entity)
@@ -409,10 +426,14 @@ def start_payment(order, gateway, *, expected_version, actor):
         _stamp(locked, actor, now)
         locked.save()
         _change(locked, actor, PAYMENT_STARTED, before, now, gateway=gateway)
+        Payment.objects.create(
+            order=locked, gateway=gateway, amount=locked.total, currency=locked.currency,
+            session_expires_at=now + gateways.adapter(gateway).session_lifetime,
+            created_at=now, updated_at=now)
         return locked
 
 
-def _move(order, to, event, allowed, stamp_field, *, expected_version, actor):
+def _move(order, to, event, allowed, stamp_field, *, expected_version, actor, now=None):
     """Move the order to `to` once, with its hook: a replay on an order already there
     returns it untouched."""
     _check_actor(actor)
@@ -423,7 +444,9 @@ def _move(order, to, event, allowed, stamp_field, *, expected_version, actor):
         _check_version(locked, expected_version)
         if locked.state not in allowed:
             raise InvalidTransition(f'an order that is {locked.state} cannot be {to}')
-        now = timezone.now()
+        now = now or timezone.now()
+        if to in (Order.CANCELLED, Order.EXPIRED) and _live_attempts(locked, now):
+            raise AttemptOpen('a payment attempt of the order is open')
         before = locked.state
         locked.state = to
         setattr(locked, stamp_field, now)
@@ -448,10 +471,11 @@ def cancel(order, *, expected_version, actor):
                  expected_version=expected_version, actor=actor)
 
 
-def expire(order, *, expected_version, actor=SYSTEM_ACTOR):
-    """An unpaid order ran out of time -> `expired`, firing `expired`."""
+def expire(order, *, expected_version, actor=SYSTEM_ACTOR, now=None):
+    """An unpaid order ran out of time -> `expired`, firing `expired`. Refused
+    (`AttemptOpen`) while a payment attempt of the order has a live gateway session."""
     return _move(order, Order.EXPIRED, EXPIRED, Order.OPEN_STATES, 'expired_at',
-                 expected_version=expected_version, actor=actor)
+                 expected_version=expected_version, actor=actor, now=now)
 
 
 def expire_stale(now=None):
@@ -466,9 +490,9 @@ def expire_stale(now=None):
              | Q(state=Order.PENDING_PAYMENT, pending_at__lt=cutoff))
     for pk, version in list(Order.objects.filter(stale).values_list('pk', 'version')):
         try:
-            expire(pk, expected_version=version)
-        except StaleVersion:
-            continue  # moved meanwhile; the next run looks again
+            expire(pk, expected_version=version, now=now)
+        except (StaleVersion, AttemptOpen):
+            continue  # moved meanwhile, or paying now; the next run looks again
         except OrderError as failure:
             logger.error('order %s: not expired: %s', pk, type(failure).__name__)
             continue
@@ -484,3 +508,133 @@ def order_of(user, order_id):
         except ValueError:
             return None
     return Order.objects.filter(pk=order_id, user_id=user.pk).first()
+
+
+# --- Payment attempts and confirmation (entry 2) ---------------------------------------------
+
+CONFIRMED, STILL_PENDING, FAILED_AT_GATEWAY = 'confirmed', 'pending', 'failed'
+AMOUNT_MISMATCH, NOT_PAYABLE = 'amount_mismatch', 'not_payable'
+
+
+def _live_attempts(order, now):
+    """The order's open attempts whose gateway session may still be live; those whose
+    session timed out are closed here (the caller holds the order's lock)."""
+    live = []
+    for payment in order.payments.select_for_update().filter(state=Payment.OPEN):
+        if payment.session_expires_at is not None and payment.session_expires_at <= now:
+            _set_payment_state(payment, Payment.CLOSED, now)
+        else:
+            live.append(payment)
+    return live
+
+
+def _set_payment_state(payment, state, now, **fields):
+    payment.state, payment.updated_at = state, now
+    for name, value in fields.items():
+        setattr(payment, name, value)
+    payment.save()
+
+
+def _cancel_live_attempts(order_id):
+    """Before a new attempt: close every live open attempt at its gateway (`cancel_attempt`,
+    an HTTP call: no transaction or lock is held) and mark each closed in its own short
+    transaction once the gateway confirmed. A gateway that cannot cancel (or is not
+    available), or fails to: `AttemptOpen` until the session times out."""
+    now = timezone.now()
+    for payment in Payment.objects.filter(order_id=order_id, state=Payment.OPEN):
+        if payment.session_expires_at is not None and payment.session_expires_at <= now:
+            continue  # timed out: closed under the lock by `_live_attempts`
+        found = gateways.adapter(payment.gateway)
+        if found is None or not found.supports('cancel_attempt'):
+            raise AttemptOpen('the previous attempt is open until its session times out')
+        try:
+            found.call('cancel_attempt', payment)
+        except Exception as failure:  # noqa: BLE001 - any gateway fault: keep it open
+            logger.warning('order %s: an attempt was not closed at %s (%s)', order_id,
+                           payment.gateway, type(failure).__name__)
+            raise AttemptOpen('the previous attempt could not be closed') from failure
+        with transaction.atomic():
+            locked = Payment.objects.select_for_update().get(pk=payment.pk)
+            if locked.state == Payment.OPEN:
+                _set_payment_state(locked, Payment.CLOSED, timezone.now())
+
+
+def open_payment(order):
+    """The order's open attempt, or None."""
+    return Payment.objects.filter(order_id=getattr(order, 'pk', order),
+                                  state=Payment.OPEN).first()
+
+
+def set_gateway_payment_id(payment, gateway_payment_id):
+    """Record the gateway's id of the attempt (an adapter's `start` calls this)."""
+    payment.gateway_payment_id = gateway_payment_id
+    payment.updated_at = timezone.now()
+    payment.save(update_fields=['gateway_payment_id', 'updated_at'])
+
+
+def fail_payment(payment):
+    """The gateway says the attempt failed (the doctor may retry or cancel): an open
+    attempt becomes `failed`; any other is left as it is."""
+    with transaction.atomic():
+        locked = Payment.objects.select_for_update().get(pk=payment.pk)
+        if locked.state == Payment.OPEN:
+            _set_payment_state(locked, Payment.FAILED, timezone.now())
+        return locked
+
+
+def report_attention(order_id, what):
+    """An error to Sentry (and the log) naming the order by its UUID only (AD-23)."""
+    import sentry_sdk
+    message = f'payment {what}: order {order_id}'
+    logger.warning(message)  # not error: the one explicit capture below reaches Sentry
+    with sentry_sdk.new_scope() as scope:
+        scope.set_tag('payments.attention', what)
+        sentry_sdk.capture_message(message, level='error')
+
+
+def confirm_payment(payment, gateway_payment):
+    """Apply what the gateway reports of `payment` (re-read from the gateway, never from a
+    webhook's body): the one path that pays an order, for the webhook task and the return
+    page. Idempotent. Returns CONFIRMED, STILL_PENDING, FAILED_AT_GATEWAY, AMOUNT_MISMATCH
+    or NOT_PAYABLE.
+
+    Paid at the gateway: the order is paid (`mark_paid`, its `paid` hook once) only when the
+    payment is the order's open attempt, the order is `pending_payment` and the gateway's
+    amount and currency equal the order's total and currency. A different amount or
+    currency, or an order that is not payable (paid already, cancelled, expired, or the
+    attempt was closed or replaced since: a retry may switch gateways), leaves the order as
+    it is and marks the payment `needs_attention`, with an error to Sentry by order UUID.
+    A hook that raises (`HookFailed`) rolls everything back."""
+    with transaction.atomic():
+        order = _lock(payment.order_id)
+        locked = Payment.objects.select_for_update().get(pk=payment.pk)
+        now = timezone.now()
+        if locked.state == Payment.CONFIRMED:
+            return CONFIRMED
+        if gateway_payment.status == gateways.FAILED:
+            if locked.state == Payment.OPEN:
+                _set_payment_state(locked, Payment.FAILED, now)
+            return FAILED_AT_GATEWAY
+        if gateway_payment.status != gateways.PAID:
+            return STILL_PENDING
+        if locked.state == Payment.NEEDS_ATTENTION:
+            return NOT_PAYABLE
+        if (gateway_payment.amount != order.total or gateway_payment.amount != locked.amount
+                or gateway_payment.currency != order.currency
+                or gateway_payment.currency != locked.currency):
+            _set_payment_state(locked, Payment.NEEDS_ATTENTION, now)
+            report_attention(order.pk, 'amount or currency differs')
+            return AMOUNT_MISMATCH
+        if locked.state != Payment.OPEN or order.state != Order.PENDING_PAYMENT:
+            _set_payment_state(locked, Payment.NEEDS_ATTENTION, now)
+            report_attention(order.pk, 'confirmed for an order that is not payable')
+            return NOT_PAYABLE
+        mark_paid(order, expected_version=order.version, actor=SYSTEM_ACTOR)
+        _set_payment_state(locked, Payment.CONFIRMED, now, confirmed_at=now)
+        return CONFIRMED
+
+
+def needs_attention(order):
+    """Whether a confirmed payment of the order could not pay it (the doctor sees an error
+    message, staff check it)."""
+    return order.payments.filter(state=Payment.NEEDS_ATTENTION).exists()

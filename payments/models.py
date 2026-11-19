@@ -206,3 +206,99 @@ class OrderChange(models.Model):
 
     def delete(self, *args, **kwargs):
         raise AppendOnly('the order changes are append-only')
+
+
+class Payment(models.Model):
+    """One payment attempt at one gateway (epic-payments entry 2, user decision 2026-11-19).
+    Written only by `payments.service`. `open`: the doctor was sent to the gateway and the
+    gateway's session may still be live (`session_expires_at`); there is at most one open
+    attempt per order (a database constraint). `confirmed`: the gateway said it was paid and
+    the order was paid by it. `failed`: the gateway said it failed. `closed`: the attempt was
+    closed at the gateway, replaced by a retry or its session timed out. `needs_attention`:
+    a confirmed payment that could not pay the order (the order was not payable, or the
+    amount or currency differ): staff check it and refund by hand if money moved.
+    `gateway_payment_id` is the gateway's own id of the payment (unique per gateway)."""
+
+    OPEN, CONFIRMED, FAILED, CLOSED, NEEDS_ATTENTION = (
+        'open', 'confirmed', 'failed', 'closed', 'needs_attention')
+    STATES = [(OPEN, 'Open'), (CONFIRMED, 'Confirmed'), (FAILED, 'Failed'),
+              (CLOSED, 'Closed'), (NEEDS_ATTENTION, 'Needs attention')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name='payments')
+    gateway = models.CharField(max_length=20)
+    gateway_payment_id = models.CharField(max_length=100, blank=True, default='')
+    amount = models.DecimalField(max_digits=17, decimal_places=2)
+    currency = models.CharField(max_length=3)
+    state = models.CharField(max_length=16, choices=STATES, default=OPEN)
+    session_expires_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=('gateway', 'gateway_payment_id'), name='payments_payment_gateway_id',
+                condition=~models.Q(gateway_payment_id='')),
+            models.UniqueConstraint(
+                fields=('order',), name='payments_payment_one_open',
+                condition=models.Q(state='open')),
+        ]
+
+    def __str__(self):
+        return f'Payment {self.pk} ({self.state})'
+
+
+class WebhookLog(models.Model):
+    """One row per webhook received, accepted or refused (epic-payments entry 2, user
+    decision 2026-11-19): when, from which IP, the result, the gateway's event and payment
+    ids, the amount the event claimed, and the SHA-256 and size of the body, never the body.
+    Kept 180 days (`purge_webhook_logs`). An accepted row is also the task's work item:
+    `processed_at` (set when the payment was re-read and confirmed or refused), `attempts`
+    and `next_try_at` (the backoff after a failed re-read, AD-8). Rows whose event was taken
+    in (`DEDUPED`) are unique per (gateway, event id): the database refuses the same event
+    twice."""
+
+    ACCEPTED, DUPLICATE, BAD_SIGNATURE, STALE = 'accepted', 'duplicate', 'bad_signature', 'stale'
+    AMOUNT_MISMATCH, UNKNOWN, NOT_PAYABLE = 'amount_mismatch', 'unknown', 'not_payable'
+    TOO_LARGE, RATE_LIMITED = 'too_large', 'rate_limited'
+    RESULTS = [(ACCEPTED, 'Accepted'), (DUPLICATE, 'Duplicate'),
+               (BAD_SIGNATURE, 'Bad signature'), (STALE, 'Stale'),
+               (AMOUNT_MISMATCH, 'Amount mismatch'), (UNKNOWN, 'Unknown'),
+               (NOT_PAYABLE, 'Not payable'), (TOO_LARGE, 'Too large'),
+               (RATE_LIMITED, 'Rate limited')]
+    # The results of an event that was taken in (the task may change `accepted` to the
+    # other two): the event id is unique among them.
+    DEDUPED = (ACCEPTED, AMOUNT_MISMATCH, NOT_PAYABLE)
+
+    id = models.BigAutoField(primary_key=True)
+    gateway = models.CharField(max_length=20)
+    received_at = models.DateTimeField(default=timezone.now, db_index=True)
+    ip = models.CharField(max_length=64, blank=True, default='')
+    result = models.CharField(max_length=16, choices=RESULTS)
+    event_id = models.CharField(max_length=100, blank=True, default='')
+    gateway_payment_id = models.CharField(max_length=100, blank=True, default='')
+    amount = models.DecimalField(max_digits=17, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=3, blank=True, default='')
+    body_sha256 = models.CharField(max_length=64, blank=True, default='')
+    body_size = models.PositiveIntegerField(default=0)
+    payment = models.ForeignKey(Payment, null=True, blank=True, on_delete=models.SET_NULL,
+                                related_name='webhooks')
+    processed_at = models.DateTimeField(null=True, blank=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    next_try_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['received_at', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=('gateway', 'event_id'), name='payments_webhooklog_event',
+                condition=~models.Q(event_id='') & models.Q(
+                    result__in=['accepted', 'amount_mismatch', 'not_payable'])),
+        ]
+
+    def __str__(self):
+        return f'Webhook {self.pk} {self.gateway} ({self.result})'

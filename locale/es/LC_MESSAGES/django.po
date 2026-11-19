@@ -2819,3 +2819,30 @@ msgstr "Iniciar el pedido"
 #: payments/templates
 msgid "No products are offered to you."
 msgstr "No se le ofrece ningún producto."
+
+#: payments/views.py
+msgid ""
+"A payment for this order is in progress. Please wait a few minutes, or check "
+"your payment before trying again."
+msgstr ""
+"Hay un pago de este pedido en curso. Espere unos minutos o compruebe su pago "
+"antes de volver a intentarlo."
+
+#: payments/templates
+msgid ""
+"We received a payment for this order but could not apply it to the order. We "
+"have been told and will contact you. Please do not pay again."
+msgstr ""
+"Hemos recibido un pago de este pedido pero no hemos podido aplicarlo al "
+"pedido. Ya se nos ha avisado y nos pondremos en contacto con usted. No vuelva "
+"a pagar."
+
+#: payments/templates
+msgid ""
+"Waiting for confirmation of your payment. This usually takes a few seconds."
+msgstr ""
+"Esperando la confirmación de su pago. Suele tardar unos segundos."
+
+#: payments/templates
+msgid "Refresh"
+msgstr "Actualizar"

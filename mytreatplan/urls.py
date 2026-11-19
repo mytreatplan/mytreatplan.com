@@ -23,6 +23,7 @@ from django.urls import include, path
 from mytp_core.views import healthz
 from mytp_publicsite.sitemaps import PublicPagesSitemap
 from mytp_publicsite.views import robots_txt
+from payments.urls import webhook_urlpatterns
 from regions.suggestion import stay as region_stay
 
 urlpatterns = [
@@ -43,6 +44,9 @@ urlpatterns = [
     # The upload widget's endpoints (storage.views): logged-in users, CSRF; outside the
     # language prefixes.
     path('storage/', include('storage.urls')),
+    # The payment gateways' webhooks (epic-payments entry 2): public, signed by the
+    # gateway, outside the language prefixes and /api/.
+    *webhook_urlpatterns,
 ]
 
 # Portal routes (signup, login, ...). They are served, under the language prefixes, only

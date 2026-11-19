@@ -14,7 +14,7 @@ from accounts.models import FiscalEntity
 from catalogue import pricing, resolver
 from integration.tests.snapshot_rows import GENERAL, TPS, pull, voucher
 from payments import gateways, hooks, reference, service
-from payments.models import AppendOnly, Order, OrderChange, OrderLine
+from payments.models import AppendOnly, Order, OrderChange, OrderLine, Payment
 from subscriptions.tests.helpers import ADVANCED, catalogue, doctor as make_doctor
 from payments.tests.conftest import COMPANY
 
@@ -310,6 +310,7 @@ def test_cancel_and_expire_an_unpaid_order(doctor, entity, fake_on, events, firs
     order = new(doctor)
     if first == 'pending_payment':
         order = service.start_payment(order, 'fake', expected_version=1, actor=actor(doctor))
+        service.fail_payment(service.open_payment(order))  # no attempt open: may cancel
     cancelled = service.cancel(order, expected_version=order.version, actor=actor(doctor))
     assert cancelled.state == 'cancelled' and cancelled.cancelled_at is not None
     assert service.cancel(order, expected_version=0, actor=actor(doctor)).state == 'cancelled'
@@ -340,6 +341,7 @@ def test_the_expiry_job_expires_only_the_orders_older_than_24_hours(
     Order.objects.filter(pk__in=[old.pk, done.pk, checkout_old.pk]).update(
         created_at=now - timedelta(hours=25))
     Order.objects.filter(pk=old.pk).update(pending_at=now - timedelta(hours=25))
+    Payment.objects.filter(order=old).update(session_expires_at=now - timedelta(hours=24))
     # Created 30 h ago but frozen 1 h ago: the doctor may be on the gateway page.
     fresh_pending = service.start_payment(new(doctor), 'fake', expected_version=1,
                                           actor=actor(doctor))

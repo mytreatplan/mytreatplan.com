@@ -16,6 +16,7 @@
 Only the order's own doctor sees any of it: another doctor's id, a staff account or a flag
 that is off is a 404. All writes go through `payments.service`; nothing here prices.
 """
+import logging
 from urllib.parse import quote
 
 from django.conf import settings
@@ -32,8 +33,10 @@ from accounts.client_sync import is_client
 from catalogue import pricing, resolver
 from subscriptions import service as subscriptions_service
 
-from . import checks, gateways, service
+from . import checks, fake, gateways, service, webhooks
 from .models import Order
+
+logger = logging.getLogger(__name__)
 
 GATEWAY_LABELS = {
     'fake': gettext_lazy('Test payment (fake gateway)'),
@@ -101,7 +104,10 @@ def _go_to_gateway(request, order):
     """Redirect to what the order's gateway shows (a paid 0.00 order goes to the return)."""
     if order.state == Order.PAID or not order.gateway:
         return redirect('checkout_return', pk=order.pk)
-    return redirect(gateways.adapter(order.gateway).start(order, request))
+    payment = service.open_payment(order)
+    if payment is None:
+        return redirect('checkout_return', pk=order.pk)
+    return redirect(gateways.adapter(order.gateway).start(payment, request))
 
 
 def _failed(request, error):
@@ -116,6 +122,9 @@ def _failed(request, error):
         text = _('Choose one of the payment methods offered.')
     elif isinstance(error, service.NoPaymentMethod):
         text = _('There is no payment method for this order yet.')
+    elif isinstance(error, service.AttemptOpen):
+        text = _('A payment for this order is in progress. Please wait a few minutes, '
+                 'or check your payment before trying again.')
     elif isinstance(error, service.InvalidTransition):
         text = _('This order can no longer be changed.')
     elif isinstance(error, service.HookFailed):
@@ -193,7 +202,24 @@ def _checkout_post(request, order):
 @require_http_methods(['GET'])
 def checkout_return(request, pk):
     order = _doctor_order(request, pk)
-    return render(request, 'payments/return.html', {'order': order})
+    waiting = False
+    if order.state == Order.PENDING_PAYMENT:
+        # The webhook may not have been handled yet: re-read the payment once, through
+        # the same path as the webhook's task.
+        payment = service.open_payment(order)
+        if payment is not None and payment.gateway_payment_id:
+            try:
+                webhooks.reread_and_confirm(payment)
+            except service.HookFailed:
+                messages.error(request, _('Something went wrong. Please try again in a '
+                                          'moment.'))
+            except Exception as failure:  # noqa: BLE001 - the gateway cannot be read now: wait
+                logger.warning('checkout return: order %s not re-read (%s)', order.pk,
+                               type(failure).__name__)
+            order = service.order_of(request.user, pk)
+        waiting = order.state == Order.PENDING_PAYMENT and payment is not None
+    return render(request, 'payments/return.html', {
+        'order': order, 'waiting': waiting, 'needs_attention': service.needs_attention(order)})
 
 
 @login_required
@@ -231,17 +257,15 @@ def fake_gateway(request, pk):
         if order.state == Order.PAID:
             return redirect('checkout_return', pk=order.pk)
         raise Http404('no fake payment to make')
+    payment = service.open_payment(order)
+    if payment is None or not payment.gateway_payment_id:
+        raise Http404('no fake payment to make')
     if request.method == 'POST':
         if request.POST.get('action') == 'pay':
-            try:
-                service.mark_paid(order, expected_version=_version(request, order),
-                                  actor=service.SYSTEM_ACTOR)
-            except service.StaleVersion:
-                pass  # moved meanwhile: the return page shows where it is
-            except service.OrderError as error:
-                _failed(request, error)
-                return redirect('checkout_failure', pk=order.pk)
+            fake.pay(payment)  # a signed webhook through the real handler
             return redirect('checkout_return', pk=order.pk)
+        fake.fail(payment)
+        service.fail_payment(payment)
         return redirect('checkout_failure', pk=order.pk)
     return render(request, 'payments/fake_gateway.html', {'order': order})
 
