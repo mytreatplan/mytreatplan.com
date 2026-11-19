@@ -9,6 +9,11 @@
   `pending_payment`) or cancel.
 - `fake_gateway`: the fake gateway's "hosted page" with Pay and Fail (only while
   PAYMENTS_FAKE_GATEWAY is on).
+- `redsys_gateway`: the page that posts the signed form to Redsys's payment page (it
+  submits itself; a button without JavaScript). `redsys_back`: where Redsys sends the
+  doctor back (UrlOK / UrlKO, GET or POST, CSRF-exempt): 303 to the return or failure
+  page; what Redsys posts is ignored (the payment is paid only by its signed
+  notification).
 - `test_order`: the hidden test-order page of dev and dev-ae (only while
   PAYMENTS_TEST_ORDERS is on): pick one product the doctor is offered and go through the
   real checkout.
@@ -22,10 +27,13 @@ from urllib.parse import quote
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.http import Http404
+from django.http import Http404, HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils.translation import get_language, gettext as _, gettext_lazy
+from django.utils import timezone
+from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from accounts import fiscal
@@ -33,7 +41,7 @@ from accounts.client_sync import is_client
 from catalogue import pricing, resolver
 from subscriptions import service as subscriptions_service
 
-from . import checks, fake, gateways, service, webhooks
+from . import checks, fake, gateways, redsys, service, webhooks
 from .models import Order
 
 logger = logging.getLogger(__name__)
@@ -268,6 +276,48 @@ def fake_gateway(request, pk):
         service.fail_payment(payment)
         return redirect('checkout_failure', pk=order.pk)
     return render(request, 'payments/fake_gateway.html', {'order': order})
+
+
+@login_required
+@never_cache
+@require_http_methods(['GET'])
+def redsys_gateway(request, pk):
+    """The signed form for the order's open Redsys attempt, posted to Redsys by the page
+    itself."""
+    order = _doctor_order(request, pk)
+    if order.state == Order.PAID:
+        return redirect('checkout_return', pk=order.pk)
+    if (order.state != Order.PENDING_PAYMENT or order.gateway != redsys.NAME
+            or gateways.adapter(redsys.NAME) is None):
+        raise Http404('no Redsys payment to make')
+    payment = service.open_payment(order)
+    if payment is None or payment.gateway != redsys.NAME or not payment.gateway_payment_id:
+        raise Http404('no Redsys payment to make')
+    if payment.session_expires_at is not None and payment.session_expires_at <= timezone.now():
+        return redirect('checkout_failure', pk=order.pk)  # too late for this attempt
+    try:
+        fields = redsys.form(payment)
+    except gateways.GatewayError as error:
+        _failed(request, error)
+        return redirect('checkout_failure', pk=order.pk)
+    # Redsys's session starts when this form is posted: our clock moves with it.
+    service.extend_session(payment, gateways.adapter(redsys.NAME).session_lifetime)
+    return render(request, 'payments/redsys_form.html', {'order': order, 'form': fields})
+
+
+@csrf_exempt
+@never_cache
+@require_http_methods(['GET', 'POST'])
+def redsys_back(request, pk, outcome):
+    """Redsys's UrlOK (`ok`) and UrlKO (`ko`): a 303 to our own GET page, which needs the
+    doctor's session (a cross-site POST carries no Lax cookie; the GET after the 303
+    does). Nothing posted is read."""
+    if outcome not in ('ok', 'ko'):
+        raise Http404('no such outcome')
+    target = reverse('checkout_return' if outcome == 'ok' else 'checkout_failure', args=[pk])
+    response = HttpResponseRedirect(target)
+    response.status_code = 303
+    return response
 
 
 @login_required

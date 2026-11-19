@@ -565,6 +565,20 @@ def open_payment(order):
                                   state=Payment.OPEN).first()
 
 
+def extend_session(payment, lifetime, now=None):
+    """The doctor is sent to the gateway's page now: an open attempt's session may be
+    paid until `now + lifetime` (moved forward only; no gateway call). Returns the
+    attempt."""
+    now = now or timezone.now()
+    with transaction.atomic():
+        locked = Payment.objects.select_for_update().get(pk=payment.pk)
+        until = now + lifetime
+        if locked.state == Payment.OPEN and (locked.session_expires_at is None
+                                             or locked.session_expires_at < until):
+            _set_payment_state(locked, Payment.OPEN, now, session_expires_at=until)
+        return locked
+
+
 def set_gateway_payment_id(payment, gateway_payment_id):
     """Record the gateway's id of the attempt (an adapter's `start` calls this)."""
     payment.gateway_payment_id = gateway_payment_id

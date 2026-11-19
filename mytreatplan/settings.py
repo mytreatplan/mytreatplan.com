@@ -137,6 +137,15 @@ PAYMENTS_TEST_ORDERS = config('PAYMENTS_TEST_ORDERS', default=False, cast=bool)
 # The secret the fake gateway signs its webhooks with (epic-payments entry 2; dev and
 # dev-ae only). Unset: a key derived from SECRET_KEY. Gateway secrets are never logged.
 PAYMENTS_FAKE_WEBHOOK_SECRET = config('PAYMENTS_FAKE_WEBHOOK_SECRET', default='')
+# Redsys (epic-payments entry 3, payments.redsys): the merchant code (FUC), the terminal,
+# the SHA-256 key (base64) and the environment (`test` or `production`). The adapter is
+# offered when the code and the key are set; on a public site the three must be set
+# (payments.E003) and the environment must be `production` with the company's own terminal
+# (payments.E004). The key is never logged.
+REDSYS_MERCHANT_CODE = config('REDSYS_MERCHANT_CODE', default='')
+REDSYS_TERMINAL = config('REDSYS_TERMINAL', default='')
+REDSYS_SECRET_KEY = config('REDSYS_SECRET_KEY', default='')
+REDSYS_ENVIRONMENT = config('REDSYS_ENVIRONMENT', default='test')
 
 # Portal features (signup, login, ...) are routed only when this is True. See
 # `portal_patterns` in mytreatplan/urls.py.
@@ -248,7 +257,8 @@ SENTRY_RELEASE = config(
     'RELEASE_SHA',
     default=_revision_file.read_text().strip() if _revision_file.is_file() else '')
 MYTP_SENTRY_IGNORED_LOGGERS = ('signup.verification',)
-MYTP_SENTRY_SENSITIVE_FIELDS = ('signature', 'webhook_secret')
+MYTP_SENTRY_SENSITIVE_FIELDS = ('signature', 'webhook_secret', 'redsys',
+                                'merchantparameters')
 # Keys that keep their value although they contain a field name (the reset step's tag).
 MYTP_SENTRY_SAFE_KEYS = ('password_reset.action',)
 if SENTRY_DSN:

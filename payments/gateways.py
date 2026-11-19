@@ -83,11 +83,15 @@ class Stale(WebhookRefused):
 @dataclass(frozen=True)
 class WebhookEvent:
     """What a verified webhook says; informational until the payment is re-read.
-    `event_id` is the gateway's event id, else its payment id (the dedupe key)."""
+    `event_id` is the gateway's event id, else its payment id (the dedupe key). `status`
+    (PAID or FAILED, optional) is what the event says of the payment; it is stored on the
+    log row, where a gateway whose signed notification is the record of the payment
+    (Redsys, entry 3) reads it back in `fetch_payment`."""
     event_id: str
     payment_id: str
     amount: Optional[Decimal] = None
     currency: str = ''
+    status: Optional[str] = None
 
 
 @dataclass(frozen=True)

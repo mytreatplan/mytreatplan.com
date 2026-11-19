@@ -371,6 +371,7 @@ def test_a_retry_closes_the_previous_attempt_at_the_gateway(doctor, entity, fake
 
 
 def test_a_gateway_that_cannot_cancel_waits_for_its_session(doctor, entity, fake_on):
+    real = gateways._registry.pop('redsys')  # the real adapter, put back after
     gateways.register('redsys', lambda payment, request: '/x/')
     try:
         order = new(doctor)
@@ -388,6 +389,7 @@ def test_a_gateway_that_cannot_cancel_waits_for_its_session(doctor, entity, fake
         assert [p.state for p in Payment.objects.order_by('created_at')] == ['closed', 'open']
     finally:
         gateways.unregister('redsys')
+        gateways._registry['redsys'] = real
 
 
 def test_a_gateway_that_fails_to_cancel_keeps_the_attempt_open(
@@ -589,6 +591,7 @@ def test_fake_webhook_needs_the_flag_and_an_order(doctor, entity, fake_on):
 def test_an_enabled_gateway_without_its_secret_fails_a_public_site(settings):
     settings.DEBUG, settings.ROBOTS_NOINDEX = False, False
     settings.REDSYS_SECRET = ''
+    real = gateways._registry.pop('redsys')  # the real adapter, put back after
     gateways.register('redsys', lambda payment, request: '/x/',
                       required_settings=('REDSYS_SECRET',))
     try:
@@ -602,3 +605,4 @@ def test_an_enabled_gateway_without_its_secret_fails_a_public_site(settings):
         assert checks.check_gateway_secrets() == []
     finally:
         gateways.unregister('redsys')
+        gateways._registry['redsys'] = real
