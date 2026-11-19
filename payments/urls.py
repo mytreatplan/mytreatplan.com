@@ -10,6 +10,9 @@ urlpatterns = [
     path('checkout/<uuid:pk>/return/', views.checkout_return, name='checkout_return'),
     path('checkout/<uuid:pk>/failed/', views.checkout_failure, name='checkout_failure'),
     path('checkout/<uuid:pk>/fake/', views.fake_gateway, name='checkout_fake'),
+    path('checkout/<uuid:pk>/redsys/', views.redsys_gateway, name='checkout_redsys'),
+    path('checkout/<uuid:pk>/redsys/<slug:outcome>/', views.redsys_back,
+         name='checkout_redsys_back'),
 ]
 
 # The gateways' webhooks (epic-payments entry 2): public, outside the language prefixes and

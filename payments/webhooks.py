@@ -80,7 +80,7 @@ def _log(gateway, result, ip, body, *, event=None, payment=None, event_id=None):
         body_size=len(body), event_id=(event_id or '')[:100],
         gateway_payment_id=(event.payment_id if event else '')[:100],
         amount=event.amount if event else None, currency=(event.currency if event else '')[:3],
-        payment=payment)
+        status=(event.status or '') if event else '', payment=payment)
 
 
 def _refuse(gateway, result, ip, body, *, event=None, payment=None):

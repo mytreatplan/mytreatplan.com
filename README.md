@@ -369,5 +369,55 @@ path. Logs, Sentry and URLs carry no signature, secret, body or personal data.
 gateway's webhooks. On dev and dev-ae, `manage.py fake_webhook <reference>` sends a valid one for
 the order's open fake attempt; `--bad-signature`, `--stale`, `--amount X` and `--replay` send each
 refusal on purpose. `payments.E003` fails `check` on a public site when an available gateway's
-`required_settings` secret is missing. Real gateways' webhooks reach a staging site only if Nginx
-lets `/payments/webhook/` past its basic auth (not done: staging uses the fake gateway).
+`required_settings` secret is missing. Nginx serves `/payments/webhook/` without the staging
+basic auth (entry 3; deploy/README.md "Payment webhooks").
+
+## Payments: Redsys (epic-payments entry 3)
+
+`payments.redsys` is the card gateway of the Iberian company (5.9's rule offers `redsys`, shown as
+"Card", then `bank_transfer`): Redsys's hosted payment page by redirection, signed with
+HMAC_SHA256_V1 (a per-order key: `Ds_Order` encrypted with 3DES under the merchant key, then
+HMAC-SHA256 of `Ds_MerchantParameters`).
+
+- **Pay.** `start` gives the attempt a fresh `Ds_Order` (4 digits and 8 of `[0-9A-Z]`, the
+  attempt's `gateway_payment_id`) and sends the doctor to `/<lang>/checkout/<order>/redsys/`
+  (the doctor's own order only), which posts the signed form to Redsys's `realizarPago` by itself
+  (`static/js/redsys-form.js`; a button without JavaScript): the amount in cents, currency 978
+  (EUR), the notification URL and UrlOK / UrlKO, all built from `SITE_URL`. Redsys sends the
+  doctor back to `/<lang>/checkout/<order>/redsys/ok/` or `/ko/` (GET or POST, CSRF-exempt), which
+  answers 303 to the return or failure page; nothing posted there is read.
+- **Notification.** Redsys's signed online notification arrives at `/payments/webhook/redsys/`
+  through the shared handler: the signature is checked with our key (standard or URL-safe
+  base64), `Ds_Date`/`Ds_Hour` (Europe/Madrid) must be within 30 minutes, the event id is
+  `Ds_Order:Ds_Response`, and `Ds_Response` 0000-0099 is paid, any other failed. The verified
+  notification is the record of the payment: its status is stored on the log row
+  (`WebhookLog.status`), and `fetch_payment` returns a paid one of the attempt if any (a later
+  refusal never hides a charge), else the latest failed one, else PENDING (no SOAP query). The
+  signed merchant code and terminal must be ours. Showing the form page moves the attempt's
+  session forward to 30 minutes from then. A lost notification leaves the order pending until it expires;
+  staff can check Redsys's admin module.
+- **Retry.** Redsys cannot close a session (no `cancel_attempt`): while an attempt may still be
+  paid (`session_lifetime`, 30 minutes) a retry shows "payment in progress"; a refusal
+  notification fails the attempt and the doctor can retry at once.
+- **Refund.** `python manage.py redsys_refund <reference> [--amount X]` refunds the order's
+  confirmed Redsys payment (the full amount by default) over Redsys REST (`trataPeticionREST`,
+  transaction type 3); the signed answer is verified and must say `Ds_Response` 0900; it prints
+  the refund id (`Ds_Order:authorisation code`). Nothing changes on the order (no state change,
+  no credit note: entry 7). A refusal or an HTTP fault is an error naming only Redsys's code.
+
+Settings (settings.env; the key is never logged and never shared): `REDSYS_MERCHANT_CODE` (the
+FUC), `REDSYS_TERMINAL`, `REDSYS_SECRET_KEY` and `REDSYS_ENVIRONMENT` (`test`, the default, or
+`production`). The adapter is offered when the code and the key are set. On a public site
+`payments.E003` wants the first three, and `payments.E004` refuses the `test` environment and
+Redsys's public test terminal (also at start: the site refuses to run).
+
+Test terminal (published by Redsys; dev and dev-ae): merchant code `999008881`, terminal `1`,
+the published SHA-256 test key, `REDSYS_ENVIRONMENT=test` (`https://sis-t.redsys.es:25443`). Test
+card 4548 8120 4940 0004, CVV 123, any future expiry, 3-D Secure code 123456. The notification
+reaches a staging site only once nginx serves `/payments/webhook/` without the basic auth
+(re-provision, deploy/README.md "Payment webhooks").
+
+Measuring the session lifetime: on dev, pay a test order up to Redsys's card form, leave it open
+and note when Redsys refuses to go on (and whether a refusal notification arrives: the log shows
+an accepted row with status `failed`). Set `SESSION_LIFETIME` in `payments/redsys.py` to that
+time plus a margin; until then a retry during the session is refused for 30 minutes.

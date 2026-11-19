@@ -52,7 +52,7 @@ def test_a_failed_fetch_is_unavailable_and_the_number_is_never_logged(fake_vies,
 def test_post_json_sends_json(monkeypatch, settings):
     seen = {}
 
-    def fake_fetch(request):
+    def fake_fetch(request, timeout=None):
         seen['url'], seen['body'], seen['headers'] = (
             request.full_url, request.data, dict(request.header_items()))
         return '{"valid": true}'

@@ -200,13 +200,14 @@ def test_an_entity_edited_after_it_was_chosen_must_be_chosen_again(doctor, entit
 
 def test_a_gateway_that_is_not_offered_is_refused(doctor, entity, fake_on):
     order = new(doctor)
-    for gateway in ('redsys', 'nonsense', ''):  # redsys is priced but has no adapter yet
+    for gateway in ('redsys', 'nonsense', ''):  # redsys is priced but not set up (no REDSYS_*)
         with pytest.raises(service.GatewayRefused):
             service.start_payment(order, gateway, expected_version=1, actor=actor(doctor))
     assert Order.objects.get(pk=order.pk).state == 'checkout'
 
 
 def test_a_priced_gateway_with_an_adapter_is_offered(doctor, entity, settings):
+    real = gateways._registry.pop('redsys')  # the real adapter, put back after
     gateways.register('redsys', lambda order, request: '/x/')
     try:
         order = new(doctor)
@@ -214,10 +215,11 @@ def test_a_priced_gateway_with_an_adapter_is_offered(doctor, entity, settings):
         service.start_payment(order, 'redsys', expected_version=1, actor=actor(doctor))
     finally:
         gateways.unregister('redsys')
+        gateways._registry['redsys'] = real
 
 
 def test_without_a_payment_method_no_order_is_started(doctor, entity):
-    with pytest.raises(service.NoPaymentMethod):  # fake gateway off, redsys has no adapter
+    with pytest.raises(service.NoPaymentMethod):  # fake gateway off, redsys not set up
         new(doctor)
     assert not Order.objects.exists()
 

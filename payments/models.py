@@ -273,6 +273,9 @@ class WebhookLog(models.Model):
     # The results of an event that was taken in (the task may change `accepted` to the
     # other two): the event id is unique among them.
     DEDUPED = (ACCEPTED, AMOUNT_MISMATCH, NOT_PAYABLE)
+    # `status`: what the event said of the payment (the values of payments.gateways).
+    PAID, FAILED = 'paid', 'failed'
+    STATUSES = [(PAID, 'Paid'), (FAILED, 'Failed')]
 
     id = models.BigAutoField(primary_key=True)
     gateway = models.CharField(max_length=20)
@@ -285,6 +288,10 @@ class WebhookLog(models.Model):
     currency = models.CharField(max_length=3, blank=True, default='')
     body_sha256 = models.CharField(max_length=64, blank=True, default='')
     body_size = models.PositiveIntegerField(default=0)
+    # What the verified event said of the payment (epic-payments entry 3, user decision
+    # 2026-11-19): paid, failed, or blank (the event does not say). Redsys's
+    # `fetch_payment` reads the latest of an attempt: its signed notification is the record.
+    status = models.CharField(max_length=10, choices=STATUSES, blank=True, default='')
     payment = models.ForeignKey(Payment, null=True, blank=True, on_delete=models.SET_NULL,
                                 related_name='webhooks')
     processed_at = models.DateTimeField(null=True, blank=True)

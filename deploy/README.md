@@ -35,6 +35,7 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Signup and login codes | Twilio Verify (email via SendGrid, WhatsApp, SMS); credentials in `shared/settings.env` ("Twilio Verify") |
 | Geo-IP | DB-IP Lite country database `/srv/mytp-dev/shared/geoip/dbip-country-lite.mmdb` (CC BY 4.0), monthly `geoipupdate` job ("Geo-IP database") |
 | Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute; configuration snapshot pulled from it, `pullconfig` job every 5 minutes, `show_config`; `checkinterface` job every 5 minutes, one Sentry warning per outage of either; the catalogue it carries, `price_catalogue`; the country map it carries ("Interface with the admin site", "Interface alerts", "Outbox", "Configuration snapshot", "Catalogue", "Country map") |
+| Payment webhooks | `/payments/webhook/<gateway>/` (no password: signed by the gateway, checked by Django; 64 KB), Redsys settings `REDSYS_*` in `shared/settings.env` ("Payment webhooks"; the repo README "Payments: Redsys") |
 | Doctor subscriptions | one record per doctor (Basic from signup; migration `subscriptions.0002` for existing doctors), `assign_basic` after a deploy, `doctor_subscription` to read one ("Doctor subscriptions") |
 | Errors and job alerts | Sentry (EU region), one environment per site (`dev`, `dev-ae`, `admindev`), alerts to devops@mytreatplan.com |
 
@@ -3806,6 +3807,35 @@ accepted row for each with `iss` `dev` and `dev-ae`; with admindev's gunicorn st
 and `curl -s -o /dev/null -w '%{http_code}' -u <htpasswd-user> https://dev.mytpdso.com/en/`
 still answers 200; with the setting removed on admindev (restart), it prints `refused
 (http_404_not_found)`.
+
+## Payment webhooks
+
+The gateways' notifications (epic-payments entries 2-3) arrive at
+`https://<site>/payments/webhook/<gateway>/` (Redsys: `/payments/webhook/redsys/`). A
+gateway cannot send the team password, so nginx serves that location without basic auth
+(`location ^~ /payments/webhook/` in `nginx/site.conf.template`, modelled on `/api/`,
+bodies up to 64 KB). Django checks every signature and logs every notification, accepted
+or refused (`payments.models.WebhookLog`, never the body); anything else under the path is
+a 404.
+
+A site provisioned before this location existed needs its nginx file rendered again: from
+a copy of the merged `deploy/`, re-run `provision.sh` for each site (dev and dev-ae):
+
+```sh
+bash ~/deploy/provision.sh dev dev.mytpdso.com mytp-team < /dev/null
+bash ~/deploy/provision.sh dev-ae dev-ae.mytpdso.com mytp-team < /dev/null
+```
+
+Checks: `curl -s -o /dev/null -w '%{http_code}' -X POST https://dev.mytpdso.com/payments/webhook/redsys/`
+prints `401` (Django refused an unsigned notification; not nginx's `401` page: the
+response is empty and a `bad_signature` row is logged), or `404` while Redsys is not set
+up on the site; `curl -s -o /dev/null -w '%{http_code}' https://dev.mytpdso.com/en/` still
+prints `401` without the password.
+
+Redsys's settings (`REDSYS_MERCHANT_CODE`, `REDSYS_TERMINAL`, `REDSYS_SECRET_KEY`,
+`REDSYS_ENVIRONMENT`) are typed in `shared/settings.env` on the server only; dev and dev-ae
+use Redsys's public test terminal until the company's own test credentials arrive (the
+repo README, "Payments: Redsys"). Restart the site's gunicorn and worker after a change.
 
 ## Rollback
 

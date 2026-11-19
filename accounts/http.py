@@ -36,8 +36,8 @@ def _fetch_bytes(request, timeout=None, max_bytes=None):
         return body
 
 
-def _fetch_text(request):
-    return _fetch_bytes(request).decode('utf-8')
+def _fetch_text(request, timeout=None):
+    return _fetch_bytes(request, timeout=timeout).decode('utf-8')
 
 
 def get_text(url, headers=None):
@@ -68,12 +68,13 @@ def post_form(url, data):
         }))
 
 
-def post_json(url, payload):
+def post_json(url, payload, timeout=None):
     """POST `payload` (a dict) as JSON to `url` and return the body as text; raises one of
-    FETCH_ERRORS on any failure (an HTTP 4xx/5xx is an urllib.error.HTTPError)."""
+    FETCH_ERRORS on any failure (an HTTP 4xx/5xx is an urllib.error.HTTPError). `timeout`
+    (seconds, default EXTERNAL_CHECK_TIMEOUT) is the socket timeout."""
     return _fetch_text(urllib.request.Request(
         url, data=json.dumps(payload).encode('utf-8'), method='POST', headers={
             'User-Agent': settings.EXTERNAL_CHECK_USER_AGENT,
             'Content-Type': 'application/json',
             'Accept': 'application/json',
-        }))
+        }), timeout=timeout)

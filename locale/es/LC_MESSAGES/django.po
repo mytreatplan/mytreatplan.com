@@ -2846,3 +2846,15 @@ msgstr ""
 #: payments/templates
 msgid "Refresh"
 msgstr "Actualizar"
+
+#: payments/templates
+msgid "Card payment"
+msgstr "Pago con tarjeta"
+
+#: payments/templates
+msgid "Taking you to the bank's secure payment page…"
+msgstr "Le llevamos a la página de pago segura del banco…"
+
+#: payments/templates
+msgid "Continue to payment"
+msgstr "Continuar al pago"
