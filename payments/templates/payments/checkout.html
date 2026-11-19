@@ -1,0 +1,88 @@
+{% extends "doctor_base.html" %}
+{% load i18n money %}
+{% comment %}
+The checkout (payments.views.checkout, epic-payments entry 1): the order's reference,
+lines and totals, the fiscal entity to bill (a select among the usable ones; none: a link
+to add one that comes back here), the payment method, Pay and Cancel. An order that is no
+longer open shows what became of it.
+{% endcomment %}
+
+{% block title %}{% translate "Checkout" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_width %}max-w-[760px]{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Checkout" %}</h1>
+<p class="mt-3 text-copy text-ink-muted">{% blocktranslate with reference=order.reference %}Order reference <strong class="text-ink" data-order-reference>{{ reference }}</strong>{% endblocktranslate %}</p>
+
+{% if order.state == "cancelled" %}<p class="mt-6 text-copy font-semibold" data-order-state="cancelled">{% translate "This order was cancelled." %}</p>
+{% elif order.state == "expired" %}<p class="mt-6 text-copy font-semibold" data-order-state="expired">{% translate "This order expired. Please start it again." %}</p>
+{% endif %}
+
+<table class="mt-8 w-full text-left text-copy" data-order-lines>
+  <thead><tr class="border-b border-line text-[14px] text-ink-muted"><th class="py-2 font-semibold">{% translate "Item" %}</th><th class="py-2 text-right font-semibold">{% translate "Net" %}</th></tr></thead>
+  <tbody>
+  {% for line in lines %}
+  <tr class="border-b border-line align-top" data-order-line>
+    <td class="py-3">{{ line.name }}{% if line.quantity > 1 %} &times; {{ line.quantity }}{% endif %}</td>
+    <td class="py-3 text-right">{{ line.net }} {{ order.currency }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+<dl class="mt-4 space-y-1 text-copy" data-order-totals>
+  <div class="flex justify-between"><dt>{% translate "Net total" %}</dt><dd>{{ order.net_total }} {{ order.currency }}</dd></div>
+  {% for group in vat_groups %}
+  <div class="flex justify-between" data-vat-group><dt>{% if group.text %}{{ group.text }}{% else %}{% blocktranslate with percent=group.percent %}VAT {{ percent }}%{% endblocktranslate %}{% endif %}</dt><dd>{{ group.vat }} {{ order.currency }}</dd></div>
+  {% endfor %}
+  <div class="flex justify-between text-[20px] font-black"><dt>{% translate "Total" %}</dt><dd data-order-total>{{ order.total }} {{ order.currency }}</dd></div>
+</dl>
+
+{% if order.state == "checkout" or order.state == "pending_payment" %}
+<form method="post" class="mt-8 space-y-6" data-checkout-form>
+  {% csrf_token %}
+  <input type="hidden" name="version" value="{{ order.version }}">
+  <input type="hidden" name="total" value="{{ order.total }}">
+
+  {% if order.state == "checkout" %}
+  <div>
+    <h2 class="text-h3 font-black">{% translate "Bill to" %}</h2>
+    {% if entities %}
+    <select name="entity" class="mt-2 w-full rounded-12 border border-line bg-surface p-3 text-copy" data-entity-select>
+      {% if not selected %}<option value="">{% translate "Choose a fiscal entity" %}</option>{% endif %}
+      {% for entity in entities %}<option value="{{ entity.pk }}"{% if entity.pk == selected %} selected{% endif %}>{{ entity.display_name }} &middot; {{ entity.masked_tax_id }} &middot; {{ entity.country.name }}</option>{% endfor %}
+    </select>
+    <button type="submit" name="action" value="entity" class="mt-2 cursor-pointer text-[15px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-update-entity>{% translate "Update the price for this entity" %}</button>
+    {% else %}
+    <p class="mt-2 text-copy text-ink-muted" data-no-entity>{% translate "You need a fiscal entity to order." %}</p>
+    <p class="mt-2"><a href="{{ add_entity_url }}" class="font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-add-entity>{% translate "Add a fiscal entity" %}</a></p>
+    {% endif %}
+  </div>
+  {% else %}
+  <p class="text-copy text-ink-muted">{% blocktranslate with name=order.bill_display_name %}Billed to {{ name }}.{% endblocktranslate %}</p>
+  {% endif %}
+
+  {% if not free %}
+  <div>
+    <h2 class="text-h3 font-black">{% translate "Payment method" %}</h2>
+    {% if gateway_choices %}
+    <ul class="mt-2 space-y-2" data-gateways>
+      {% for gateway in gateway_choices %}
+      <li><label class="flex items-center gap-3 text-copy"><input type="radio" name="gateway" value="{{ gateway.name }}" {% if forloop.first %}checked{% endif %} required> {{ gateway.label }}</label></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="mt-2 text-copy text-ink-muted" data-no-gateway>{% translate "There is no payment method for this order yet." %}</p>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="flex flex-wrap items-center gap-[clamp(16px,4vw,48px)]">
+    {% if order.state == "pending_payment" or entities or selected %}
+    <button type="submit" name="action" value="pay" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-pay{% if not free and not gateway_choices %} disabled{% endif %}>{% if free %}{% translate "Confirm" %}{% else %}{% translate "Pay" %}{% endif %}</button>
+    {% endif %}
+    <button type="submit" name="action" value="cancel" formnovalidate class="cursor-pointer text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink" data-cancel-order>{% translate "Cancel order" %}</button>
+  </div>
+</form>
+{% endif %}
+{% endblock %}

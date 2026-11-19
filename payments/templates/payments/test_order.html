@@ -1,0 +1,27 @@
+{% extends "doctor_base.html" %}
+{% load i18n money %}
+{% comment %}
+The hidden test-order page of dev and dev-ae (payments.views.test_order; only while
+PAYMENTS_TEST_ORDERS is on): pick one product the doctor is offered and go through the
+real checkout.
+{% endcomment %}
+
+{% block title %}{% translate "Test order" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Test order" %}</h1>
+<p class="mt-3 text-copy text-ink-muted">{% translate "Development only: choose a product to go through the checkout." %}</p>
+{% if offers %}
+<form method="post" class="mt-8 space-y-4" data-test-order-form>
+  {% csrf_token %}
+  <ul class="space-y-2">
+    {% for offer in offers %}
+    <li><label class="flex items-center gap-3 text-copy"><input type="radio" name="product" value="{{ offer.id }}" {% if forloop.first %}checked{% endif %} required> {{ offer.name }} &middot; {{ offer.price|money }}</label></li>
+    {% endfor %}
+  </ul>
+  <button type="submit" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none">{% translate "Start the order" %}</button>
+</form>
+{% else %}
+<p class="mt-8 text-copy" data-no-offers>{% translate "No products are offered to you." %}</p>
+{% endif %}
+{% endblock %}

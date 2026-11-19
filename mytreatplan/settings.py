@@ -128,6 +128,13 @@ LEGAL_TEXTS_FINAL = False
 # `X-Robots-Tag: noindex, nofollow` and robots.txt disallows everything.
 ROBOTS_NOINDEX = config('ROBOTS_NOINDEX', default=False, cast=bool)
 
+# Orders and checkout (epic-payments entry 1; payments.checks): both default off and are
+# refused on a public site (DEBUG and ROBOTS_NOINDEX off). PAYMENTS_FAKE_GATEWAY offers the
+# fake gateway (a portal page with Pay and Fail) next to the real ones; PAYMENTS_TEST_ORDERS
+# serves the hidden test-order page (/checkout/test-order/) of dev and dev-ae.
+PAYMENTS_FAKE_GATEWAY = config('PAYMENTS_FAKE_GATEWAY', default=False, cast=bool)
+PAYMENTS_TEST_ORDERS = config('PAYMENTS_TEST_ORDERS', default=False, cast=bool)
+
 # Portal features (signup, login, ...) are routed only when this is True. See
 # `portal_patterns` in mytreatplan/urls.py.
 PORTAL_ENABLED = config('PORTAL_ENABLED', default=False, cast=bool)
@@ -398,6 +405,10 @@ INSTALLED_APPS = [
     # download and delete service, the delete task, the staging sample page and the
     # command storage_bucket.
     'storage.apps.StorageConfig',
+    # Orders and checkout (epic-payments entry 1): the order model, its one service, the
+    # hooks and gateway adapters other epics plug into, the doctor's checkout pages and the
+    # `expire_orders` command.
+    'payments.apps.PaymentsConfig',
     # The interface with the admin site (epic-admin-interface, AD-4): the signed
     # /api/v1/ endpoints, the log of every call received (InterfaceCall), the outbox of
     # events to the admin site (OutboxEvent, entry 3), the configuration snapshot pulled

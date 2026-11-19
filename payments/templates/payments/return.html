@@ -1,0 +1,26 @@
+{% extends "doctor_base.html" %}
+{% load i18n money %}
+{% comment %}
+Where a gateway sends the doctor back (payments.views.checkout_return): the order as it is
+now (paid, waiting for the payment, or closed).
+{% endcomment %}
+
+{% block title %}{% translate "Your order" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Your order" %}</h1>
+<p class="mt-3 text-copy text-ink-muted">{% blocktranslate with reference=order.reference %}Order reference <strong class="text-ink" data-order-reference>{{ reference }}</strong>{% endblocktranslate %}</p>
+{% if order.state == "paid" %}
+<p class="mt-6 text-copy font-semibold" data-order-state="paid">{% blocktranslate with total=order.total currency=order.currency %}Payment received: {{ total }} {{ currency }}. Thank you.{% endblocktranslate %}</p>
+{% elif order.state == "pending_payment" %}
+<p class="mt-6 text-copy" data-order-state="pending_payment">{% translate "We have not received your payment yet." %}</p>
+<p class="mt-4"><a href="{% url 'checkout_failure' order.pk %}" class="font-semibold text-green-deep underline underline-offset-2 hover:text-ink">{% translate "Try again" %}</a></p>
+{% elif order.state == "checkout" %}
+<p class="mt-6 text-copy" data-order-state="checkout"><a href="{% url 'checkout' order.pk %}" class="font-semibold text-green-deep underline underline-offset-2 hover:text-ink">{% translate "Continue to checkout" %}</a></p>
+{% elif order.state == "cancelled" %}
+<p class="mt-6 text-copy" data-order-state="cancelled">{% translate "This order was cancelled." %}</p>
+{% else %}
+<p class="mt-6 text-copy" data-order-state="expired">{% translate "This order expired. Please start it again." %}</p>
+{% endif %}
+<p class="mt-8"><a href="{% url 'home' %}" class="text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Back to home" %}</a></p>
+{% endblock %}
