@@ -3,7 +3,7 @@ title: 'Order model, checkout and a paid test order'
 type: 'feature'
 ticket: '1'
 created: '2026-11-18'
-status: 'built'
+status: 'done'
 baseline_revision: 'edbff829bda7f096a06fec8ce89c5eb29cbfd2b9'
 route: 'full'
 route_source: 'auto'
@@ -149,3 +149,26 @@ Opus security review, one pass (2026-11-18): 11 findings, 0 high, 6 medium, 5 lo
 **Commands:**
 - `pytest` (full suite, from the repo root) -- expected: 0 failed
 - `python manage.py makemigrations --check --dry-run` -- expected: no changes
+
+## Staging
+
+- Merged as PR #113, merge commit 593620d80a571228e408690d08b14a70b8393a2b (2026-11-19). Master CI run 44495816498 green: test plus both staging deploys (dev, dev-ae). PR CI: runs 44357647650 and 44357663319. The second first failed on the flaky maker test, a known pre-existing issue now in deferred-work; it passed on the rerun.
+- Local suite 3673 passed, 13 skipped, 0 failed (SQLite); the concurrent `mark_paid` test ran on PostgreSQL in CI.
+- `PAYMENTS_FAKE_GATEWAY=True` and `PAYMENTS_TEST_ORDERS=True` added to dev's and dev-ae's settings.env (both with `ROBOTS_NOINDEX=True`). Both sites re-provisioned: the `expireorders` timer is listed on each, and `/healthz` is ok.
+- Checks 1–6, run server-side with the `check71.py` test client against a real doctor of each site, inside one rolled-back transaction (nothing kept; orders after: 0):
+  1. On dev and dev-ae, a test order paid through the fake page:
+     - the order went `checkout` → `pending_payment` → `paid`;
+     - the entity's `used_at` was set;
+     - there was one `paid` change row;
+     - the paid hook fired once, including after a second Pay.
+  2. The lines and total were unchanged after the product's net price was set to 9999.00.
+  3. The failure path and cancel:
+     - Fail kept the order `pending_payment`;
+     - the retry then paid it once;
+     - Cancel on another order gave `cancelled`, with the hook firing once.
+  4. With no usable entity, the checkout showed the add link with `next` back to the checkout.
+  5. On dev-ae only `fake` was offered. On dev only `fake` too, since Redsys and bank transfer have no adapter until entries 3 and 5.
+  6. Ownership and the expiry job:
+     - another doctor got a 404 on dev (dev-ae has a single AE doctor);
+     - `expire_orders` printed `0 order(s) expired`.
+- Check 7 (clean-up): nothing to remove, since everything was rolled back. The two flags stay on for dev and dev-ae.

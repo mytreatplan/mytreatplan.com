@@ -178,3 +178,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-doctor-profile/story-production-checks-for-the-eu-go-live-plan.md`
   summary: The scan worker's "object <uuid> scanned clean" INFO line probably never reaches the journal (no `storage` logger in `LOGGING`, so the default WARNING level drops it); deploy/README.md's staging recipe expects the UUID and outcome there. Check on dev and add a `storage` logger at INFO if the verdict should be visible.
   evidence: 6.10 review finding 4; `storage/tasks.py:327` logger.info, `mytreatplan/settings.py` LOGGING. Unverified: a journal read on dev settles it.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-order-model-checkout-and-a-paid-test-order-plan.md`
+  summary: Flaky test `accounts/tests/test_makers.py::test_an_other_login_is_saved_listed_replaced_and_deleted`: `_no_secret` asserts the short values 'u2'/'p2' never occur in the page, but random tokens (CSRF, UUIDs) can contain them; use long distinctive test values.
+  evidence: PR #113 CI run 44357663319 failed with `AssertionError: u2` on code 7.1 does not touch; the rerun and the twin run on the same commit passed.
