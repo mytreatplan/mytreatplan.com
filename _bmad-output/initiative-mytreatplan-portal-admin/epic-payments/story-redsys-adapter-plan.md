@@ -3,7 +3,7 @@ title: 'Redsys adapter'
 type: 'feature'
 ticket: '3'
 created: '2026-11-19'
-status: 'built'
+status: 'done'
 baseline_revision: 'e01ff20ea941c9019db4d10abd97c90e41fa82ad'
 route: 'full'
 route_source: 'auto'
@@ -109,7 +109,12 @@ context: []
 - Signature vector: `payments/tests/test_redsys.py` checks the per-order key and the signature against values computed independently with OpenSSL (`des-ede3-cbc`, zero IV, `-nopad`; `dgst -sha256 -mac HMAC`) for order `1234ABCDEFGH` under the public test key.
 - Small additions beyond the task list: `accounts.http.post_json` takes an optional `timeout` (refund uses 30 s; the default 3 s is the signup checks'); a notification whose `Ds_TransactionType` is not `0` (e.g. a refund's, if the terminal sends one) is logged without a status, so `fetch_payment` ignores it; `start` keeps an attempt's `Ds_Order` when called again (a reload never orphans a number Redsys may have charged); the form page sends a timed-out attempt to the failure page; the auto-submit is `static/js/redsys-form.js` (no inline script); `payments.E004` also refuses Redsys's public test merchant code; `deploy/staging.env.example` gets commented Redsys lines.
 - `redsys_refund` refunds only a `confirmed` Redsys payment (a `needs_attention` one is staff's, by hand in the Redsys module).
-- Still to confirm on dev (manual checks): the notification's content type and base64 variant, the refund response shape, whether a user cancel sends a refusal notification, the payment page's real timeout (`SESSION_LIFETIME`).
+- Confirmed on dev (2026-11-19, public test terminal 999008881/1, staging below):
+  - Notification: a form POST from Redsys's `Java/1.8` client (859 bytes paid, 623 refused), accepted by the signature check; the browser return (`/redsys/ok/`, `/redsys/ko/`) arrives as a GET with `Ds_*` in the query string and a URL-safe base64 signature (`-`), which `verify` already takes.
+  - Paid: `Ds_Response` 0000, notification ~1 s before the browser return; the worker task confirmed the payment before the return page read it.
+  - User cancel on Redsys's page: Redsys DOES send a signed notification, `Ds_Response` 9915, which closes the attempt as `failed`; the doctor lands on the failure page and can pay again (a new attempt and `Ds_Order`).
+  - Refund over REST: answer 0900, the refund id is `Ds_Order:Ds_AuthorisationCode`, the SAME for every refund of a payment (not a refund key). A second refund of the same payment within ~1 minute is refused SIS0295 (duplicate operation; it went through ~2 min after the first); a refund above what is left is refused by Redsys SIS0057.
+  - Page timeout: not measured; `SESSION_LIFETIME` stays 30 minutes (open, see Staging).
 
 ## Plan Change Log
 
@@ -137,3 +142,14 @@ Quick lens (Opus), iteration 0, 8 findings (one split in two). Patches went back
 
 **Manual checks (staging, dev):**
 - Unverified Redsys details confirmed on the first run and recorded in Implementation Notes: the notification's content type and base64 variant, the refund response shape, whether a user cancel sends a refusal notification, the payment page's real timeout (adjust `session_lifetime`).
+
+## Staging
+
+2026-11-19, dev (Redsys public test terminal; dev-ae has no Redsys settings), after #115 merged (0c1e35b) and dev + dev-ae were re-provisioned:
+
+1. Re-provision: the `/payments/webhook/` location is in nginx for both sites; an unsigned POST reaches Django (401 `bad_signature`, no basic-auth challenge). PASS.
+2. The user typed the four `REDSYS_*` lines into dev `shared/settings.env`; after a restart `check` is clean and the adapters are `fake`, `redsys`. PASS.
+3. Test-card payment, order YG-008970 (1699.00 EUR): one `accepted`/`paid` log row (0000), payment `confirmed`, order `paid`, one `paid` change, worker task successful, return page "paid". PASS.
+4. `redsys_refund YG-008970 --amount 100.00` refunded; an immediate `--amount 50.00` refused SIS0295, the same ~2 min later refunded; `--amount 1600.00` (above the 1549.00 left) refused SIS0057. Order stays `paid` (by design: entry 7). PASS.
+5. Abandon and retry, order CC-827483 (315.92 EUR): Cancel on Redsys's page → notification 9915, attempt `failed`, failure page "You have not been charged"; Pay again → a second attempt `confirmed`, order `paid`. PASS.
+6. Unverified details recorded in Implementation Notes. PASS, except the payment page's real timeout: not measured (open; leave a Redsys tab open past 30 minutes on a later run and adjust `SESSION_LIFETIME` if Redsys's page outlives it).

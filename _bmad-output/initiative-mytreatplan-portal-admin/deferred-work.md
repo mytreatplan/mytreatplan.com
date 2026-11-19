@@ -186,4 +186,10 @@
   evidence: 2.8 investigation of the nginx template; the eu profile's domains list www.mytreatplan.com.
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-redsys-adapter-plan.md`
   summary: `redsys_refund` (and `redsys.refund`) do not record refunds, so repeated partial refunds can add up past the payment and a timeout after Redsys refunded invites a re-run; entry 7 (credit notes and refunds) must record each refund and subtract it before the next.
-  evidence: 7.3 review finding 7b. Unverified whether Redsys refuses a cumulative over-refund itself: a second partial refund on the test terminal settles it.
+  evidence: 7.3 review finding 7b. Settled on the test terminal (7.3 staging): Redsys itself refuses a cumulative over-refund (SIS0057) and a second refund within ~1 minute (SIS0295, duplicate), but its refund id (`Ds_Order:auth code`) is the same for every refund of a payment, so entry 7 needs its own refund key.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-redsys-adapter-plan.md`
+  summary: Redsys's browser return (`/payments/.../redsys/ok/` and `/ko/`) carries `Ds_MerchantParameters` in the query string (masked card number, authorisation code, `Ds_Order`), and both nginx's and gunicorn's access logs keep the full URL; strip or mask the query string of these paths in the access log formats before production.
+  evidence: 7.3 staging, the dev gunicorn journal of 2026-11-19.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-redsys-adapter-plan.md`
+  summary: NGINX2Root (Xint, DSA-6642-1): the staging host was patched by hand on 2026-11-19 (nginx 1.26.3-3+deb13u11, full restart) and SCTP autoload blocked in `/etc/modprobe.d/disable-sctp.conf` (the kernel half of the chain, no Debian fix yet). Add the SCTP block to `deploy/provision.sh` so new hosts (production) get it, check the nginx package is at or above the fixed version at provision, and remove the block once a fixed kernel is installed and the host rebooted.
+  evidence: staging host check of 2026-11-19 (http2 on + proxied upstream = CVE-2026-123007/123633 applied before the patch).
