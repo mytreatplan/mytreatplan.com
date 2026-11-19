@@ -114,7 +114,7 @@ context: []
   - Paid: `Ds_Response` 0000, notification ~1 s before the browser return; the worker task confirmed the payment before the return page read it.
   - User cancel on Redsys's page: Redsys DOES send a signed notification, `Ds_Response` 9915, which closes the attempt as `failed`; the doctor lands on the failure page and can pay again (a new attempt and `Ds_Order`).
   - Refund over REST: answer 0900, the refund id is `Ds_Order:Ds_AuthorisationCode`, the SAME for every refund of a payment (not a refund key). A second refund of the same payment within ~1 minute is refused SIS0295 (duplicate operation; it went through ~2 min after the first); a refund above what is left is refused by Redsys SIS0057.
-  - Page timeout: not measured; `SESSION_LIFETIME` stays 30 minutes (open, see Staging).
+  - Page timeout: Redsys's page keeps showing the card form, but a card submitted ~31 minutes after the page opened is refused by Redsys with SIS0081 ("La sesión con el servidor se ha perdido") and no notification is sent; so Redsys's session ends no later than ours and `SESSION_LIFETIME` stays 30 minutes.
 
 ## Plan Change Log
 
@@ -152,4 +152,4 @@ Quick lens (Opus), iteration 0, 8 findings (one split in two). Patches went back
 3. Test-card payment, order YG-008970 (1699.00 EUR): one `accepted`/`paid` log row (0000), payment `confirmed`, order `paid`, one `paid` change, worker task successful, return page "paid". PASS.
 4. `redsys_refund YG-008970 --amount 100.00` refunded; an immediate `--amount 50.00` refused SIS0295, the same ~2 min later refunded; `--amount 1600.00` (above the 1549.00 left) refused SIS0057. Order stays `paid` (by design: entry 7). PASS.
 5. Abandon and retry, order CC-827483 (315.92 EUR): Cancel on Redsys's page → notification 9915, attempt `failed`, failure page "You have not been charged"; Pay again → a second attempt `confirmed`, order `paid`. PASS.
-6. Unverified details recorded in Implementation Notes. PASS, except the payment page's real timeout: not measured (open; leave a Redsys tab open past 30 minutes on a later run and adjust `SESSION_LIFETIME` if Redsys's page outlives it).
+6. Unverified details recorded in Implementation Notes. PASS. Page timeout (order JL-179268, page opened 19:40:56 UTC, card submitted ~20:12 UTC): Redsys refused with SIS0081 (session lost), no notification; our attempt had ended at 20:10:56 and the order stays `pending_payment` until the 24-hour expiry or a retry.
