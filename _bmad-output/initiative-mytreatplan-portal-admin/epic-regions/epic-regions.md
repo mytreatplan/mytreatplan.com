@@ -61,3 +61,4 @@ Routing and region identity on the portal. The billing-country block lives with 
 - Handoff: epic-catalogue edits the country map through the configuration channel; this epic owns the model and its seed data.
 - Geo-IP uses a local database so no IP leaves the instance (architecture document).
 - Waits on epic 1 because: it needs REGION profile and global UUIDs.
+- Production checks (entry 8, 2026-11-19): 3ai–3al in epic-eu-golive's Done when 3.

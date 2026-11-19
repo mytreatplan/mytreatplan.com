@@ -181,3 +181,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-order-model-checkout-and-a-paid-test-order-plan.md`
   summary: Flaky test `accounts/tests/test_makers.py::test_an_other_login_is_saved_listed_replaced_and_deleted`: `_no_secret` asserts the short values 'u2'/'p2' never occur in the page, but random tokens (CSRF, UUIDs) can contain them; use long distinctive test values.
   evidence: PR #113 CI run 44357663319 failed with `AssertionError: u2` on code 7.1 does not touch; the rerun and the twin run on the same commit passed.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-regions/story-production-checks-for-the-eu-go-live-plan.md`
+  summary: www.mytreatplan.com should answer a 301 to https://mytreatplan.com/ (check 3ai), but `deploy/nginx/site.conf.template` names only the apex in server_name and EXTRA_DOMAINS holds the other EU domains; add www.mytreatplan.com to the redirect before the go-live: its DNS record, its name on the certificate (provision.sh issues it for `$DOMAIN $EXTRA_DOMAINS` only) and a redirect server block for ports 80 and 443.
+  evidence: 2.8 investigation of the nginx template; the eu profile's domains list www.mytreatplan.com.
