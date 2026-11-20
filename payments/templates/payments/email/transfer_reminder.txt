@@ -1,0 +1,20 @@
+{% load i18n %}{% autoescape off %}{% translate "Hello," %}
+
+{% blocktranslate with reference=order.reference %}We have not received the bank transfer for your MyTreatPlan order {{ reference }} yet.{% endblocktranslate %}
+{% if details %}
+{% translate "Account holder" %}: {{ details.holder }}
+IBAN: {{ details.iban }}
+BIC: {{ details.bic }}
+{% translate "Bank" %}: {{ details.bank_name }}
+{% translate "Amount" %}: {{ details.amount }} {{ details.currency }}
+{% translate "Transfer concept" %}: {{ details.concept }}
+{% blocktranslate with date=details.deadline|date:"DATE_FORMAT" %}Please pay by {{ date }} at the latest; after that the order expires.{% endblocktranslate %}
+{% endif %}
+{% translate "You can see these details again here:" %}
+
+{{ url }}
+
+{% translate "If you have already paid, please ignore this email: we will record your payment when it arrives." %}
+
+MyTreatPlan
+{% endautoescape %}

@@ -2858,3 +2858,65 @@ msgstr "Le llevamos a la página de pago segura del banco…"
 #: payments/templates
 msgid "Continue to payment"
 msgstr "Continuar al pago"
+
+#: payments/templates
+msgid "Account holder"
+msgstr "Titular de la cuenta"
+
+#: payments/templates
+msgid "Bank"
+msgstr "Banco"
+
+#: payments/templates
+msgid "Amount"
+msgstr "Importe"
+
+#: payments/templates
+msgid "Transfer concept"
+msgstr "Concepto de la transferencia"
+
+#: payments/templates
+#, python-format
+msgid "Please pay by %(date)s at the latest; after that the order expires."
+msgstr "Pague como muy tarde el %(date)s; después, el pedido caduca."
+
+#: payments/templates
+msgid "You can see these details again here:"
+msgstr "Puede volver a ver estos datos aquí:"
+
+#: payments/templates
+msgid ""
+"If you have already paid, please ignore this email: we will record your "
+"payment when it arrives."
+msgstr ""
+"Si ya ha pagado, ignore este correo: registraremos su pago cuando llegue."
+
+#: payments/templates
+#, python-format
+msgid "Reminder: bank transfer for order %(reference)s"
+msgstr "Recordatorio: transferencia bancaria del pedido %(reference)s"
+
+#: payments/templates
+#, python-format
+msgid ""
+"We have not received the bank transfer for your MyTreatPlan order "
+"%(reference)s yet."
+msgstr ""
+"Todavía no hemos recibido la transferencia bancaria de su pedido %(reference)s "
+"de MyTreatPlan."
+
+#: payments/templates
+msgid ""
+"Make a bank transfer with these details. Your order is confirmed when we "
+"receive it."
+msgstr ""
+"Haga una transferencia bancaria con estos datos. Su pedido se confirma cuando "
+"la recibamos."
+
+#: payments/templates
+msgid "The bank details are not available right now. Please contact us."
+msgstr "Los datos bancarios no están disponibles ahora. Por favor, contáctenos."
+
+#: payments/templates
+msgid "Choose another payment method"
+msgstr "Elegir otro método de pago"

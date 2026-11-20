@@ -1,0 +1,1 @@
+{% load i18n %}{% blocktranslate with reference=order.reference %}Reminder: bank transfer for order {{ reference }}{% endblocktranslate %}

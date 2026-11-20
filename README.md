@@ -326,8 +326,7 @@ off; `payments.E001`, `payments.E002`): `PAYMENTS_FAKE_GATEWAY` offers the fake 
 page with Pay and Fail) next to the real ones, and `PAYMENTS_TEST_ORDERS` serves
 `/<lang>/checkout/test-order/`, where a doctor account picks a product it is offered and goes
 through the real checkout (set both on dev and dev-ae in `settings.env`). Not here yet: real
-gateways, webhooks and refunds (entries 2-4), the invoice (6), the bank-transfer page (5), the
-admin pages and the order event to the admin site (8).
+gateways, webhooks and refunds (entries 2-4), the invoice (6), the admin pages and the order event to the admin site (8).
 
 ## Payments: webhooks (epic-payments entry 2)
 
@@ -344,8 +343,8 @@ unique per gateway, amount, currency, state `open` / `confirmed` / `failed` / `c
 `needs_attention`, `session_expires_at`). One attempt is open per order (a database constraint): a
 retry or a second tab first closes the previous one at the gateway (`cancel_attempt`); a gateway
 without it waits for the session to time out (`service.AttemptOpen`). While an attempt is open the
-order is frozen: the doctor cannot cancel it and `expire_orders` skips it until the session timed
-out. `payments.models.WebhookLog` has one row per webhook, accepted or refused (result `accepted`,
+order is frozen: the doctor cannot cancel it (except a bank transfer attempt, which `cancel` closes
+itself, see entry 5 below) and `expire_orders` skips it until the session timed out. `payments.models.WebhookLog` has one row per webhook, accepted or refused (result `accepted`,
 `duplicate`, `bad_signature`, `stale`, `amount_mismatch`, `unknown`, `not_payable`, plus
 `too_large` and `rate_limited`), with the IP, the gateway's event and payment ids, the amount, the
 SHA-256 and size of the body (never the body); kept 180 days (`purge_webhook_logs`, job
@@ -356,7 +355,8 @@ SHA-256 and size of the body (never the body); kept 180 days (`purge_webhook_log
 gateway's id, the event is taken in once (unique (gateway, event id) in the database), a log row is
 written, a `django.tasks` task (`payments.tasks.confirm_webhook`) is queued and the answer is 200
 at once. The task re-reads the payment from the gateway and calls `payments.service.confirm_payment`,
-the one way an order is paid: the payment must be the order's open attempt, the order
+the way a gateway's payment pays an order (a bank transfer is paid by
+`service.mark_transfer_paid`, see entry 5 below): the payment must be the order's open attempt, the order
 `pending_payment`, and the re-read amount and currency equal the order's. Otherwise (paid already,
 cancelled, expired, a late success of an earlier attempt, another amount) the order is left alone,
 the payment is `needs_attention`, an error goes to Sentry by order UUID and the doctor's return page
@@ -371,6 +371,31 @@ the order's open fake attempt; `--bad-signature`, `--stale`, `--amount X` and `-
 refusal on purpose. `payments.E003` fails `check` on a public site when an available gateway's
 `required_settings` secret is missing. Nginx serves `/payments/webhook/` without the staging
 basic auth (entry 3; deploy/README.md "Payment webhooks").
+
+## Payments: bank transfer (epic-payments entry 5)
+
+`payments.bank_transfer` is an adapter that calls no gateway. Paying by transfer opens a 14-day
+attempt (`session_lifetime`; the days run from the order's first freeze, `pending_at`, so choosing
+transfer again never renews them) and sends the doctor to `/<lang>/checkout/<id>/transfer/`: the
+billing company's holder, IBAN (in groups of four), BIC and bank, the amount, the order reference
+as the transfer concept and the last day to pay. The checkout and return pages lead there while the
+attempt is open (`?change=1` on the checkout picks another method). The order stays
+`pending_payment`. `Adapter.accepts(order)` is a new optional hook: `gateways.offered` keeps a
+gateway only when it returns true; transfer accepts an order whose company
+(`BillingCompany.has_bank_details`) has all its bank details, and the rule's `gateway_countries`
+(entry 14) limit it per country. Bank details are shown to the order's own doctor only and never
+logged.
+
+Staff record a received transfer with `payments.service.mark_transfer_paid(order, amount,
+*, expected_version, actor)` (admin or system actor): attempt `confirmed` and `mark_paid` in one
+transaction; refused unless the order is `pending_payment` with an open transfer attempt and the
+amount (and currency, for a `Money`) equals the total; a repeat returns the order unchanged. The
+doctor can cancel a pending transfer order: `cancel` closes the transfer attempt and cancels the
+order (an open attempt of another gateway still refuses with `AttemptOpen`). After the 14 days
+`expire_orders` expires the order as usual. The `remind_transfers` job (`remindtransfers` in
+`deploy/jobs.conf`, hourly) sends one plain-text reminder per order, from day 7 of the freeze, to
+the login email in the doctor's language (`Profile.language`); `Payment.reminded_at` records it, set
+only after a successful send, so a failed send is retried by the next run.
 
 ## Payments: Redsys (epic-payments entry 3)
 
