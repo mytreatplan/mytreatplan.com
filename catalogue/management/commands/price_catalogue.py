@@ -264,7 +264,7 @@ class Command(BaseCommand):
             if applies is None:
                 raise CommandError(f'No active {tier} subscription applies to {country}.')
             return self.print_line(found, applies, title, language, add_ons,
-                                   1 if quantity is None else quantity)
+                                   1 if quantity is None else quantity, country or None)
         offers = [] if applies is None else resolver.offers_under(
             applies, country=country or None)
         billed = resolver.has_billing_rules()
@@ -272,10 +272,10 @@ class Command(BaseCommand):
             self.stdout.write(f'no offers for {title}')
             self.print_not_served(country)
             if applies is not None:
-                self.print_subscription(applies, language)
+                self.print_subscription(applies, language, country or None)
             return
         self.stdout.write(f'{title}: {len(offers)} offer(s)')
-        self.print_subscription(applies, language)
+        self.print_subscription(applies, language, country or None)
         for offered, price in offers:
             per_unit = (f'  per unit, {offered.min_quantity} to {offered.max_quantity}'
                         if offered.per_unit else '')
@@ -283,7 +283,7 @@ class Command(BaseCommand):
                               f'{offered.category}  {price}{per_unit}')
             if billed:
                 self.stdout.write('      billing: ' + self.rule_text(
-                    self.rule_of(offered, applies, country)))
+                    self.rule_of(offered, applies, country), country or None))
             calls = resolver.calls(offered, applies)
             if calls is not None:
                 self.stdout.write(f'      calls: {calls[0]} of {calls[1]} minutes')
@@ -324,17 +324,18 @@ class Command(BaseCommand):
     def one_line(text):
         return ' / '.join(line.strip() for line in text.split('\n') if line.strip())
 
-    def rule_text(self, rule):
+    def rule_text(self, rule, country=None):
         """A rule in one line: the company, the VAT rate (with the exemption text for a
-        rate of 0), the gateways in order and the currency; "no billing rule" for
-        None."""
+        rate of 0), the gateways in order (those offered to `country` when it is known:
+        a rule may limit a gateway to some countries) and the currency; "no billing rule"
+        for None."""
         if rule is None:
             return 'no billing rule'
         vat = f'VAT {rule.vat_percent} %'
         if rule.exempt:
             vat += f': {self.one_line(rule.exemption_text)}'
         return (f'{rule.company.code}  {rule.company.legal_name}  {vat}  gateways: '
-                f'{", ".join(rule.known_gateways) or "none"}  {rule.currency}'
+                f'{", ".join(self.gateways_of(rule, country)) or "none"}  {rule.currency}'
                 f'{"" if rule.available else "  not available"}')
 
     def print_not_served(self, country):
@@ -357,9 +358,14 @@ class Command(BaseCommand):
                                   'product is offered, in every currency')
             return
         self.stdout.write(f'{title}: billing rule')
-        self.print_rule_details(rule)
+        self.print_rule_details(rule, country)
 
-    def print_rule_details(self, rule):
+    @staticmethod
+    def gateways_of(rule, country):
+        """The gateways to print: those offered to `country`, else every known one."""
+        return rule.gateways_for(country) if country else rule.known_gateways
+
+    def print_rule_details(self, rule, country=None):
         """A billing rule's company, VAT, texts, gateways, currency and availability."""
         company = rule.company
         self.stdout.write(f'  company: {company.code}  {company.legal_name}'
@@ -374,7 +380,7 @@ class Command(BaseCommand):
         if rule.reverse_charge_text:
             self.stdout.write('  reverse-charge text: '
                               f'{self.one_line(rule.reverse_charge_text)}')
-        self.stdout.write(f'  gateways: {", ".join(rule.known_gateways) or "none"}')
+        self.stdout.write(f'  gateways: {", ".join(self.gateways_of(rule, country)) or "none"}')
         self.stdout.write(f'  currency: {rule.currency}')
         self.stdout.write(f'  available: {"yes" if rule.available else "no: not offered"}')
 
@@ -422,7 +428,7 @@ class Command(BaseCommand):
         return (f'{found.code or found.pk} {found.tier} ({found.country_group.name}), '
                 f'{kind}{state}')
 
-    def print_subscription(self, found, language):
+    def print_subscription(self, found, language, country=None):
         """The subscription's line under the title: its code, public name and own price
         (free, or its monthly and upfront amounts)."""
         parts = []
@@ -435,7 +441,7 @@ class Command(BaseCommand):
                           f'{", ".join(parts) or "free"}')
         if resolver.has_billing_rules():
             self.stdout.write('  subscription billing: '
-                              + self.rule_text(resolver.subscription_rule(found)))
+                              + self.rule_text(resolver.subscription_rule(found), country))
 
     def found(self, product_id):
         found = resolver.product(product_id)
@@ -482,7 +488,7 @@ class Command(BaseCommand):
             self.stdout.write(f'  monthly, not in the sum: {monthly.label} x '
                               f'{monthly.quantity}: {amount}')
 
-    def print_line(self, found, applies, title, language, codes, quantity):
+    def print_line(self, found, applies, title, language, codes, quantity, country=None):
         """The price of one line of the product `found` under the subscription
         `applies` (`title`: how it was asked for)."""
         chosen = []
@@ -498,7 +504,7 @@ class Command(BaseCommand):
             raise CommandError(f'Refused: {refusal}.') from None
         self.stdout.write(f'{title}: {found.code or "-"}  '
                           f'{found.name_in(language)}  {found.category}')
-        self.print_subscription(applies, language)
+        self.print_subscription(applies, language, country)
         self.stdout.write(f'  net price: {found.net_price}'
                           f'{" per unit" if found.per_unit else ""}')
         self.stdout.write(f'  quantity: {quantity}')
@@ -511,7 +517,7 @@ class Command(BaseCommand):
             self.stdout.write(f'  add-on: {self.add_on_text(add_on, language)}')
         if resolver.has_billing_rules():
             self.stdout.write('  billing: ' + self.rule_text(
-                resolver.billing_rule_for(applies.country_group_id, found.category)))
+                resolver.billing_rule_for(applies.country_group_id, found.category), country))
         self.stdout.write(f'  line price: {price}')
 
     # --- Pricing an order (epic-catalogue entry 12) ----------------------------------------

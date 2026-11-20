@@ -43,8 +43,9 @@ VAT is computed per order: one amount per (rate, text), on the sum of the lines 
 rate, rounded half up to the cent.
 
 One order has one billing company and one currency (refused otherwise, never split). The
-gateways are those every line's rule allows and the region profile has, in the first
-line's rule order; an order of 0.00 needs none; an order above 0 with no common gateway
+gateways are those every line's rule allows for the billing country (a rule may limit a
+gateway to some countries of its group: `BillingRule.gateways_for`, mytp-core 0.29.0) and
+the region profile has, in the first line's rule order; an order of 0.00 needs none; an order above 0 with no common gateway
 is priced and flagged `no_payment_method`.
 
 "Offered" is what `resolver.offers_under(subscription, day, country)` means; with no
@@ -360,8 +361,8 @@ def _price(billing_country, lines, vies, voucher, voucher_type, doctor, day):
     if needs_payment:
         common = set(settings.REGION_PROFILE.gateways)
         for line in lines:
-            common &= set(line.rule.known_gateways)
-        gateways = tuple(gateway for gateway in lines[0].rule.known_gateways
+            common &= set(line.rule.gateways_for(country))
+        gateways = tuple(gateway for gateway in lines[0].rule.gateways_for(country)
                          if gateway in common)
     return PricedOrder(
         company=company, currency=currency, lines=tuple(priced), vat_groups=vat_groups,

@@ -468,3 +468,113 @@ def test_price_catalogue_without_rules_is_as_before(admin):
         'no billing rule for ES tps_branded (Iberia)\n'
         '  the catalogue has no billing rules: every linked product is offered, in every '
         'currency\n')
+
+
+# --- Bank details and country limits (mytp-core 0.29.0, epic-payments entry 14) ---------------
+
+BANK = {'bank_account_holder': 'MyTPDSO Spain S.L.', 'iban': 'ES9121000418450200051332',
+        'bic': 'CAIXESBBXXX', 'bank_name': 'CaixaBank'}
+CREDITOR_ID = 'ES29ZZZ47587218K'
+
+
+def companies_with_bank():
+    found = copy.deepcopy(COMPANIES)
+    found[0].update(BANK, sepa_creditor_id=CREDITOR_ID)
+    return found
+
+
+@pytest.mark.django_db
+def test_the_bank_details_and_the_creditor_id_are_stored(admin):
+    assert pull(admin, 1, billed(companies=companies_with_bank())) == ('applied', 1)
+    spain = BillingCompany.objects.get(code='ES')
+    assert spain.has_bank_details
+    assert (spain.bank_account_holder, spain.iban, spain.bic, spain.bank_name,
+            spain.sepa_creditor_id) == (*BANK.values(), CREDITOR_ID)
+    # The other companies have none.
+    ireland = BillingCompany.objects.get(code='IE')
+    assert not ireland.has_bank_details
+    assert (ireland.iban, ireland.sepa_creditor_id) == ('', '')
+
+
+@pytest.mark.django_db
+def test_a_creditor_id_alone_is_stored_without_bank_details(admin):
+    found = copy.deepcopy(COMPANIES)
+    found[0]['sepa_creditor_id'] = CREDITOR_ID
+    pull(admin, 1, billed(companies=found))
+    spain = BillingCompany.objects.get(code='ES')
+    assert spain.sepa_creditor_id == CREDITOR_ID and not spain.has_bank_details
+
+
+@pytest.mark.django_db
+def test_a_snapshot_of_0_28_0_applies_with_empty_bank_fields_and_no_limits(admin):
+    # The plan's companies and rules carry none of the 0.29.0 fields: a 0.28.0 body.
+    assert pull(admin, 1, billed()) == ('applied', 1)
+    for stored in BillingCompany.objects.all():
+        assert (stored.bank_account_holder, stored.iban, stored.bic, stored.bank_name,
+                stored.sepa_creditor_id) == ('', '', '', '', '')
+        assert not stored.has_bank_details
+    for stored in BillingRule.objects.all():
+        assert stored.gateway_countries == {}
+    found = resolver.billing_rule('PT', 'tps_branded')
+    assert found.gateways_for('PT') == ['redsys', 'bank_transfer']
+
+
+@pytest.mark.django_db
+def test_a_rule_limit_is_stored_and_read_per_country(admin):
+    changed = rules()
+    changed[0]['gateway_countries'] = {'bank_transfer': ['ES']}
+    pull(admin, 1, billed(rules_=changed))
+    found = resolver.billing_rule('ES', 'tps_branded')
+    assert found.gateway_countries == {'bank_transfer': ['ES']}
+    assert found.gateways_for('ES') == ['redsys', 'bank_transfer']
+    assert found.gateways_for(' es ') == ['redsys', 'bank_transfer']
+    assert found.gateways_for('PT') == ['redsys']
+    assert found.gateways_for(None) == ['redsys']
+    # The other rules are as before.
+    assert resolver.billing_rule('IE', 'tps_branded').gateways_for('IE') == ['revolut']
+
+
+@pytest.mark.django_db
+def test_a_gateway_this_release_does_not_know_is_still_skipped_with_a_limit(admin):
+    changed = rules()
+    changed[0]['gateways'] = ['wio', 'redsys', 'bank_transfer']
+    changed[0]['gateway_countries'] = {'wio': ['PT'], 'redsys': ['ES', 'PT']}
+    pull(admin, 1, billed(rules_=changed))
+    found = resolver.billing_rule('ES', 'tps_branded')
+    assert found.gateways_for('PT') == ['redsys', 'bank_transfer']
+    assert found.gateways_for('ES') == ['redsys', 'bank_transfer']
+    assert found.gateways_for('FR') == ['bank_transfer']
+
+
+@pytest.mark.django_db
+def test_the_contract_the_portal_applies_refuses_a_limit_outside_the_group():
+    from pydantic import ValidationError
+
+    from mytp_core.contracts import CatalogueSection
+    changed = rules()
+    changed[0]['gateway_countries'] = {'bank_transfer': ['FR']}
+    with pytest.raises(ValidationError, match='outside its country group'):
+        CatalogueSection.model_validate(billed(rules_=changed))
+
+
+@pytest.mark.django_db
+def test_the_contract_the_portal_applies_refuses_three_of_four_bank_fields():
+    from pydantic import ValidationError
+
+    from mytp_core.contracts import CatalogueSection
+    found = copy.deepcopy(COMPANIES)
+    found[0].update({key: value for key, value in BANK.items() if key != 'bic'})
+    with pytest.raises(ValidationError, match='all four or none'):
+        CatalogueSection.model_validate(billed(companies=found))
+
+
+@pytest.mark.django_db
+def test_price_catalogue_prints_the_gateways_offered_to_the_country(admin):
+    changed = rules()
+    changed[0]['gateway_countries'] = {'bank_transfer': ['ES']}
+    pull(admin, 1, billed(rules_=changed))
+    assert '  gateways: redsys, bank_transfer\n' in run('--country', 'ES',
+                                                       '--category', 'tps_branded')
+    assert '  gateways: redsys\n' in run('--country', 'PT', '--category', 'tps_branded')
+    assert 'gateways: redsys  EUR' in run('--country', 'PT', '--tier', 'basic')
+    assert 'gateways: redsys, bank_transfer  EUR' in run('--country', 'ES', '--tier', 'basic')

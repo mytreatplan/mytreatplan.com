@@ -641,3 +641,42 @@ def test_price_catalogue_order_refusals_are_errors(priced_catalogue):
 def test_price_catalogue_one_line_is_unchanged(priced_catalogue):
     out = run('--product', TPS_M, '--country', 'ES', '--tier', 'advanced')
     assert out.endswith('  line price: 234.06 EUR\n')
+
+
+@pytest.mark.django_db
+def test_a_rule_limit_offers_bank_transfer_to_es_and_not_to_pt(admin):
+    section = catalogue_section()
+    (iberia,) = [found for found in section['billing_rules']
+                 if found['country_group'] == IBERIA and found['category'] == 'tps_branded']
+    assert iberia['gateways'] == ['redsys', 'bank_transfer']
+    iberia['gateway_countries'] = {'bank_transfer': ['ES']}
+    assert pull(admin, 1, section, vouchers=VOUCHERS) == ('applied', 1)
+    assert holds(order('ES', 'basic', line(TPS_M))).gateways == ('redsys', 'bank_transfer')
+    assert holds(order('PT', 'basic', line(TPS_M))).gateways == ('redsys',)
+    priced = holds(order('PT', 'basic', line(TPS_M)))
+    assert priced.needs_payment and not priced.no_payment_method
+    # A limit on a gateway the other lines do not have changes nothing for them: Iberia's
+    # ODB rule has Revolut only, so a PT order of both has no common gateway.
+    assert holds(order('PT', 'basic', line(TPS_M), line(ODB))).no_payment_method
+    # Every line is limited by its own rule: the same country, the same gateways as before.
+    assert holds(order('ES', 'basic', line(ODB))).gateways == ('revolut',)
+
+
+@pytest.mark.django_db
+def test_a_limit_that_leaves_no_gateway_flags_the_order(admin):
+    section = catalogue_section()
+    (iberia,) = [found for found in section['billing_rules']
+                 if found['country_group'] == IBERIA and found['category'] == 'tps_branded']
+    iberia['gateways'] = ['bank_transfer']
+    iberia['gateway_countries'] = {'bank_transfer': ['ES']}
+    pull(admin, 1, section, vouchers=VOUCHERS)
+    assert holds(order('ES', 'basic', line(TPS_M))).gateways == ('bank_transfer',)
+    priced = holds(order('PT', 'basic', line(TPS_M)))
+    assert priced.gateways == () and priced.needs_payment and priced.no_payment_method
+
+
+@pytest.mark.django_db
+def test_without_limits_the_whole_group_gets_every_gateway(priced_catalogue):
+    for country in ('ES', 'PT'):
+        assert holds(order(country, 'basic', line(TPS_M))).gateways == (
+            'redsys', 'bank_transfer')
