@@ -28,7 +28,7 @@ Completed at inception from the initiative's P15 and the source.
 2. A UAE gateway adapter passes the same sandbox checks as Revolut and Redsys; invoices meet the UAE tax-invoice rules (TRN, 5% VAT).
 3. SMS to UAE numbers come from a registered sender; the legal texts name the UAE company.
 4. mytreatplan.ae is live in production on the same build, and a first order completes.
-5. Every UAE tax invoice and credit note is sent through the appointed ASP and its status recorded, by the 1 July 2027 deadline.
+5. Every UAE tax invoice and credit note is sent by the .ae instance through the appointed ASP's API and its status recorded; onboarding and testing with the ASP finished before 31 March 2027, mandatory from 1 July 2027.
 
 ## Boundaries
 
@@ -39,11 +39,13 @@ The UAE region's launch. The preparation entries (hosting comparison, TDRA, Meta
 - parent — _bmad-output/initiative-mytreatplan-portal-admin/initiative-mytreatplan-portal-admin.md, section Requirements (P15)
 - reqs — ../MyTP_Reqs_Def_V1_21Oct2026_v3.docx (parent folder of the repo)
 - architecture — the part-2 architecture document (bmad-architecture), once written
+- e-invoicing — ../UAE_E-Invoicing_Briefing.pptx (parent folder of the repo; DGTX, the accountants, 2026-11)
 
 ## Notes
 
 - Decision (user, 2026-10-29): EU first, then UAE quickly; preparation runs during EU development.
 - Decision (user, 2026-11-18): the UAE company banks with Wio Bank. At inception, the first entry is "choose the UAE gateway": check Wio against the adapter needs (online card acquiring API, hosted page, signed webhooks, refunds, sandbox, saved cards with repeat charges) and compare UAE providers that settle into the Wio account; record the choice; the adapter entry follows it on epic-payments entry 2's interface. Tabby/Tamara/Amazon Pay (initiative Notes, 2026-10-26) would be extra gateways next to the card one.
-- Decision (user, 2026-11-20, after a meeting with accounting and sales): the UAE company must be ready for UAE e-invoicing. It is under AED 50M a year, so it must appoint an Accredited Service Provider (ASP) by 31 March 2027 and go live on 1 July 2027 (secondary sources: Ministerial Decision 244 of 2025; reported penalty AED 5,000 a month). Invoices go in PINT AE (UBL) over Peppol through the ASP, which reports to the FTA. At inception, an entry "UAE e-invoicing through an ASP": send each tax invoice and credit note through the ASP's API and store its status on the invoice's e-invoice status field (epic-payments entry 6). Accounting will send the official document; it replaces these details. Choosing the ASP is a business action with that deadline, and the e-invoicing go-live does not wait on the .ae production go-live.
+- Decision (user, 2026-11-20, after a meeting with accounting and sales; confirmed by the accountants' briefing, References "e-invoicing"): the UAE company must be ready for UAE e-invoicing. Under AED 50M a year: appoint a Ministry of Finance accredited service provider (ASP) by 31 March 2027, with onboarding and testing finished before that date; e-invoicing mandatory from 1 July 2027; penalty AED 5,000 a month for missing either. Sales invoices and credit notes (B2B and B2G) go from us to our ASP, which reports the tax data to the FTA and delivers to the customer's ASP. VAT returns continue as before. (Format per secondary sources: PINT AE, UBL, over Peppol.)
+- Decision (user, 2026-11-20, on the briefing): (1) DGTX offers two ASPs, DG Ledger (theirs) and Zoho Books: choose the one with a documented API to submit invoices and credit notes and read their status, with a test environment (Zoho Books has a public API; ask DGTX whether DG Ledger has one). (2) The .ae instance sends each invoice and credit note to the ASP when it issues it and stores the ASP's status on the invoice's e-invoice status field (epic-payments entry 6); not the admin site's accounting copy. (3) Purchase invoices (input VAT), which also arrive through the ASP, are accounting's, in the ASP's platform: out of the portal's scope. (4) The ASP integration is built and tested before 31 March 2027, whatever the .ae launch date. At inception: an entry "choose the ASP" (the API check, with DGTX; no prerequisite) and an entry "UAE e-invoicing through the ASP" (after epic-payments entries 6 and 7; must finish before 31 March 2027; does not wait on the .ae production go-live).
 - Waits on epic 7 because: it needs gateway interface and invoicing.
 - Waits on epic 15 because: it needs EU go-live, for the production step only.
