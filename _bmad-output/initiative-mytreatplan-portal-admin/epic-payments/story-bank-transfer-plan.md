@@ -3,14 +3,14 @@ title: 'Bank transfer'
 type: 'feature'
 ticket: '5'
 created: '2026-11-19'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: '3a147957397e5f33841916d322054d5022e95fe1'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -73,6 +73,7 @@ context: []
 - `deploy/jobs.conf:68` `expireorders` line format.
 - `payments/tests/test_service.py` (`new`, `pay`, backdating via `.update`), `payments/tests/conftest.py`.
 - `mytp_publicsite/tests/test_i18n.py:20` `TRANSLATABLE_FOLDERS` lacks `payments`.
+- **Build setup:** branch `story/7.5-bank-transfer` is checked out (baseline 3a14795, mytp-core 0.29.0 already vendored by entry 14). Commit nothing, push nothing. Venv `../.venv` lacks the 0.29.0 wheel: use `/private/tmp/claude-501/portal-6.9-venv` (has it). Suite (repo root, sandbox off): `FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" DATABASE_URL="sqlite:///$TMPDIR/p75.sqlite3" /private/tmp/claude-501/portal-6.9-venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` (baseline 3805 passed / 13 skipped, 0 failures). After editing the .po, run `compilemessages` for the i18n tests.
 
 ## Tasks & Acceptance
 
@@ -96,11 +97,28 @@ context: []
 
 ## Implementation Notes
 
+- Built by a Sonnet implementer; Opus quick review: 8 findings, all patched (table below). Suite (main session) 3840 passed / 13 skipped; makemigrations and check clean. Migration `payments` 0004 (`Payment.reminded_at`); job `remindtransfers` (dev needs a re-provision).
+- Deviations accepted: the reminder language is `Profile.language` (`accounts.profile.profile_of`; `User` has none), site `LANGUAGE_CODE` as fallback; `checkout/<id>/?change=1` plus a "Choose another payment method" link on the transfer page (the redirect would otherwise block the switch to card); a company that lost its bank details mid-attempt shows "details not available, contact us".
+- From the review: an open transfer attempt is closed only inside the locked transaction after every check (a refused pay POST keeps it); a transfer attempt's deadline is capped at `pending_at + 14 days` (re-choosing transfer never extends it; refused once past); the reminder is due from `pending_at + 7 days`, once per order; the page and email show the last full day to pay (`session_expires_at - 1 day`, company time zone); `mark_transfer_paid` refuses another currency.
+
 ## Plan Change Log
 
 - 2026-11-20: split (user): bank details on billing companies moved to entry 14 (with the SEPA creditor id and per-country gateway limits); this plan regenerated for the portal only.
 
 ## Review Triage Log
+
+Quick lens (Opus), 2026-11-20:
+
+| # | Finding | Verdict | Route | Evidence |
+|---|---------|---------|-------|----------|
+| 1 | `start_payment` closes an open transfer attempt (no-op cancel, own transaction) before the version/state/gateway checks: a refused pay POST loses the attempt, the order then expires after 24 h | high | patch | `_cancel_live_attempts` runs before `_check_version`; transfer `cancel_attempt` is a no-op so nothing guards the attempt |
+| 2 | re-choosing transfer (or card then transfer) opens a fresh 14-day attempt: the deadline can be renewed for ever | medium | patch | `session_expires_at = now + lifetime`; nothing ties it to the order's first freeze (`pending_at`); intent says expiry after 14 days |
+| 3 | page/email say "expires after {date}" but `expire_stale` expires during that date | medium | patch | date is `session_expires_at.date()`; expiry at that time of day |
+| 4 | `mark_transfer_paid` drops a `Money` currency | low | patch | direct correction, as `confirm_payment` |
+| 5 | README not updated (transfer page, cancel rule, second paying path, job, `reminded_at`, `accepts`) | low | patch | earlier entries kept README current |
+| 6 | limit test has dead code and tests ES-under-PT instead of the AC's PT-under-ES | low | patch | direct correction |
+| 7 | no tests for findings 1 and 2 | medium | patch | added with their fixes |
+| 8 | three new lines over 99 chars | low | patch | baseline `payments/` has none |
 
 ## Verification
 

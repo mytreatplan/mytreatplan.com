@@ -118,6 +118,9 @@ class Adapter:
     session_lifetime: timedelta = DEFAULT_SESSION_LIFETIME
     timestamp_tolerance: timedelta = DEFAULT_TIMESTAMP_TOLERANCE
     required_settings: tuple = field(default_factory=tuple)
+    # Optional `accepts(order) -> bool` (entry 5): whether this gateway can take this
+    # order at all (bank transfer needs the billing company's bank details).
+    accepts: Optional[Callable] = None
 
     def available(self):
         return self.enabled is None or bool(self.enabled())
@@ -169,11 +172,15 @@ def check_timestamp(adapter_, sent_at, now, event=None):
 
 def offered(order):
     """The gateway names the doctor may choose for `order`, in order: the order's priced
-    gateways that have an available adapter, then the fake one when it is available and
-    the order has something to pay."""
+    gateways that have an available adapter that accepts the order, then the fake one when
+    it is available and the order has something to pay."""
     if order.total <= 0:
         return []
-    names = [name for name in order.gateways if name != FAKE and adapter(name) is not None]
+    names = []
+    for name in order.gateways:
+        found = adapter(name) if name != FAKE else None
+        if found is not None and (found.accepts is None or found.accepts(order)):
+            names.append(name)
     if adapter(FAKE) is not None:
         names.append(FAKE)
     return names

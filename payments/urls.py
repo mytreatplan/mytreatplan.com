@@ -8,6 +8,7 @@ urlpatterns = [
     path('checkout/test-order/', views.test_order, name='checkout_test_order'),
     path('checkout/<uuid:pk>/', views.checkout, name='checkout'),
     path('checkout/<uuid:pk>/return/', views.checkout_return, name='checkout_return'),
+    path('checkout/<uuid:pk>/transfer/', views.transfer_page, name='checkout_transfer'),
     path('checkout/<uuid:pk>/failed/', views.checkout_failure, name='checkout_failure'),
     path('checkout/<uuid:pk>/fake/', views.fake_gateway, name='checkout_fake'),
     path('checkout/<uuid:pk>/redsys/', views.redsys_gateway, name='checkout_redsys'),

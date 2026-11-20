@@ -55,9 +55,11 @@ doctor_actor = subscriptions_service.doctor_actor
 admin_actor = subscriptions_service.admin_actor
 
 CREATED, ENTITY_CHOSEN, PAYMENT_STARTED = 'created', 'entity_chosen', 'payment_started'
+BANK_TRANSFER = 'bank_transfer'
 PAID, CANCELLED, EXPIRED = 'paid', 'cancelled', 'expired'
 # How long an order may stay unpaid in `checkout` or `pending_payment` before the
-# `expire_orders` job expires it (a bank transfer's 14 days are entry 5's).
+# `expire_orders` job expires it (a bank transfer's 14 days: its attempt's session keeps the
+# order open).
 EXPIRY_HOURS = 24
 _REFERENCE_TRIES = 5
 
@@ -106,6 +108,10 @@ class GatewayRefused(OrderError):
 class AttemptOpen(OrderError):
     """A payment attempt of the order is open: its gateway session may still be live, so
     the order cannot be cancelled or expired and another attempt cannot be started yet."""
+
+
+class AmountMismatch(OrderError):
+    """The amount received is not the order's total (no partial payments)."""
 
 
 class HookFailed(OrderError):
@@ -310,9 +316,7 @@ def _create(user, kind, asked, *, actor, voucher, entity):
                     actor_type=actor.type, actor_uuid=actor.uuid, created_at=now,
                     updated_at=now)
                 _copy_totals(order, priced)
-                if priced.needs_payment and not (
-                        [name for name in order.gateways if gateways.adapter(name)]
-                        or gateways.adapter(gateways.FAKE)):
+                if priced.needs_payment and not gateways.offered(order):
                     raise NoPaymentMethod('no payment method is available for this order')
                 _snapshot_entity(order, entity)
                 order.save()
@@ -392,7 +396,9 @@ def start_payment(order, gateway, *, expected_version, actor):
     after a failure) only the gateway may change. A 0.00 order needs no gateway
     (`gateway` ''): it is paid here. Returns the order."""
     _check_actor(actor)
-    _cancel_live_attempts(getattr(order, 'pk', order))  # gateway calls, outside the lock
+    # Gateway calls, outside the lock. A bank transfer attempt is closed later, under the
+    # lock, once every check has passed (a refused request must not lose it).
+    _cancel_live_attempts(getattr(order, 'pk', order), exclude=BANK_TRANSFER)
     with transaction.atomic():
         locked = _lock(order)
         _check_version(locked, expected_version)
@@ -416,8 +422,18 @@ def start_payment(order, gateway, *, expected_version, actor):
             return locked
         if gateway not in gateways.offered(locked):
             raise GatewayRefused(f'the gateway {gateway!r} is not offered for this order')
-        if _live_attempts(locked, now):  # one opened since: nothing changed
-            raise AttemptOpen('a payment attempt of the order is open')
+        live = _live_attempts(locked, now)
+        if [payment for payment in live if payment.gateway != BANK_TRANSFER]:
+            raise AttemptOpen('a payment attempt of the order is open')  # one opened since
+        lifetime = gateways.adapter(gateway).session_lifetime
+        session_ends = now + lifetime
+        if gateway == BANK_TRANSFER:
+            # The 14 days run from the first freeze: choosing transfer again never renews them.
+            session_ends = min(session_ends, (locked.pending_at or now) + lifetime)
+            if session_ends <= now:
+                raise GatewayRefused('the 14 days of the bank transfer have ended')
+        for payment in live:  # the open transfer attempt: closed locally, nothing to cancel
+            _set_payment_state(payment, Payment.CLOSED, now)
         before = locked.state
         if before == Order.CHECKOUT:
             fiscal.mark_used(entity)
@@ -428,7 +444,7 @@ def start_payment(order, gateway, *, expected_version, actor):
         _change(locked, actor, PAYMENT_STARTED, before, now, gateway=gateway)
         Payment.objects.create(
             order=locked, gateway=gateway, amount=locked.total, currency=locked.currency,
-            session_expires_at=now + gateways.adapter(gateway).session_lifetime,
+            session_expires_at=session_ends,
             created_at=now, updated_at=now)
         return locked
 
@@ -466,9 +482,15 @@ def mark_paid(order, *, expected_version, actor):
 
 def cancel(order, *, expected_version, actor):
     """The buyer gives up: an unpaid order -> `cancelled`, firing `cancelled`. A paid or
-    expired order is refused."""
-    return _move(order, Order.CANCELLED, CANCELLED, Order.OPEN_STATES, 'cancelled_at',
-                 expected_version=expected_version, actor=actor)
+    expired order is refused. An open bank transfer attempt is closed here (nothing to
+    cancel at a bank), in the same transaction; an open attempt of another gateway still
+    refuses (`AttemptOpen`)."""
+    with transaction.atomic():
+        locked = _lock(order)  # the order first, then its attempts (as `mark_transfer_paid`)
+        if locked.state in Order.OPEN_STATES and locked.version == expected_version:
+            _cancel_live_attempts(locked.pk, only=BANK_TRANSFER)
+        return _move(locked, Order.CANCELLED, CANCELLED, Order.OPEN_STATES, 'cancelled_at',
+                     expected_version=expected_version, actor=actor)
 
 
 def expire(order, *, expected_version, actor=SYSTEM_ACTOR, now=None):
@@ -535,13 +557,19 @@ def _set_payment_state(payment, state, now, **fields):
     payment.save()
 
 
-def _cancel_live_attempts(order_id):
+def _cancel_live_attempts(order_id, only=None, exclude=None):
     """Before a new attempt: close every live open attempt at its gateway (`cancel_attempt`,
     an HTTP call: no transaction or lock is held) and mark each closed in its own short
     transaction once the gateway confirmed. A gateway that cannot cancel (or is not
-    available), or fails to: `AttemptOpen` until the session times out."""
+    available), or fails to: `AttemptOpen` until the session times out. `only`: just the
+    attempts of that gateway; `exclude`: all but that gateway's."""
     now = timezone.now()
-    for payment in Payment.objects.filter(order_id=order_id, state=Payment.OPEN):
+    attempts = Payment.objects.filter(order_id=order_id, state=Payment.OPEN)
+    if only is not None:
+        attempts = attempts.filter(gateway=only)
+    if exclude is not None:
+        attempts = attempts.exclude(gateway=exclude)
+    for payment in attempts:
         if payment.session_expires_at is not None and payment.session_expires_at <= now:
             continue  # timed out: closed under the lock by `_live_attempts`
         found = gateways.adapter(payment.gateway)
@@ -646,6 +674,45 @@ def confirm_payment(payment, gateway_payment):
         mark_paid(order, expected_version=order.version, actor=SYSTEM_ACTOR)
         _set_payment_state(locked, Payment.CONFIRMED, now, confirmed_at=now)
         return CONFIRMED
+
+
+def mark_transfer_paid(order, amount, *, expected_version, actor):
+    """Staff (or the system) recorded that a bank transfer of `amount` arrived (epic-payments
+    entry 5): the order's open `bank_transfer` attempt is `confirmed` and the order is
+    paid (`mark_paid`, its `paid` hook once), in one transaction. Refused, changing
+    nothing: `InvalidTransition` unless the order is `pending_payment` (an expired or
+    cancelled order is re-sold or refunded by hand), `NoPaymentMethod` without an open
+    transfer attempt, `AmountMismatch` unless `amount` equals the total, `StaleVersion`.
+    An order already paid by this service is returned unchanged."""
+    _check_actor(actor)
+    if actor.type == DOCTOR:
+        raise InvalidActor('a transfer is recorded by staff or the system')
+    currency = getattr(amount, 'currency', None)
+    if currency is not None and str(currency) != order.currency:
+        raise AmountMismatch('the currency is not the order\'s')
+    amount = getattr(amount, 'amount', amount)
+    try:
+        amount = Decimal(str(amount))
+    except ArithmeticError:
+        raise AmountMismatch('not an amount') from None
+    with transaction.atomic():
+        locked = _lock(order)
+        if locked.state == Order.PAID and locked.payments.filter(
+                gateway=BANK_TRANSFER, state=Payment.CONFIRMED).exists():
+            return locked
+        _check_version(locked, expected_version)
+        if locked.state != Order.PENDING_PAYMENT:
+            raise InvalidTransition(f'an order that is {locked.state} cannot be paid')
+        attempt = locked.payments.select_for_update().filter(
+            state=Payment.OPEN, gateway=BANK_TRANSFER).first()
+        if attempt is None:
+            raise NoPaymentMethod('the order has no open bank transfer')
+        if amount != locked.total:
+            raise AmountMismatch('the amount is not the order\'s total')
+        now = timezone.now()
+        paid = mark_paid(locked, expected_version=locked.version, actor=actor)
+        _set_payment_state(attempt, Payment.CONFIRMED, now, confirmed_at=now)
+        return paid
 
 
 def needs_attention(order):

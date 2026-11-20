@@ -5,6 +5,8 @@
   here), the payment method, Pay and Cancel. Changing the entity re-prices the order; Pay
   with an entity that changed the total stops to show the new total first.
 - `checkout_return`: where a gateway sends the doctor back: paid, waiting, or closed.
+- `transfer_page`: the bank transfer's details while its attempt is open (epic-payments
+  entry 5); the checkout and the return page lead there meanwhile.
 - `checkout_failure`: a payment that did not go through: retry (the order is still
   `pending_payment`) or cancel.
 - `fake_gateway`: the fake gateway's "hosted page" with Pay and Fail (only while
@@ -41,7 +43,7 @@ from accounts.client_sync import is_client
 from catalogue import pricing, resolver
 from subscriptions import service as subscriptions_service
 
-from . import checks, fake, gateways, redsys, service, webhooks
+from . import bank_transfer, checks, fake, gateways, redsys, service, webhooks
 from .models import Order
 
 logger = logging.getLogger(__name__)
@@ -103,6 +105,18 @@ def _version(request, order):
         return -1  # never matches: stale
 
 
+def _open_transfer(order):
+    """The order's open bank transfer attempt whose 14 days have not ended, else None."""
+    if order.state != Order.PENDING_PAYMENT:
+        return None
+    payment = service.open_payment(order)
+    if (payment is None or payment.gateway != bank_transfer.NAME
+            or (payment.session_expires_at is not None
+                and payment.session_expires_at <= timezone.now())):
+        return None
+    return payment
+
+
 def _gateway_choices(order):
     return [{'name': name, 'label': GATEWAY_LABELS.get(name, name)}
             for name in gateways.offered(order)]
@@ -152,6 +166,8 @@ def checkout(request, pk):
         return _checkout_post(request, order)
     if order.state == Order.PAID:
         return redirect('checkout_return', pk=order.pk)
+    if request.GET.get('change') != '1' and _open_transfer(order) is not None:
+        return redirect('checkout_transfer', pk=order.pk)
     entities = list(fiscal.usable_entities(request.user)) if order.state == Order.CHECKOUT \
         else []
     here = reverse('checkout', args=[order.pk])
@@ -210,6 +226,8 @@ def _checkout_post(request, order):
 @require_http_methods(['GET'])
 def checkout_return(request, pk):
     order = _doctor_order(request, pk)
+    if _open_transfer(order) is not None:
+        return redirect('checkout_transfer', pk=order.pk)
     waiting = False
     if order.state == Order.PENDING_PAYMENT:
         # The webhook may not have been handled yet: re-read the payment once, through
@@ -228,6 +246,20 @@ def checkout_return(request, pk):
         waiting = order.state == Order.PENDING_PAYMENT and payment is not None
     return render(request, 'payments/return.html', {
         'order': order, 'waiting': waiting, 'needs_attention': service.needs_attention(order)})
+
+
+@login_required
+@never_cache
+@require_http_methods(['GET'])
+def transfer_page(request, pk):
+    """The bank details of the order's open transfer attempt (only for the order's own
+    doctor); any other state shows the return page."""
+    order = _doctor_order(request, pk)
+    payment = _open_transfer(order)
+    if payment is None:
+        return redirect('checkout_return', pk=order.pk)
+    return render(request, 'payments/transfer.html', {
+        'order': order, 'details': bank_transfer.details(order, payment)})
 
 
 @login_required
