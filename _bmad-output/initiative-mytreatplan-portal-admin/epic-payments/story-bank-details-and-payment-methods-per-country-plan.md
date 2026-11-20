@@ -3,7 +3,7 @@ title: 'Bank details and payment methods per country'
 type: 'feature'
 ticket: '14'
 created: '2026-11-20'
-status: 'built'
+status: 'done'
 baseline_revision: 'e4eed081d7b6354d690f7bb9a936ccf7cd71fbd6'
 route: 'full'
 route_source: 'auto'
@@ -113,3 +113,10 @@ Quick lens (Opus), 2026-11-20:
 **Manual checks (staging):**
 1. admindev: type the ES company's bank details (staging test IBAN `ES9121000418450200051332`, BIC `CAIXESBBXXX`) and a test creditor id; limit bank_transfer to ES on the Iberia rule(s); publish.
 2. dev: snapshot applied (company fields present, rule limit stored); an ES test doctor's checkout lists Bank transfer only after entry 5 ships (until then: `pricing` gateways include `bank_transfer` for ES, not for PT, checked in a shell script); dev-ae unchanged.
+
+## Staging
+
+- 2026-11-20. mytp-core 0.29.0 (d8ad580, tag v0.29.0, core CI green). Portal PR #117 merged 3a14795 (CI test pass; master run 44727118701 green, dev + dev-ae deployed); admin PR mytp-admin#44 merged ebd3aeb (admindev deployed). Suites: core 1641 / 4, admin 1651 / 12, portal 3805 / 13.
+- admindev (real writes, `staging-7.14` command actor): billing 0004 applied; a partial set refused on `bic`, a bad IBAN checksum on `iban`; the ES company has staging bank details (CaixaBank test IBAN, normalised) and a test creditor id; its audit entry masks the values; bank_transfer limited to ES on the 9 active Iberia rules; the snapshot moved; removing ES from Iberia refused on `countries` (rolled back).
+- dev: catalogue 0010 applied; ES company has bank details and creditor id, IE none; 9 rules with limits; tps_branded gateways ES redsys + bank_transfer, PT redsys, IE and DE revolut. dev-ae: no bank details, no limits.
+- Checks 1 and 2 of the plan: confirmed.
