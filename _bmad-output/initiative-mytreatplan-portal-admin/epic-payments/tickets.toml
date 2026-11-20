@@ -49,18 +49,18 @@ unknown = "The Revolut Merchant sandbox credentials, requested by the user."
 id = 5
 type = "story"
 title = "Bank transfer"
-description = "Adds the bank_transfer gateway where billing rules allow it: the order shows the company's bank details and a reference and stays pending; a 'mark as paid' service (the admin button is epic-sales-finance's); a reminder email on day 7; automatic expiry after 14 days through the expired hook (epic 8 releases any voucher)."
+description = "Adds the bank_transfer gateway where billing rules allow it (per country, entry 14; at launch Spain only): the order shows the company's bank details and a reference and stays pending; a 'mark as paid' service (the admin button is epic-sales-finance's); a reminder email on day 7; automatic expiry after 14 days through the expired hook (epic 8 releases any voucher)."
 verify = "A bank-transfer order on dev shows the bank details, gets the day-7 reminder, is paid through the service, and an unpaid one expires on day 14 firing the expired hook."
 covers = ["Y5"]
-after = [4]
+after = [3, 14]
 hitl = false
-risk = "medium"
+risk = "high"
 
 [[entry]]
 id = 6
 type = "story"
 title = "Invoices"
-description = "Issues an invoice when an order is paid, in the regional instance: gapless series per company, instance and year in the format <company>-<instance>-<year>-<6 digits>, using a short company code added to 5.9's billing companies (ES, IE, AE) and 1.6's invoice instance prefix, assigned in a locked transaction; VAT per rate on the total, half up, or the exemption text; buyer from the fiscal-entity snapshot; lines with an optional patient code (subscriptions have none); dates in the company's legal time zone; issued invoices immutable (AD-7); a service to invoice a manual order for a buyer without an account (epic-sales-finance); room left for VeriFactu fields and the UAE tax invoice (TRN, 5% VAT)."
+description = "Issues an invoice when an order is paid, in the regional instance: gapless series per company, instance and year in the format <company>-<instance>-<year>-<6 digits>, using a short company code added to 5.9's billing companies (ES, IE, AE) and 1.6's invoice instance prefix, assigned in a locked transaction; VAT per rate on the total, half up, or the exemption text; buyer from the fiscal-entity snapshot; lines with an optional patient code (subscriptions have none); dates in the company's legal time zone; issued invoices immutable (AD-7); a service to invoice a manual order for a buyer without an account (epic-sales-finance); room left for VeriFactu fields and the UAE tax invoice (TRN, 5% VAT); an invoice is stored as structured, immutable data (seller and buyer identifiers, lines with tax category, totals, issue date and time) from which the PDF is rendered, never PDF-first, with an e-invoice transmission status per invoice (none until a channel exists) so the UAE e-invoicing entry (epic-uae-launch) and VeriFactu plug in without reshaping invoices."
 verify = "Paying three orders issues ES-EU-2026-000001 to 000003 with no gap under concurrent payments; a DE reverse-charge invoice carries the exemption text; a manual order invoices a buyer with no account; an issued invoice cannot be edited."
 covers = ["Y6"]
 after = [5]
@@ -130,7 +130,7 @@ title = "Production checks for the EU go-live"
 description = "Writes this epic's production checks (live gateways per company, webhooks, bank transfer flow, invoice series per company, credit notes, restore-safe numbering, PDF download, accounting copy, repeat charges) into epic-eu-golive's Done when."
 verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
 covers = []
-after = [9, 10, 11]
+after = [9, 10, 11, 15]
 hitl = false
 risk = "low"
 
@@ -141,6 +141,29 @@ title = "Refactor sweep"
 description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
 verify = "The portal's, the admin repo's and mytp-core's test suites pass; deferred review findings are closed or recorded."
 covers = []
-after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15]
 hitl = false
 risk = "low"
+
+[[entry]]
+id = 14
+type = "story"
+title = "Bank details and payment methods per country"
+description = "mytp-core 0.29.0, the admin site and the portal: a billing company gains optional bank details (account holder, IBAN, BIC, bank name; all or none) and an optional SEPA creditor identifier; a billing rule may limit each of its gateways to some countries of its group (none listed: the whole group), so a method such as bank_transfer or a SEPA debit is offered per country (user decision 2026-11-20: bank transfer in Spain only at launch; some countries never, after a financial risk assessment). Admin form and snapshot; portal catalogue fields, applier, and pricing that keeps a gateway only for the billing country it allows."
+verify = "On admindev the Iberia rule limits bank_transfer to ES and the ES company has bank details; on dev an ES doctor's order offers bank transfer and a PT doctor's does not; a company with three of the four bank fields is refused by the admin form and by the contract."
+covers = ["Y5", "Y10"]
+after = [3]
+hitl = false
+risk = "high"
+
+[[entry]]
+id = 15
+type = "story"
+title = "SEPA Direct Debit"
+description = "SEPA Core direct debit for EU doctors, at launch in Spain and Portugal (Banco Santander) and Ireland (Revolut, if it offers collection), other EU countries undecided, offered per country through entry 14: online mandate acceptance (debtor IBAN encrypted, unique mandate reference, date), pre-notification before each debit, collection through the company's provider, the order paid only once the collection is confirmed, and returns (8 weeks; 13 months unauthorised) undoing the payment through entry 7; for one-off orders and subscription renewals (entry 11's repeat-charge service)."
+verify = "On dev an ES doctor accepts a mandate, a test order is debited through Santander's test channel and paid only on confirmation; a simulated return marks the payment returned and reaches the refund path; a PT doctor is offered it, a DE doctor is not."
+covers = ["Y10"]
+after = [14, 7, 11]
+hitl = true
+risk = "high"
+unknown = "Santander's SEPA collection channel for ES and PT (API, or a Cuaderno 19.14 / pain.008 file uploaded by finance), whether Revolut Business collects SEPA debits for the Irish company, and the provider for the other EU countries; accounting asks (user decision 2026-11-20). Its plan settles the shape once known."

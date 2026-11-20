@@ -193,3 +193,9 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-redsys-adapter-plan.md`
   summary: NGINX2Root (Xint, DSA-6642-1): the staging host was patched by hand on 2026-11-19 (nginx 1.26.3-3+deb13u11, full restart) and SCTP autoload blocked in `/etc/modprobe.d/disable-sctp.conf` (the kernel half of the chain, no Debian fix yet). Add the SCTP block to `deploy/provision.sh` so new hosts (production) get it, check the nginx package is at or above the fixed version at provision, and remove the block once a fixed kernel is installed and the host rebooted.
   evidence: staging host check of 2026-11-19 (http2 on + proxied upstream = CVE-2026-123007/123633 applied before the patch).
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-bank-transfer-plan.md`
+  summary: A bank transfer that arrives after its order expired or was cancelled cannot be recorded (`mark_transfer_paid` refuses it, user decision 2026-11-19); staff refund or re-sell by hand. Decide later whether staff may reopen an expired transfer order and mark it paid.
+  evidence: 7.5 decision 4.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-bank-transfer-plan.md`
+  summary: Bank details (and the SEPA creditor id and per-country gateway limits) on billing companies and rules, across mytp-core 0.29.0, the admin site and the portal: now epic-payments entry 14, built before entry 5.
+  evidence: 7.5 plan was ~3000 tokens over three repos; the user chose to split (2026-11-20).
