@@ -3,7 +3,7 @@ title: 'Bank transfer'
 type: 'feature'
 ticket: '5'
 created: '2026-11-19'
-status: 'built'
+status: 'done'
 baseline_revision: '3a147957397e5f33841916d322054d5022e95fe1'
 route: 'full'
 route_source: 'auto'
@@ -130,3 +130,10 @@ Quick lens (Opus), 2026-11-20:
 1. Re-provision dev (new `remindtransfers` timer).
 2. An ES test doctor's checkout offers Bank transfer; a PT one's does not.
 3. A transfer order shows the bank details; day 7 and day 14 simulated by backdating the attempt in a rolled-back shell script (check72 pattern): one reminder email, then `expired` with the hook; another order marked paid through the service; a third cancelled by the doctor.
+
+## Staging
+
+- 2026-11-20. PR #118 merged 997eb04 (CI test pass on push and pull_request; master run 44732376147 green, dev + dev-ae deployed). Suite 3840 / 13 skipped. dev and dev-ae re-provisioned (4 changes each): `mytp-dev-job@remindtransfers.timer` and `mytp-dev-ae-job@remindtransfers.timer` exist.
+- dev, in one rolled-back transaction (test doctors staging75-es/pt, none left after): payments 0004 applied, adapter registered; pricing ES redsys + bank_transfer, PT redsys only (entry 14's ES-only limit); a transfer order is `pending_payment` with a 14-day attempt and the details holder, IBAN, BIC, bank, amount, currency, concept, deadline; day 7: one reminder, a second run none (in-memory mailer via `MAILERS`); day 14: `expire_orders` expires it, `expired` hook once; `mark_transfer_paid` refuses another amount (`AmountMismatch`), then pays (`paid` hook once, attempt `confirmed`), a repeat changes nothing; the doctor cancels another (attempt `closed`, `cancelled` hook).
+- Also seen: with the real mailer, a refused recipient is logged as "transfer reminder not sent: payment <uuid> (SMTPRecipientsRefused)", `reminded_at` stays empty and the next run retries (no bank details in the log).
+- Checks 1-3 confirmed. Check 4 (the transfer page by eye, EN and ES) is the user's.
