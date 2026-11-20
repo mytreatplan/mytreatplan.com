@@ -238,7 +238,12 @@ def apply(section):
                        time_zone=company.time_zone,
                        company_number=company.company_number or '',
                        vat_number=company.vat_number or '',
-                       tax_number=company.tax_number or '', active=company.active)
+                       tax_number=company.tax_number or '',
+                       bank_account_holder=company.bank_account_holder or '',
+                       iban=company.iban or '', bic=company.bic or '',
+                       bank_name=company.bank_name or '',
+                       sepa_creditor_id=company.sepa_creditor_id or '',
+                       active=company.active)
         for company in companies)
     BillingRule.objects.bulk_create(
         BillingRule(id=rule.id, country_group_id=rule.country_group,
@@ -246,7 +251,10 @@ def apply(section):
                     vat_percent=rule.vat_percent,
                     exemption_text=rule.exemption_text or '',
                     reverse_charge_text=rule.reverse_charge_text or '',
-                    gateways=list(rule.gateways), currency=rule.currency,
+                    gateways=list(rule.gateways),
+                    gateway_countries={gateway: list(countries) for gateway, countries
+                                       in (rule.gateway_countries or {}).items()},
+                    currency=rule.currency,
                     available=rule.available, active=rule.active)
         for rule in rules)
     mismatch = billing.profile_mismatch()

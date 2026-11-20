@@ -50,6 +50,7 @@ import uuid
 from decimal import Decimal
 
 from django.db import models
+from django.db.models import JSONField, Value
 from django.utils import translation
 
 from integration.snapshot_tables import SnapshotFedModel
@@ -391,8 +392,12 @@ class BillingCompany(SnapshotFedModel):
     name, address (plain text, `\\n` line breaks), country (ISO 3166-1 alpha-2), legal
     time zone (an IANA name) and its identifiers, each '' when it has none: the company
     number or license, the VAT registration and the TAX registration. A deactivated
-    company stays, readable for what refers to it. No bank details and no invoice series
-    (epic-payments)."""
+    company stays, readable for what refers to it. Since mytp-core 0.29.0 (epic-payments
+    entry 14) its bank details (`bank_account_holder`, `iban`, `bic`, `bank_name`: all
+    four or none, the IBAN without spaces in capitals) and its SEPA creditor identifier
+    (`sepa_creditor_id`), each '' when it has none: configuration only, for the bank
+    transfer instructions (entry 5) and SEPA Direct Debit (entry 15). They are never
+    logged. No invoice series (epic-payments)."""
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     code = models.CharField(max_length=16)
@@ -403,6 +408,13 @@ class BillingCompany(SnapshotFedModel):
     company_number = models.CharField(max_length=64, default='')
     vat_number = models.CharField(max_length=64, default='')
     tax_number = models.CharField(max_length=64, default='')
+    # mytp-core 0.29.0: '' when absent. A database default too, so the release before
+    # this one can still insert rows while this one is being deployed.
+    bank_account_holder = models.CharField(max_length=140, default='', db_default='')
+    iban = models.CharField(max_length=34, default='', db_default='')
+    bic = models.CharField(max_length=11, default='', db_default='')
+    bank_name = models.CharField(max_length=140, default='', db_default='')
+    sepa_creditor_id = models.CharField(max_length=35, default='', db_default='')
     active = models.BooleanField()
 
     class Meta:
@@ -411,6 +423,11 @@ class BillingCompany(SnapshotFedModel):
 
     def __str__(self):
         return self.code
+
+    @property
+    def has_bank_details(self):
+        """Whether the four bank fields are set (the snapshot sends them all or none)."""
+        return all((self.bank_account_holder, self.iban, self.bic, self.bank_name))
 
     @property
     def identifiers(self):
@@ -428,7 +445,10 @@ class BillingRule(SnapshotFedModel):
     in another country than the company's), the payment `gateways` in order of
     preference (codes; read the ones this release knows with `known_gateways`), the
     `currency` the pair is sold in and whether the category is `available` in the group.
-    At most one active rule per group and category (the snapshot's contract).
+    At most one active rule per group and category (the snapshot's contract). Since
+    mytp-core 0.29.0 `gateway_countries` ({gateway: [country, ...]}, empty: no limit)
+    limits a gateway to some countries of the group: read the gateways offered to a
+    billing country with `gateways_for`.
 
     Every rule is stored, also one of a category or in a currency this release does not
     know: such a rule offers nothing (no product has that category or currency), which
@@ -449,6 +469,8 @@ class BillingRule(SnapshotFedModel):
     exemption_text = models.TextField(default='')
     reverse_charge_text = models.TextField(default='')
     gateways = models.JSONField(default=list)
+    # mytp-core 0.29.0; a database default too, as the company's bank fields.
+    gateway_countries = models.JSONField(default=dict, db_default=Value({}, JSONField()))
     currency = models.CharField(max_length=3)
     available = models.BooleanField()
     active = models.BooleanField()
@@ -470,6 +492,15 @@ class BillingRule(SnapshotFedModel):
         """The gateways this release knows, in the rule's order of preference."""
         from mytp_core.contracts import known_gateways
         return known_gateways(self.gateways)
+
+    def gateways_for(self, country):
+        """The gateways offered for a billing `country` (an alpha-2 code; any case): the
+        ones this release knows, in the rule's order, without those the rule limits to
+        other countries. A gateway without a limit is offered in the whole group."""
+        country = (country or '').strip().upper()
+        limits = self.gateway_countries or {}
+        return [gateway for gateway in self.known_gateways
+                if gateway not in limits or country in limits[gateway]]
 
 
 class CatalogueState(SnapshotFedModel):

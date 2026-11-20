@@ -3,14 +3,14 @@ title: 'Bank details and payment methods per country'
 type: 'feature'
 ticket: '14'
 created: '2026-11-20'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: 'e4eed081d7b6354d690f7bb9a936ccf7cd71fbd6'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -59,6 +59,15 @@ context: []
 - mytp-admin `billing/models.py:73` `BillingCompany` (+ `clean`), `BillingRule` (`gateways` :186, `clean` :225), `billing/views.py:205` `CompanyForm`, `RuleForm` :265 (per-position gateway fields :332 `_gateway_field`), `billing/snapshot.py` `company_entry`/`rule_entry`; next migration `billing` 0004; vendored wheel test `interface/tests/test_vendored_core.py`; `billing/tests/test_billing.py`.
 - Portal `catalogue/models.py:389` `BillingCompany`, `BillingRule` (`known_gateways` :469); `catalogue/applier.py:235-250`; next migration `catalogue` 0010; `catalogue/pricing.py:_price` (country :~336, gateways :~359-366); vendored wheel path and pin (follow 6.9: `vendor/` + requirements hash).
 
+- **Build setup (as for 6.9):**
+  - Branch `story/7.14-bank-details-per-country` is checked out in all three repos (portal = this repo, baseline e4eed08; `../mytp-core` baseline cf21dea; `../mytp-admin` baseline c6132c9). Commit nothing, push nothing, tag nothing: the release is the main session's.
+  - Core venv `/private/tmp/claude-501/core-5.17-venv`, admin venv `/private/tmp/claude-501/admin-5.17-venv` (reinstall the core into them as needed). Portal: do not install the local wheel into `../.venv` (shared); use `/private/tmp/claude-501/portal-6.9-venv` (reinstall the portal requirements with the local wheel).
+  - Local wheel: copy the core working tree's tracked files (`git ls-files | rsync --files-from=-`) to a temp dir, `SOURCE_DATE_EPOCH` = core HEAD commit time, `pip wheel --no-deps`, put it in both sites' `vendor/` and move each `requirements.txt` line to 0.29.0 (remove the 0.28.0 wheel). The main session re-vendors from the tag with `scripts/vendor-mytp-core.sh v0.29.0` before the PRs.
+  - Portal suite (repo root, sandbox off): `FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" DATABASE_URL="sqlite:///$TMPDIR/p714.sqlite3" <venv>/bin/python -m pytest -q -p no:cacheprovider --tb=line` (0 failures expected; PostgreSQL-only tests skip).
+  - Admin suite (in `../mytp-admin`): `SECRET_KEY=ci-only-not-a-secret DEBUG=False SECURE_SSL_REDIRECT=False ALLOWED_HOSTS=localhost,127.0.0.1,testserver DATABASE_URL=sqlite:///$TMPDIR/a714.sqlite3 FIELD_ENCRYPTION_KEYS=<portal test key above> BLIND_INDEX_KEY=<portal test key above> ALLOW_FAKE_VERIFICATION=True <venv>/bin/python -m pytest -q -p no:cacheprovider`.
+  - Core suite (in `../mytp-core`): `<venv>/bin/python -m pytest -q -p no:cacheprovider`; regenerate the JSON schemas with the core's own script and the test that checks them.
+  - Previous baselines: core 1606 / 4 skipped, admin 1623 / 12, portal 3794 / 13.
+
 ## Tasks & Acceptance
 
 **Execution (in this order; one branch `story/7.14-bank-details-per-country` in each repo):**
@@ -75,9 +84,27 @@ context: []
 
 ## Implementation Notes
 
+- Built by a Sonnet implementer; Opus quick review (6 findings: 5 patched, 1 rejected, table below).
+- mytp-core 0.29.0 = d8ad580, tag v0.29.0; both sites vendor the tag's wheel (sha256 c7c6b2c8…9f49). Admin migration `billing` 0004, portal `catalogue` 0010 (with `db_default`s so the previous release can still insert during a deploy).
+- Beyond the plan: admin audit entries mask the bank fields and creditor id (`AUDIT_MASKED`: set/empty/changed); the admin refuses a group change that drops a country a rule limit names; the rule form asks to re-check a limit when its gateway moves position; `price_catalogue` prints the gateways per country.
+- BIC: `^[A-Z0-9]{4}[A-Z]{2}[A-Z0-9]{2}([A-Z0-9]{3})?$` (ISO 9362:2014). The JSON schema carries no pattern for the bank fields: checking is the contract's code.
+- Release order: core, then the portal (a 0.28.0 portal would ignore the limits), then the admin.
+- Suites (main session, before the tag re-vendor): core 1641 / 4 skipped, admin 1651 / 12, portal 3805 / 13; makemigrations clean in both sites; after the re-vendor the vendoring, billing and catalogue/payments tests pass on the tag wheel.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Quick lens (Opus), 2026-11-20:
+
+| # | Finding | Verdict | Route | Evidence |
+|---|---------|---------|-------|----------|
+| 1 | admin `catalogue/service.py` group update: removing a country a rule limit names makes `snapshot_body` raise pydantic's error → 500 | medium | patch | the section check is new; group `_validate` checks only the group; views catch Django's `ValidationError` only |
+| 2 | portal `price_catalogue` prints `known_gateways` per country | low | patch | `print_rule(country, …)` knows the country; direct correction |
+| 3 | admin `RuleForm`: a limit follows the position, so swapping gateways moves "ES only" from bank_transfer to redsys silently | medium | patch | `clean` maps `gateway_countries_{n}` to whatever gateway is at n; no check against the stored rule |
+| 4 | core `BIC_PATTERN` requires letters in the first 6 characters; plan and ISO 9362:2014 allow alphanumeric party prefix | low | patch | direct correction of the pattern |
+| 5 | core JSON schema lacks patterns for iban/bic/creditor id and list constraints | low | reject | every consumer validates with the pydantic contract; adding schema extras is more than a direct correction |
+| 6 | admin catch-all test can `pytest.skip`; group-country lookup duplicated in model and form | low | patch | deletion of the skip and of the duplicate (form uses `BillingRule.group_country_codes`) |
 
 ## Verification
 
