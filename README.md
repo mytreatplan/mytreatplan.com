@@ -326,7 +326,7 @@ off; `payments.E001`, `payments.E002`): `PAYMENTS_FAKE_GATEWAY` offers the fake 
 page with Pay and Fail) next to the real ones, and `PAYMENTS_TEST_ORDERS` serves
 `/<lang>/checkout/test-order/`, where a doctor account picks a product it is offered and goes
 through the real checkout (set both on dev and dev-ae in `settings.env`). Not here yet: real
-gateways, webhooks and refunds (entries 2-4), the invoice (6), the admin pages and the order event to the admin site (8).
+gateways, webhooks and refunds (entries 2-4), the admin pages and the order event to the admin site (8).
 
 ## Payments: webhooks (epic-payments entry 2)
 
@@ -396,6 +396,29 @@ order (an open attempt of another gateway still refuses with `AttemptOpen`). Aft
 `deploy/jobs.conf`, hourly) sends one plain-text reminder per order, from day 7 of the freeze, to
 the login email in the doctor's language (`Profile.language`); `Payment.reminded_at` records it, set
 only after a successful send, so a failed send is retried by the next run.
+
+## Invoices (epic-payments entry 6)
+
+The `invoices` app holds structured, immutable invoices (AD-7): `Invoice` with the seller's snapshot
+(from the billing company at issue time), the buyer's encrypted `bill_*` snapshot, the VAT groups,
+the totals, the issue date and time in the company's legal time zone and an e-invoice status
+(`none` until a channel exists); `InvoiceLine` with a tax category (S, Z, E, AE), the included-case
+flag and a `patient_code` (blank until 9.1 fills `OrderLine.patient_code`); and `InvoiceSeries`, a
+locked counter per (company, instance, year). The number is `<company>-<instance>-<year>-<6
+digits>` (`ES-EU-2026-000001`), taken in the transaction that creates the invoice, so the series
+has no gap; the year is the company's local year. An invoice is copied from the order, never
+re-priced, and is append-only: `save` of an issued invoice, `delete` and the queryset `update`,
+`bulk_update` and `delete` raise `invoices.models.AppendOnly`; only the three e-invoice fields
+change, through `invoices.service.set_einvoice_status`. Nothing links an invoice to the user or the
+fiscal entity, so an erasure leaves it.
+
+`invoices.service.issue_for_order` is the `paid` hook receiver (registered in `InvoicesConfig.ready`):
+it runs inside the payment's transaction, is idempotent per order, and a failure (a company missing
+from the snapshot) rolls the payment back. `issue_manual(company_code, buyer, lines, currency,
+actor)` invoices a sale with no order and no account (`kind=manual`); epic-sales-finance builds its
+screen. Orders paid before this release have no invoice. Not here yet: credit notes (7.7), the
+accounting copy (7.8), restore-safe numbering (7.9), the PDF and the doctor's download (7.10) and
+any e-invoice transmission.
 
 ## Payments: Redsys (epic-payments entry 3)
 
