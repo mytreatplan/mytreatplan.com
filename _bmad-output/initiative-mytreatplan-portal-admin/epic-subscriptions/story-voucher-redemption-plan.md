@@ -3,7 +3,7 @@ title: 'Voucher redemption'
 type: 'feature'
 ticket: '4'
 created: '2026-11-20'
-status: 'built'
+status: 'done'
 baseline_revision: '8cfa1c65b19fa0f8ebc5626aefbeb139e596b710'
 route: 'full'
 route_source: 'auto'
@@ -56,17 +56,6 @@ context: []
 - Merge and staging are delegated. Claude commits and tags mytp-core 0.30.0 locally, and the user pushes it. Claude merges admin first, then the portal, after green CI. Claude runs the staging checks over SSH on admindev and dev; the user's answer is the SSH OK for these checks.
 
 </frozen-after-approval>
-
-## Open Questions
-
-1. **How often can a voucher be used?** 5.10 decided "a subscription code once in total, a try-me code once per doctor". AD-20 says "unique per voucher and doctor".
-   (a, recommended) Follow 5.10, enforced by type: a subscription voucher has one live redemption in total, and a try-me voucher has one live redemption per doctor. (b) One rule for both types: once per doctor.
-2. **What does the admin site see?**
-   (a, recommended) The whole lifecycle. `voucher.redeemed` is sent when a redemption is reserved (state `reserved`, version 1) and again when it is consumed (state `consumed`, version 2). `voucher.released` is sent when it is released (version 2). Sales can then see a voucher held by an unpaid order, such as a subscription voucher blocked by a 14-day bank transfer. (b) Uses only. `voucher.redeemed` is sent when a redemption is consumed, and `voucher.released` is reserved for the refund in 7.7. Simpler, but a held voucher is invisible to admin.
-3. **Holding a voucher while an order is unpaid:** a reservation lasts as long as its order: 24 h in checkout, 14 days for a bank transfer. For a subscription voucher (once in total) that blocks everyone else meanwhile.
-   (a, recommended) Accept it. The holder can cancel the order to free the voucher. (b) Release the reservation sooner, after 24 h, even on a bank-transfer order. The transfer would then be paid without its discount being guaranteed. Not advised.
-4. **Merge and staging delegation** (this story releases mytp-core 0.30.0):
-   (a) As for 7.6. I commit and tag core locally, and you push it (`! git -C ../mytp-core push origin master v0.30.0`). I merge admin first, then the portal, after green CI. Then I run the staging checks over SSH on admindev and dev: reserve, consume and release through the shell, then the usage rows on admindev. Choosing (a) is your SSH OK for these checks. (b) You merge and run the checks.
 
 ## Code Map
 
@@ -131,3 +120,17 @@ context: []
 - `VoucherRedemption(id UUID, voucher_id, voucher_type, doctor_uid, order_id unique, state reserved|consumed|released, amount, currency, version, timestamps)`. Partial unique constraints on live states (reserved or consumed): `(voucher_id, doctor_uid)` for try_me, and `(voucher_id)` for subscription. Both work on SQLite and PostgreSQL.
 - Aggregate = the redemption id, so each redemption's versions rise on their own.
 - Reusable API for epic-ordering: `subscriptions.vouchers.check_use(voucher, doctor_uid)`, `reserve(order)`, `consume(order)`, `release(order)`.
+
+## Staging
+
+- mytp-core 0.30.0: commit 8bacb9a and tag v0.30.0, pushed by the user; core CI green on master and on the tag.
+- Admin PR #45 merged as 5144097. Master run 44900498417: test and the admindev deploy green.
+- Portal PR #120 merged as 96bfe91. Master run 44901005588: test and the dev and dev-ae deploys green; /healthz ok on dev and admindev.
+- My local suites before the PRs: core 1655 / 4 skipped, admin 1660 / 12, portal 3903 / 15, 0 failures.
+- Checks passed 2026-11-21 (Claude, over SSH, scripts check84.py and check84b.py):
+  1. Migrations `subscriptions` 0003 on dev and `vouchers` 0002 on admindev applied.
+  2. dev, rolled back: a try-me voucher order was `reserved` (v1), then paid through the fake gateway and `consumed` (v2). A second order with it by the same doctor was refused `voucher_used`. An unknown code was refused `voucher_unknown`.
+  3. dev, rolled back: a subscription voucher held by an unpaid order was refused `voucher_used`, `released` after the cancel, then usable again. dev has only one doctor with a fiscal entity, so "another doctor" was checked with the same doctor; the tests cover two doctors.
+  4. dev to admindev, committed: order NZ-539537 (try-me voucher 83692ffc, €10.00) was reserved, then cancelled. Its `voucher.redeemed` v1 and `voucher.released` v2 were delivered. admindev holds the redemption c4ed6498 as region eu, `released`, version 2.
+  5. Not run on staging: replaying an older event on admindev (stale). The admin tests cover it.
+- Staging data left behind: the cancelled order NZ-539537 on dev, its released redemption, and that admindev record. Orders and their changes are append-only, so they stay.
