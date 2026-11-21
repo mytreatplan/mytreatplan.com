@@ -211,3 +211,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-credit-notes-refunds-and-cancellation-plan.md`
   summary: Resolving a `needs_attention` refund in the portal (mark it done with its credit note and the order refunded, or mark it failed) is needed before the admin refund button ships (epic-sales-finance); until then such an order stays `paid` and blocked for refunds.
   evidence: 7.7 review: nothing in 7.7 resolves a `needs_attention` refund.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-accounting-feed-plan.md`
+  summary: Ask the tax advisor for the legal retention periods in Spain and the UAE for the accounting copy on the admin site (invoices, credit notes, payments, refunds, with the buyer's identity as issued) before any purge job exists. Until then the copy is never deleted.
+  evidence: 7.8 decision of 2026-11-21 (retention: never deleted for now); `accounting` rows are append-only and `client.erased` never touches them.

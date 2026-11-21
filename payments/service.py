@@ -43,6 +43,7 @@ from django.utils import timezone
 from accounts import fiscal
 from catalogue import pricing, resolver
 from catalogue.models import AddOn, Voucher
+from invoices import feed
 from mytp_core.money import Money
 from subscriptions import service as subscriptions_service
 from subscriptions import vouchers as voucher_redemptions
@@ -690,6 +691,7 @@ def confirm_payment(payment, gateway_payment):
             return NOT_PAYABLE
         mark_paid(order, expected_version=order.version, actor=SYSTEM_ACTOR)
         _set_payment_state(locked, Payment.CONFIRMED, now, confirmed_at=now)
+        feed.send_payment(locked)
         return CONFIRMED
 
 
@@ -729,6 +731,7 @@ def mark_transfer_paid(order, amount, *, expected_version, actor):
         now = timezone.now()
         paid = mark_paid(locked, expected_version=locked.version, actor=actor)
         _set_payment_state(attempt, Payment.CONFIRMED, now, confirmed_at=now)
+        feed.send_payment(attempt)
         return paid
 
 

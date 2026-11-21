@@ -19,9 +19,11 @@ from django.utils import timezone
 
 from accounts import fiscal
 from catalogue.models import BillingCompany, BillingRule
+from mytp_core.contracts.checks import PATIENT_CODE_RE
 from mytp_core.money import Money
 from payments.models import Order
 
+from . import feed
 from .models import EINVOICE_FIELDS, Invoice, InvoiceLine, InvoiceSeries
 
 logger = logging.getLogger(__name__)
@@ -175,6 +177,7 @@ def issue_for_order(order):
                                          row.vat_text.strip() in texts),
                 included_case=row.included_case, patient_code=row.patient_code)
             for row in order.lines.order_by('position')])
+        feed.send_invoice(invoice)
     return invoice
 
 
@@ -243,6 +246,7 @@ def issue_credit_note(invoice, *, reason, actor):
                 tax_category=row.tax_category, included_case=row.included_case,
                 patient_code=row.patient_code)
             for row in original.lines.order_by('position')])
+        feed.send_invoice(note)
     return note
 
 
@@ -320,6 +324,9 @@ def _check_line(raw, position, currency):
     patient_code = str(raw.get('patient_code') or '')
     if len(code) > 64 or len(patient_code) > 32:
         raise BadLine(f'line {position}: the code or the patient code is too long')
+    if patient_code and not PATIENT_CODE_RE.fullmatch(patient_code):
+        raise BadLine(f'line {position}: the patient code is a region prefix and 8 '
+                      f'characters, such as EU-7K3QX9MD')
     amount = _decimal(raw.get('net'), f'line {position} net')
     if amount != amount.quantize(Decimal('0.01')):
         raise BadLine(f'line {position}: the net has more than two decimals')
@@ -367,6 +374,7 @@ def issue_manual(company_code, buyer, lines, currency, actor):
                          'vat': str(vat.amount)} for percent, text, base, vat in vat_groups],
             **{_BILL[name]: value for name, value in data.items()})
         InvoiceLine.objects.bulk_create([InvoiceLine(invoice=invoice, **row) for row in rows])
+        feed.send_invoice(invoice)
     return invoice
 
 

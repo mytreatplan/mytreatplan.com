@@ -24,6 +24,7 @@ import logging
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+from invoices import feed
 from invoices import service as invoices
 from invoices.models import Invoice
 
@@ -129,6 +130,7 @@ def _settle(refund_id, actor, gateway_refund_id):
         row.state, row.credit_note = Refund.DONE, note
         row.gateway_refund_id, row.completed_at, row.updated_at = gateway_refund_id, now, now
         row.save()
+        feed.send_refund(row)
         locked = service._move(locked, Order.REFUNDED, 'refunded', (Order.PAID,),
                                'refunded_at', expected_version=locked.version, actor=actor,
                                now=now)
