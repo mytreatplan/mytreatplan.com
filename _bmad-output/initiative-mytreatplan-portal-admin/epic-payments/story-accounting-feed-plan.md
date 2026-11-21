@@ -3,14 +3,14 @@ title: 'Accounting feed'
 type: 'feature'
 ticket: '8'
 created: '2026-11-21'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: 'f829f5cdc60128fc6f14549f8080e582fe0bcda1'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -139,16 +139,29 @@ context: []
 
 ## Review Triage Log
 
+**Pass 1 (quick, Opus), 2026-11-21:** 0 high, 3 medium, 3 low, 0 false, 0 maybe-false. Five patched, one rejected.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | Admin `AppendOnlyModel.save`: a new instance with an existing `uid` overwrites the stored row | medium | patch | `uid` is a pk with no default, so Django tries an UPDATE first. The guard now forces an INSERT when adding, and a test covers it. |
+| 2 | Admin appliers accept `aggregate_version` ≥ 2 and drop it while answering `accepted` | medium | patch | `_record_and_apply` moves the version on and `_new` returns None. Any version other than 1 is now refused as `invalid_payload`. |
+| 3 | Portal `_check_line` accepts any two-letter prefix and non-Crockford letters | medium | patch | The plan says the region prefix plus 8 Crockford characters. The check now uses `REGION_PROFILE.patient_code_prefix` and the Crockford alphabet. |
+| 4 | A 500+ line invoice exceeds the contract or envelope size and rolls back a confirmed payment | low | reject | Not met in everyday use: orders and manual sales have a handful of lines. The fix adds guards to order creation and `issue_manual`. A payload refusal rolling back is the plan's stated behavior. |
+| 5 | Core `InvoiceIssued` does not tie `kind` to `original_id`/`reason`. Mixed currencies are possible. | low | patch (kind); reject (currency) | The writer now has a validator: a credit note requires both fields, and other kinds forbid them. The reader stays lenient. The portal always uses one currency from `invoice.currency`, so currency is not reached. |
+| 6 | Core test skips required ids in its "missing field refused" loop | low | patch | A direct correction: the loop now covers `invoice_id`, `payment_id`, `order_id` and `order_reference`. |
+
 ## Design Notes
 
 A credit note is an `invoice.issued` with kind `credit_note`. Using one type keeps one series of records on the admin and mirrors the portal's single `Invoice` table. The aggregate id is the invoice UUID; the payment UUID and the refund UUID are the aggregate ids for the other two. Each record is sent once, so the version is always 1. A later change would need a new event type, not a new version.
 
 ## Verification
 
+All three repos are on branch `story/7.8-accounting-feed` (core baseline 8bacb9a, admin baseline 5144097). Commit in each repo; never push. Writing to `../mytp-core` and `../mytp-admin`, and running the suites, needs the sandbox off. Vendor the local tag with `MYTP_CORE_REPO=../mytp-core scripts/vendor-mytp-core.sh v0.31.0` in each site, and reinstall the wheel into that site's venv.
+
 **Commands:**
-- Core: `pytest`. Expected: green, and the schema files are fresh.
-- Portal: `makemigrations --check` shows no changes, and the full suite has 0 failures.
-- Admin: `makemigrations --check` and `pytest` (in the admin test venv) are green.
+- Core (in `../mytp-core`): `/private/tmp/claude-501/core-8.4-venv/bin/python -m pytest -q`. Expected: green, and the schema files are fresh.
+- Portal (repo root): `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" DATABASE_URL="sqlite:///$TMPDIR/x.sqlite3"; ../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line`. Expected: 0 failures. Also `../.venv/bin/python manage.py makemigrations --check --dry-run`: no changes.
+- Admin (in `../mytp-admin`): `SECRET_KEY=ci-only-not-a-secret DEBUG=False SECURE_SSL_REDIRECT=False ALLOWED_HOSTS=localhost,127.0.0.1,testserver DATABASE_URL=sqlite:///$TMPDIR/adm.sqlite3 FIELD_ENCRYPTION_KEYS=<same test key> BLIND_INDEX_KEY=<same test key> ALLOW_FAKE_VERIFICATION=True /private/tmp/claude-501/admin-8.4-venv/bin/python -m pytest -q -p no:cacheprovider`. Expected: green. Also `makemigrations --check`.
 
 **Manual checks:**
 - Staging (dev → admindev): a fake-gateway order is paid and refunded. admindev then holds the four rows with codes only. Erasing a test client on admindev leaves them in place.
