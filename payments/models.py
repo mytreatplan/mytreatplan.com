@@ -13,7 +13,7 @@ The buyer's fiscal entity is copied into encrypted `bill_*` fields (the fields o
 is a plain link that goes to NULL when the entity is erased.
 
 States: `checkout` -> `pending_payment` -> `paid`; `checkout` / `pending_payment` ->
-`cancelled` / `expired`. Neither the order nor its lines are listed in the Django admin;
+`cancelled` / `expired`; `paid` -> `refunded` (epic-payments entry 7, a full refund). Neither the order nor its lines are listed in the Django admin;
 an order goes with no user: the link to the user is SET_NULL (the order is a legal
 record).
 """
@@ -45,8 +45,9 @@ class Order(models.Model):
     PAID = 'paid'
     CANCELLED = 'cancelled'
     EXPIRED = 'expired'
+    REFUNDED = 'refunded'
     STATES = [(CHECKOUT, 'Checkout'), (PENDING_PAYMENT, 'Pending payment'), (PAID, 'Paid'),
-              (CANCELLED, 'Cancelled'), (EXPIRED, 'Expired')]
+              (CANCELLED, 'Cancelled'), (EXPIRED, 'Expired'), (REFUNDED, 'Refunded')]
     OPEN_STATES = (CHECKOUT, PENDING_PAYMENT)
     SERVICE = 'service'
     SUBSCRIPTION = 'subscription'
@@ -105,6 +106,7 @@ class Order(models.Model):
     paid_at = models.DateTimeField(null=True, blank=True)
     cancelled_at = models.DateTimeField(null=True, blank=True)
     expired_at = models.DateTimeField(null=True, blank=True)
+    refunded_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at', 'id']
@@ -179,7 +181,7 @@ class OrderChangeQuerySet(models.QuerySet):
 
 class OrderChange(models.Model):
     """One change of an order: when, who (actor type and UUID), what (`event`: created,
-    entity_chosen, payment_started, paid, cancelled, expired), the state before ('' on
+    entity_chosen, payment_started, paid, cancelled, expired, refunded), the state before ('' on
     creation) and after, and the order's version after it. Append-only, as far as the ORM
     guards it (as the subscription change rows)."""
 
@@ -315,3 +317,51 @@ class WebhookLog(models.Model):
 
     def __str__(self):
         return f'Webhook {self.pk} {self.gateway} ({self.result})'
+
+
+class Refund(models.Model):
+    """One refund of an order (epic-payments entry 7, AD-7), written only by
+    `payments.refunds`. Written `pending` and committed before the gateway is called;
+    `done` once the credit note is issued and the order is `refunded`; `failed` when the
+    gateway refused (no money moved); `needs_attention` when the gateway did not answer or
+    answered something unknown (Redsys may have refunded; it is never retried automatically and
+    blocks any new refund of the order until staff resolve it). `manual`: staff refunded by hand, with a `note`, and no
+    gateway was called. At most one `pending` refund per order (a database constraint).
+    `gateway_refund_id` is not unique: Redsys repeats it for every refund of a payment."""
+
+    PENDING, DONE, FAILED, NEEDS_ATTENTION = 'pending', 'done', 'failed', 'needs_attention'
+    STATES = [(PENDING, 'Pending'), (DONE, 'Done'), (FAILED, 'Failed'),
+              (NEEDS_ATTENTION, 'Needs attention')]
+    CANCELLATION, GOODWILL, ERROR = 'cancellation', 'goodwill', 'error'
+    REASONS = [(CANCELLATION, 'Cancellation'), (GOODWILL, 'Goodwill'), (ERROR, 'Error')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # The refund's own key (idempotency key at a gateway that takes one).
+    key = models.UUIDField(default=uuid.uuid4, editable=False, unique=True)
+    order = models.ForeignKey(Order, on_delete=models.PROTECT, related_name='refunds')
+    payment = models.ForeignKey(Payment, null=True, blank=True, on_delete=models.PROTECT,
+                                related_name='refunds')
+    amount = models.DecimalField(max_digits=17, decimal_places=2)
+    currency = models.CharField(max_length=3)
+    state = models.CharField(max_length=16, choices=STATES, default=PENDING)
+    manual = models.BooleanField(default=False)
+    note = models.CharField(max_length=500, blank=True, default='')
+    reason = models.CharField(max_length=12, choices=REASONS)
+    gateway_refund_id = models.CharField(max_length=100, blank=True, default='')
+    actor_type = models.CharField(max_length=10, choices=ACTOR_TYPES)
+    actor_uuid = models.UUIDField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    credit_note = models.ForeignKey('invoices.Invoice', null=True, blank=True,
+                                    on_delete=models.PROTECT, related_name='refunds')
+
+    class Meta:
+        ordering = ['created_at', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=('order',), name='payments_refund_one_pending',
+                                    condition=models.Q(state='pending')),
+        ]
+
+    def __str__(self):
+        return f'Refund {self.pk} ({self.state})'

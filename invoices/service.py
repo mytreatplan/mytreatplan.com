@@ -79,24 +79,26 @@ def _instance():
     return settings.REGION_PROFILE.invoice_prefix
 
 
-def _next_number(company_code, instance, year):
-    """The next invoice number of the series, `<company>-<instance>-<year>-<6 digits>`,
-    from the series' counter row, locked until the caller's transaction ends. Two first
+def _next_number(company_code, instance, year, kind=InvoiceSeries.INVOICE):
+    """The next number of the series of `kind`, `<company>-<instance>-<year>-<6 digits>`
+    (a credit note's: `...-R<6 digits>`), from the series' counter row, locked until the caller's transaction ends. Two first
     invoices of a new series at once: the second create fails on the unique key once the
     first commits, and then waits for its lock."""
     with transaction.atomic():
         while True:
             series = (InvoiceSeries.objects.select_for_update()
-                      .filter(company_code=company_code, instance=instance, year=year)
+                      .filter(company_code=company_code, instance=instance, year=year,
+                              kind=kind)
                       .first())
             if series is not None:
                 series.last_number += 1
                 series.save(update_fields=['last_number'])
-                return f'{company_code}-{instance}-{year}-{series.last_number:06d}'
+                prefix = 'R' if kind == InvoiceSeries.CREDIT_NOTE else ''
+                return f'{company_code}-{instance}-{year}-{prefix}{series.last_number:06d}'
             try:
                 with transaction.atomic():
                     InvoiceSeries.objects.create(company_code=company_code,
-                                                 instance=instance, year=year)
+                                                 instance=instance, year=year, kind=kind)
             except IntegrityError:
                 pass  # created by another transaction meanwhile: lock that one
 
@@ -111,11 +113,15 @@ def _create(company, issued_at, legal_name=None, **fields):
     """The invoice row with the next number of its series, in the company's time zone."""
     local = issued_at.astimezone(_zone(company))
     instance = _instance()
-    number = _next_number(company.code, instance, local.year)
+    series = (InvoiceSeries.CREDIT_NOTE if fields.get('kind') == Invoice.CREDIT_NOTE
+              else InvoiceSeries.INVOICE)
+    number = _next_number(company.code, instance, local.year, series)
+    # A credit note brings the original's seller snapshot; the others take the company's.
+    seller = {name: fields.pop(name) for name in list(fields) if name.startswith('seller_')}
     return Invoice.objects.create(
         number=number, company_code=company.code, instance=instance, year=local.year,
         issued_at=issued_at, issue_date=local.date(), time_zone=company.time_zone,
-        **_seller(company, legal_name), **fields)
+        **(seller or _seller(company, legal_name)), **fields)
 
 
 def _tax_category(percent, text, reverse_charge):
@@ -170,6 +176,80 @@ def issue_for_order(order):
                 included_case=row.included_case, patient_code=row.patient_code)
             for row in order.lines.order_by('position')])
     return invoice
+
+
+# --- A credit note ---------------------------------------------------------------------------
+
+def _negated(value):
+    return -value if value else value  # keeps 0.00 as 0.00, never -0.00
+
+
+def issue_credit_note(invoice, *, reason, actor):
+    """The credit note of `invoice`, in full (epic-payments entry 7): its seller and buyer
+    snapshots, lines and VAT groups with negated amounts, numbered in the credit-note series
+    (`<company>-<instance>-<year>-R<6 digits>`, the year of the issue in the company's time
+    zone) and referencing the original (`original`, so its number and issue date). One per
+    invoice: a repeated call returns the existing note. `reason` is `cancellation`,
+    `goodwill` or `error`; `extensions["rectification_code"]` is left empty for the tax
+    advisor. Takes the number inside the caller's transaction, so a refund that rolls back
+    leaves no gap. Raises `InvoiceError` for a credit note, a bad reason or a missing
+    company."""
+    from payments import service as payments_service
+    payments_service._check_actor(actor)
+    if actor.type == 'doctor':
+        raise payments_service.InvalidActor('a credit note is issued by staff or the system')
+    if invoice.kind == Invoice.CREDIT_NOTE:
+        raise InvoiceError('a credit note has no credit note')
+    if reason not in dict(Invoice.REASONS):
+        raise InvoiceError(f'not a credit-note reason: {reason!r}')
+    with transaction.atomic():
+        # Serialise on the original, so two calls never number two notes.
+        original = Invoice.objects.select_for_update().get(pk=invoice.pk)
+        existing = Invoice.objects.filter(original=original,
+                                          kind=Invoice.CREDIT_NOTE).first()
+        if existing is not None:
+            return existing
+        company = _company(original.company_code)
+        note = _create(
+            company, timezone.now(),
+            seller_legal_name=original.seller_legal_name,
+            seller_address=original.seller_address, seller_country=original.seller_country,
+            seller_company_number=original.seller_company_number,
+            seller_vat_number=original.seller_vat_number,
+            seller_tax_number=original.seller_tax_number,
+            kind=Invoice.CREDIT_NOTE, order=None, original=original, reason=reason,
+            actor_type=actor.type, actor_uuid=actor.uuid, currency=original.currency,
+            net_total=_negated(original.net_total),
+            discount_total=_negated(original.discount_total),
+            ice_total=_negated(original.ice_total),
+            voucher_taken=_negated(original.voucher_taken),
+            vat_total=_negated(original.vat_total), total=_negated(original.total),
+            vat_groups=[{**group, 'base': _negate_text(group.get('base')),
+                         'vat': _negate_text(group.get('vat'))}
+                        for group in copy.deepcopy(original.vat_groups)],
+            bill_entity_id=original.bill_entity_id,
+            bill_entity_version=original.bill_entity_version,
+            bill_vies_status=original.bill_vies_status,
+            extensions={'rectification_code': ''},
+            **{target: getattr(original, target) for target in _BILL.values()})
+        InvoiceLine.objects.bulk_create([
+            InvoiceLine(
+                invoice=note, position=row.position, code=row.code, name=row.name,
+                quantity=row.quantity, list_amount=_negated(row.list_amount),
+                discount_percent=row.discount_percent,
+                discount_amount=_negated(row.discount_amount), ice=_negated(row.ice),
+                voucher_share=_negated(row.voucher_share), net=_negated(row.net),
+                vat_percent=row.vat_percent, vat_text=row.vat_text,
+                tax_category=row.tax_category, included_case=row.included_case,
+                patient_code=row.patient_code)
+            for row in original.lines.order_by('position')])
+    return note
+
+
+def _negate_text(value):
+    """A VAT group's amount (a string such as "100.00"), negated."""
+    amount = Decimal(str(value or '0'))
+    return str(_negated(amount))
 
 
 # --- A manual sale ---------------------------------------------------------------------------

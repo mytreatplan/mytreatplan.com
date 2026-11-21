@@ -26,6 +26,8 @@ confirmed by the gateway that could not pay the order (staff check it).
 <p class="mt-6 text-copy" data-order-state="checkout"><a href="{% url 'checkout' order.pk %}" class="font-semibold text-green-deep underline underline-offset-2 hover:text-ink">{% translate "Continue to checkout" %}</a></p>
 {% elif order.state == "cancelled" %}
 <p class="mt-6 text-copy" data-order-state="cancelled">{% translate "This order was cancelled." %}</p>
+{% elif order.state == "refunded" %}
+<p class="mt-6 text-copy" data-order-state="refunded">{% translate "This order was refunded." %}</p>
 {% else %}
 <p class="mt-6 text-copy" data-order-state="expired">{% translate "This order expired. Please start it again." %}</p>
 {% endif %}

@@ -3,14 +3,14 @@ title: 'Credit notes, refunds and cancellation'
 type: 'feature'
 ticket: '7'
 created: '2026-11-21'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: 'e73402a75699a69550eb19de7c2fe53bce6d053f'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -76,7 +76,7 @@ context: []
 - `invoices/service.py` -- `_next_number` :82 (format; take a kind and put `R` before the digits); `_create`; `_check_line` refuses a negative net, so credit notes build their lines from the original and do not go through it; `issue_for_order`, `issue_manual` :254, `set_einvoice_status` :295. Next migration `invoices` 0002.
 - Planning: AD-7 (architecture :136); deferred-work :188-189 (record each refund; Redsys's refund id is not unique) and :197; the 8.4 plan leaves consumed vouchers to 7.7.
 - Tests: `payments/tests/conftest.py` (`catalogue_loaded`, `fake_on`, `doctor`, `entity`, `events`); `test_service.py:24-36` (`actor`, `line`, `new`, `pay`); `test_bank_transfer.py` (`bank` :33, `staff()` :57, `start_transfer`); `test_redsys.py` (`redsys_on`, `sentry`, `notify(…, transaction_type=3)`, `FakeRedsys` :457, `paid` :486, `refund` :495); `invoices/tests/test_invoices.py` (€0 and transfer invoice :208-219, append-only :236/:269, concurrency :366 PG-only).
-- **Build setup:** build only after 8.4 has merged: both change `payments/service.py`, and 8.4 adds the `cancelled`/`expired` receivers. Branch `story/7.7-credit-notes-refunds` from master then; copy this plan in. Portal only.
+- **Build setup:** 8.4 is merged (master 96bfe91: `subscriptions.vouchers` registers receivers on `created`, `paid`, `cancelled` and `expired`; mytp-core 0.30.0 is vendored). Branch `story/7.7-credit-notes-refunds` is checked out in this repo (baseline e73402a). Portal only. Commit nothing, push nothing. Venv `/private/tmp/claude-501/portal-8.4-venv` (has 0.30.0). Suite (repo root, sandbox off): `FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" DATABASE_URL="sqlite:///$TMPDIR/p77.sqlite3" <venv>/bin/python -m pytest -q -p no:cacheprovider --tb=line` (baseline 3903 passed / 15 skipped, 0 failures); also `manage.py makemigrations --check`.
 
 ## Tasks & Acceptance
 
@@ -95,6 +95,29 @@ context: []
 **Acceptance Criteria:**
 - Given a paid ES order refunded on dev through the fake gateway, then a credit note ES-EU-2026-R000001 references the order's invoice, its totals are the invoice's negated, and the order is `refunded`.
 - Given a refund whose gateway call timed out, then no credit note exists, the order is still `paid`, and a second refund is refused until staff resolve the first.
+
+## Implementation Notes
+
+- Sonnet implementer; suite before review 3941 passed / 16 skipped / 0 failed. It ran the concurrency tests on a local PostgreSQL 17. After the review patches, my suite: 3943 passed / 17 skipped / 0 failed; makemigrations clean.
+- Choices made during the build (kept): `gateways.GatewayUnknown`, a subclass of `GatewayError`, lets the service tell a refusal from an unknown outcome. `Invoice.kind` is widened to 12 characters. The refund-notice short-circuit applies to Redsys only, because the fake gateway's events also carry no status.
+
+## Plan Change Log
+
+## Review Triage Log
+
+**Pass 1 (quick lens, Opus, 2026-11-21):** 9 findings: 0 high, 4 medium, 5 low. 7 patched by the implementer, 1 deferred, 2 rejected (one finding was partly patched and partly rejected).
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | A refunded order reads "This order expired" on the return page; `checkout` renders an empty page | medium | patch | `return.html` has no `refunded` branch. Fix: a branch with its text (EN/ES) and a redirect like `paid`, plus view tests. |
+| 2 | Inside a caller's `atomic()` the pending row is not committed before the gateway call, which then runs under the order lock | medium | patch | Plan Always rule. The admin buttons will be the first callers. Fix: refuse inside an atomic block, the inverse of `subscriptions/service.py:391`, plus a test. |
+| 3 | `issue_credit_note` accepts a doctor actor and runs outside a refund | low | patch (part) | Doctor actor: a direct refusal. "Outside a refund" is rejected: its only caller is `_settle`, and guarding it further adds checks for a call nobody makes. |
+| 4 | A `needs_attention` refund can never be cleared; the README and the command promise a retry that does not exist | medium | patch + defer | Per plan, resolution belongs to sales-finance. Docs corrected; deferred-work entry: resolution is needed before the admin refund button ships. |
+| 5 | A gateway disabled between the phases is reported as an unknown answer | low | reject | Needs a settings change in the seconds between the phases; the fix adds a guard. |
+| 6 | Orders paid before 7.6 have no invoice, so they can never leave `paid` | low | reject | Staging only: no production orders exist before the go-live, and 7.6 decided no backfill. |
+| 7 | `refund_order` prints a traceback for an `InvoiceError` | low | patch | A direct correction: catch it as a `CommandError`. |
+| 8 | Stale docstrings (`redsys.refund`, `invoices/models.py`) | low | patch | A direct correction. |
+| 9 | The concurrency matrix row is tested with `issue_credit_note` only, not 3 refunds; `_settle` locks the refund before the order | medium | patch | Matrix audit gap. Fix: a PG thread test through `refund`, and lock the order first. |
 
 ## Design Notes
 

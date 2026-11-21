@@ -494,17 +494,18 @@ def paid(doctor):
 
 def refund(reference, *args):
     out = StringIO()
-    call_command('redsys_refund', reference, *args, stdout=out)
+    call_command('refund_order', reference, '--reason', 'cancellation', *args, stdout=out)
     return out.getvalue()
 
 
-def test_redsys_refund_refunds_the_full_amount_and_changes_nothing_on_the_order(
+@pytest.mark.django_db(transaction=True)
+def test_the_refund_goes_over_rest_as_a_type_3_request_for_the_full_amount(
         doctor, entity, redsys_on, monkeypatch):
     order, payment = paid(doctor)
     fake = FakeRedsys()
     monkeypatch.setattr('accounts.http.post_json', fake)
     printed = refund(order.reference)
-    assert printed.strip().endswith(f'{payment.gateway_payment_id}:654321')
+    assert printed.strip().startswith(f'refund done for order {order.reference}: credit note ')
     url, payload, timeout = fake.calls[0]
     assert url == 'https://sis-t.redsys.es:25443/sis/rest/trataPeticionREST'
     assert timeout == redsys.REFUND_TIMEOUT
@@ -513,33 +514,14 @@ def test_redsys_refund_refunds_the_full_amount_and_changes_nothing_on_the_order(
                     'ds_merchant_order': payment.gateway_payment_id,
                     'ds_merchant_merchantcode': '999008881', 'ds_merchant_currency': '978',
                     'ds_merchant_transactiontype': '3', 'ds_merchant_terminal': '1'}
-    fresh = Order.objects.get(pk=order.pk)
-    assert (fresh.state, fresh.version) == ('paid', order.version)
+    assert Order.objects.get(pk=order.pk).state == 'refunded'
     assert Payment.objects.get(pk=payment.pk).state == 'confirmed'
 
 
-def test_redsys_refund_takes_a_partial_amount(doctor, entity, redsys_on, monkeypatch):
-    order, _payment = paid(doctor)
-    fake = FakeRedsys()
-    monkeypatch.setattr('accounts.http.post_json', fake)
-    assert 'refunded 25.50 EUR' in refund(order.reference, '--amount', '25.50')
-    data = redsys.decode_parameters(fake.calls[0][1]['Ds_MerchantParameters'])
-    assert data['ds_merchant_amount'] == '2550'
-    for wrong in ('0', '100.01', '-1', 'abc', '1.005', 'NaN'):
-        with pytest.raises(CommandError):
-            refund(order.reference, '--amount', wrong)
-    assert len(fake.calls) == 1
-
-
-@pytest.mark.parametrize('fake', [
-    FakeRedsys(response='0950'), FakeRedsys(error='SIS0057'),
-    FakeRedsys(key=base64.b64encode(b'y' * 24).decode()), FakeRedsys(order='0000OTHER000'),
-    FakeRedsys(fault=urllib.error.URLError('down')), FakeRedsys(fault=ValueError('HTTP 500')),
-    FakeRedsys(Ds_Amount='100'), FakeRedsys(Ds_Currency='840'),
-    FakeRedsys(Ds_TransactionType='0'),
-])
-def test_redsys_refund_fails_on_any_other_answer(doctor, entity, redsys_on, monkeypatch,
-                                                 caplog, fake):
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('fake', [FakeRedsys(response='0950'), FakeRedsys(error='SIS0057')])
+def test_redsys_refusing_the_refund_leaves_the_order_paid(
+        doctor, entity, redsys_on, monkeypatch, caplog, fake):
     order, _payment = paid(doctor)
     monkeypatch.setattr('accounts.http.post_json', fake)
     with caplog.at_level(logging.DEBUG), pytest.raises(CommandError) as raised:
@@ -548,9 +530,29 @@ def test_redsys_refund_fails_on_any_other_answer(doctor, entity, redsys_on, monk
     assert Order.objects.get(pk=order.pk).state == 'paid'
 
 
-def test_redsys_refund_needs_a_confirmed_redsys_payment(doctor, entity, redsys_on):
+@pytest.mark.django_db(transaction=True)
+@pytest.mark.parametrize('fake', [
+    FakeRedsys(key=base64.b64encode(b'y' * 24).decode()), FakeRedsys(order='0000OTHER000'),
+    FakeRedsys(fault=urllib.error.URLError('down')), FakeRedsys(fault=ValueError('HTTP 500')),
+    FakeRedsys(Ds_Amount='100'), FakeRedsys(Ds_Currency='840'),
+    FakeRedsys(Ds_TransactionType='0'),
+])
+def test_an_unknown_redsys_answer_is_an_unknown_outcome_never_a_refusal(
+        doctor, entity, redsys_on, monkeypatch, caplog, fake, sentry):
+    order, payment = paid(doctor)
+    monkeypatch.setattr('accounts.http.post_json', fake)
+    with caplog.at_level(logging.DEBUG):
+        printed = refund(order.reference)
+    assert 'refund needs_attention' in printed and KEY not in caplog.text
+    assert Order.objects.get(pk=order.pk).state == 'paid'
+    with pytest.raises(gateways.GatewayUnknown):
+        redsys.refund(payment, Decimal('100.00'))
+
+
+@pytest.mark.django_db(transaction=True)
+def test_a_refund_needs_a_confirmed_redsys_payment(doctor, entity, redsys_on):
     order, _payment = attempt(doctor, 'redsys')
-    with pytest.raises(CommandError, match='no confirmed Redsys payment'):
+    with pytest.raises(CommandError, match='InvalidTransition'):
         refund(order.reference)
     with pytest.raises(CommandError, match='no such order'):
         refund('KM-000000')

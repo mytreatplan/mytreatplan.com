@@ -166,7 +166,7 @@ def checkout(request, pk):
     order = _doctor_order(request, pk)
     if request.method == 'POST':
         return _checkout_post(request, order)
-    if order.state == Order.PAID:
+    if order.state in (Order.PAID, Order.REFUNDED):
         return redirect('checkout_return', pk=order.pk)
     if request.GET.get('change') != '1' and _open_transfer(order) is not None:
         return redirect('checkout_transfer', pk=order.pk)

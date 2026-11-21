@@ -148,6 +148,9 @@ _RESULT_OF = {service.AMOUNT_MISMATCH: WebhookLog.AMOUNT_MISMATCH,
               service.NOT_PAYABLE: WebhookLog.NOT_PAYABLE}
 
 
+REFUND_NOTICE = 'refund_notice'
+
+
 def reread_and_confirm(payment):
     """Re-read `payment` from its gateway and confirm it (`service.confirm_payment`);
     returns the outcome. Raises when the gateway cannot be read."""
@@ -167,6 +170,10 @@ def process(log_id):
     if (row is None or row.processed_at is not None or row.payment is None
             or row.result not in WebhookLog.DEDUPED):
         return None
+    if row.gateway == 'redsys' and not row.status:
+        # A notification that says nothing of the payment is a refund's (type 3; epic-payments
+        # entry 7): logged, marked done, never re-read or retried.
+        return _record(row.pk, REFUND_NOTICE)
     try:
         outcome = reread_and_confirm(row.payment)
     except Exception as failure:  # noqa: BLE001 - any gateway or hook fault is retried

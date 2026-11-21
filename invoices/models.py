@@ -1,6 +1,8 @@
-"""Invoices (epic-payments entry 6, AD-7): one `Invoice` per paid order (or per manual
+"""Invoices (epic-payments entries 6 and 7, AD-7): one `Invoice` per paid order (or per manual
 sale), its `InvoiceLine`s and the `InvoiceSeries` counter of each (billing company,
-instance, year).
+instance, year, kind). `Invoice.kind` is `order`, `manual` or `credit_note`: a credit note
+(entry 7) copies its original with negated amounts, references it (`original`, `reason`) and is
+numbered in its own series (`InvoiceSeries.kind=credit_note`, `...-R<6 digits>`).
 
 An invoice is a legal record, copied from the order (or given by the manual sale) and never
 re-priced: the seller's identity from the billing company at issue time, the buyer's
@@ -44,38 +46,51 @@ class AppendOnlyQuerySet(models.QuerySet):
 
 
 class InvoiceSeries(models.Model):
-    """The counter of one (billing company code, instance, year): `last_number` is the last
-    number issued. Locked while a number is taken (`invoices.service._next_number`)."""
+    """The counter of one (billing company code, instance, year, kind): `last_number` is the
+    last number issued. Credit notes (epic-payments entry 7) count in their own series.
+    Locked while a number is taken (`invoices.service._next_number`)."""
 
+    INVOICE, CREDIT_NOTE = 'invoice', 'credit_note'
+    KINDS = [(INVOICE, 'Invoice'), (CREDIT_NOTE, 'Credit note')]
+
+    kind = models.CharField(max_length=12, choices=KINDS, default=INVOICE)
     company_code = models.CharField(max_length=16)
     instance = models.CharField(max_length=8)
     year = models.PositiveSmallIntegerField()
     last_number = models.PositiveIntegerField(default=0)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=('company_code', 'instance', 'year'),
-                                               name='invoices_series_key')]
+        constraints = [models.UniqueConstraint(
+            fields=('company_code', 'instance', 'year', 'kind'), name='invoices_series_kind_key')]
 
     def __str__(self):
-        return f'{self.company_code}-{self.instance}-{self.year}: {self.last_number}'
+        return f'{self.company_code}-{self.instance}-{self.year}-{self.kind}: {self.last_number}'
 
 
 class Invoice(models.Model):
     ORDER = 'order'
     MANUAL = 'manual'
-    KINDS = [(ORDER, 'Order'), (MANUAL, 'Manual sale')]
+    CREDIT_NOTE = 'credit_note'
+    KINDS = [(ORDER, 'Order'), (MANUAL, 'Manual sale'), (CREDIT_NOTE, 'Credit note')]
+    REASONS = [('cancellation', 'Cancellation'), ('goodwill', 'Goodwill'), ('error', 'Error')]
     NONE, PENDING, SENT, ACCEPTED, REJECTED = 'none', 'pending', 'sent', 'accepted', 'rejected'
     EINVOICE_STATUSES = [(NONE, 'None'), (PENDING, 'Pending'), (SENT, 'Sent'),
                          (ACCEPTED, 'Accepted'), (REJECTED, 'Rejected')]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    # `<company>-<instance>-<year>-<6 digits>`, e.g. ES-EU-2026-000001.
+    # `<company>-<instance>-<year>-<6 digits>`, e.g. ES-EU-2026-000001; a credit note's has
+    # an `R` before the digits (ES-EU-2026-R000001).
     number = models.CharField(max_length=40, unique=True)
-    kind = models.CharField(max_length=10, choices=KINDS)
-    # One invoice per order (a OneToOne is unique; NULL for a manual sale and after the
-    # order is gone).
+    kind = models.CharField(max_length=12, choices=KINDS)
+    # One invoice per order (a OneToOne is unique; NULL for a manual sale, a credit note and
+    # after the order is gone: a credit note reaches its order through `original.order`).
     order = models.OneToOneField('payments.Order', null=True, blank=True,
                                  on_delete=models.SET_NULL, related_name='invoice')
+    # Credit notes only: the invoice it reverses (its number and issue date go on the
+    # document) and why (`REASONS`).
+    original = models.ForeignKey('self', null=True, blank=True, on_delete=models.PROTECT,
+                                 related_name='credit_notes')
+    reason = models.CharField(max_length=12, blank=True, default='', choices=REASONS)
     company_code = models.CharField(max_length=16)
     instance = models.CharField(max_length=8)
     year = models.PositiveSmallIntegerField()
@@ -137,6 +152,9 @@ class Invoice(models.Model):
     class Meta:
         ordering = ['issued_at', 'number']
         indexes = [models.Index(fields=['company_code', 'instance', 'year'])]
+        constraints = [models.UniqueConstraint(
+            fields=('original',), name='invoices_one_credit_note', condition=models.Q(
+                kind='credit_note'))]
 
     def __str__(self):
         return self.number

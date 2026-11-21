@@ -428,9 +428,40 @@ fiscal entity, so an erasure leaves it.
 it runs inside the payment's transaction, is idempotent per order, and a failure (a company missing
 from the snapshot) rolls the payment back. `issue_manual(company_code, buyer, lines, currency,
 actor)` invoices a sale with no order and no account (`kind=manual`); epic-sales-finance builds its
-screen. Orders paid before this release have no invoice. Not here yet: credit notes (7.7), the
+screen. Orders paid before this release have no invoice. Not here yet: the
 accounting copy (7.8), restore-safe numbering (7.9), the PDF and the doctor's download (7.10) and
 any e-invoice transmission.
+
+## Credit notes, refunds and cancellation (epic-payments entry 7)
+
+A paid order leaves `paid` only through a refund. `payments.refunds.refund(order, expected_version,
+actor, reason, manual=False, note='')` (staff or the system; a doctor actor raises `InvalidActor`)
+refunds the whole order, in phases: a `Refund` row is committed `pending`, the gateway refunds
+outside any lock (or nothing is called for `manual=True`, which needs a `note`: a bank transfer, a
+0.00 order), then one transaction under the order lock marks
+the refund `done`, issues the credit note and moves the order to `refunded`, firing the new
+`refunded` hook (receivers that release vouchers or give back included cases belong to later
+stories; a used voucher stays used). A gateway refusal leaves the refund `failed` (`RefundFailed`,
+order still `paid`, staff may try again). A timeout or an answer that cannot be trusted leaves it
+`needs_attention` with a Sentry message naming the order by UUID: it is never retried
+automatically, because Redsys may already have refunded, and the order stays `paid` and blocked for
+any refund (manual ones too) until staff resolve it, which the admin site's tools (epic-sales-finance)
+will do. At most one pending refund per order (database constraint);
+`Refund.gateway_refund_id` is not unique (Redsys repeats it per payment). Partial refunds are not
+supported yet.
+
+A credit note is an `Invoice` of `kind=credit_note`: the original's seller and buyer snapshots,
+lines and VAT groups with negated amounts, `original` (so its number and issue date), a `reason`
+(`cancellation`, `goodwill`, `error`), `order` empty (it reaches its order through
+`original.order`) and an empty `extensions["rectification_code"]` for the tax advisor. It is
+numbered `<company>-<instance>-<year>-R<6 digits>` in its own `InvoiceSeries(kind=credit_note)`,
+gapless like the invoices, and append-only like them. One per invoice.
+
+`payments.refunds.staff_cancel` cancels an unpaid order with a staff actor (`AttemptOpen` while a
+card session is live). For staff and staging until the admin screens exist (epic-sales-finance),
+both run as the system actor: `python manage.py refund_order <reference> --reason
+{cancellation,goodwill,error} [--manual --note TEXT]` (replaces `redsys_refund`) and
+`python manage.py cancel_order <reference>`.
 
 ## Payments: Redsys (epic-payments entry 3)
 
@@ -459,11 +490,10 @@ HMAC-SHA256 of `Ds_MerchantParameters`).
 - **Retry.** Redsys cannot close a session (no `cancel_attempt`): while an attempt may still be
   paid (`session_lifetime`, 30 minutes) a retry shows "payment in progress"; a refusal
   notification fails the attempt and the doctor can retry at once.
-- **Refund.** `python manage.py redsys_refund <reference> [--amount X]` refunds the order's
-  confirmed Redsys payment (the full amount by default) over Redsys REST (`trataPeticionREST`,
-  transaction type 3); the signed answer is verified and must say `Ds_Response` 0900; it prints
-  the refund id (`Ds_Order:authorisation code`). Nothing changes on the order (no state change,
-  no credit note: entry 7). A refusal or an HTTP fault is an error naming only Redsys's code.
+- **Refund.** `redsys.refund` refunds the confirmed payment over Redsys REST (`trataPeticionREST`,
+  transaction type 3); the signed answer is verified and must say `Ds_Response` 0900. A refusal
+  is a `GatewayError`; no answer or an untrustworthy one is a `GatewayUnknown`. Refunds go through
+  `refund_order` (entry 7, below). A type-3 notification is logged and marked done, never retried.
 
 Settings (settings.env; the key is never logged and never shared): `REDSYS_MERCHANT_CODE` (the
 FUC), `REDSYS_TERMINAL`, `REDSYS_SECRET_KEY` and `REDSYS_ENVIRONMENT` (`test`, the default, or

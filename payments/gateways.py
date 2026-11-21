@@ -19,7 +19,8 @@ Every operation is an optional callable; an adapter declares what it supports by
   (or any error of the HTTP helpers) when the gateway cannot be read.
 - `cancel_attempt(payment)`: closes the open session at the gateway, so it can no longer be
   paid. A gateway without it waits for the session to time out (`session_lifetime`).
-- `refund(payment, amount) -> str` (the gateway's refund id), `save_card(user) -> str` (a
+- `refund(payment, amount) -> str` (the gateway's refund id; a refusal raises `GatewayError`,
+  no answer or an untrustworthy one `GatewayUnknown`: `payments.refunds` tells them apart), `save_card(user) -> str` (a
   card token), `charge_saved_card(user, token, amount, currency) -> GatewayPayment`: used by
   entries 7 and later.
 - `session_lifetime`: how long an open attempt can still be paid (default 30 minutes);
@@ -53,6 +54,12 @@ PAID, PENDING, FAILED = 'paid', 'pending', 'failed'
 class GatewayError(Exception):
     """The gateway could not be read or refused a call (never carries secrets or card
     data)."""
+
+
+class GatewayUnknown(GatewayError):
+    """The gateway did not answer, or its answer cannot be trusted (a timeout, an HTTP
+    fault, a bad signature): the operation may or may not have happened. A plain
+    `GatewayError` from an operation that moves money is a refusal (nothing moved)."""
 
 
 class UnsupportedOperation(GatewayError):
