@@ -127,11 +127,25 @@ def render_html(invoice, user):
         return render_to_string(TEMPLATE, {**context(invoice, user), 'language': language})
 
 
+def font_urls():
+    """The file URIs of the fonts: all the renderer may load."""
+    return {Path(finders.find(path)).as_uri() for path in FONTS.values() if finders.find(path)}
+
+
+def _fonts_only():
+    from weasyprint.urls import URLFetcher
+
+    class FontsOnly(URLFetcher):
+        def fetch(self, url, headers=None):
+            if url not in font_urls():
+                raise ValueError('only the invoice fonts can be loaded')
+            return super().fetch(url, headers)
+    return FontsOnly()
+
+
 def render(invoice, user):
-    """The PDF's bytes. Only the static files (the fonts) can be loaded by the renderer."""
+    """The PDF's bytes. Only the fonts (`font_urls`) can be loaded by the renderer."""
     # Imported here: WeasyPrint loads Pango at import, and only a download needs it.
     from weasyprint import HTML
-    from weasyprint.urls import URLFetcher
     html = render_html(invoice, user)
-    fetcher = URLFetcher(allowed_protocols=['file', 'data'])
-    return HTML(string=html, url_fetcher=fetcher).write_pdf()
+    return HTML(string=html, url_fetcher=_fonts_only()).write_pdf()

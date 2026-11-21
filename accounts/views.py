@@ -411,6 +411,7 @@ def home(request):
         'greeting_name': doctor_area.first_name(user),
         'profile_name': doctor_area.display_name(user),
         'profile_line': doctor_area.profile_line(user),
+        'show_invoices': client_sync.is_client(user),  # the invoices page is a doctor's
     })
 
 

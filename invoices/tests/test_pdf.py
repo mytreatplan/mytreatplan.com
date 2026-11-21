@@ -72,7 +72,7 @@ def spanish(doctor):
     Profile.objects.update_or_create(user=doctor, defaults={'language': 'es'})
 
 
-def test_an_es_invoice_in_spanish_with_the_name_next_to_the_code(doctor, entity):
+def test_an_es_invoice_in_spanish_with_the_name_next_to_the_code(doctor, entity, monkeypatch):
     spanish(doctor)
     knows((CODE, NAME))
     invoice = invoice_with_patient(doctor)
@@ -83,20 +83,30 @@ def test_an_es_invoice_in_spanish_with_the_name_next_to_the_code(doctor, entity)
     assert f'{NAME} ({CODE})' in html
     assert re.search(r'data-total>[\d.,]+ EUR<', html)
     assert '100,00 EUR' in html and invoice.number in html  # Spanish separators
-    response = browser(doctor).get(f'/en/invoices/{invoice.pk}/pdf/')
+    rendered = []
+    real = pdf.render_html
+    monkeypatch.setattr(pdf, 'render_html', lambda *args: rendered.append(real(*args)) or rendered[-1])
+    response = browser(doctor).get(f'/en/invoices/{invoice.pk}/pdf/')  # an /en/ URL, es profile
+    assert 'lang="es"' in rendered[0] and f'{NAME} ({CODE})' in rendered[0]
     assert response.status_code == 200 and response.content.startswith(b'%PDF')
     assert response['Content-Type'] == 'application/pdf'
     assert response['Content-Disposition'] == f'attachment; filename="{invoice.number}.pdf"'
 
 
 def test_the_pdf_shows_the_vat_groups_and_the_exemption_text(doctor, entity):
-    invoice = invoice_with_patient(doctor)
+    from integration.tests.snapshot_rows import EXEMPT
+    invoice = invoices.issue_manual(
+        'ES', {**COMPANY}, [{'name': 'Course', 'net': '50.00', 'vat_percent': '0',
+                             'vat_text': EXEMPT},
+                            {'name': 'Setup', 'net': '100.00', 'vat_percent': '21.00'}],
+        'EUR', STAFF, entity=entity)
     html = pdf.render_html(invoice, doctor)
-    group = invoice.vat_groups[0]
-    assert 'data-vat-group' in html
-    if group['text']:
-        assert group['text'] in html
-    assert invoice.lines.get().vat_text in html
+    assert EXEMPT and invoice.lines.get(position=1).vat_text == EXEMPT
+    assert [group['text'] for group in invoice.vat_groups] == [EXEMPT, '']
+    assert html.count('data-vat-group') == 2 + 1  # the table's attribute names, per group row
+    assert html.count(EXEMPT) == 2  # under the line and in its VAT group
+    assert '50,00 EUR' not in html and '50.00 EUR' in html  # English: the doctor has no profile language
+    assert '21.00 EUR' in html and '21%' in html and '0%' in html
 
 
 def test_an_erased_patient_shows_only_the_code(doctor, entity):
@@ -251,3 +261,28 @@ def test_the_home_has_an_invoices_tile(doctor):
 
 def test_the_models_are_untouched():
     assert not InvoiceLine._meta.get_field('patient_code').null
+
+
+def test_the_renderer_loads_only_the_fonts(doctor, entity):
+    fetcher = pdf._fonts_only()
+    for url in ('file:///etc/hosts', 'data:text/plain,x', 'http://example.com/a.css'):
+        with pytest.raises(ValueError):
+            fetcher.fetch(url)
+    assert pdf.font_urls() and all(url.endswith('.woff2') for url in pdf.font_urls())
+    # And a real render still gets its fonts through it.
+    assert pdf.render(invoice_with_patient(doctor), doctor).startswith(b'%PDF')
+
+
+def test_a_manual_invoice_keeps_its_entity_when_the_doctor_removes_it(doctor, entity):
+    from accounts import fiscal
+    invoice = manual_for(entity)
+    assert fiscal.remove(doctor, entity.pk) == fiscal.ARCHIVED
+    page = browser(doctor).get('/en/invoices/').content.decode()
+    assert f'data-invoice="{invoice.number}"' in page
+    assert browser(doctor).get(f'/en/invoices/{invoice.pk}/pdf/').status_code == 200
+
+
+def test_the_invoices_tile_is_a_doctors_only(doctor, django_user_model):
+    staff = django_user_model.objects.create_user('staff@example.com', 'x', is_staff=True)
+    assert 'data-tile="invoices"' in browser(doctor).get('/en/home/').content.decode()
+    assert 'data-tile="invoices"' not in browser(staff).get('/en/home/').content.decode()

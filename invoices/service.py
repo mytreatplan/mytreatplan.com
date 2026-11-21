@@ -390,6 +390,9 @@ def issue_manual(company_code, buyer, lines, currency, actor, entity=None):
             bill_entity_version=entity.version if entity is not None else None,
             **{_BILL[name]: value for name, value in data.items()})
         InvoiceLine.objects.bulk_create([InvoiceLine(invoice=invoice, **row) for row in rows])
+        if entity is not None:
+            # As an order does: "delete" now archives the entity, so the doctor keeps the invoice.
+            fiscal.mark_used(entity)
         feed.send_invoice(invoice)
     return invoice
 
