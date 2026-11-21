@@ -199,3 +199,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-bank-transfer-plan.md`
   summary: Bank details (and the SEPA creditor id and per-country gateway limits) on billing companies and rules, across mytp-core 0.29.0, the admin site and the portal: now epic-payments entry 14, built before entry 5.
   evidence: 7.5 plan was ~3000 tokens over three repos; the user chose to split (2026-11-20).
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-invoices-plan.md`
+  summary: Flaky test `accounts/tests/test_makers.py::test_an_other_login_is_saved_listed_replaced_and_deleted`: it asserts the two-character password `p2` (and its 6-character slices) never appears in the page HTML, which a random token can contain by chance.
+  evidence: PR #119 pull_request run 44889811813 failed with `AssertionError: p2` at line 218 on commit 5a59cb1; the push run of the same commit and the re-run passed. Fix: use long, distinctive test values in that test.

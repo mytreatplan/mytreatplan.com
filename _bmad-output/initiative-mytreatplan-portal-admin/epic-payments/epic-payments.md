@@ -65,7 +65,7 @@ Paying and invoicing. Not what is bought (epic-subscriptions, epic-ordering). Th
 - Decision (user, 2026-10-30): VeriFactu is not in this epic; the tax advisor confirms whether and when it applies; invoices leave room for it.
 - Decision (user, 2026-10-30): an unpaid bank-transfer order gets a reminder on day 7 and expires after 14 days.
 - Decision (user, 2026-10-30): invoice numbers are <company>-<instance>-<year>-<6 digits>, e.g. ES-EU-2026-000123; credit notes ES-EU-2026-R000012; restarting each year.
-- Handoff: epic-subscriptions consumes and releases vouchers through the order hooks and owns renewals; epic-ordering implements the patient-name lookup hook; epic-sales-finance builds the buttons on the mark-as-paid, refund, cancel and manual-invoice services; epic-catalogue's billing companies gain a short company code (entry 6).
+- Handoff: epic-subscriptions consumes and releases vouchers through the order hooks and owns renewals; epic-ordering implements the patient-name lookup hook; epic-sales-finance builds the buttons on the mark-as-paid, refund, cancel and manual-invoice services. (Correction 2026-11-21: billing companies already had their short company code, `BillingCompany.code`, since mytp-core 0.23.0; entry 6 needed no core release.)
 - Handoff: epic-subscriptions and epic-ordering create orders through this epic's order model.
 - Handoff: epic-sales-finance builds the admin buttons for mark as paid, cancel and refund on top of this epic's services.
 - Unknown: whether Redsys (Santander must enable it) and Revolut support recurring charges on our merchant accounts; the saved-card entry waits on it.

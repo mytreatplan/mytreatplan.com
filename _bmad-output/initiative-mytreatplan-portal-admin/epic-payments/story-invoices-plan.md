@@ -3,7 +3,7 @@ title: 'Invoices'
 type: 'feature'
 ticket: '6'
 created: '2026-11-20'
-status: 'built'
+status: 'done'
 baseline_revision: 'fecbc12e2c0cb2ae9a4686e2b9135a2750450e37'
 route: 'full'
 route_source: 'auto'
@@ -119,3 +119,14 @@ context: []
 - Suite (repo root, sandbox off): `FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" DATABASE_URL="sqlite:///$TMPDIR/p76.sqlite3" <venv>/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: 0 failures (baseline 3840 passed / 13 skipped)
 - `manage.py makemigrations --check` -- expected: no changes
 - Concurrency test once against PostgreSQL -- expected: passes, no gap
+
+## Staging
+
+- PR #119 merged as 9dbc79e (feature commit 5a59cb1). The PR's pull-request test run failed once on the flaky `accounts/tests/test_makers.py::test_an_other_login_is_saved_listed_replaced_and_deleted` (unrelated, recorded in deferred-work) and passed on re-run. The push run passed: 3883 passed, 1 skipped on PostgreSQL, so the concurrency test ran there. Master run 44891624053: test and both deploys green; /healthz ok on dev and dev-ae.
+- My local suite: 3871 passed, 14 skipped, 0 failed (SQLite).
+- Checks 1–5 passed 2026-11-21 (Claude, over SSH, script check76.py, all in a rolled-back transaction, so no invoices or series remain):
+  1. Migrations `invoices` 0001 and `payments` 0005 applied on dev and dev-ae.
+  2. dev: three paid ES orders got ES-EU-2026-000001…000003, dated 2026-11-21 Europe/Madrid. Totals, VAT groups and buyer equal the order. Line 0.00 % tax category E with the exemption text. A repeated hook returns the same invoice.
+  3. save, update, delete and line update are refused (`AppendOnly`). `set_einvoice_status` set `pending`, and the totals are unchanged.
+  4. A manual sale with no account got ES-EU-2026-000004, kind manual, no order, VAT 21.00, total 121.00.
+  5. dev-ae: AE-AE-2026-000001, Asia/Dubai, AED, line 5.00 % category S.
