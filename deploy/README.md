@@ -2501,6 +2501,24 @@ To rotate dev-ae's deploy key, repeat step 8 and replace the old line in
 `/srv/mytp-dev-ae/.ssh/authorized_keys`. To remove dev-ae, see "Remove a site" above,
 then drop the `dev-ae` leg from the `deploy-staging` matrix.
 
+## Invoice PDF (epic-payments entry 10)
+
+The doctor downloads each invoice and credit note as a PDF (`/<lang>/invoices/`), rendered
+in the request by WeasyPrint (pinned in `requirements.txt`).
+
+- **System libraries:** WeasyPrint loads Pango at import. `provision.sh` installs
+  `libpango-1.0-0 libpangoft2-1.0-0` (in `PACKAGES`) and the CI job installs the same
+  through apt. A host provisioned before this story needs one re-provision (or
+  `sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0`) before the release that
+  adds WeasyPrint. Without them the site still starts (the import is lazy) and only a PDF
+  download fails.
+- **On a Mac:** `brew install pango`, and run Python with
+  `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`.
+- **Check on staging:** `sudo -u mytp-dev /srv/mytp-dev/venv/bin/python -c "import weasyprint; print(weasyprint.__version__)"`
+  prints `70.0`.
+- **Patient names:** the PDF shows a patient's name next to the code only when epic-ordering
+  registers `invoices.patients.register`; names are never stored or logged.
+
 ## Interface with the admin site
 
 The admin site (`admindev` on staging) and each portal site call each other on `/api/v1/`

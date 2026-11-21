@@ -2932,3 +2932,188 @@ msgstr "Los datos bancarios no están disponibles ahora. Por favor, contáctenos
 #: payments/templates
 msgid "Choose another payment method"
 msgstr "Elegir otro método de pago"
+
+#: invoices/templates
+msgid "Billing"
+msgstr "Facturación"
+
+#: invoices/templates
+msgid "Invoices"
+msgstr "Facturas"
+
+#: invoices/templates
+msgid "PDF"
+msgstr "PDF"
+
+#: invoices/templates
+msgid "Download PDF"
+msgstr "Descargar PDF"
+
+#: invoices/templates
+msgid "You have no invoices yet."
+msgstr "Todavía no tiene facturas."
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Number"
+msgstr "Número"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Date"
+msgstr "Fecha"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Reason"
+msgstr "Motivo"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Seller"
+msgstr "Vendedor"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Buyer"
+msgstr "Comprador"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Description"
+msgstr "Descripción"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Qty"
+msgstr "Cant."
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "VAT"
+msgstr "IVA"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Net"
+msgstr "Neto"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Patient"
+msgstr "Paciente"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "VAT breakdown"
+msgstr "Desglose del IVA"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Base"
+msgstr "Base"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "VAT amount"
+msgstr "Cuota de IVA"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Total"
+msgstr "Total"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Tax ID"
+msgstr "NIF"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "VAT ID"
+msgstr "NIF-IVA"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Company number"
+msgstr "Nº de registro mercantil"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Net total"
+msgstr "Total neto"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Discount"
+msgstr "Descuento"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Special consumption tax"
+msgstr "Impuesto especial de consumo"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Voucher"
+msgstr "Bono"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Credit note"
+msgstr "Factura rectificativa (abono)"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Invoice"
+msgstr "Factura"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Cancellation"
+msgstr "Cancelación"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Goodwill"
+msgstr "Cortesía comercial"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Error"
+msgstr "Error"
+
+#: invoices/pdf
+msgctxt "invoice PDF"
+msgid "Corrects invoice %(number)s of %(date)s"
+msgstr "Rectifica la factura %(number)s del %(date)s"
+
+#: invoices/templates
+msgctxt "invoice list"
+msgid "Number"
+msgstr "Número"
+
+#: invoices/templates
+msgctxt "invoice list"
+msgid "Type"
+msgstr "Tipo"
+
+#: invoices/templates
+msgctxt "invoice list"
+msgid "Date"
+msgstr "Fecha"
+
+#: invoices/templates
+msgctxt "invoice list"
+msgid "Total"
+msgstr "Total"
+
+#: invoices/templates
+msgctxt "invoice list"
+msgid "Credit note"
+msgstr "Abono"
+
+#: invoices/templates
+msgctxt "invoice list"
+msgid "Invoice"
+msgstr "Factura"

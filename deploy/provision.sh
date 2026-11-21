@@ -177,7 +177,8 @@ SCAN_WORKER=mytp-$SITE-scan-worker
 RELEASE_COMMAND=/usr/local/bin/mytp-release
 CERT_FILE=/etc/letsencrypt/live/$DOMAIN/fullchain.pem
 PACKAGES=(nginx certbot python3-certbot-nginx python3-venv python3-pip gettext libpq5 ufw apache2-utils curl
-    gpg age openssl clamav-daemon clamav-freshclam)
+    gpg age openssl clamav-daemon clamav-freshclam
+    libpango-1.0-0 libpangoft2-1.0-0)
 # The PostgreSQL client tools (pg_dump, pg_restore, psql), host-wide, installed after the
 # PGDG source below: one explicit major, the newest of the sites' database services
 # (staging: dev and dev-ae on 17, admindev on 18). A client serves servers of its major

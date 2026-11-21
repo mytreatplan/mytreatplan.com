@@ -1,0 +1,99 @@
+{% load i18n %}{% comment %}
+The invoice or credit note PDF (invoices.pdf, epic-payments entry 10): a standalone document,
+rendered by WeasyPrint from the invoice's snapshot only. `lines[].patient` is "name (code)" or
+the code alone. Nothing here loads anything but the fonts.
+{% endcomment %}<!doctype html>
+<html lang="{{ language }}">
+<head>
+<meta charset="utf-8">
+<title>{{ invoice.number }}</title>
+<style>
+{% for name, url in fonts.items %}@font-face { font-family: "Inter"; src: url("{{ url }}") format("woff2"); font-weight: 100 900; }
+{% endfor %}
+@page { size: A4; margin: 18mm 16mm; }
+body { font-family: "Inter", "Helvetica Neue", Arial, sans-serif; font-size: 9.5pt; color: #1b1b1f; line-height: 1.4; }
+h1 { font-size: 20pt; margin: 0 0 2mm; }
+.muted { color: #5f6368; }
+.head { display: flex; justify-content: space-between; }
+.parties { display: flex; gap: 12mm; margin-top: 8mm; }
+.parties > div { flex: 1; }
+h2 { font-size: 8.5pt; text-transform: uppercase; letter-spacing: .06em; color: #5f6368; margin: 0 0 1.5mm; }
+table { width: 100%; border-collapse: collapse; margin-top: 8mm; }
+th { text-align: left; font-size: 8.5pt; color: #5f6368; border-bottom: 1px solid #1b1b1f; padding: 1.5mm 1mm; }
+td { padding: 2mm 1mm; border-bottom: 1px solid #dadce0; vertical-align: top; }
+.num { text-align: right; white-space: nowrap; }
+.small { font-size: 8pt; }
+.totals { margin-top: 6mm; margin-left: auto; width: 85mm; }
+.totals div { display: flex; justify-content: space-between; padding: 0.8mm 0; }
+.totals .grand { font-weight: 800; font-size: 11.5pt; border-top: 1px solid #1b1b1f; margin-top: 1.5mm; padding-top: 2mm; }
+.groups { margin-top: 6mm; }
+.groups table { margin-top: 2mm; width: auto; min-width: 110mm; }
+</style>
+</head>
+<body>
+<div class="head">
+  <div>
+    <h1 data-title>{{ title }}</h1>
+    <div data-number>{% translate "Number" context "invoice PDF" %}: <strong>{{ invoice.number }}</strong></div>
+    <div data-date>{% translate "Date" context "invoice PDF" %}: {{ issue_date }}</div>
+    {% if credit %}
+    <div data-original>{% blocktranslate with number=original.number date=original_date context "invoice PDF" %}Corrects invoice {{ number }} of {{ date }}{% endblocktranslate %}</div>
+    {% if reason %}<div class="muted">{% translate "Reason" context "invoice PDF" %}: {{ reason }}</div>{% endif %}
+    {% endif %}
+  </div>
+</div>
+
+<div class="parties">
+  <div data-seller>
+    <h2>{% translate "Seller" context "invoice PDF" %}</h2>
+    <strong>{{ seller.name }}</strong>
+    {% for line in seller.lines %}<div>{{ line }}</div>{% endfor %}
+    {% for label, value in seller.ids %}<div class="small muted">{{ label }}: {{ value }}</div>{% endfor %}
+  </div>
+  <div data-buyer>
+    <h2>{% translate "Buyer" context "invoice PDF" %}</h2>
+    {% for line in buyer.lines %}<div{% if forloop.first %} style="font-weight: 700"{% endif %}>{{ line }}</div>{% endfor %}
+    {% for label, value in buyer.ids %}<div class="small muted">{{ label }}: {{ value }}</div>{% endfor %}
+  </div>
+</div>
+
+<table data-lines>
+  <thead><tr>
+    <th>{% translate "Description" context "invoice PDF" %}</th>
+    <th class="num">{% translate "Qty" context "invoice PDF" %}</th>
+    <th class="num">{% translate "VAT" context "invoice PDF" %}</th>
+    <th class="num">{% translate "Net" context "invoice PDF" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for line in lines %}
+  <tr data-line>
+    <td>{{ line.name }}{% if line.patient %}<div class="small" data-patient>{% translate "Patient" context "invoice PDF" %}: {{ line.patient }}</div>{% endif %}{% if line.vat_text %}<div class="small muted">{{ line.vat_text }}</div>{% endif %}</td>
+    <td class="num">{{ line.quantity }}</td>
+    <td class="num">{{ line.vat_percent }}%</td>
+    <td class="num">{{ line.net }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if groups %}
+<div class="groups" data-vat-groups>
+  <h2>{% translate "VAT breakdown" context "invoice PDF" %}</h2>
+  <table>
+    <thead><tr><th>{% translate "VAT" context "invoice PDF" %}</th><th class="num">{% translate "Base" context "invoice PDF" %}</th><th class="num">{% translate "VAT amount" context "invoice PDF" %}</th></tr></thead>
+    <tbody>
+    {% for group in groups %}
+    <tr data-vat-group><td>{{ group.percent }}%{% if group.text %} <span class="small muted">{{ group.text }}</span>{% endif %}</td><td class="num">{{ group.base }}</td><td class="num">{{ group.vat }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<div class="totals" data-totals>
+  {% for label, value in totals %}<div><span>{{ label }}</span><span>{{ value }}</span></div>{% endfor %}
+  <div><span>{% translate "VAT" context "invoice PDF" %}</span><span>{{ vat_total }}</span></div>
+  <div class="grand"><span>{% translate "Total" context "invoice PDF" %}</span><span data-total>{{ total }}</span></div>
+</div>
+</body>
+</html>
