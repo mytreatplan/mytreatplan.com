@@ -154,6 +154,10 @@ class OrderLine(models.Model):
     vat_text = models.CharField(max_length=500, blank=True, default='')
     # An included case use (epic-subscriptions 13 registers the hook that sets it).
     included_case = models.BooleanField(default=False)
+    # The patient's code when the line is a case for a patient (epic-payments entry 6; 9.1
+    # fills it), copied to the invoice line. A database default too, so the release before
+    # this one can still insert rows while this one is being deployed.
+    patient_code = models.CharField(max_length=32, blank=True, default='', db_default='')
     # The provider cost of the line (the product's `resolver.cost` total times the
     # quantity) in the order's currency, and whether every cost link had a price.
     provider_cost = models.DecimalField(max_digits=17, decimal_places=2, default=0)

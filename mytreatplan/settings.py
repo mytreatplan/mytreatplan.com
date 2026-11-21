@@ -422,6 +422,9 @@ INSTALLED_APPS = [
     # hooks and gateway adapters other epics plug into, the doctor's checkout pages and the
     # `expire_orders` command.
     'payments.apps.PaymentsConfig',
+    # Invoices (epic-payments entry 6, AD-7): immutable invoices with a gapless number per
+    # billing company, instance and year, issued from the order's `paid` hook.
+    'invoices.apps.InvoicesConfig',
     # The interface with the admin site (epic-admin-interface, AD-4): the signed
     # /api/v1/ endpoints, the log of every call received (InterfaceCall), the outbox of
     # events to the admin site (OutboxEvent, entry 3), the configuration snapshot pulled
