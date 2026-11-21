@@ -3,7 +3,7 @@ title: 'Credit notes, refunds and cancellation'
 type: 'feature'
 ticket: '7'
 created: '2026-11-21'
-status: 'built'
+status: 'done'
 baseline_revision: 'e73402a75699a69550eb19de7c2fe53bce6d053f'
 route: 'full'
 route_source: 'auto'
@@ -130,3 +130,14 @@ context: []
 - Portal suite (sandbox off; see local-dev command) -- expected: 0 failures
 - `manage.py makemigrations --check` -- expected: no changes
 - The concurrency test once on PostgreSQL -- expected: no gap
+
+## Staging
+
+- PR #121 merged as 5d9fad9 (feature commit f08abfb). The PR's CI passed on PostgreSQL, so the concurrency tests ran there. Master run 44903707278: test and the dev and dev-ae deploys green.
+- My local suite before the PR: 3943 passed, 17 skipped, 0 failed (SQLite).
+- Checks passed 2026-11-21 (Claude, over SSH, script check77.py). Everything ran in one rolled-back transaction, so no refund, credit note or order remains. `refund` refuses to run inside a transaction, so for this script only the module's view of the connection was shimmed, and its phases ran as savepoints.
+  1. Migrations `payments` 0006 and `invoices` 0002 applied on dev and dev-ae.
+  2. dev: order JA-782408, paid through the fake gateway, got invoice ES-EU-2026-000001 (80.00). A staff refund was `done` with a fake refund id. Its credit note was ES-EU-2026-R000001, kind `credit_note`, total -80.00, original ES-EU-2026-000001, reason `cancellation`, `rectification_code` empty. The order became `refunded` and the invoice was unchanged. A second refund was refused (`InvalidTransition`).
+  3. A refund by a doctor was refused (`InvalidActor`). A refund recorded by hand, on a second fake-paid order, was `done` with credit note R000002. dev has no bank details on the ES company, so the hand refund was not run on a bank-transfer order; the tests cover that.
+  4. A staff cancel of an unpaid order: `cancelled`, actor admin. A staff cancel by a doctor was refused. Cancelling a paid order, or one already refunded, was refused (`InvalidTransition`).
+- Left on dev: only fake-gateway cache entries, which expire. No database rows.
