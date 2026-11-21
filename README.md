@@ -463,6 +463,27 @@ both run as the system actor: `python manage.py refund_order <reference> --reaso
 {cancellation,goodwill,error} [--manual --note TEXT]` (replaces `redsys_refund`) and
 `python manage.py cancel_order <reference>`.
 
+## The accounting feed (epic-payments entry 8)
+
+The admin site keeps the accounting copy. Each invoice (an order's, a manual sale's, a
+credit note), each confirmed payment and each completed refund is recorded on the outbox, in
+the transaction that creates it (`invoices/feed.py`, mytp-core 0.31.0): `invoice.issued`
+(kind `order`, `manual` or `credit_note`), `payment.confirmed` and `refund.completed`, each
+sent once, at version 1. An idempotent repeat (`issue_for_order`, `issue_credit_note`) sends
+nothing, and a 0.00 order sends the invoice only. Records issued before the feed existed are
+not sent. A payload the contract refuses rolls the payment or refund back.
+
+- Amounts are `{amount, currency}` (negative on a credit note), percents strings.
+- The doctor is referenced by `client_uid` only, left out for a manual sale or an order
+  whose account is gone; the buyer is sent as issued, and the admin site stores it
+  encrypted, so erasing the doctor never touches the copy.
+- Patients are `patient_code` only (the key is left out when a line has none).
+  `issue_manual` refuses a patient code that is not a region prefix and 8 characters
+  (`EU-7K3QX9MD`) before anything is written.
+- **For staff:** never type a patient's name in a manual line's `name`; the contract cannot
+  check free text.
+- A refund's staff note, gateway secrets and card data are never sent.
+
 ## Payments: Redsys (epic-payments entry 3)
 
 `payments.redsys` is the card gateway of the Iberian company (5.9's rule offers `redsys`, shown as

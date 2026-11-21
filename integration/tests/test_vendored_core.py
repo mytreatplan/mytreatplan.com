@@ -19,7 +19,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.30.0'
+    assert mytp_core.__version__ == '0.31.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -36,7 +36,8 @@ def test_vendored_mytp_core_has_the_client_events_and_no_sample():
     assert contracts.registered_types() == ['client.erased', 'client.updated',
                                             'contact_message.deleted',
                                             'contact_message.updated',
-                                            'voucher.redeemed', 'voucher.released']
+                                            'invoice.issued', 'payment.confirmed',
+                                            'refund.completed', 'voucher.redeemed', 'voucher.released']
     assert not hasattr(contracts, 'SAMPLE_RECORDED')
 
 
