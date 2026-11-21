@@ -2641,6 +2641,14 @@ msgid "This voucher is for another account."
 msgstr "Este cupón es de otra cuenta."
 
 #: payments/views.py
+msgid "This voucher has already been used."
+msgstr "Este cupón ya se ha utilizado."
+
+#: payments/views.py
+msgid "This voucher code is not valid."
+msgstr "Este código de cupón no es válido."
+
+#: payments/views.py
 msgid "This subscription is not offered to you."
 msgstr "Esta suscripción no se le ofrece."
 

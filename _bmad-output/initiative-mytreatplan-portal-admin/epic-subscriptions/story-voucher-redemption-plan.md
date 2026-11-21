@@ -3,14 +3,14 @@ title: 'Voucher redemption'
 type: 'feature'
 ticket: '4'
 created: '2026-11-20'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: '8cfa1c65b19fa0f8ebc5626aefbeb139e596b710'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -81,6 +81,15 @@ context: []
 - Release: `scripts/vendor-mytp-core.sh v0.30.0` in both sites; update the version asserts and `layout/tests/test_deploy.py` (admin).
 - Tests: `integration/tests/snapshot_rows.py:333` `voucher(...)`, `GENERAL` :340, `pull(..., vouchers=[...])` :103; `payments/tests/conftest.py` (`doctor`, `entity`, `fake_on`, `events`); `payments/tests/test_bank_transfer.py:49` helpers, :314 expiry; full-cover example `payments/tests/test_service.py:394`; admin `interface/tests/test_events.py:88-139`. Suite commands: see `epic-payments/story-bank-details-and-payment-methods-per-country-plan.md:64-68`.
 
+- **Build setup (as for 7.14):**
+  - Branch `story/8.4-voucher-redemption` is checked out in all three repos (portal = this repo, baseline 8cfa1c6; `../mytp-core` baseline d8ad580; `../mytp-admin` baseline ebd3aeb). Commit nothing, push nothing, tag nothing: the release is the main session's.
+  - Test venvs (the old ones were cleaned up; create them): core `/private/tmp/claude-501/core-8.4-venv`, admin `/private/tmp/claude-501/admin-8.4-venv`, portal `/private/tmp/claude-501/portal-8.4-venv` (each from its repo's requirements, with the local core). Do not install the local wheel into `../.venv` (shared).
+  - Local wheel: copy the core working tree's tracked files (`git ls-files | rsync --files-from=-`) to a temp dir, `SOURCE_DATE_EPOCH` = core HEAD commit time, `pip wheel --no-deps`, put it in both sites' `vendor/` and move each `requirements.txt` line to 0.30.0 (remove the 0.29.0 wheel). The main session re-vendors from the tag with `scripts/vendor-mytp-core.sh v0.30.0` before the PRs.
+  - Portal suite (repo root, sandbox off): `FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" DATABASE_URL="sqlite:///$TMPDIR/p84.sqlite3" <venv>/bin/python -m pytest -q -p no:cacheprovider --tb=line` (0 failures expected; PostgreSQL-only tests skip). Also `makemigrations --check` and `compilemessages`.
+  - Admin suite (in `../mytp-admin`): `SECRET_KEY=ci-only-not-a-secret DEBUG=False SECURE_SSL_REDIRECT=False ALLOWED_HOSTS=localhost,127.0.0.1,testserver DATABASE_URL=sqlite:///$TMPDIR/a84.sqlite3 FIELD_ENCRYPTION_KEYS=<portal test key above> BLIND_INDEX_KEY=<portal test key above> ALLOW_FAKE_VERIFICATION=True <venv>/bin/python -m pytest -q -p no:cacheprovider`.
+  - Core suite (in `../mytp-core`): `<venv>/bin/python -m pytest -q -p no:cacheprovider`; regenerate the JSON schemas with the core's own script and the test that checks them.
+  - Previous baselines: portal 3871 / 14 skipped (7.6); core and admin: record yours before changing anything.
+
 ## Tasks & Acceptance
 
 **Execution:**
@@ -97,6 +106,25 @@ context: []
 - Given a try-me voucher, when a doctor's order with it is paid, then the portal holds one `consumed` redemption and the outbox holds `voucher.redeemed` v1 (`reserved`) and v2 (`consumed`) for it.
 - Given a subscription voucher reserved by one doctor's unpaid order, when another doctor tries it, then the order is refused with `VOUCHER_USED`. After the first order is cancelled, the second doctor can use it.
 - Given admin receives those events in order, then its record for the redemption shows the latest state, and a replayed older event leaves it unchanged.
+
+## Implementation Notes
+
+- Sonnet implementer; suites before review: core 1655/4, admin 1660/12, portal 3895/15, 0 failures. After the review patches, my suites on the wheel vendored from the local tag v0.30.0 (core 8bacb9a): core 1655/4, admin 1660/12, portal 3903/15, 0 failures; makemigrations clean. Core release 0.30.0 adds a closed `UsageAmount` (the payload registry needs closed nested models; same JSON as `Amount`).
+- Not in the plan, kept (Claude, told the user): `consume` on a paid order that has no redemption row (an order created before this release) reserves first; if another order holds the voucher, it logs an error and lets the payment through, so a hook never undoes money that has arrived.
+
+## Plan Change Log
+
+## Review Triage Log
+
+**Pass 1 (quick lens, Opus, 2026-11-21):** 5 findings: 0 high, 2 medium, 3 low, 0 rejected. All 5 patched by the implementer.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | A code never in this region's snapshot is not refused: `voucher_by_code` returns None and `create_order(voucher=None)` makes a full-price order; only the stale-row path refuses `VOUCHER_UNKNOWN` | medium | patch | The Always rule asks for the refusal; no service maps a code. Fix: `subscriptions.vouchers.voucher_for_code(code)` in the reusable API, raising `VOUCHER_UNKNOWN`, plus tests. |
+| 2 | The released event's amount comes from the order, not the stored row | medium | patch | `_record` used `_amount(order)`; `release` does not refresh the row, and `choose_entity` re-prices. Fix: the payload amount from the row. |
+| 3 | Portal README lacks the new refusals and receivers | low | patch | README :64-71, :315-329; a direct correction. |
+| 4 | Admin README lacks 0.30.0 and the `voucher` kind | low | patch | README :109, :950, :962; a direct correction. |
+| 5 | Core README 0.30.0 schema entry is in the middle of the 0.14.0 text | low | patch | README :456; move it to the end of the list. |
 
 ## Design Notes
 

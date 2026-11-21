@@ -73,6 +73,8 @@ REFUSALS = {
     pricing.VOUCHER_TYPE: gettext_lazy('This voucher is not for this kind of order.'),
     pricing.VOUCHER_CURRENCY: gettext_lazy('This voucher is in another currency.'),
     pricing.VOUCHER_DOCTOR: gettext_lazy('This voucher is for another account.'),
+    pricing.VOUCHER_USED: gettext_lazy('This voucher has already been used.'),
+    pricing.VOUCHER_UNKNOWN: gettext_lazy('This voucher code is not valid.'),
     pricing.SUBSCRIPTION_NOT_OFFERED: gettext_lazy(
         'This subscription is not offered to you.'),
     pricing.PERIOD_NOT_OFFERED: gettext_lazy('This subscription is not sold for that period.'),

@@ -66,7 +66,9 @@ the snapshot tables only: it writes and reserves nothing.
   `product_not_offered` (unlinked, no available rule, another currency, outside its
   validity, inactive), `quantity_refused`, `add_on_refused`, `two_companies`,
   `two_currencies`, `ice_twice`, `ice_not_planning`, `ice_currency`, `voucher_not_usable`
-  (its state in `detail`), `voucher_type`, `voucher_currency`, `voucher_doctor`,
+  (its state in `detail`), `voucher_type`, `voucher_currency`, `voucher_doctor`, `voucher_used` (a live redemption
+  blocks it, epic-subscriptions entry 4), `voucher_unknown` (the code is not in this
+  region's snapshot),
   `subscription_not_offered` (inactive, no available `subscription` rule, or priced in
   another currency than the rule's), `period_not_offered`.
 
@@ -318,6 +320,16 @@ transaction, must be idempotent by `order.id`, and a raise rolls the transition 
 `payments.gateways.register(name, start, enabled=None)` (`start(order, request)` returns the
 redirect URL). The `expire_orders` job (`deploy/jobs.conf`, every 15 minutes) expires orders left
 in `checkout` or `pending_payment` for more than 24 hours.
+
+The first production receivers (epic-subscriptions entry 4, registered in
+`SubscriptionsConfig.ready`) are `voucher_reserve` (`created`), `voucher_consume` (`paid`) and
+`voucher_release` (`cancelled`, `expired`) of `subscriptions.vouchers`: a `VoucherRedemption`
+follows the order (reserved, consumed, released) and records `voucher.redeemed` and
+`voucher.released` in the outbox. Before an order is created `create_order` and
+`create_subscription_order` re-read the voucher (`voucher_unknown`) and call
+`subscriptions.vouchers.check_use` (`voucher_used`); a screen that takes a typed code gets its
+voucher with `subscriptions.vouchers.voucher_for_code(code)`, which raises `voucher_unknown`
+when the code is absent.
 
 Pages (portal prefix `checkout/`): the checkout, the return and failure pages, the fake gateway's
 page and the test-order page. A doctor sees only their own orders (404 otherwise). Two flags,
