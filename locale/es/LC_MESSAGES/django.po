@@ -2713,6 +2713,10 @@ msgid "This order was cancelled."
 msgstr "Este pedido se ha cancelado."
 
 #: payments/templates
+msgid "This order was refunded."
+msgstr "Este pedido se ha reembolsado."
+
+#: payments/templates
 msgid "This order expired. Please start it again."
 msgstr "Este pedido ha caducado. Empiécelo de nuevo."
 

@@ -202,3 +202,12 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-invoices-plan.md`
   summary: Flaky test `accounts/tests/test_makers.py::test_an_other_login_is_saved_listed_replaced_and_deleted`: it asserts the two-character password `p2` (and its 6-character slices) never appears in the page HTML, which a random token can contain by chance.
   evidence: PR #119 pull_request run 44889811813 failed with `AssertionError: p2` at line 218 on commit 5a59cb1; the push run of the same commit and the re-run passed. Fix: use long, distinctive test values in that test.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-credit-notes-refunds-and-cancellation-plan.md`
+  summary: Partial refunds: 7.7 refunds the whole order only (the credit note is the whole invoice negated). Add partial refunds (a credit note for part of the lines or amount, a running refunded total checked against the payment) once epic-sales-finance settles the refund conditions.
+  evidence: 7.7 decision of 2026-11-21 (full refunds only).
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-credit-notes-refunds-and-cancellation-plan.md`
+  summary: Ask the tax advisor to confirm the credit-note series code (`R` before the digits, `<company>-<instance>-<year>-R<6 digits>`) and the rectification method (rectification by differences or by substitution, and the rectification code kept in `extensions["rectification_code"]`, empty today) before the EU go-live (7.12).
+  evidence: 7.7 decision of 2026-11-21.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-credit-notes-refunds-and-cancellation-plan.md`
+  summary: Resolving a `needs_attention` refund in the portal (mark it done with its credit note and the order refunded, or mark it failed) is needed before the admin refund button ships (epic-sales-finance); until then such an order stays `paid` and blocked for refunds.
+  evidence: 7.7 review: nothing in 7.7 resolves a `needs_attention` refund.

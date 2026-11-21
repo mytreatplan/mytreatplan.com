@@ -350,8 +350,9 @@ def fetch_payment(payment):
 
 def refund(payment, amount):
     """Refund `amount` (a Decimal) of the confirmed `payment` at Redsys (REST, type 3); the
-    refund's id (`Ds_Order:Ds_AuthorisationCode`). Raises `GatewayError` on any refusal or
-    HTTP fault (nothing of the response is logged)."""
+    refund's id (`Ds_Order:Ds_AuthorisationCode`). Raises `GatewayUnknown` on an HTTP fault or an unsigned or mismatched
+    answer (the refund may have happened) and `GatewayError` only on a refusal (nothing of
+    the response is logged)."""
     from accounts import http
     if not payment.gateway_payment_id:
         raise gateways.GatewayError('the payment has no Redsys order number')
@@ -372,24 +373,25 @@ def refund(payment, amount):
             'Ds_Signature': signature,
         }, timeout=REFUND_TIMEOUT))
     except http.FETCH_ERRORS as failure:
-        raise gateways.GatewayError(
+        raise gateways.GatewayUnknown(
             f'Redsys could not be reached ({type(failure).__name__})') from None
     if not isinstance(answer, dict):
-        raise gateways.GatewayError('Redsys answered something unexpected')
+        raise gateways.GatewayUnknown('Redsys answered something unexpected')
     if 'errorCode' in answer:
         code = str(answer['errorCode'])[:10]
         raise gateways.GatewayError(f'Redsys refused the refund ({code})')
     try:
         data = _verify(answer.get('Ds_MerchantParameters'), answer.get('Ds_Signature'))
     except gateways.BadSignature:
-        raise gateways.GatewayError('the Redsys answer is not signed with our key') from None
+        raise gateways.GatewayUnknown('the Redsys answer is not signed with our key') from None
     response_code = str(data.get('ds_response', '')).strip()
     if str(data.get('ds_order', '')) != payment.gateway_payment_id:
-        raise gateways.GatewayError('the Redsys answer is for another order')
+        raise gateways.GatewayUnknown('the Redsys answer is for another order')
     if (str(data.get('ds_amount', '')).strip() != parameters['DS_MERCHANT_AMOUNT']
             or str(data.get('ds_currency', '')).strip() != parameters['DS_MERCHANT_CURRENCY']
             or str(data.get('ds_transactiontype', REFUND)).strip() != REFUND):
-        raise gateways.GatewayError('the Redsys answer is for another amount or operation')
+        raise gateways.GatewayUnknown(
+            'the Redsys answer is for another amount or operation')
     if response_code != REFUNDED:
         raise gateways.GatewayError(f'Redsys refused the refund (Ds_Response '
                                     f'{response_code[:4] or "-"})')
