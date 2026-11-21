@@ -349,11 +349,14 @@ def _check_line(raw, position, currency):
         included_case=False, patient_code=patient_code), net
 
 
-def issue_manual(company_code, buyer, lines, currency, actor):
+def issue_manual(company_code, buyer, lines, currency, actor, entity=None):
     """Invoice a sale with no order (and so no account needed): `buyer` is a dict of
     `accounts.fiscal.FIELDS`, `lines` a list of dicts (see `_check_line`), `currency` one of
     `Money`'s. The VAT is grouped per (percent, text) and rounded half up. `actor` is a
-    `payments.service.Actor`. Returns the invoice, `kind=manual`, `order=None`."""
+    `payments.service.Actor`. `entity`, when given, is the doctor's `accounts.FiscalEntity` the
+    sale is for: its id and version are snapshotted (`bill_entity_id`, `bill_entity_version`),
+    which is how the doctor finds the invoice (invoices.views). Returns the invoice,
+    `kind=manual`, `order=None`."""
     from payments import service as payments_service
     payments_service._check_actor(actor)
     company = _company(company_code)
@@ -383,8 +386,13 @@ def issue_manual(company_code, buyer, lines, currency, actor):
             total=(net_total + vat_total).amount,
             vat_groups=[{'percent': str(percent.quantize(Decimal('0.01'))), 'text': text, 'base': str(base.amount),
                          'vat': str(vat.amount)} for percent, text, base, vat in vat_groups],
+            bill_entity_id=entity.pk if entity is not None else None,
+            bill_entity_version=entity.version if entity is not None else None,
             **{_BILL[name]: value for name, value in data.items()})
         InvoiceLine.objects.bulk_create([InvoiceLine(invoice=invoice, **row) for row in rows])
+        if entity is not None:
+            # As an order does: "delete" now archives the entity, so the doctor keeps the invoice.
+            fiscal.mark_used(entity)
         feed.send_invoice(invoice)
     return invoice
 

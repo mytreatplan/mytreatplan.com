@@ -59,6 +59,8 @@ portal_patterns = [
     path('', include('subscriptions.urls')),
     # Checkout and the order pages (epic-payments entry 1).
     path('', include('payments.urls')),
+    # The doctor's invoices and their PDFs (epic-payments entry 10).
+    path('', include('invoices.urls')),
 ]
 
 

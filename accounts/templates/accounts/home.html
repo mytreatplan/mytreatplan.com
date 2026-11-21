@@ -4,7 +4,7 @@
 The doctor area's home (accounts.views.home, Annex I mockup): the greeting, the two large
 tiles (VirtuaORTHO, planning services), the green bar to start a case, the profile card
 (with the upgrade reminder's line for a doctor who can upgrade: epic-subscriptions entry
-3) and the three small tiles. Every link leads to an area's address ("coming soon" until its
+3) and the four small tiles (invoices: epic-payments entry 10). Every link leads to an area's address ("coming soon" until its
 epic builds it). Below the tablet breakpoint everything stacks in one column.
 {% endcomment %}
 
@@ -49,10 +49,11 @@ epic builds it). Below the tablet breakpoint everything stacks in one column.
       {% upgrade_reminder as reminder %}{% if reminder %}<span class="mt-1 block text-[clamp(14px,1.4vw,17px)]" data-upgrade-line="{{ reminder.tier }}">{% blocktranslate with level=reminder.name %}Level: {{ level }}{% endblocktranslate %} · <a href="{{ reminder.url }}" class="font-bold underline underline-offset-4 hover:text-violet">{% translate "See upgrade options" %}</a></span>{% endif %}
     </span>
   </section>
-  <ul class="grid grid-cols-1 gap-[clamp(12px,1.4vw,16px)] tablet:grid-cols-3" data-small-tiles>
+  <ul class="grid grid-cols-1 gap-[clamp(12px,1.4vw,16px)] {% if show_invoices %}tablet:grid-cols-4{% else %}tablet:grid-cols-3{% endif %}" data-small-tiles>
     {% with tile="flex h-full flex-col items-center justify-center gap-2 rounded-[clamp(20px,2.4vw,32px)] bg-green-tint px-3 py-[clamp(16px,2vw,24px)] text-center text-[clamp(14px,1.3vw,17px)] leading-tight transition-shadow hover:shadow-card" icon="size-[clamp(36px,3.6vw,52px)]" %}
     <li><a href="{% url 'settings' %}" class="{{ tile }}" data-tile="settings">{% include "includes/_icon.html" with name="wrench" class=icon %}<span>{% translate "Personal data" %}<strong class="block font-black">{% translate "Settings" %}</strong></span></a></li>
     <li><a href="{% url 'messages' %}" class="{{ tile }}" data-tile="messages">{% include "includes/_icon.html" with name="bell" class=icon %}<span>{% translate "Messages" %}<strong class="block font-black">{% translate "Alerts" %}</strong></span></a></li>
+    {% if show_invoices %}<li><a href="{% url 'invoices' %}" class="{{ tile }}" data-tile="invoices">{% include "includes/_icon.html" with name="invoice" class=icon %}<span>{% translate "Billing" %}<strong class="block font-black">{% translate "Invoices" %}</strong></span></a></li>{% endif %}
     <li><a href="{% url 'tutorials' %}" class="{{ tile }}" data-tile="tutorials">{% include "includes/_icon.html" with name="help" class=icon %}<span>{% translate "Welcome" %}<strong class="block font-black">{% translate "Tutorials" %}</strong></span></a></li>
     {% endwith %}
   </ul>

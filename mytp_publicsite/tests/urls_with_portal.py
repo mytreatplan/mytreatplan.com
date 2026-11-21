@@ -35,5 +35,6 @@ urlpatterns = list(site_urlpatterns) + i18n_patterns(
     path('virtuaortho/', _stub, name='virtuaortho'),
     path('planning-services/', _stub, name='planning_services'),
     path('start-a-case/', _stub, name='start_a_case'),
+    path('invoices/', _stub, name='invoices'),
     prefix_default_language=True,
 )

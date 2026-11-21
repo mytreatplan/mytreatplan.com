@@ -41,7 +41,9 @@ PORTAL_PREFIXES = ('signup/', 'login', 'logout/', 'welcome/', 'password-reset/',
                    'upgrade/', 'checkout/',
                    # The doctor area (epic-doctor-profile entry 1).
                    'home/', 'patients/', 'support/', 'messages/', 'settings/', 'cart/',
-                   'tutorials/', 'virtuaortho/', 'planning-services/', 'start-a-case/')
+                   'tutorials/', 'virtuaortho/', 'planning-services/', 'start-a-case/',
+                   # The doctor's invoices (epic-payments entry 10).
+                   'invoices/')
 ADMIN_PREFIX = '/admin/'
 
 
