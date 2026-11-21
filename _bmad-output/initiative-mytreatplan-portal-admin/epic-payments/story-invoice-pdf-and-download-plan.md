@@ -3,7 +3,7 @@ title: 'Invoice PDF and download'
 type: 'feature'
 ticket: '10'
 created: '2026-11-21'
-status: 'built'
+status: 'done'
 baseline_revision: 'e03ed84c47a4bd612c40c4c3a4db4702b836ebb7'
 route: 'full'
 route_source: 'auto'
@@ -161,3 +161,20 @@ Before the first suite run in the fresh worktree: `../.venv/bin/python manage.py
 
 **Manual checks:**
 - On dev, a doctor downloads an ES invoice. The fixture patient's name and code show; with the fixture patient erased only the code shows. Another doctor gets 404.
+
+## Staging
+
+Run on 2026-11-21, by Claude over SSH, with merge and staging delegated by the user. PR #123 merged as b82ff28. Deploy run 44950520851 passed on dev and dev-ae. Pango (`libpango-1.0-0 libpangoft2-1.0-0`) was installed on the staging host with apt before the deploy. On dev, WeasyPrint is 70.0.
+
+All checks ran in one rolled-back transaction, using a made-up fixture patient.
+
+1. **Manual invoice:** a manual invoice was issued with the dev doctor's fiscal entity and a line with `EU-7K3QX9MD`.
+2. **Download with the hook registered:**
+   - The doctor's language was Spanish, and the download URL was under `/es/`.
+   - The download returned 200 `application/pdf`, as an attachment named `ES-EU-2026-000002.pdf`.
+   - `Cache-Control` was no-store and private.
+   - The file started with `%PDF`, and the name was not in the URL.
+   - The PDF showed "Factura", the seller MyTPDSO Spain S.L. and its NIF-IVA, the buyer, "Paciente: <name> (EU-7K3QX9MD)", the VAT breakdown and the totals. Claude checked the rendered file by eye.
+3. **Without the hook:** only the code shows.
+4. **Other users:** another doctor got 404, a staff user got 404, and an anonymous user was redirected to login (302).
+5. **List page:** returned 200 and listed ES-EU-2026-000001, ES-EU-2026-R000001 and the manual invoice. No name appeared.
