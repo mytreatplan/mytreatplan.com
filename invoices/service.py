@@ -290,6 +290,17 @@ def _decimal(value, what):
         raise BadLine(f'{what} is not a number') from None
 
 
+_CROCKFORD = frozenset('0123456789ABCDEFGHJKMNPQRSTVWXYZ')  # no I, L, O, U
+
+
+def _patient_code_fits(code):
+    """This portal's region prefix and 8 Crockford characters (and the contract's form)."""
+    prefix, _, rest = code.partition('-')
+    return (bool(PATIENT_CODE_RE.fullmatch(code))
+            and prefix == settings.REGION_PROFILE.patient_code_prefix
+            and set(rest) <= _CROCKFORD)
+
+
 def _check_line(raw, position, currency):
     """(row fields, net Money) of a manual line: `name`, `net` (for the quantity, 0 or
     more), `vat_percent` (0 to 100), `vat_text` (required at 0 %), and optionally `code`,
@@ -324,9 +335,9 @@ def _check_line(raw, position, currency):
     patient_code = str(raw.get('patient_code') or '')
     if len(code) > 64 or len(patient_code) > 32:
         raise BadLine(f'line {position}: the code or the patient code is too long')
-    if patient_code and not PATIENT_CODE_RE.fullmatch(patient_code):
-        raise BadLine(f'line {position}: the patient code is a region prefix and 8 '
-                      f'characters, such as EU-7K3QX9MD')
+    if patient_code and not _patient_code_fits(patient_code):
+        raise BadLine(f'line {position}: the patient code is this region\'s prefix and 8 '
+                      f'Crockford characters, such as EU-7K3QX9MD')
     amount = _decimal(raw.get('net'), f'line {position} net')
     if amount != amount.quantize(Decimal('0.01')):
         raise BadLine(f'line {position}: the net has more than two decimals')

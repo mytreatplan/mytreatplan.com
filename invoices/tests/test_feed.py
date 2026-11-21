@@ -137,7 +137,8 @@ def test_an_order_line_patient_code_travels(doctor, entity):
     assert of_type(INVOICE_ISSUED)[0].payload['lines'][0]['patient_code'] == 'EU-7K3QX9MD'
 
 
-@pytest.mark.parametrize('code', ['Ana', 'eu-7k3qx9md', 'EU-7K3QX9M', 'EU7K3QX9MD1'])
+@pytest.mark.parametrize('code', ['Ana', 'eu-7k3qx9md', 'EU-7K3QX9M', 'EU7K3QX9MD1', 'ZZ-7K3QX9MD',
+                                  'EU-IIIIIIII', 'EU-7K3QX9MU'])
 def test_a_bad_patient_code_is_refused_and_nothing_is_written(catalogue_loaded, code):
     lines = [{'name': 'Case', 'net': '10.00', 'vat_percent': '21.00', 'patient_code': code}]
     with pytest.raises(invoices.BadLine):
