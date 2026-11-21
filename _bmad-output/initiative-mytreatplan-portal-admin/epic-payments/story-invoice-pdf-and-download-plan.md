@@ -3,14 +3,14 @@ title: 'Invoice PDF and download'
 type: 'feature'
 ticket: '10'
 created: '2026-11-21'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: 'e03ed84c47a4bd612c40c4c3a4db4702b836ebb7'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -136,11 +136,28 @@ context: []
 
 ## Review Triage Log
 
+**Pass 1 (quick, Opus), 2026-11-21:** 0 high, 1 medium, 4 low, 0 false, 0 maybe-false. All five were patched.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | `issue_manual(entity=…)` never marks the entity used, so `fiscal.remove` hard-deletes it and the doctor loses the invoice | medium | patch | `fiscal.remove` deletes an entity whose `used_at` is None, and `invoices_of` matches manual invoices through the doctor's entities. `mark_used` is now called in the issue transaction, and a test removes the entity and still downloads. |
+| 2 | The VAT/exemption test passes vacuously (empty `vat_text`) | low | patch | The default ES order has no exemption text. The test now uses an exempt 0% line plus a 21% line and asserts the texts unconditionally. |
+| 3 | The download test never shows that the view renders in the profile language with the name | low | patch | The view's HTML is captured through a patched `render_html`. The test asserts `lang="es"` and `NAME (CODE)` under an `/en/` URL. |
+| 4 | The URL fetcher allows any `file:`/`data:` URL, wider than its docstring | low | patch | There was no injection path (autoescape), but the defence was implicit. Only the font URLs are allowed now, and a test refuses `file:///etc/hosts`, `data:` and `http:`. |
+| 5 | Staff see an Invoices tile that always returns 404 | low | patch | The tile is shown only when `is_client(user)`, and a test covers doctor and staff. |
+
+Full suite after the fixes, merged with master (7.8): 3981 passed, 17 skipped, 1 failed. The failure is `test_remembered_device.py::test_ticked_right_code_logs_in_and_sets_the_mark`. It also fails on the 7.8 code with `SECRET_KEY=ci-only-not-a-secret` on SQLite, so it was not introduced here; it is already in deferred-work.
+
 ## Verification
 
-**Commands:**
-- `python manage.py makemigrations --check --dry-run`: expected "No changes detected".
-- The full suite command (see local-dev-notes): expected 0 failures.
+Work in the git worktree `../mytreatplan-7.10` (branch `story/7.10-invoice-pdf`, based on the unmerged 7.8 branch). Never touch the main checkout `../mytreatplan.com`. Commit there with new commits; never push. The venv is `../.venv` (shared). Install the pinned WeasyPrint into it. WeasyPrint needs Pango; on this Mac it comes from Homebrew (`brew install pango`). If `import weasyprint` still fails, report it rather than skipping the tests. CI installs Pango through apt. The suite and git need the sandbox off.
+
+Before the first suite run in the fresh worktree: `../.venv/bin/python manage.py compilemessages` and `npm ci && npm run build:css`.
+
+**Commands** (from the worktree root):
+- `export SECRET_KEY=ci-only-not-a-secret DEBUG=False SECURE_SSL_REDIRECT=False ALLOWED_HOSTS=localhost,127.0.0.1,testserver FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" DATABASE_URL="sqlite:///$TMPDIR/x710.sqlite3"`
+- `../.venv/bin/python manage.py makemigrations --check --dry-run`: expected "No changes detected".
+- `../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line`: expected 0 failures.
 
 **Manual checks:**
 - On dev, a doctor downloads an ES invoice. The fixture patient's name and code show; with the fixture patient erased only the code shows. Another doctor gets 404.
