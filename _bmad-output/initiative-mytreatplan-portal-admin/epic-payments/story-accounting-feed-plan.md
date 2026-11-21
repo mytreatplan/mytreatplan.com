@@ -3,7 +3,7 @@ title: 'Accounting feed'
 type: 'feature'
 ticket: '8'
 created: '2026-11-21'
-status: 'built'
+status: 'done'
 baseline_revision: 'f829f5cdc60128fc6f14549f8080e582fe0bcda1'
 route: 'full'
 route_source: 'auto'
@@ -165,3 +165,31 @@ All three repos are on branch `story/7.8-accounting-feed` (core baseline 8bacb9a
 
 **Manual checks:**
 - Staging (dev → admindev): a fake-gateway order is paid and refunded. admindev then holds the four rows with codes only. Erasing a test client on admindev leaves them in place.
+
+## Staging
+
+Run on 2026-11-21, by Claude over SSH, with merge and staging delegated by the user.
+
+**Release and merges:**
+- mytp-core v0.31.0 (b7f2ece) was pushed by the user. CI passed on both master and the tag.
+- Admin #46 merged as 5b114e5, and its deploy to admindev passed.
+- Portal #122 merged as 5bb5eed. Deploy run 44937503927 passed on dev and dev-ae.
+
+**Local suites:**
+- core: 1677 passed.
+- admin: 1674 passed.
+- portal: 3959 passed, 0 failures.
+
+**Checks:**
+1. On dev, fake-gateway order LC-927423 (committed, left on dev) was paid and refunded by staff. That recorded four events, each at version 1, and all four reached `delivered`:
+   - `invoice.issued` for ES-EU-2026-000001, kind order;
+   - `payment.confirmed`;
+   - `invoice.issued` for ES-EU-2026-R000001, kind credit_note, with `original_id` and reason `cancellation`;
+   - `refund.completed`.
+2. None of the four payloads had a patient key other than `patient_code`, and none contained the refund note.
+3. A manual sale with patient code `Ana` was refused with BadLine, and nothing was written. This check was rolled back.
+4. On admindev:
+   - Migration `accounting` 0001 is applied, and all four rows are present, with `client_uid` set.
+   - The model has no patient fields.
+   - `buyer_tax_id` is ciphertext in the database and reads back.
+   - Deleting the doctor's ClientRecord left all four rows in place. This check was rolled back.
