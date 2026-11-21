@@ -52,6 +52,14 @@ Paying and invoicing. Not what is bought (epic-subscriptions, epic-ordering). Th
 
 ## Notes
 
+- Santander (user, 2026-11-21; answers part of entry 11's unknown):
+  - Recurring charges on the Redsys terminal come with a paid add-on, "Servicios Venta +".
+  - It includes subscriptions with recurring payments, a risk-management tool, and "TPV Get Link & Pay" (payment links by email, SMS, WhatsApp or QR).
+  - Priced per month by the number of stored cards: 0–300 cards €8; 301–600 €11; 601–1000 €15.
+  - The account holder is MyTPDSO Spain S.L.
+  - Still to ask Santander: whether it covers merchant-initiated charges without the doctor present (Redsys COF/MIT, the SCA exemption); and to switch it on for the sandbox terminal first.
+  - The Revolut half of the unknown is still open.
+
 - Handoff (2026-10-30, epic-subscriptions inception): the order-creation service accepts a €0 order (a voucher covering the whole price), which skips the gateway, is marked paid and still gets a €0 invoice.
 - Handoff (2026-11-15, included cases): an order line can be an included case of the subscription (epic-subscriptions entry 13): entry 1's paid, cancelled and expired hooks consume or release its use; entries 6 and 10 show it on the invoice at list price with an "included in your subscription" deduction to 0.00; entry 7 gives the case back on a refund only while the term runs. VAT treatment to be confirmed by the tax advisor.
 - Tracer bullet: entry 1 (a test order through checkout and a fake gateway on dev).
