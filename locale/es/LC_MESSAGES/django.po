@@ -3117,3 +3117,32 @@ msgstr "Abono"
 msgctxt "invoice list"
 msgid "Invoice"
 msgstr "Factura"
+
+#: regions/profiles.py
+msgid ""
+"Madrid Commercial Register, sheet M-894040, entry 1, electronic folio; IRUS "
+"1000477547891"
+msgstr ""
+"Registro Mercantil de Madrid, hoja M-894040, inscripción 1.ª, folio "
+"electrónico; IRUS 1000477547891"
+
+#: templates/base.html
+#: mytp_publicsite/templates/publicsite/legal_notice.html
+msgid "Legal notice"
+msgstr "Aviso legal"
+
+#: templates/base.html
+msgid "Contracting conditions"
+msgstr "Condiciones de contratación"
+
+#: mytp_publicsite/templates/publicsite/legal_notice.html
+msgid ""
+"Legal notice of the MyTreatPlan website: owner, selling companies and contact "
+"details."
+msgstr ""
+"Aviso legal del sitio web de MyTreatPlan: titular, sociedades vendedoras y "
+"datos de contacto."
+
+#: mytp_publicsite/templates/publicsite/conditions.html
+msgid "Conditions governing the contracting of MyTreatPlan paid services."
+msgstr "Condiciones que rigen la contratación de los servicios de pago de MyTreatPlan."

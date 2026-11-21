@@ -22,8 +22,11 @@ def company_registration(company):
 def region_company(request):
     """`region_company` (regions.profiles.RegionCompany), and its registration line and
     office in the active language: `region_company_registration`,
-    `region_company_address`."""
-    company = settings.REGION_PROFILE.company
-    return {'region_company': company,
+    `region_company_address`. `region_has_sales_pages`: the profile has country sellers, so
+    the public legal notice and contracting conditions pages exist (footer links)."""
+    profile = settings.REGION_PROFILE
+    company = profile.company
+    return {'region_has_sales_pages': bool(profile.country_sellers),
+            'region_company': company,
             'region_company_registration': company_registration(company),
             'region_company_address': company_address(company)}

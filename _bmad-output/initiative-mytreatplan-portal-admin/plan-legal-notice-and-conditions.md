@@ -3,14 +3,14 @@ title: 'Public legal notice (aviso legal) and contracting conditions pages'
 type: 'feature'
 ticket: ''
 created: '2026-11-21'
-status: 'in-progress'
+status: 'built'
 baseline_revision: '3eae4b5750b4e7e12fdb8079035ba96db37cffba'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -92,6 +92,30 @@ S.L. data (user, 2026-11-21):
 - Given LEGAL_TEXTS_FINAL is False, when either page is opened, then it shows the provisional-text notice.
 - Given the conditions page on /es/, when the current CONDITIONS version has Spanish text, then the Spanish title and body are shown.
 - Given the full suite, when it runs, then it has 0 failures.
+
+## Implementation Notes
+
+- Built by a Sonnet implementer from this plan. New: `CountrySeller` and `RegionProfile.country_sellers`/`contact_email` (EU only), `LegalNoticeView`/`ConditionsView` behind `SalesPageMixin` (404 without sellers), the notice bodies (en, es), footer links behind `region_has_sales_pages`, sitemap entries, `test_legal_pages.py`, and the lawyer draft `legal-drafts/condiciones-contratacion.md`.
+- The Irish Ltd has no VAT number yet (user, 2026-11-21): the notice shows its company number only; lawyer note 1 says so.
+- Santander's "product with a price" is covered by a screenshot of the existing checkout page (7.1), not a story (user, 2026-11-21).
+- Locally, 8 `invoices/tests/test_pdf.py` tests fail because this Mac lacks the WeasyPrint native libraries; they fail the same without this change.
+
+- Full suite after the patches: 3994 passed, 17 skipped, 8 failed (the WeasyPrint-library tests above, environment only).
+
+## Plan Change Log
+
+## Review Triage Log
+
+Pass 1 (quick lens, Opus): 0 high, 1 medium, 4 low, 1 rejected low, 0 false.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | Footer, sitemap and notice link to /conditions/ even when no CONDITIONS version is published (the page 404s) | low | reject | CONDITIONS is a REQUIRED_KINDS document that signup needs, so a live EU site always has one; guarding the footer adds a query and a branch for a state the site cannot run in. |
+| 2 | Section 2 heading hard-codes "Spain and Portugal" while the body reads the profile | low | patch | Heading now joins each seller's countries from the profile. |
+| 3 | Section 7 joins seller names with no separator; "Spanish/Irish law" and "CIF" assume one Spanish seller | low | patch (separator) / reject (wording) | ", " added between names. The legal wording is a lawyer draft and stays as written. |
+| 4 | Conditions page ignores the document's own `provisional` flag, unlike signup | medium | patch | `legal_texts_final` is now `LEGAL_TEXTS_FINAL and not document.provisional`; test for both cases with LEGAL_TEXTS_FINAL=True. |
+| 5 | New pages missing from `LEGAL_PAGES` (canonical, Open Graph, no-JSON-LD tests) | low | patch | Added /en|es/legal-notice/ and /en|es/conditions/, with the site documents published by a fixture. |
+| 6 | No-document 404 test covers /es/ only; no future-dated test | low | patch (en) / reject (future) | Parametrized over en and es. Future-dated drafts are filtered by `LegalDocument.objects.current`, already tested in `legal/tests`. |
 
 ## Design Notes
 

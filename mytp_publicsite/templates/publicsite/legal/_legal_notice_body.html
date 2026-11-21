@@ -1,0 +1,43 @@
+{# DRAFT legal text, pending lawyer: not for production. Company data comes from the region profile. #}
+<h2>1. Website owner</h2>
+<p>In compliance with article 10 of Spanish Law 34/2002 on information society services
+    and electronic commerce (LSSI), the following is the identification of the owner of this
+    website:</p>
+<ul>
+<li>Name: {{ region_company.name }}</li>
+<li>Registration: {{ legal_company_registration }}</li>
+<li>Registered office: {{ legal_company_address }}</li>
+{% if legal_contact_email %}<li>Email: <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a></li>{% endif %}
+</ul>
+<p>{{ region_company.name }} also sells the paid services offered on this website in all
+    the countries served by this website, except those named in the next section.</p>
+<h2>2. Sale of services in {% for seller in legal_sellers %}{{ seller.countries|join:", " }}{% if not forloop.last %}, {% endif %}{% endfor %}</h2>
+{% for seller in legal_sellers %}
+<p>The paid services are sold in {{ seller.countries|join:", " }} by:</p>
+<ul>
+<li>Name: {{ seller.name }}</li>
+<li>Tax ID (CIF): {{ seller.tax_id }}</li>
+<li>Registered office: {{ seller.address }}</li>
+<li>Registration: {{ seller.registration }}</li>
+{% if legal_contact_email %}<li>Email: <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a></li>{% endif %}
+</ul>
+{% endfor %}
+<h2>3. Terms of use</h2>
+<p>Access to and use of this website are governed by the
+    <a href="{% url 'publicsite:terms' %}">Website Terms &amp; Conditions</a>.</p>
+<h2>4. Contracting conditions</h2>
+<p>The contracting of paid services is governed by the
+    <a href="{% url 'publicsite:conditions' %}">Contracting conditions</a>.</p>
+<h2>5. Privacy</h2>
+<p>The processing of personal data is described in the
+    <a href="{% url 'publicsite:privacy' %}">Privacy Policy</a>.</p>
+<h2>6. Intellectual property</h2>
+<p>The contents of this website (texts, images, logos, software, design and trademarks) are
+    owned by {{ region_company.name }} or its licensors and are protected by intellectual
+    and industrial property law. They may not be reproduced, distributed or transformed
+    without prior written authorisation.</p>
+<h2>7. Applicable law</h2>
+<p>This legal notice is governed by the law of the country of the company that sells the
+    service concerned: Spanish law for {% for seller in legal_sellers %}{{ seller.name }}{% if not forloop.last %}, {% endif %}{% endfor %}, Irish law for {{ region_company.name }}. Any
+    dispute will be submitted to the competent courts, as set out in the contracting
+    conditions.</p>

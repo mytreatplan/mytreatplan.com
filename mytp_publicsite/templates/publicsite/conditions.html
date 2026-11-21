@@ -1,0 +1,9 @@
+{% extends "publicsite/legal/base_legal.html" %}
+{% load i18n %}
+
+{% block title %}{{ conditions_title }} &mdash; MyTreatPlan{% endblock %}
+{% block meta_description %}{% translate "Conditions governing the contracting of MyTreatPlan paid services." %}{% endblock %}
+{% block og_title %}{{ conditions_title }}{% endblock %}
+{% block og_description %}{% translate "Conditions governing the contracting of MyTreatPlan paid services." %}{% endblock %}
+
+{% block legal_heading %}{{ conditions_title }}{% endblock %}

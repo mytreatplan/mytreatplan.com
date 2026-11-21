@@ -11,8 +11,16 @@ from django.test import override_settings
 from mytp_publicsite.checks import DRAFT_LEGAL_TEXTS, check_legal_texts_final
 
 SITE = 'https://staging.mytreatplan.example'
-LEGAL_PAGES = ['/en/privacy/', '/en/terms/', '/es/privacy/', '/es/terms/']
+LEGAL_PAGES = ['/en/privacy/', '/en/terms/', '/es/privacy/', '/es/terms/',
+               '/en/legal-notice/', '/es/legal-notice/', '/en/conditions/', '/es/conditions/']
 SPANISH_NOTE = 'La versión en español de este documento se está preparando'
+
+
+@pytest.fixture(autouse=True)
+def _site_documents(db):
+    """The conditions page needs a published CONDITIONS document."""
+    from conftest import publish_site_documents
+    publish_site_documents()
 
 
 def _html(client, url):
@@ -145,7 +153,7 @@ def test_sitemap_lists_every_page_in_both_languages_with_alternates(client):
     urls = root.findall('sm:url', NS)
     locs = {u.find('sm:loc', NS).text for u in urls}
     assert locs == {f'{SITE}/{lang}/{page}' for lang in ['en', 'es']
-                    for page in ['', 'privacy/', 'terms/']}
+                    for page in ['', 'privacy/', 'terms/', 'legal-notice/', 'conditions/']}
     for url in urls:
         alternates = {link.get('hreflang'): link.get('href')
                       for link in url.findall('xhtml:link', NS)}
