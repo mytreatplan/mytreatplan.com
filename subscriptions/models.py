@@ -155,3 +155,62 @@ class SubscriptionChange(models.Model):
 
     def delete(self, *args, **kwargs):
         raise AppendOnly('the subscription changes are append-only')
+
+
+class VoucherRedemption(models.Model):
+    """One use of a voucher by one order (epic-subscriptions entry 4, AD-20, S5; user
+    decisions 2026-11-20). It follows the order through the `payments.hooks` receivers of
+    `subscriptions.vouchers`: `reserved` when the order is created, `consumed` when it is
+    paid, `released` when it is cancelled or expires before payment. A released row stays
+    as history and never counts as a use; a consumed one is never released (a refund is
+    epic-payments' 7.7).
+
+    The limits are database constraints on the live states (reserved, consumed): a
+    subscription voucher has one live redemption in total, a try-me voucher one per
+    doctor, and an order has one redemption. `voucher_id` and `doctor_uid` are plain
+    UUIDs, with no database link: the catalogue's rows are re-created on every snapshot
+    apply (catalogue.applier), and the doctor's account may go. `version` is the version
+    of the `voucher.redeemed` / `voucher.released` event last recorded for it (reserved 1,
+    consumed or released 2); `amount` is what the voucher took off the order.
+    """
+
+    CROSSES_SITES = True  # AD-5: its UUID is the events' aggregate id
+
+    RESERVED, CONSUMED, RELEASED = 'reserved', 'consumed', 'released'
+    STATES = [(RESERVED, 'Reserved'), (CONSUMED, 'Consumed'), (RELEASED, 'Released')]
+    LIVE_STATES = (RESERVED, CONSUMED)
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    voucher_id = models.UUIDField()
+    voucher_type = models.CharField(max_length=32)
+    doctor_uid = models.UUIDField()
+    order_id = models.UUIDField()
+    state = models.CharField(max_length=10, choices=STATES)
+    amount = models.DecimalField(max_digits=17, decimal_places=2)
+    currency = models.CharField(max_length=3)
+    version = models.PositiveIntegerField()
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+        indexes = [models.Index(fields=['voucher_id', 'state'],
+                                name='voucher_red_voucher_state')]
+        constraints = [
+            models.UniqueConstraint(fields=['order_id'], name='voucher_red_one_per_order'),
+            models.UniqueConstraint(
+                fields=['voucher_id', 'doctor_uid'],
+                condition=models.Q(voucher_type='try_me', state__in=['reserved', 'consumed']),
+                name='voucher_red_try_me_live_per_doctor'),
+            models.UniqueConstraint(
+                fields=['voucher_id'],
+                condition=models.Q(voucher_type='subscription',
+                                   state__in=['reserved', 'consumed']),
+                name='voucher_red_subscription_live_once'),
+            models.CheckConstraint(
+                condition=models.Q(state__in=['reserved', 'consumed', 'released']),
+                name='voucher_red_state'),
+        ]
+
+    def __str__(self):
+        return f'Voucher redemption {self.pk} ({self.state})'

@@ -7,8 +7,21 @@ class SubscriptionsConfig(AppConfig):
     (subscriptions.service: Basic at signup, the effective tier, a doctor's offers and
     order prices, the versioned change, the upgrade screen's options), the commands
     `assign_basic` and `doctor_subscription`, and the upgrade screen (entry 2:
-    subscriptions.views)."""
+    subscriptions.views), and the voucher redemptions (entry 4: subscriptions.vouchers, whose
+    receivers of the order hooks are registered in `ready`)."""
 
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'subscriptions'
     verbose_name = 'Subscriptions'
+
+    def ready(self):
+        from payments import hooks
+
+        from . import vouchers
+        # The lifecycle of a voucher redemption follows its order (epic-subscriptions
+        # entry 4): reserved when created, consumed when paid, released when cancelled or
+        # expired. A free order fires `created` then `paid` in one transaction.
+        hooks.register('created', 'voucher_reserve', vouchers.reserve)
+        hooks.register('paid', 'voucher_consume', vouchers.consume)
+        hooks.register('cancelled', 'voucher_release', vouchers.release)
+        hooks.register('expired', 'voucher_release', vouchers.release)

@@ -6,7 +6,10 @@ Creating (`create_order`, `create_subscription_order`): the order is priced by
 `catalogue.pricing.price_subscription` (a subscription purchase) with the buyer's VIES
 status, and copied: totals, VAT groups, company, gateways, and per line the priced values and
 the provider cost. Nothing here does price arithmetic. It is born in `checkout` with the
-buyer's default usable fiscal entity (or the one given); the `created` hook fires there. An
+buyer's default usable fiscal entity (or the one given); the `created` hook fires there. A
+voucher is read again from the catalogue (`voucher_unknown` when it is gone) and checked for
+use (`subscriptions.vouchers.check_use`, `voucher_used`) before anything is written; the
+redemption itself is reserved, consumed and released by the hooks of `subscriptions.vouchers`. An
 order with nothing to pay (0.00) and an entity is paid at creation (no gateway; its `paid`
 hook fires too). Without a payment method for a total above 0 no order is started.
 
@@ -42,6 +45,7 @@ from catalogue import pricing, resolver
 from catalogue.models import AddOn, Voucher
 from mytp_core.money import Money
 from subscriptions import service as subscriptions_service
+from subscriptions import vouchers as voucher_redemptions
 
 from . import gateways, hooks, reference
 from .models import Order, OrderChange, OrderLine, Payment
@@ -240,6 +244,11 @@ def _price(user, kind, asked, entity, voucher):
     return subscriptions_service.price_order_for(user, asked, vies=vies, voucher=voucher)
 
 
+def _unknown_voucher():
+    raise pricing.OrderRefused(pricing.VOUCHER_UNKNOWN,
+                               'the voucher is not in this region\'s catalogue')
+
+
 def _voucher_of(order):
     if not order.voucher_id:
         return None
@@ -304,7 +313,15 @@ def _create(user, kind, asked, *, actor, voucher, entity):
         entity = fiscal.default_entity(user)
     else:
         entity = _usable(user, entity)
+    if voucher is not None:
+        # The snapshot row as it is now: a code that is gone (unknown, or another region's)
+        # is refused with its own reason, and the checks below read the current row.
+        voucher = Voucher.objects.filter(pk=voucher.pk).first() or _unknown_voucher()
     priced = _price(user, kind, asked, entity, voucher)  # OrderRefused: no order
+    if voucher is not None:
+        # One use at a time (epic-subscriptions entry 4): a clear refusal here; two orders
+        # racing past this are stopped by the constraints at the `created` hook.
+        voucher_redemptions.check_use(voucher, user.uid)
     now = timezone.now()
     for attempt in range(_REFERENCE_TRIES):
         try:
