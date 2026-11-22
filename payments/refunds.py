@@ -143,7 +143,8 @@ def refund(order, *, expected_version, actor, reason, manual=False, note=''):
     `needs_attention` (the gateway gave no usable answer). Raises `InvalidActor`,
     `InvalidTransition` (the order is not paid), `RefundPending`, `StaleVersion`,
     `BadRefund`, `RefundFailed` (the gateway refused), `HookFailed` or
-    `invoices.service.InvoiceError` (the settlement rolled back: the refund is `failed`,
+    `invoices.service.NumberingOnHold` (numbering is on hold after a restore:
+    refused before anything is written or sent), `invoices.service.InvoiceError` (the settlement rolled back: the refund is `failed`,
     or `needs_attention` when money moved), `InsideTransaction` (called inside an atomic
     block: nothing is written)."""
     if transaction.get_connection().in_atomic_block:
@@ -157,6 +158,9 @@ def refund(order, *, expected_version, actor, reason, manual=False, note=''):
         raise BadRefund('a refund made by hand needs a note')
     if len(note) > MAX_NOTE:
         raise BadRefund('the note is too long')
+    if invoices.numbering_on_hold():
+        # Before any row or gateway call: the credit note could not be numbered afterwards.
+        raise invoices.NumberingOnHold('numbering is on hold after a restore: no refund now')
     pending = _start(order, expected_version, actor, reason, manual, note)
     order_id, gateway_refund_id = pending.order_id, ''
     if not manual:

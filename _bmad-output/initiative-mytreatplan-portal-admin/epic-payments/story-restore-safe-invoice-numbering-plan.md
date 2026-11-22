@@ -3,15 +3,15 @@ title: 'Restore-safe invoice numbering'
 type: 'feature'
 ticket: '9'
 created: '2026-11-22'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: 'a6c3377bafe50e7965f8c38b2e223f3f4aca8fc2'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
-review_loop_iteration: 0
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
+review_loop_iteration: 1
 context: []
 ---
 
@@ -26,6 +26,7 @@ context: []
 Decisions (user, 2026-11-22):
 - The check is an explicit after-restore command, not an automatic check on each issue.
 - While issuing is refused, the paid transition rolls back as for any failed hook: the order stays pending payment, and the existing payment re-check confirms it once the hold lifts.
+- Decision (user, 2026-11-22, after review): the webhook retries stop after ~2 h 42 min, so after lifting the hold `resume_invoice_numbering` re-checks every order still pending payment that has a live gateway attempt (re-read at the gateway; paid ones confirmed) and prints what it confirmed; `expire_stale` expires nothing while the hold is on.
 - A new hub lookup ("invoice-series-highest"), added in a mytp-core minor release. Architecture AD-3 channel 4 is widened to name it.
 
 ## Boundaries & Constraints
@@ -103,3 +104,25 @@ The parsing helper sits next to the admin's lookup. The sequence is the number's
 
 **Manual checks:**
 - On staging, after a merge: run `resume_invoice_numbering` on dev with admindev up, and it reports each series. Stop admindev's app, run it again, and it exits non-zero with the hold on. Start admindev and re-run, and the hold is lifted.
+
+## Plan Change Log
+
+- Loop 1 (2026-11-22): triage #2 (intent_gap) resolved by the user's decision (a) above; frozen block amended with it. The existing code stays (the user chose to extend it, not re-derive): KEEP the hold model, command, lookup, admin duplicate refusal and tests as built; add the re-check and the expiry pause, plus the patches #1, #6-8, #9b, #10.
+
+## Review Triage Log
+
+Pass 1 (quick lens, Opus, 2026-11-22): high 2, medium 2, low 6, false 0, maybe-false 0.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | `payments/refunds.py` `refund()`: during the hold the gateway refunds, then `_settle` → `issue_credit_note` raises `NumberingOnHold`; refund left `needs_attention`, money gone, no credit note | high | patch | Confirmed: `_call_gateway` runs before `_settle` (refunds.py ~l.161-176) and nothing checks the hold. Fix: refuse before `_start` while the hold is on. |
+| 2 | "Existing payment re-check confirms it once the hold lifts" is false for a long hold: webhook retries stop after `MAX_ATTEMPTS` (~2 h 42 min) with `report_attention('could not be confirmed')`; nothing re-runs confirmation when the hold lifts; `expire_stale` expires pending orders after 24 h | high | intent_gap | Confirmed in `payments/webhooks.py` l.46-206 and `payments/service.py:521`; the only other re-read is the return page. The frozen decision assumes a re-check that does not exist for holds longer than ~2.7 h. Asked the user. |
+| 3 | Every refused confirmation during the hold logs an ERROR with traceback (one Sentry error per attempt) | low | reject | Real but bounded by the retry count; quieting it adds a branch in `_fire`. |
+| 4 | Admin answer capped at `MAX_SERIES = 200`; series grow by year, so the lookup eventually 500s | low | reject | 3 companies × 2 kinds = 6 series a year: the cap is reached after ~33 years. Fix adds a year filter for no near-term harm. |
+| 5 | A 7-digit sequence is skipped by `_SEQUENCE_RE` | low | reject | Needs over 999,999 invoices in one series-year. |
+| 6 | Runbook has no `migrate` before `--hold-only`: a dump older than migration 0003 has no hold table | medium | patch | Confirmed: the section starts with `--hold-only`. Add the migrate step. |
+| 7 | Runbook assumes services are stopped; in-place OVH restores in "Who restores" don't link here | medium | patch | Confirmed in deploy/README.md "Who restores". Link the section and say to run `--hold-only` at once if the site runs. |
+| 8 | Runbook commands hard-code `/srv/mytp-dev` while the text covers every site | low | patch | Direct correction: use `<site>` placeholders. |
+| 9 | Admin duplicate check is unlocked; two clashing events at once could both be stored | low | reject | A reused number arrives long after the original (only after a restore); a simultaneous clash is not met in practice, and the fix needs a unique constraint and migration. |
+| 9b | `accounting/events.py` docstring does not mention the `duplicate_number` refusal | low | patch | Direct correction. |
+| 10 | `test_a_restore_that_lost_two_invoices_raises_the_counter` consumes 000008 via `_next_number`, so no real invoice is shown as 000008 | low | patch | Direct correction: drop the `_next_number` call, assert the real invoice is 000008. |

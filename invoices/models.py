@@ -67,6 +67,21 @@ class InvoiceSeries(models.Model):
         return f'{self.company_code}-{self.instance}-{self.year}-{self.kind}: {self.last_number}'
 
 
+class NumberingHold(models.Model):
+    """The numbering hold (restore-safe numbering, AD-7): a singleton row (pk 1). While `on`,
+    no invoice or credit note is numbered (`invoices.service.NumberingOnHold`). Set by the
+    restore runbook (`resume_invoice_numbering --hold-only`) and lifted only once every
+    series counter has been checked against the admin site's. A row, so it survives
+    restarts."""
+
+    on = models.BooleanField(default=False)
+    set_at = models.DateTimeField(null=True, blank=True)
+    reason = models.CharField(max_length=200, blank=True)
+
+    def __str__(self):
+        return f'Numbering {"on hold" if self.on else "running"}'
+
+
 class Invoice(models.Model):
     ORDER = 'order'
     MANUAL = 'manual'

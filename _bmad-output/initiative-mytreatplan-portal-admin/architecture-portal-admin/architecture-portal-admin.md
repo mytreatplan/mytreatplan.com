@@ -108,7 +108,7 @@ The admin site keeps no patient data anywhere (AD-23). **[ADOPTED]**
   1. **Configuration:** the instance pulls a signed, versioned snapshot from the admin site on a schedule and when nudged; it applies only a snapshot with a higher version, atomically, and keeps working on the last one when the admin site is down.
   2. **Outbox (events and accounting feed):** written in the same transaction as the change; each row carries a per-aggregate sequence; a dispatcher sends them in order per aggregate and keeps attempts, next retry and last error **on the row**; the admin site deduplicates on `event_id`, applies an aggregate's event only when its version is higher than the stored one (AD-18), and a rejected event stays visible as failed for an operator.
   3. **Remote access (admin → region, live):** server-side calls whose responses are rendered and never persisted; every write carries an idempotency key and the entity's version, and a stale version is refused with 409.
-  4. **Hub lookups (region → admin, live):** reads of admin-owned live data, limited to specialist availability and slot holds (AD-21); when the admin site is down, booking is unavailable and nothing else is.
+  4. **Hub lookups (region → admin, live):** reads of admin-owned live data, limited to specialist availability and slot holds (AD-21), and the highest invoice numbers per series after a restore (AD-7); when the admin site is down, booking is unavailable and, after a restore, invoicing too; nothing else is.
   No message broker. No direct database access across sites. Tasks are enqueued with `transaction.on_commit`. **[ADOPTED]**
 
 ### AD-4 — Trust between sites

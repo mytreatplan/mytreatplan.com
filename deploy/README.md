@@ -1221,8 +1221,8 @@ the public Privacy and Terms pages. Until the lawyer's texts arrive, every legal
 
 | Layer | Where | Retention | Who restores |
 |-------|-------|-----------|--------------|
-| OVHcloud managed backups | same provider region as the database (GRA) | 2 days (staging plan, checked 2026-10-12; stored in Gravelines and Strasbourg) | OVHcloud panel (restore or fork the service) |
-| Nightly `backupdb` dump | Object Storage **SBG**, `staging-<site>/<basename>-<UTC>.dump.age` (`mytreatplan` for dev and dev-ae, `mytp-admin` for admindev) | 30 daily dumps (one bucket lifecycle rule per prefix) | `deploy/restore-db.sh` by hand; checked weekly by the `restoretest` job |
+| OVHcloud managed backups | same provider region as the database (GRA) | 2 days (staging plan, checked 2026-10-12; stored in Gravelines and Strasbourg) | OVHcloud panel (restore or fork the service); a portal restore then needs [invoice numbering](#after-a-restore-invoice-numbering-restore-safe-numbering-ad-7) |
+| Nightly `backupdb` dump | Object Storage **SBG**, `staging-<site>/<basename>-<UTC>.dump.age` (`mytreatplan` for dev and dev-ae, `mytp-admin` for admindev) | 30 daily dumps (one bucket lifecycle rule per prefix) | `deploy/restore-db.sh` by hand; checked weekly by the `restoretest` job; a portal restore then needs [invoice numbering](#after-a-restore-invoice-numbering-restore-safe-numbering-ad-7) |
 
 The managed backups cover everyday mistakes; the SBG dumps cover losing the GRA region or
 the managed service, or a managed backup that does not restore.
@@ -1713,7 +1713,56 @@ run `backupdb` by hand just before the test to compare like with like.) Afterwar
 To recover for real (region lost): restore the latest dump the same way, by hand,
 into the new database service with `age --decrypt -i <key> <dump> | pg_restore --no-owner
 --no-privileges -d <new database>`; `restore-db.sh` only restores into `*_restore_test`
-on purpose.
+on purpose. Then follow "After a restore: invoice numbering" below before the site serves
+traffic.
+
+### After a restore: invoice numbering (restore-safe numbering, AD-7)
+
+A restored portal database rewinds each invoice and credit-note counter (`InvoiceSeries`),
+and the next invoice would reuse a number already issued and already in the admin site's
+accounting copy. So after **any** restore of a portal database (dev, dev-ae or a
+production region; a restore from a `backupdb` dump, or an OVHcloud managed restore or
+fork, see "Backups and restore" above), before the site serves traffic. `<site>` is the
+site's name (`dev`, `dev-ae`, a region's site):
+
+1. Right after the restore, **before starting the services**, apply migrations (a dump
+   older than migration `invoices.0003` has no hold table) and put numbering on hold. The
+   hold is a database row, so it survives restarts. If the site is **still running**
+   against the restored database (an in-place OVHcloud restore or a fork the site was
+   pointed at), run `--hold-only` at once, as the very first thing:
+
+   ```sh
+   cd /srv/mytp-<site>/current
+   sudo -u mytp-<site> ./venv/bin/python manage.py migrate
+   sudo -u mytp-<site> ./venv/bin/python manage.py resume_invoice_numbering --hold-only
+   ```
+
+   While the hold is on, no invoice or credit note is numbered and no refund starts: a
+   payment confirmed meanwhile rolls back (the order stays pending payment) and the
+   expiry job expires nothing.
+2. Once the admin site is reachable, resume:
+
+   ```sh
+   sudo -u mytp-<site> ./venv/bin/python manage.py resume_invoice_numbering
+   ```
+
+   It asks the admin site (hub lookup `invoice-series-highest`, this region only) for the
+   highest number of each series, raises every counter that is behind, creates a series
+   the admin knows and the portal lacks, lifts the hold and prints each series. Then it
+   re-checks every order still pending payment that has an open gateway attempt (even one
+   whose session has expired), re-reading it at the gateway (the gateway's webhook retries give up after about 2 h 42 min, so
+   a payment made during a long hold would otherwise stay unconfirmed), and prints one line
+   per order confirmed and a count; a failure on one order is reported and does not stop
+   the others. Counters only go up, so running it again changes nothing. If the admin site
+   cannot answer, the hold stays on and the command exits non-zero: run it again later.
+   (`manage.py hub_lookup invoice-series` prints the same answer without changing
+   anything.)
+
+Known gap, accepted: an invoice issued in the seconds before the failure that never
+reached the admin site through the outbox is lost in both places and its number can be
+reused; point-in-time recovery keeps that window to seconds. The admin site logs a Sentry
+error (`accounting.events`, "issued twice") when an `invoice.issued` arrives with a number
+it already holds under another invoice, and does not apply it.
 
 ## Object storage
 

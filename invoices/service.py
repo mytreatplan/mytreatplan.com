@@ -24,7 +24,7 @@ from mytp_core.money import Money
 from payments.models import Order
 
 from . import feed
-from .models import EINVOICE_FIELDS, Invoice, InvoiceLine, InvoiceSeries
+from .models import EINVOICE_FIELDS, Invoice, InvoiceLine, InvoiceSeries, NumberingHold
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,11 @@ _ACTOR_TYPES = ('doctor', 'admin', 'system')
 
 class InvoiceError(Exception):
     """An invoice was not issued."""
+
+
+class NumberingOnHold(InvoiceError):
+    """Numbering is on hold after a restore, until `resume_after_restore` has checked the
+    counters against the admin's copy (`manage.py resume_invoice_numbering`)."""
 
 
 class CompanyMissing(InvoiceError):
@@ -81,6 +86,57 @@ def _instance():
     return settings.REGION_PROFILE.invoice_prefix
 
 
+# --- The numbering hold (restore-safe numbering) -------------------------------------------
+
+def numbering_on_hold():
+    """Whether numbering is on hold. No row means it is not."""
+    return NumberingHold.objects.filter(pk=1, on=True).exists()
+
+
+def hold_numbering(reason='after a database restore'):
+    """Put numbering on hold (idempotent: an existing hold keeps its time)."""
+    hold, _ = NumberingHold.objects.get_or_create(pk=1)
+    if not hold.on:
+        hold.on, hold.set_at = True, timezone.now()
+    hold.reason = reason[:200]
+    hold.save()
+    return hold
+
+
+def resume_after_restore(answer):
+    """Raise the series counters to the admin's highest numbers (`answer`, mytp-core's
+    `InvoiceSeriesHighestAnswer`) and lift the hold, in one transaction: a failure leaves
+    the hold on and every counter as it was. Counters only go up; a series of this
+    instance the portal lacks is created at the admin's number; other instances' series
+    are ignored. Returns [(company, year, kind, before, after)] for each series of the
+    answer, `before` None for a created series. Run outside any request, after
+    `hold_numbering`."""
+    instance = _instance()
+    report = []
+    with transaction.atomic():
+        for entry in answer.series:
+            if entry.instance != instance:
+                continue
+            key = dict(company_code=entry.company_code, instance=instance, year=entry.year,
+                       kind=entry.kind)
+            series = InvoiceSeries.objects.select_for_update().filter(**key).first()
+            if series is None:
+                InvoiceSeries.objects.create(last_number=entry.highest, **key)
+                report.append((entry.company_code, entry.year, entry.kind, None,
+                               entry.highest))
+                continue
+            before = series.last_number
+            if entry.highest > before:
+                series.last_number = entry.highest
+                series.save(update_fields=['last_number'])
+            report.append((entry.company_code, entry.year, entry.kind, before,
+                           max(before, entry.highest)))
+        hold, _ = NumberingHold.objects.get_or_create(pk=1)
+        hold.on, hold.reason = False, ''
+        hold.save()
+    return report
+
+
 def _next_number(company_code, instance, year, kind=InvoiceSeries.INVOICE):
     """The next number of the series of `kind`, `<company>-<instance>-<year>-<6 digits>`
     (a credit note's: `...-R<6 digits>`), from the series' counter row, locked until the caller's transaction ends. Two first
@@ -113,6 +169,8 @@ def _seller(company, legal_name=None):
 
 def _create(company, issued_at, legal_name=None, **fields):
     """The invoice row with the next number of its series, in the company's time zone."""
+    if numbering_on_hold():
+        raise NumberingOnHold('numbering is on hold after a restore')
     local = issued_at.astimezone(_zone(company))
     instance = _instance()
     series = (InvoiceSeries.CREDIT_NOTE if fields.get('kind') == Invoice.CREDIT_NOTE

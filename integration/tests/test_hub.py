@@ -86,6 +86,9 @@ class FakeAdmin:
         self.delay = 0
         self.calls = []
         self.replay = ReplayCache()
+        # The lookup served: another path and answer for the tests that use another one.
+        self.path = SAMPLE_AVAILABILITY_PATH
+        self.answer_for = answer_for
 
     def __call__(self, request, timeout):
         self.calls.append((request.full_url, timeout))
@@ -95,7 +98,7 @@ class FakeAdmin:
             raise urllib.error.URLError(ConnectionRefusedError(61, 'refused'))
         parts = urlsplit(request.full_url)
         assert f'{parts.scheme}://{parts.netloc}' == ADMIN_URL
-        assert parts.path == SAMPLE_AVAILABILITY_PATH and request.method == 'GET'
+        assert parts.path == self.path and request.method == 'GET'
         try:
             claims = interface.verify_request(
                 request.get_header('Authorization'), 'GET',
@@ -111,7 +114,7 @@ class FakeAdmin:
         region = parse_qs(parts.query).get('region', [''])[0]
         if region != self.regions[claims['iss']]:
             return self._error('region_mismatch', 403, request)
-        body = self.body if self.body is not None else json.dumps(answer_for(region)).encode()
+        body = self.body if self.body is not None else json.dumps(self.answer_for(region)).encode()
         response = io.BytesIO(body)
         response.status = 200
         return response
