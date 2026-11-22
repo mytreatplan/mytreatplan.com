@@ -1,0 +1,44 @@
+{# BORRADOR de texto legal, pendiente del abogado: no apto para producción. Los datos de las sociedades salen del perfil de la región. #}
+<h2>1. Titular del sitio web</h2>
+<p>En cumplimiento del artículo 10 de la Ley 34/2002, de servicios de la sociedad de la
+    información y de comercio electrónico (LSSI), se identifica al titular de este sitio
+    web:</p>
+<ul>
+<li>Denominación: {{ region_company.name }}</li>
+<li>Registro: {{ legal_company_registration }}</li>
+<li>Domicilio social: {{ legal_company_address }}</li>
+{% if legal_contact_email %}<li>Correo electrónico: <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a></li>{% endif %}
+</ul>
+<p>{{ region_company.name }} vende además los servicios de pago ofrecidos en este sitio
+    web en todos los países a los que se dirige, salvo los indicados en el apartado
+    siguiente.</p>
+<h2>2. Venta de servicios en {% for seller in legal_sellers %}{{ seller.countries|join:", " }}{% if not forloop.last %}, {% endif %}{% endfor %}</h2>
+{% for seller in legal_sellers %}
+<p>Los servicios de pago se venden en {{ seller.countries|join:", " }} por:</p>
+<ul>
+<li>Denominación: {{ seller.name }}</li>
+<li>CIF: {{ seller.tax_id }}</li>
+<li>Domicilio social: {{ seller.address }}</li>
+<li>Datos registrales: {{ seller.registration }}</li>
+{% if legal_contact_email %}<li>Correo electrónico: <a href="mailto:{{ legal_contact_email }}">{{ legal_contact_email }}</a></li>{% endif %}
+</ul>
+{% endfor %}
+<h2>3. Condiciones de uso</h2>
+<p>El acceso y el uso de este sitio web se rigen por los
+    <a href="{% url 'publicsite:terms' %}">Términos y condiciones del sitio web</a>.</p>
+<h2>4. Condiciones de contratación</h2>
+<p>La contratación de los servicios de pago se rige por las
+    <a href="{% url 'publicsite:conditions' %}">Condiciones de contratación</a>.</p>
+<h2>5. Privacidad</h2>
+<p>El tratamiento de los datos personales se describe en la
+    <a href="{% url 'publicsite:privacy' %}">Política de privacidad</a>.</p>
+<h2>6. Propiedad intelectual</h2>
+<p>Los contenidos de este sitio web (textos, imágenes, logotipos, software, diseño y marcas)
+    son titularidad de {{ region_company.name }} o de sus licenciantes y están protegidos por
+    la normativa de propiedad intelectual e industrial. No pueden reproducirse, distribuirse
+    ni transformarse sin autorización previa y por escrito.</p>
+<h2>7. Legislación aplicable</h2>
+<p>Este aviso legal se rige por la ley del país de la sociedad que vende el servicio de que
+    se trate: ley española para {% for seller in legal_sellers %}{{ seller.name }}{% if not forloop.last %}, {% endif %}{% endfor %}, ley irlandesa para {{ region_company.name }}. Cualquier
+    controversia se someterá a los juzgados y tribunales competentes, según se establece en
+    las condiciones de contratación.</p>

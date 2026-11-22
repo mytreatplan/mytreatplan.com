@@ -59,6 +59,18 @@ class RegionCompany:
 
 
 @dataclass(frozen=True)
+class CountrySeller:
+    """A company that sells the paid services in some countries of the region instead of
+    the region's own company (e.g. MyTPDSO Spain S.L. in Spain and Portugal). `company`
+    carries its name, registration line and office; `tax_id` is its CIF/VAT number;
+    `countries` are ISO codes. The public legal notice and the contracting conditions
+    name it (epic-regions, legal notice story)."""
+    company: RegionCompany
+    tax_id: str
+    countries: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class RegionProfile:
     code: str
     # Production domains, the canonical one first. They are the default ALLOWED_HOSTS,
@@ -77,6 +89,11 @@ class RegionProfile:
     # Patient code prefix (AD-5, e.g. EU-7K3QX9MD) and invoice instance prefix (AD-7).
     patient_code_prefix: str
     invoice_prefix: str
+    # Companies selling in some countries instead of `company`; none: `company` sells
+    # everywhere. Regions with some have the public legal notice and conditions pages.
+    country_sellers: tuple[CountrySeller, ...] = ()
+    # Public contact email (legal notice); empty: none published.
+    contact_email: str = ''
 
     @property
     def site_url(self):
@@ -110,6 +127,23 @@ PROFILES = {
         gateways=('redsys', 'revolut', 'bank_transfer'),
         patient_code_prefix='EU',
         invoice_prefix='EU',
+        country_sellers=(
+            CountrySeller(
+                company=RegionCompany(
+                    name='MyTPDSO Spain S.L.',
+                    registration=gettext_noop(
+                        'Madrid Commercial Register, sheet M-894040, entry 1, '
+                        'electronic folio; IRUS 1000477547891'),
+                    registration_number='M-894040',
+                    office=RegionOffice(
+                        street='Avda. Labradores 1, Edificio COS, Planta 4, Oficina 6',
+                        locality='Tres Cantos (Madrid)',
+                        postal_code='28760',
+                        country_code='ES')),
+                tax_id='B93858371',
+                countries=('ES', 'PT')),
+        ),
+        contact_email='sayhi@mytreatplan.com',
     ),
     'ae': RegionProfile(
         code='ae',

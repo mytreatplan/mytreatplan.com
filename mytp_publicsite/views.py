@@ -1,7 +1,7 @@
 import json
 
 from django.conf import settings
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.shortcuts import render
 from django.templatetags.static import static
 from django.utils.safestring import mark_safe
@@ -13,7 +13,10 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.debug import sensitive_post_parameters
 from django.views.decorators.http import require_POST, require_safe
 from django.views.generic import TemplateView
+from django_countries import countries
 
+from legal.models import LegalDocument
+from legal.rendering import render_markdown
 from regions.context_processors import company_address, company_registration
 from signup.forms import refuse
 
@@ -149,6 +152,59 @@ class PrivacyView(LegalPageView):
 class TermsView(LegalPageView):
     template_name = 'publicsite/terms.html'
     body = 'terms'
+
+
+class SalesPageMixin:
+    """404 unless the region's profile has country sellers (the legal notice and the
+    contracting conditions exist only there, never keyed on the region's name)."""
+
+    def dispatch(self, request, *args, **kwargs):
+        if not settings.REGION_PROFILE.country_sellers:
+            raise Http404
+        return super().dispatch(request, *args, **kwargs)
+
+
+class LegalNoticeView(SalesPageMixin, LegalPageView):
+    """Aviso legal (LSSI art. 10): the website owner and each country seller."""
+    template_name = 'publicsite/legal_notice.html'
+    body = 'legal_notice'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        profile = settings.REGION_PROFILE
+        sellers = []
+        with translation.override(context['legal_body_lang']):
+            for seller in profile.country_sellers:
+                sellers.append({
+                    'name': seller.company.name,
+                    'tax_id': seller.tax_id,
+                    'registration': company_registration(seller.company),
+                    'address': company_address(seller.company),
+                    'countries': [str(countries.name(code)) for code in seller.countries],
+                })
+        context['legal_sellers'] = sellers
+        context['legal_contact_email'] = profile.contact_email
+        return context
+
+
+class ConditionsView(SalesPageMixin, LegalPageView):
+    """Condiciones de contratación: the current CONDITIONS document, the text accepted at
+    signup, in the page language."""
+    template_name = 'publicsite/conditions.html'
+    body = 'conditions'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        document = LegalDocument.objects.current(LegalDocument.Kind.CONDITIONS)
+        if document is None:
+            raise Http404
+        context['conditions_title'] = document.title
+        context['conditions_body'] = render_markdown(document.body)
+        context['legal_texts_final'] = (context['legal_texts_final']
+                                        and not document.provisional)
+        context['legal_body_is_fallback'] = False
+        context['legal_body_lang'] = (get_language() or settings.LANGUAGE_CODE).split('-')[0]
+        return context
 
 
 @require_safe

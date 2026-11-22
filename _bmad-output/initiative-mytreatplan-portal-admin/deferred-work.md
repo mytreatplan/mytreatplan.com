@@ -214,3 +214,7 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-accounting-feed-plan.md`
   summary: Ask the tax advisor for the legal retention periods in Spain and the UAE for the accounting copy on the admin site (invoices, credit notes, payments, refunds, with the buyer's identity as issued) before any purge job exists. Until then the copy is never deleted.
   evidence: 7.8 decision of 2026-11-21 (retention: never deleted for now); `accounting` rows are append-only and `client.erased` never touches them.
+
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/plan-legal-notice-and-conditions.md`
+  summary: Show a product with its price on the public EU site (Santander's third Redsys requirement).
+  evidence: Split from the legal-notice story by the user's answer (2026-11-21); the legal notice and conditions pages do not cover prices.
