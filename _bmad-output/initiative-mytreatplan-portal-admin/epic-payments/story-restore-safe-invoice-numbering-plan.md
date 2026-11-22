@@ -3,7 +3,7 @@ title: 'Restore-safe invoice numbering'
 type: 'feature'
 ticket: '9'
 created: '2026-11-22'
-status: 'built'
+status: 'done'
 baseline_revision: 'a6c3377bafe50e7965f8c38b2e223f3f4aca8fc2'
 route: 'full'
 route_source: 'auto'
@@ -126,3 +126,12 @@ Pass 1 (quick lens, Opus, 2026-11-22): high 2, medium 2, low 6, false 0, maybe-f
 | 9 | Admin duplicate check is unlocked; two clashing events at once could both be stored | low | reject | A reused number arrives long after the original (only after a restore); a simultaneous clash is not met in practice, and the fix needs a unique constraint and migration. |
 | 9b | `accounting/events.py` docstring does not mention the `duplicate_number` refusal | low | patch | Direct correction. |
 | 10 | `test_a_restore_that_lost_two_invoices_raises_the_counter` consumes 000008 via `_next_number`, so no real invoice is shown as 000008 | low | patch | Direct correction: drop the `_next_number` call, assert the real invoice is 000008. |
+
+## Staging
+
+- Merged 2026-11-22: portal PR #125 → 631d9a6 (deploy run 45051223480 green on dev and dev-ae; CI suite 4035 passed, 1 skipped); mytp-admin PR #47 → a300e64 (deploy run 45051206033 green on admindev); mytp-core v0.32.0 tagged and pushed (CI green).
+- Staging checks, run over SSH with the user's delegation (2026-11-22), all passed:
+  1. dev with admindev up: `resume_invoice_numbering` checked 2 series (ES 2026 invoice and credit note, unchanged at 1), confirmed 0 pending orders, exit 0; hold off.
+  2. admindev's gunicorn socket and service stopped: the command exited 1 ("unavailable (http_502)", "stays on hold"); hold on; `_create` refused with `NumberingOnHold`, invoice count unchanged.
+  3. admindev started again (healthz `site: admindev`): the command answered, both series unchanged, hold lifted, exit 0.
+  4. `hub_lookup invoice-series` on dev printed the admin's answer for region `eu` (two ES 2026 series at 1).
