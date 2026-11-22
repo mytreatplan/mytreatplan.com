@@ -7,7 +7,9 @@
   `required_settings`, from settings.env) is not set;
 - payments.E004: the Redsys adapter enabled on a public site with REDSYS_ENVIRONMENT not
   `production`, or with Redsys's public test terminal (its published key or merchant
-  code): no real payment could be taken (epic-payments entry 3).
+  code): no real payment could be taken (epic-payments entry 3);
+- payments.E005: the Revolut adapter enabled on a public site with REVOLUT_ENVIRONMENT not
+  `production` (epic-payments entry 4).
 """
 from django.conf import settings
 from django.core.checks import Error, register
@@ -16,6 +18,7 @@ FAKE_ON_PUBLIC_SITE = 'payments.E001'
 TEST_ORDERS_ON_PUBLIC_SITE = 'payments.E002'
 GATEWAY_SECRET_MISSING = 'payments.E003'
 REDSYS_TEST_ON_PUBLIC_SITE = 'payments.E004'
+REVOLUT_SANDBOX_ON_PUBLIC_SITE = 'payments.E005'
 
 
 def public_site():
@@ -73,4 +76,21 @@ def check_redsys_environment(app_configs=None, **kwargs):
             'its public test terminal.',
             hint='Set REDSYS_ENVIRONMENT=production and the company\'s own merchant code, '
                  'terminal and key in settings.env.', id=REDSYS_TEST_ON_PUBLIC_SITE)]
+    return []
+
+
+def revolut_sandbox_on_public_site():
+    """Revolut enabled on a public site with its sandbox environment (payments.E005; also
+    refused at start, PaymentsConfig.ready)."""
+    from . import revolut
+    return public_site() and revolut.enabled() and revolut.environment() != revolut.PRODUCTION
+
+
+@register()
+def check_revolut_environment(app_configs=None, **kwargs):
+    if revolut_sandbox_on_public_site():
+        return [Error(
+            'The Revolut gateway is enabled on a public site with its sandbox environment.',
+            hint='Set REVOLUT_ENVIRONMENT=production and the production key in '
+                 'settings.env.', id=REVOLUT_SANDBOX_ON_PUBLIC_SITE)]
     return []

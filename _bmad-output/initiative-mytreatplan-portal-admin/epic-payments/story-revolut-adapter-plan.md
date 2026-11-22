@@ -3,14 +3,14 @@ title: 'Revolut adapter'
 type: 'feature'
 ticket: '4'
 created: '2026-11-22'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: '4cb00274418431f3280b95ccae247720b7d937ad'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -101,3 +101,17 @@ context: []
 
 **Manual checks:**
 - Staging, after the user has typed `REVOLUT_SECRET_KEY` into dev's settings.env and the webhook is registered: a sandbox payment by an Irish test doctor is paid by webhook; a sandbox refund of it is accepted; a second start cancels the first Revolut order.
+
+## Review Triage Log
+
+Quick lens (Opus), 2026-11-22. Revolut's request/response shapes were checked against merchant-2026-09-22.yaml before review.
+
+| # | Finding | Verdict | Evidence | Route |
+|---|---------|---------|----------|-------|
+| 1 | `refund()` read `decline_reason` at the top level; a declined/failed Revolut Pay refund (HTTP 200) counted as refunded | high | Spec examples Res-Refund-Declined/Failed put it in `payments[]`; credit note would issue with no money moved | patch: refused when any `payments[]` entry is declined/failed or has a reason; test fake fixed |
+| 2 | A second Pay could close an attempt whose `start` was in flight; `start` then sent the doctor to a live Revolut page | high | `cancel_attempt` returned with no id, `set_gateway_payment_id` does not check state; card charged, order NOT_PAYABLE | patch: `start` re-reads the attempt after storing the id, cancels the new Revolut order and raises if it is closed |
+| 3 | `_go_to_gateway` failed attempts whose Revolut order could still be paid (GatewayUnknown on GET, processing/authorised) | medium | Existing-id branch raised for those cases and the view called `fail_payment` | patch: fail only with no stored id, else redirect to the return page; processing/authorised return the return URL |
+| 4 | Session lifetime equal to `expire_pending_after`, portal clock starting earlier | medium | `session_expires_at` set in `start_payment` before the Revolut order exists; late completion lands on a closed attempt | patch: 35 min session, `PT30M` expiry, `extend_session` on redirect (as Redsys) |
+| 5 | Refund `Idempotency-Key` identical for every attempt of a payment | medium | Staff retry after a refusal would replay Revolut's stored refusal | patch: the pending `Refund` row's `key`, else uuid4 |
+| 6 | `request_json` followed redirects with the Bearer key | low | urllib's redirect handler copies Authorization; POST→GET could read as success | patch: no-redirect opener (direct small change, security-relevant) |
+| 7 | Unknown order id answered 404, matrix row says 200-ignored | low | Shared handler answers 404 for unknown ids; only effect is Revolut retrying webhooks of refund orders 3 times | reject (shared handler unchanged per plan; fix would add a branch to it); noted in deferred-work.md to check at staging |

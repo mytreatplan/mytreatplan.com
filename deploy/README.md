@@ -3904,6 +3904,21 @@ Redsys's settings (`REDSYS_MERCHANT_CODE`, `REDSYS_TERMINAL`, `REDSYS_SECRET_KEY
 use Redsys's public test terminal until the company's own test credentials arrive (the
 repo README, "Payments: Redsys"). Restart the site's gunicorn and worker after a change.
 
+Revolut (`/payments/webhook/revolut/`, the repo README "Payments: Revolut"): type
+`REVOLUT_SECRET_KEY` (the sandbox key) and `REVOLUT_ENVIRONMENT=sandbox` in
+`shared/settings.env`, restart gunicorn and the worker, then register the webhook over SSH from
+the site's release directory with its venv:
+
+```sh
+python manage.py revolut_webhook register
+```
+
+It prints the signing secret once, in the terminal only: type it into `shared/settings.env` as
+`REVOLUT_WEBHOOK_SECRET` and restart again. `revolut_webhook list` shows the registered
+webhooks; `revolut_webhook delete <id>` removes one. The sandbox has its own webhooks and keys:
+the production go-live repeats these steps with the production key and
+`REVOLUT_ENVIRONMENT=production`.
+
 ## NGINX2Root (2026-11)
 
 Xint's NGINX2Root (2026-11-18: CVE-2026-123007, -123633, -123634, -121810, -113425; Debian

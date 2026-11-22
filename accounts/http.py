@@ -78,3 +78,35 @@ def post_json(url, payload, timeout=None):
             'Content-Type': 'application/json',
             'Accept': 'application/json',
         }), timeout=timeout)
+
+
+class _RefuseRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None  # the 3xx then raises urllib.error.HTTPError
+
+
+_NO_REDIRECT = urllib.request.build_opener(_RefuseRedirects)
+
+
+def request_json(method, url, payload=None, headers=None, timeout=None, ok=(200, 201)):
+    """Send `method` to `url` with an optional JSON `payload` and extra `headers` (the
+    Revolut Merchant API: Bearer key, version header, GET/DELETE, 201); returns the body as
+    text ('' when empty). `ok` are the accepted statuses; any other raises ValueError, and an
+    HTTP 4xx/5xx is an urllib.error.HTTPError carrying its `code` (all FETCH_ERRORS).
+    `timeout` (seconds, default EXTERNAL_CHECK_TIMEOUT) is the socket timeout."""
+    request_headers = {
+        'User-Agent': settings.EXTERNAL_CHECK_USER_AGENT,
+        'Accept': 'application/json',
+        **(headers or {}),
+    }
+    data = None
+    if payload is not None:
+        data = json.dumps(payload).encode('utf-8')
+        request_headers['Content-Type'] = 'application/json'
+    request = urllib.request.Request(url, data=data, method=method, headers=request_headers)
+    timeout = settings.EXTERNAL_CHECK_TIMEOUT if timeout is None else timeout
+    # No redirect is followed: urllib would forward the Authorization header to the target.
+    with _NO_REDIRECT.open(request, timeout=timeout) as response:
+        if response.status not in ok:
+            raise ValueError(f'unexpected HTTP status {response.status}')
+        return response.read().decode('utf-8')
