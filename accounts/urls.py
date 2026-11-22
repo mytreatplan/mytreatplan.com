@@ -15,7 +15,7 @@ urlpatterns = [
     # address per area not built yet, all on the "coming soon" page. An epic that builds
     # an area replaces its line here with its own view, keeping the URL name.
     path('home/', views.home, name='home'),
-    path('patients/', views.coming_soon, {'area': 'patients'}, name='patients'),
+    # `patients/` is the patients app's (epic-ordering 9.1, patients.urls).
     path('support/', views.coming_soon, {'area': 'support'}, name='support'),
     path('messages/', views.coming_soon, {'area': 'messages'}, name='messages'),
     # The settings area (epic-doctor-profile entry 2): the personal-data page keeps the

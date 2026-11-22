@@ -77,7 +77,8 @@ __all__ = ['OrderLine', 'OrderRefused', 'PLANNING_CATEGORIES', 'PricedLine', 'Pr
            'QUANTITY_REFUSED', 'ADD_ON_REFUSED', 'TWO_COMPANIES', 'TWO_CURRENCIES',
            'ICE_TWICE', 'ICE_NOT_PLANNING', 'ICE_CURRENCY', 'VOUCHER_NOT_USABLE',
            'VOUCHER_TYPE', 'VOUCHER_CURRENCY', 'VOUCHER_DOCTOR', 'VOUCHER_USED',
-           'VOUCHER_UNKNOWN', 'SUBSCRIPTION_NOT_OFFERED', 'PERIOD_NOT_OFFERED']
+           'VOUCHER_UNKNOWN', 'SUBSCRIPTION_NOT_OFFERED', 'PERIOD_NOT_OFFERED',
+           'PATIENT_REFUSED']
 
 VIES_VALID, VIES_INVALID = 'valid', 'invalid'
 VIES_PENDING, VIES_NOT_APPLICABLE = 'pending', 'not_applicable'
@@ -110,11 +111,14 @@ VOUCHER_USED = 'voucher_used'
 VOUCHER_UNKNOWN = 'voucher_unknown'
 SUBSCRIPTION_NOT_OFFERED = 'subscription_not_offered'
 PERIOD_NOT_OFFERED = 'period_not_offered'
+# A case line without one of the doctor's own patients that is free to order a case for
+# (epic-ordering 9.1); raised by payments.service, never by the pricing itself.
+PATIENT_REFUSED = 'patient_refused'
 REFUSALS = (NO_LINES, COUNTRY_NOT_SERVED, NO_BILLING_RULES, PRODUCT_NOT_OFFERED,
             QUANTITY_REFUSED, ADD_ON_REFUSED, TWO_COMPANIES, TWO_CURRENCIES, ICE_TWICE,
             ICE_NOT_PLANNING, ICE_CURRENCY, VOUCHER_NOT_USABLE, VOUCHER_TYPE,
             VOUCHER_CURRENCY, VOUCHER_DOCTOR, VOUCHER_USED, VOUCHER_UNKNOWN,
-            SUBSCRIPTION_NOT_OFFERED, PERIOD_NOT_OFFERED)
+            SUBSCRIPTION_NOT_OFFERED, PERIOD_NOT_OFFERED, PATIENT_REFUSED)
 
 
 class OrderRefused(ValueError):
@@ -130,11 +134,13 @@ class OrderRefused(ValueError):
 @dataclass(frozen=True)
 class OrderLine:
     """One line asked for: a product (a `Product`), its quantity, its add-ons (`AddOn`
-    rows) and the ICE credit it takes (`Money`, or None)."""
+    rows) and the ICE credit it takes (`Money`, or None). `patient_code` (epic-ordering
+    9.1) is the patient the line is a case for; the pricing ignores it, the order keeps it."""
     product: Product
     quantity: int = 1
     add_ons: tuple = ()
     ice: Money | None = None
+    patient_code: str = ''
 
 
 @dataclass(frozen=True)

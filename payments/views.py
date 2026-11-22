@@ -41,6 +41,8 @@ from django.views.decorators.http import require_http_methods
 from accounts import fiscal
 from accounts.client_sync import is_client
 from catalogue import pricing, resolver
+from catalogue.models import Product
+from patients import service as patients_service
 from subscriptions import service as subscriptions_service
 
 from . import bank_transfer, checks, fake, gateways, redsys, service, webhooks
@@ -78,6 +80,8 @@ REFUSALS = {
     pricing.SUBSCRIPTION_NOT_OFFERED: gettext_lazy(
         'This subscription is not offered to you.'),
     pricing.PERIOD_NOT_OFFERED: gettext_lazy('This subscription is not sold for that period.'),
+    pricing.PATIENT_REFUSED: gettext_lazy(
+        'Choose one of your patients that has no case in progress.'),
 }
 
 
@@ -367,14 +371,23 @@ def test_order(request):
         if chosen is None:
             messages.error(request, _('Choose one of the products offered.'))
             return redirect('checkout_test_order')
+        patient_code = (request.POST.get('patient', '')
+                        if chosen.category == Product.ICE else '')
         try:
-            order = service.create_order(request.user, [resolver.OrderLine(chosen)],
-                                         actor=_actor(request))
+            order = service.create_order(
+                request.user, [resolver.OrderLine(chosen, patient_code=patient_code)],
+                actor=_actor(request))
         except (pricing.OrderRefused, service.OrderError) as error:
             _failed(request, error)
             return redirect('checkout_test_order')
         return redirect('checkout', pk=order.pk)
     language = get_language()
     return render(request, 'payments/test_order.html', {
-        'offers': [{'id': product.pk, 'name': product.name_in(language), 'price': price}
-                   for product, price in offers]})
+        'offers': [{'id': product.pk, 'name': product.name_in(language), 'price': price,
+                    'ice': product.category == Product.ICE}
+                   for product, price in offers],
+        # An ICE is a case for one of the doctor's patients (epic-ordering 9.1; the real
+        # wizard is 9.3).
+        'patients': [{'code': patient.code, 'label': patient.display_name}
+                     for patient in patients_service.patients_of(request.user).filter(
+                         status='active')]})

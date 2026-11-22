@@ -3,7 +3,8 @@
 {% comment %}
 The hidden test-order page of dev and dev-ae (payments.views.test_order; only while
 PAYMENTS_TEST_ORDERS is on): pick one product the doctor is offered and go through the
-real checkout.
+real checkout. An ICE is a case for one of the doctor's patients (epic-ordering 9.1): the
+patient select is read for an ICE only.
 {% endcomment %}
 
 {% block title %}{% translate "Test order" %} &mdash; MyTreatPlan{% endblock %}
@@ -19,6 +20,15 @@ real checkout.
     <li><label class="flex items-center gap-3 text-copy"><input type="radio" name="product" value="{{ offer.id }}" {% if forloop.first %}checked{% endif %} required> {{ offer.name }} &middot; {{ offer.price|money }}</label></li>
     {% endfor %}
   </ul>
+  {% if patients %}
+  <div class="flex max-w-[420px] flex-col gap-2">
+    <label for="test-order-patient" class="text-[12px] font-extrabold uppercase leading-[1.3] tracking-[0.06em] text-ink-muted">{% translate "Patient (for an ICE)" %}</label>
+    <select id="test-order-patient" name="patient" class="min-h-[52px] rounded-12 border border-line bg-white px-4 text-copy" data-patient-select>
+      <option value="">{% translate "No patient" %}</option>
+      {% for patient in patients %}<option value="{{ patient.code }}">{{ patient.code }}{% if patient.label %} &middot; {{ patient.label }}{% endif %}</option>{% endfor %}
+    </select>
+  </div>
+  {% endif %}
   <button type="submit" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none">{% translate "Start the order" %}</button>
 </form>
 {% else %}

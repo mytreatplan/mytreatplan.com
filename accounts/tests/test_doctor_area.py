@@ -19,7 +19,6 @@ User = get_user_model()
 
 # Each "coming soon" area: its URL name, its address, and its name in EN and ES.
 AREAS = [
-    ('patients', 'patients/', 'Patients', 'Pacientes'),
     ('support', 'support/', 'Support', 'Soporte'),
     ('messages', 'messages/', 'Messages', 'Mensajes'),
     ('cart', 'cart/', 'Cart', 'Carrito'),

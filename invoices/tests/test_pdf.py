@@ -33,9 +33,14 @@ def fake_gateway(fake_on):
 
 @pytest.fixture(autouse=True)
 def no_lookup():
+    # The patients app registers its lookup in ready(): set it aside for the test and put it
+    # back afterwards.
+    saved = patients._lookup
     patients.unregister()
     yield
     patients.unregister()
+    if saved is not None:
+        patients.register(saved)
 
 
 def browser(user):

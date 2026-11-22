@@ -1,8 +1,8 @@
 """The patient-name lookup of the invoice PDF (epic-payments entry 10, AD-7, AD-23).
 
 An invoice line holds only a patient code. The PDF shows the patient's current name next to
-it, asked of the app that owns patients (epic-ordering registers the hook in its
-AppConfig.ready; until then nothing is registered and the PDF shows codes only):
+it, asked of the app that owns patients (`patients`, epic-ordering 9.1, registers the lookup
+in its AppConfig.ready; with none registered the PDF shows codes only):
 
     invoices.patients.register(lookup)
 

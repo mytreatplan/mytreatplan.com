@@ -1257,7 +1257,6 @@ def settings_coming_soon(request, section):
 # replaces the route of the same name (accounts.urls): the URL name and the area's name,
 # the one its link on the home shows (the same msgid).
 COMING_SOON_AREAS = {
-    'patients': gettext_lazy('Patients'),
     'support': gettext_lazy('Support'),
     'messages': gettext_lazy('Messages'),
     'cart': gettext_lazy('Cart'),

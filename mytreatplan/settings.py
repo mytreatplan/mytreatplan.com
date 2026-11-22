@@ -425,6 +425,9 @@ INSTALLED_APPS = [
     # Invoices (epic-payments entry 6, AD-7): immutable invoices with a gapless number per
     # billing company, instance and year, issued from the order's `paid` hook.
     'invoices.apps.InvoicesConfig',
+    # Patients and work orders (epic-ordering 9.1, AD-5, AD-21): the regional patient record
+    # and its code, the work order of a paid case, the doctor's patients page.
+    'patients.apps.PatientsConfig',
     # The interface with the admin site (epic-admin-interface, AD-4): the signed
     # /api/v1/ endpoints, the log of every call received (InterfaceCall), the outbox of
     # events to the admin site (OutboxEvent, entry 3), the configuration snapshot pulled
