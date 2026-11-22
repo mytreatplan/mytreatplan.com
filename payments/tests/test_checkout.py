@@ -172,8 +172,12 @@ def test_a_stale_page_is_refused_with_a_message(doctor, entity, fake_on):
 
 def test_a_gateway_outside_the_offered_ones_is_refused_with_a_message(
         doctor, entity, fake_on):
+    # The order's pricing names `revolut`, but its adapter is disabled (no
+    # REVOLUT_SECRET_KEY): it is not offered, so the checkout refuses it.
+    fake_on.REVOLUT_SECRET_KEY = ''
     client = browser(doctor)
     checkout = start(client)
+    Order.objects.update(gateways=['revolut'])
     order = Order.objects.get()
     response = client.post(checkout, {'action': 'pay', 'entity': str(entity.pk),
                                       'gateway': 'revolut', 'version': 1,

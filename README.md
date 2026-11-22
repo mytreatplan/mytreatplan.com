@@ -532,3 +532,46 @@ Measuring the session lifetime: on dev, pay a test order up to Redsys's card for
 and note when Redsys refuses to go on (and whether a refusal notification arrives: the log shows
 an accepted row with status `failed`). Set `SESSION_LIFETIME` in `payments/redsys.py` to that
 time plus a margin; until then a retry during the session is refused for 30 minutes.
+
+## Payments: Revolut (epic-payments entry 4)
+
+`payments.revolut` is the card gateway of the Irish company (the EU region's `revolut`, shown as
+"Card") on Revolut's hosted checkout page, over the Revolut Merchant API (sandbox first, API
+version pinned to `2026-09-22`; every call sends `Authorization: Bearer <secret key>`).
+
+- **Pay.** `start` creates a Revolut order (`POST /api/orders`: the amount in cents, EUR, the order
+  reference, "MyTreatPlan order <reference>", `redirect_url` = the return page from `SITE_URL`,
+  `expire_pending_after` 30 minutes; the attempt's session is 35), stores its id as the attempt's `gateway_payment_id` and
+  redirects the doctor to Revolut's `checkout_url`. No doctor name, email or other personal data
+  is sent. A Revolut fault shows "try again" on the failure page and leaves no live attempt.
+  EUR orders only.
+- **Webhook.** `/payments/webhook/revolut/` through the shared handler. `Revolut-Signature` holds
+  one or more `v1=<hex>` entries, each HMAC-SHA256 (signing secret) over
+  `v1.{Revolut-Request-Timestamp}.{raw body}`; the timestamp (Unix milliseconds) must be within 5
+  minutes. The payload carries no status: the event id is `order_id:event` and the task re-reads
+  the order (`GET /api/orders/{id}`: `completed` is paid, `failed` and `cancelled` failed,
+  `pending`, `processing`, `authorised` pending). The order is paid only through
+  `service.confirm_payment`, which checks the amount and currency. A lost webhook is recovered
+  by the return page's re-read.
+- **Retry.** `cancel_attempt` cancels the pending Revolut order (`POST /api/orders/{id}/cancel`)
+  before a new attempt; a refusal is settled by re-reading the order.
+- **Refund.** `POST /api/orders/{id}/refund` with an `Idempotency-Key`; Revolut accepting it
+  (201) counts as refunded. A 4xx or a `decline_reason` is a `GatewayError`; a timeout or 5xx a
+  `GatewayUnknown`. A refund that later fails shows only in Revolut's dashboard. Refunds go
+  through `refund_order` (entry 7).
+
+Settings (settings.env; never logged, never shared): `REVOLUT_SECRET_KEY`, `REVOLUT_WEBHOOK_SECRET`
+(comma-separated while it is rotated) and `REVOLUT_ENVIRONMENT` (`sandbox`, the default, or
+`production`). The adapter is offered when the key is set. On a public site `payments.E003`
+wants both secrets and `payments.E005` refuses `sandbox` (the site refuses to start).
+
+Registering the webhook (once per site, after typing `REVOLUT_SECRET_KEY` and restarting):
+
+```sh
+python manage.py revolut_webhook register   # prints the signing secret once
+python manage.py revolut_webhook list
+python manage.py revolut_webhook delete <id>
+```
+
+Type the printed secret into settings.env as `REVOLUT_WEBHOOK_SECRET` and restart gunicorn and
+the worker.

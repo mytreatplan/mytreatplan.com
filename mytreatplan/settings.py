@@ -146,6 +146,15 @@ REDSYS_MERCHANT_CODE = config('REDSYS_MERCHANT_CODE', default='')
 REDSYS_TERMINAL = config('REDSYS_TERMINAL', default='')
 REDSYS_SECRET_KEY = config('REDSYS_SECRET_KEY', default='')
 REDSYS_ENVIRONMENT = config('REDSYS_ENVIRONMENT', default='test')
+# Revolut Merchant API (epic-payments entry 4, payments.revolut): the secret API key, the
+# webhook signing secret (comma-separated while it is rotated; printed once by
+# `manage.py revolut_webhook register`) and the environment (`sandbox`, the default, or
+# `production`). The adapter is offered when the key is set; on a public site both secrets
+# must be set (payments.E003) and the environment must be `production` (payments.E005).
+# Neither secret is ever logged.
+REVOLUT_SECRET_KEY = config('REVOLUT_SECRET_KEY', default='')
+REVOLUT_WEBHOOK_SECRET = config('REVOLUT_WEBHOOK_SECRET', default='')
+REVOLUT_ENVIRONMENT = config('REVOLUT_ENVIRONMENT', default='sandbox')
 
 # Portal features (signup, login, ...) are routed only when this is True. See
 # `portal_patterns` in mytreatplan/urls.py.
@@ -258,7 +267,7 @@ SENTRY_RELEASE = config(
     default=_revision_file.read_text().strip() if _revision_file.is_file() else '')
 MYTP_SENTRY_IGNORED_LOGGERS = ('signup.verification',)
 MYTP_SENTRY_SENSITIVE_FIELDS = ('signature', 'webhook_secret', 'redsys',
-                                'merchantparameters')
+                                'merchantparameters', 'revolut')
 # Keys that keep their value although they contain a field name (the reset step's tag).
 MYTP_SENTRY_SAFE_KEYS = ('password_reset.action',)
 if SENTRY_DSN:

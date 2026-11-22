@@ -135,7 +135,19 @@ def _go_to_gateway(request, order):
     payment = service.open_payment(order)
     if payment is None:
         return redirect('checkout_return', pk=order.pk)
-    return redirect(gateways.adapter(order.gateway).start(payment, request))
+    try:
+        return redirect(gateways.adapter(order.gateway).start(payment, request))
+    except gateways.GatewayError as error:
+        # The gateway could not open the payment (Revolut): no attempt is left live; the
+        # failure page offers a retry.
+        logger.warning('checkout: order %s did not start at %s (%s)', order.pk, order.gateway,
+                       type(error).__name__)
+        if payment.gateway_payment_id:
+            # The gateway may still take this payment: the return page's re-read decides.
+            return redirect('checkout_return', pk=order.pk)
+        service.fail_payment(payment)
+        _failed(request, error)
+        return redirect('checkout_failure', pk=order.pk)
 
 
 def _failed(request, error):
