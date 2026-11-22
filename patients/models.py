@@ -31,9 +31,10 @@ class Patient(models.Model):
     STATUSES = [(ACTIVE, 'Active'), (ERASED, 'Erased')]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    # SET_NULL: a doctor's account going does not delete the patient row (patients are
-    # never hard-deleted).
-    doctor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL,
+    # PROTECT: accounts and patients are deleted logically only, never physically (user
+    # decision 2026-11-22); `accounts.erasure.purge_erased` keeps an account that has
+    # patients.
+    doctor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
                                related_name='patients')
     code = models.CharField(max_length=11, unique=True)
     first_name = EncryptedCharField(max_length=150, blank=True)

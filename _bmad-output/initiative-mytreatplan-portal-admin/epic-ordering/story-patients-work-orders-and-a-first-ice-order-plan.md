@@ -116,6 +116,10 @@ Decisions (user, 2026-11-22):
 **Manual checks:**
 - On dev after the merge: create a patient, place a test order for an ICE, pay it with the fake gateway, and check the work order and the invoice PDF.
 
+## Plan Change Log
+
+- 2026-11-22, after review (user decision): a doctor's account and its patients are deleted logically only, never physically (legal, audit and compliance); kept in the database marked deleted and readable by the superuser through a fresh-code-protected report, built as a later story. Interim change in 9.1 so nothing is lost: `Patient.doctor` is PROTECT and non-null, and `accounts.erasure.purge_erased` skips any erased account with patients (tests in `patients/tests/test_service.py`).
+
 ## Review Triage Log
 
 Pass 1 (quick lens, Opus, 2026-11-22): high 0, medium 0, low 7, false 0, maybe-false 0. No unmet acceptance criterion.

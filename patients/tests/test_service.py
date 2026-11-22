@@ -5,6 +5,7 @@ import uuid
 
 import pytest
 from django.db import IntegrityError, connection, transaction
+from django.db.models import ProtectedError
 
 from mytp_core import stages
 from patients import service
@@ -153,3 +154,29 @@ def test_the_models_cross_sites_with_uuid_keys():
     from mytreatplan.uids import crossing_site_problems
     assert Patient.CROSSES_SITES and WorkOrder.CROSSES_SITES
     assert crossing_site_problems([Patient, WorkOrder]) == []
+
+
+# --- Logical deletion only (user decision 2026-11-22) -------------------------------------------
+
+def test_a_doctor_with_patients_cannot_be_deleted(doctor, patient):
+    with pytest.raises(ProtectedError):
+        doctor.delete()
+    assert Patient.objects.filter(pk=patient.pk).exists()
+
+
+def test_the_purge_keeps_an_erased_doctor_with_patients(doctor, other_doctor, patient,
+                                                        settings):
+    settings.ACCOUNT_ERASURE_RETENTION_DAYS = 30
+    from datetime import timedelta
+
+    from django.contrib.auth import get_user_model
+    from django.utils import timezone
+
+    from accounts.erasure import erase_user, purge_erased
+    staff = get_user_model().objects.create_superuser('staff@example.net', 'violet-orbit-canyon-42')
+    erase_user(doctor, by=staff)
+    erase_user(other_doctor, by=staff)
+    assert purge_erased(now=timezone.now() + timedelta(days=3650)) == 1
+    users = get_user_model().objects
+    assert users.filter(pk=doctor.pk).exists() and not users.filter(pk=other_doctor.pk).exists()
+    assert Patient.objects.filter(pk=patient.pk).exists()

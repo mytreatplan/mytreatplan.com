@@ -19,6 +19,9 @@ activity records (eventlog.retention), so they can still be tied to the person.
 same transaction), which deletes its copy; the purge sends nothing and deletes every
 outbox row of the purged accounts.
 
+An account with patients is kept: logical deletion only, user decision 2026-11-22 (the
+patients' `doctor` link is PROTECT, and `purge_erased` leaves such an account out).
+
 Nothing here logs or returns an email or a name.
 """
 import logging
@@ -156,14 +159,16 @@ def purge_erased(now=None, batch_size=500):
     (first: the user's are PROTECT) and after detaching and deleting the stored objects
     it still owns, one transaction per batch, after its purge record
     (`_record_purge`). An account whose email cannot be read or whose record could not be
-    written is kept for the next run. Returns how many were deleted."""
+    written is kept for the next run, and so is an account that has patients. Returns how
+    many were deleted."""
     User = get_user_model()
     now = now or timezone.now()
     total = 0
     unrecorded = []
     while True:
         with transaction.atomic():
-            pks = list(User.objects.filter(erased_at__isnull=False, purge_after__lte=now)
+            pks = list(User.objects.filter(erased_at__isnull=False, purge_after__lte=now,
+                                           patients__isnull=True)
                        .exclude(pk__in=unrecorded).order_by('pk')
                        .values_list('pk', flat=True)[:batch_size])
             if not pks:

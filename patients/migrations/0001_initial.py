@@ -32,7 +32,7 @@ class Migration(migrations.Migration):
                 ('actor_uuid', models.UUIDField(blank=True, null=True)),
                 ('created_at', models.DateTimeField(default=django.utils.timezone.now)),
                 ('updated_at', models.DateTimeField(default=django.utils.timezone.now)),
-                ('doctor', models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='patients', to=settings.AUTH_USER_MODEL)),
+                ('doctor', models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name='patients', to=settings.AUTH_USER_MODEL)),
             ],
             options={
                 'ordering': ['-created_at', 'code'],
