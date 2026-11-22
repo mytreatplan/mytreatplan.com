@@ -19,7 +19,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.31.0'
+    assert mytp_core.__version__ == '0.32.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -85,9 +85,11 @@ def test_vendored_mytp_core_has_remote_writes():
 
 
 def test_vendored_mytp_core_has_hub_lookups():
-    from mytp_core.contracts import LOOKUP_READERS, MAX_LOOKUP_BYTES, SampleAvailability, errors
+    from mytp_core.contracts import (LOOKUP_READERS, MAX_LOOKUP_BYTES,
+                                     InvoiceSeriesHighestAnswer, SampleAvailability, errors)
     from mytp_core.contracts.hub import SAMPLE_AVAILABILITY_PATH
-    assert LOOKUP_READERS == {'sample_availability': SampleAvailability}
+    assert LOOKUP_READERS == {'sample_availability': SampleAvailability,
+                              'invoice_series_highest': InvoiceSeriesHighestAnswer}
     assert SAMPLE_AVAILABILITY_PATH == '/api/v1/hub/sample-availability'
     assert MAX_LOOKUP_BYTES == 64 * 1024
     assert errors.HUB_LOOKUP_STATUS == {'invalid_request': 400, 'region_mismatch': 403,

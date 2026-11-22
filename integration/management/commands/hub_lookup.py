@@ -3,7 +3,9 @@ entry 7).
 
     python manage.py hub_lookup sample
 
-`sample` is the staging-only sample availability (GET /api/v1/hub/sample-availability,
+`invoice-series` is the highest invoice and credit-note number per series of this region
+(served by the admin site on every deploy; the restore runbook's
+`resume_invoice_numbering` uses it). `sample` is the staging-only sample availability (GET /api/v1/hub/sample-availability,
 served by the admin site only with its INTERFACE_SAMPLE_LOOKUPS on). The answer is printed
 as JSON and stored nowhere. A failure prints one line, ``hub_lookup sample: unavailable
 (network)`` or ``refused (http_404_not_found)``, and exits non-zero, without a traceback.
@@ -13,11 +15,12 @@ import json
 from django.core.management.base import BaseCommand, CommandError
 
 from integration.hub import HubLookupFailed, lookup
-from mytp_core.contracts import SampleAvailability
-from mytp_core.contracts.hub import SAMPLE_AVAILABILITY_PATH
+from mytp_core.contracts import InvoiceSeriesHighestAnswer, SampleAvailability
+from mytp_core.contracts.hub import INVOICE_SERIES_HIGHEST_PATH, SAMPLE_AVAILABILITY_PATH
 
 # The lookups this command runs: name -> (path, reader).
-LOOKUPS = {'sample': (SAMPLE_AVAILABILITY_PATH, SampleAvailability)}
+LOOKUPS = {'sample': (SAMPLE_AVAILABILITY_PATH, SampleAvailability),
+           'invoice-series': (INVOICE_SERIES_HIGHEST_PATH, InvoiceSeriesHighestAnswer)}
 
 
 class Command(BaseCommand):

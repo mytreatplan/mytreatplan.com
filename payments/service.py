@@ -522,7 +522,11 @@ def expire_stale(now=None):
     """Expire every `checkout` order created, and every `pending_payment` order frozen,
     more than EXPIRY_HOURS ago (the `expire_orders` job, every 15 minutes); each in its own
     transaction, a failing one logged by its UUID and skipped. Returns how many were
-    expired. Running it again expires none more."""
+    expired. Running it again expires none more. Expires nothing while invoice numbering is
+    on hold after a restore: a payment made meanwhile is confirmed once the hold lifts."""
+    from invoices.service import numbering_on_hold
+    if numbering_on_hold():
+        return 0
     now = now or timezone.now()
     cutoff = now - timedelta(hours=EXPIRY_HOURS)
     expired = 0
