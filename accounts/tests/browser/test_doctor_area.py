@@ -29,7 +29,7 @@ def test_login_lands_on_home_and_an_area_leads_back(live_server, page):
     follow(page, 'patients')
     at(page, live_server, 'en', 'patients/')
     expect(page.locator('h1')).to_have_text('Patients')
-    expect(page.get_by_text('This section is coming soon.')).to_be_visible()
+    expect(page.locator('[data-patient-form]')).to_be_visible()  # built in 9.1
 
     follow(page, 'Back to home')
     at(page, live_server, 'en', 'home/')

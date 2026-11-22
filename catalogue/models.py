@@ -115,8 +115,9 @@ class Product(SnapshotFedModel):
 
     TPS_BRANDED = 'tps_branded'
     TPS_IN_HOUSE = 'tps_in_house'
+    ICE = 'initial_case_evaluation'
     UNCATEGORISED = 'uncategorised'
-    CATEGORIES = (TPS_BRANDED, TPS_IN_HOUSE, 'initial_case_evaluation', 'virtuaortho_one',
+    CATEGORIES = (TPS_BRANDED, TPS_IN_HOUSE, ICE, 'virtuaortho_one',
                   'virtuaortho_digitaltwin', 'odb', 'retainers', 'spark_on_demand',
                   'subscription', 'education', UNCATEGORISED)
     LEGACY_CATEGORIES = {'tps': TPS_BRANDED, 'other': UNCATEGORISED}

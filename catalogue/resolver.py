@@ -168,7 +168,8 @@ __all__ = ['AddOnRefused', 'ProductRefused', 'QuantityRefused', 'add_on', 'add_o
            'QUANTITY_REFUSED', 'ADD_ON_REFUSED', 'TWO_COMPANIES', 'TWO_CURRENCIES',
            'ICE_TWICE', 'ICE_NOT_PLANNING', 'ICE_CURRENCY', 'VOUCHER_NOT_USABLE',
            'VOUCHER_TYPE', 'VOUCHER_CURRENCY', 'VOUCHER_DOCTOR', 'VOUCHER_USED',
-           'VOUCHER_UNKNOWN', 'SUBSCRIPTION_NOT_OFFERED', 'PERIOD_NOT_OFFERED']
+           'VOUCHER_UNKNOWN', 'SUBSCRIPTION_NOT_OFFERED', 'PERIOD_NOT_OFFERED',
+           'PATIENT_REFUSED']
 
 # The names catalogue.pricing gives through this module (entry 12, AD-16: callers import
 # one resolver). Read lazily (PEP 562): catalogue.pricing imports this module.

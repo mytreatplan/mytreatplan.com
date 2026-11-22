@@ -3,14 +3,14 @@ title: 'Patients, work orders and a first ICE order'
 type: 'feature'
 ticket: '1'
 created: '2026-11-22'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: '84da0546e94b99c67f279dc1e08805e612a056ca'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -72,7 +72,7 @@ Decisions (user, 2026-11-22):
 ## Code Map
 
 - `regions/profiles.py:90` -- `patient_code_prefix` ('EU'/'AE').
-- `../mytp-core/mytp_core/contracts/checks.py:45` `PATIENT_CODE_RE`. Core is at 0.31.0; add a new module (e.g. `mytp_core/stages.py`) and take the next free minor (7.9 also needs one). Tests go in `../mytp-core/tests/`.
+- `../mytp-core/mytp_core/contracts/checks.py:45` `PATIENT_CODE_RE`. Core is at 0.32.0 (7.9 took it); add a new module (e.g. `mytp_core/stages.py`) and release 0.33.0. Tests go in `../mytp-core/tests/`.
 - `scripts/vendor-mytp-core.sh vX.Y.Z`, `requirements.txt:60`, `integration/tests/test_vendored_core.py`. The admin repo pins the same minor (AD-10). It only needs the vendor bump, no code.
 - `accounts/crypto.py` -- `EncryptedCharField` etc.; examples at `accounts/models.py:100-113`.
 - `mytreatplan/uids.py` -- `CROSSES_SITES`. Convention test: `mytp_publicsite/tests/test_cross_sites.py`. Example: `payments/models.py:39`.
@@ -115,3 +115,17 @@ Decisions (user, 2026-11-22):
 
 **Manual checks:**
 - On dev after the merge: create a patient, place a test order for an ICE, pay it with the fake gateway, and check the work order and the invoice PDF.
+
+## Review Triage Log
+
+Pass 1 (quick lens, Opus, 2026-11-22): high 0, medium 0, low 7, false 0, maybe-false 0. No unmet acceptance criterion.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | `PATIENT_REFUSED` missing from `pricing.__all__` and `resolver.__all__`; `resolver.PATIENT_REFUSED` raises AttributeError | low | patch | Every other refusal is in both; direct correction. |
+| 2 | Paid receiver identifies a case by the product's current category; a category change between order and payment skips the work order silently | low | reject | Needs the snapshot to re-categorise an ICE while an order is pending; the fix changes the receiver and the invoice tests' fixtures. |
+| 3 | Test-order page: the patient select ignores the `ice` flag, lists patients with a live case, and is absent when the doctor has none | low | reject | Staging-only page (`PAYMENTS_TEST_ORDERS`); the server refuses every wrong choice with a message. Fix needs template logic. |
+| 4 | Start-up test does not prove `ready()` registers the invoice name lookup (fixture re-registers it) | low | patch | Direct correction: assert the lookup left by `ready()`. |
+| 5 | Core release commit adds a stray `uv.lock` | low | patch | Done by me: new commit 09243b7 drops it and ignores it; local tag v0.33.0 moved (never pushed); the wheel's code is unchanged. |
+| 6 | The 0.33.0 wheels are untracked in both repos | low | patch | Process: added with the commits. |
+| 7 | Any `IntegrityError` in the receiver is reported as a second live case, also a duplicate `order_line_id` from a replay race | low | reject | Message meaning only; the payment rolls back either way. |

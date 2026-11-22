@@ -42,7 +42,7 @@ from django.utils import timezone
 
 from accounts import fiscal
 from catalogue import pricing, resolver
-from catalogue.models import AddOn, Voucher
+from catalogue.models import AddOn, Product, Voucher
 from invoices import feed
 from mytp_core.money import Money
 from subscriptions import service as subscriptions_service
@@ -195,6 +195,7 @@ def _line_rows(order, priced, asked):
                             'amount': None if add_on.amount is None else _text(add_on.amount)}
                            for add_on in wanted.add_ons]
             row.ice_asked = None if wanted.ice is None else wanted.ice.amount
+            row.patient_code = wanted.patient_code
             cost = resolver.cost(product)
             row.provider_cost = (cost.total * line.quantity).amount
             row.cost_complete = bool(cost.complete)
@@ -232,7 +233,8 @@ def _inputs(order):
                                        'an add-on is no longer in the catalogue',
                                        subject=product)
         ice = None if row.ice_asked is None else Money(row.ice_asked, order.currency)
-        asked.append(pricing.OrderLine(product, row.quantity, add_ons, ice))
+        asked.append(pricing.OrderLine(product, row.quantity, add_ons, ice,
+                                       row.patient_code))
     return asked
 
 
@@ -308,8 +310,36 @@ def _usable(user, entity):
     return found
 
 
+def _check_patients(user, asked):
+    """A case line (an ICE) must name one of the user's own active patients that has no
+    live work order, once per order and in quantity 1; any other line must name none
+    (epic-ordering 9.1; 9.8 extends this to every service). Raises `OrderRefused`
+    `patient_refused`."""
+    from patients import service as patients
+
+    seen = set()
+    for wanted in asked:
+        code = wanted.patient_code
+        if wanted.product.category != Product.ICE:
+            if code:
+                raise pricing.OrderRefused(
+                    pricing.PATIENT_REFUSED, 'only a case line names a patient',
+                    subject=wanted.product)
+            continue
+        patient = patients.patient_of(user, code) if code else None
+        if (patient is None or code in seen or wanted.quantity != 1
+                or patients.live_work_order(patient) is not None):
+            raise pricing.OrderRefused(
+                pricing.PATIENT_REFUSED,
+                'a case needs one of your patients with no case in progress',
+                subject=wanted.product)
+        seen.add(code)
+
+
 def _create(user, kind, asked, *, actor, voucher, entity):
     _check_actor(actor)
+    if kind == Order.SERVICE:
+        _check_patients(user, asked)  # OrderRefused: no order
     if entity is None:
         entity = fiscal.default_entity(user)
     else:
@@ -353,7 +383,8 @@ def _create(user, kind, asked, *, actor, voucher, entity):
 def create_order(user, lines, *, actor, voucher=None, entity=None):
     """Create the service order of `user` for `lines` (`catalogue.pricing.OrderLine`s),
     optionally with a voucher (`catalogue.models.Voucher`) and a fiscal entity (the
-    default usable one when None); see the module docstring. Raises `pricing.OrderRefused`,
+    default usable one when None); see the module docstring. A line's `patient_code` is the
+    patient of a case (an ICE needs one of the user's own). Raises `pricing.OrderRefused`,
     `EntityRefused` or `NoPaymentMethod`, creating nothing."""
     return _create(user, Order.SERVICE, list(lines), actor=actor, voucher=voucher,
                    entity=entity)

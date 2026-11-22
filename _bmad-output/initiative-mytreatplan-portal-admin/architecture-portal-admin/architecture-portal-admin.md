@@ -87,8 +87,8 @@ flowchart TB
 | Doctor account, profile, fiscal entities, shipping addresses | Region | Client record (encrypted with the admin's keys) | Names, contact data, fiscal ids |
 | Doctor profile photo | Region (object storage) | No | Original file name; object encrypted at rest |
 | Maker logins | Region | No | Username and password |
-| Patients (names, photo, comments) | Region | No (code only) | Names, comments; photo in object storage |
-| Work orders, stages, assignment, appointments | Region | Events without patient data (AD-21) | Free-text comments |
+| Patients (names, doctor's reference, photo, comments) | Region | No (code only) | First name, surname, reference, comments (no blind index); photo in object storage |
+| Work orders, stages, assignment, appointments (9.1: the work order and its stage) | Region | Events without patient data (AD-21; none in 9.1, they come with 9.8) | Free-text comments |
 | Records, STL files, photos, ticket attachments | Regional object storage | No | Original file name; objects encrypted at rest |
 | Orders, invoices, credit notes, payments | Region | Accounting copy with patient codes | Buyer fiscal data |
 | Voucher redemptions, current subscription | Region | Events | — |

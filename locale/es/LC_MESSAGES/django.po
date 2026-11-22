@@ -3146,3 +3146,63 @@ msgstr ""
 #: mytp_publicsite/templates/publicsite/conditions.html
 msgid "Conditions governing the contracting of MyTreatPlan paid services."
 msgstr "Condiciones que rigen la contratación de los servicios de pago de MyTreatPlan."
+
+#: patients/templates
+msgid "Add a patient"
+msgstr "Añadir un paciente"
+
+#: patients/templates
+msgid "Your patients"
+msgstr "Sus pacientes"
+
+#: patients/templates
+msgid "You have no patients yet."
+msgstr "Todavía no tiene pacientes."
+
+#: patients/templates
+msgctxt "patient list"
+msgid "Code"
+msgstr "Código"
+
+#: patients/templates
+msgctxt "patient list"
+msgid "Name or reference"
+msgstr "Nombre o referencia"
+
+#: patients/templates
+msgctxt "patient list"
+msgid "Created"
+msgstr "Creado"
+
+#: patients/forms.py
+msgid "Enter a first name, a surname or a reference."
+msgstr "Introduzca un nombre, unos apellidos o una referencia."
+
+#: patients/forms.py
+msgid "Your reference"
+msgstr "Su referencia"
+
+#: patients/forms.py
+msgid "Optional. Your own reference for this patient."
+msgstr "Opcional. Su propia referencia para este paciente."
+
+#: patients/forms.py
+msgid "Comments"
+msgstr "Comentarios"
+
+#: patients/views.py
+#, python-format
+msgid "The patient has been saved with the code %(code)s."
+msgstr "El paciente se ha guardado con el código %(code)s."
+
+#: payments/views.py
+msgid "Choose one of your patients that has no case in progress."
+msgstr "Elija uno de sus pacientes que no tenga un caso en curso."
+
+#: payments/templates
+msgid "Patient (for an ICE)"
+msgstr "Paciente (para una ICE)"
+
+#: payments/templates
+msgid "No patient"
+msgstr "Sin paciente"

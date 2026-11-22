@@ -1,0 +1,54 @@
+{% extends "doctor_base.html" %}
+{% load i18n %}
+{% comment %}
+The doctor's patients (patients.views.patient_list, epic-ordering 9.1): the create form and
+the list of their own patients, newest first (code, name or reference, created).
+{% endcomment %}
+
+{% block title %}{% translate "Patients" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Patients" %}</h1>
+
+<h2 class="mt-8 text-[22px] font-black leading-[1.2]">{% translate "Add a patient" %}</h2>
+<form method="post" class="mt-4 flex max-w-[640px] flex-col gap-5" novalidate data-patient-form>
+  {% csrf_token %}
+  {% if form.non_field_errors %}
+  <ul class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert">
+    {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  <div class="grid grid-cols-1 gap-4 tablet:grid-cols-2">
+    {% include "includes/_form_field.html" with field=form.first_name %}
+    {% include "includes/_form_field.html" with field=form.surname %}
+  </div>
+  {% include "includes/_form_field.html" with field=form.reference %}
+  {% include "includes/_form_field.html" with field=form.comments %}
+  <div>
+    <button type="submit" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-save>{% translate "Save" %}</button>
+  </div>
+</form>
+
+<h2 class="mt-12 text-[22px] font-black leading-[1.2]">{% translate "Your patients" %}</h2>
+{% if patients %}
+<table class="mt-4 w-full text-left text-copy" data-patients>
+  <thead><tr class="border-b border-ink/20 text-ink-muted">
+    <th class="py-2 pr-3 font-semibold">{% translate "Code" context "patient list" %}</th>
+    <th class="py-2 pr-3 font-semibold">{% translate "Name or reference" context "patient list" %}</th>
+    <th class="py-2 font-semibold">{% translate "Created" context "patient list" %}</th>
+  </tr></thead>
+  <tbody>
+  {% for patient in patients %}
+  <tr class="border-b border-ink/10" data-patient="{{ patient.code }}">
+    <td class="py-3 pr-3 font-semibold">{{ patient.code }}</td>
+    <td class="py-3 pr-3">{{ patient.display_name }}</td>
+    <td class="py-3">{{ patient.created_at|date:"DATE_FORMAT" }}</td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="mt-4 text-copy text-ink-muted" data-no-patients>{% translate "You have no patients yet." %}</p>
+{% endif %}
+<p class="mt-8"><a href="{% url 'home' %}" class="text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Back to home" %}</a></p>
+{% endblock %}
