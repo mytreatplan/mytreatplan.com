@@ -41,7 +41,7 @@ context: []
 ## Decisions
 
 - Decision (user, 2026-11-22): only the patient's own doctor sees a portrait, through the inline URL, with no access record per portrait: the patient list and patient file pages are already recorded (page records) and always show the portrait, so a view of those pages covers it. AD-9's exception is widened from the doctor's own profile photo to "the portraits of a doctor's own patients, shown on the patient list and patient file pages".
-- Decision (user, 2026-11-22): 9.2 shows whatever status values 9.1 built; if 9.1 left the field free, 9.2 sets `active` (default) and `inactive`, shown in the list, with no control to change it (epic-case-lifecycle adds that).
+- Decision (user, 2026-11-22, after 9.1 was built): 9.1 built the status values `active` (default) and `erased`; 9.2 adds `inactive` (migration), shown in the list so inactive patients stand out; no control to change it yet (epic-case-lifecycle adds that). The patient model is in `patients/models.py` (Patient.doctor is PROTECT: logical deletion only, see the 9.1 plan's change log).
 - Decision (user, 2026-11-22): pagination as DataTables' standard: 10 rows by default, a selector for 10, 25, 50 and 100, "Showing 1 to 10 of N" and page links; newest first. Built server-side with Django's `Paginator` (page and size in the query string, an invalid value falls back to the default); no DataTables library.
 
 ## I/O & Edge-Case Matrix
@@ -76,7 +76,7 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `patients/models.py` + migration -- `portrait` and `portrait_pending` FKs to `StoredObject`; status values per the decision.
+- [ ] `patients/models.py` + migration -- `portrait` and `portrait_pending` FKs to `StoredObject`; add `inactive` to the status values per the decision.
 - [ ] `patients/portrait.py` -- purpose `patient_portrait` (rules above), attach, remove, settle, `portrait_of` (inline URL, owner doctor only), `can_download` owner-only.
 - [ ] `patients/views.py`, `urls.py`, templates, JS -- list columns and the DataTables-style pagination per the decision, patient page `patients/<code>/` with the portrait and its controls, delete confirmation.
 - [ ] `locale/es/LC_MESSAGES/django.po` -- Spanish strings.

@@ -3,7 +3,7 @@ title: 'Patients, work orders and a first ICE order'
 type: 'feature'
 ticket: '1'
 created: '2026-11-22'
-status: 'built'
+status: 'done'
 baseline_revision: '84da0546e94b99c67f279dc1e08805e612a056ca'
 route: 'full'
 route_source: 'auto'
@@ -133,3 +133,13 @@ Pass 1 (quick lens, Opus, 2026-11-22): high 0, medium 0, low 7, false 0, maybe-f
 | 5 | Core release commit adds a stray `uv.lock` | low | patch | Done by me: new commit 09243b7 drops it and ignores it; local tag v0.33.0 moved (never pushed); the wheel's code is unchanged. |
 | 6 | The 0.33.0 wheels are untracked in both repos | low | patch | Process: added with the commits. |
 | 7 | Any `IntegrityError` in the receiver is reported as a second live case, also a duplicate `order_line_id` from a replay race | low | reject | Message meaning only; the payment rolls back either way. |
+
+## Staging
+
+- Merged 2026-11-22: portal PR #126 → d0aaa68 (deploy run 45057785952 green on dev and dev-ae; CI suite 4033 passed, 1 skipped); mytp-admin PR #48 → 7b6c54d (vendor 0.33.0; deploy run 45057780543 green on admindev); mytp-core v0.33.0 tagged and pushed (CI green).
+- Staging checks on dev, run over SSH with the user's delegation (2026-11-22), all passed:
+  1. The test doctor created patient EU-0BNY91JQ (code format right, name stored).
+  2. An ICE for that patient (order FR-780840), paid with the fake gateway: order `paid`, one work order in `pending_assignment`.
+  3. Its invoice ES-EU-2026-000002 shows the name next to the code in the rendered HTML; the PDF renders.
+  4. A second ICE for the same patient is refused at order creation ("a case needs one of your patients with no case in progress"), earlier than the PR text said (at payment); no order created.
+- Left behind on dev: patient EU-0BNY91JQ (name "Staging91 Check"), order FR-780840 and invoice ES-EU-2026-000002 (also on admindev's accounting copy).

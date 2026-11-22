@@ -218,3 +218,7 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/plan-legal-notice-and-conditions.md`
   summary: Show a product with its price on the public EU site (Santander's third Redsys requirement).
   evidence: Split from the legal-notice story by the user's answer (2026-11-21); the legal notice and conditions pages do not cover prices.
+
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-ordering/story-patients-work-orders-and-a-first-ice-order-plan.md`
+  summary: New story: logical deletion of a doctor's account and its patients, archived per region as an encrypted write-once export in long-term object storage, expired by lifecycle rules, restorable read-only on an admin-site request behind a fresh code. Plan it after 7.4 and 9.2.
+  evidence: User decisions 2026-11-22: logical deletion only (legal, audit, compliance); retention 25 years for patient data (Dubai Health Authority, telehealth) and at least 5 years for fiscal data (Spanish tax authority); object storage chosen over a separate database (very low access frequency). Open then: retention per data type (EU clinical 25 years too? accountant on the 6-year commercial-code rule), storage tier (cold archive vs infrequent access), lawyer on GDPR Art. 17(3). Interim in 9.1: Patient.doctor PROTECT and purge_erased skips erased accounts with patients.
