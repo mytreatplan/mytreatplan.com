@@ -191,7 +191,11 @@ def _virtuaortho_options(request, patient):
             entry['offered'].add(key)
 
     def price_of(product, variant, money):
-        if product.category == Product.ODB and variant == service.DIGITALTWIN and twin:
+        """The row's price; None when the row cannot be sold (under DigitalTwin an ODB needs
+        its ODB-DT add-on, offered on it)."""
+        if product.category == Product.ODB and variant == service.DIGITALTWIN:
+            if twin is None or twin not in resolver.add_ons(product):
+                return None
             try:
                 return resolver.price(product, held, [twin])
             except ValueError:
@@ -209,17 +213,22 @@ def _virtuaortho_options(request, patient):
                     or (choice == service.RETAINERS and not finished) \
                     or (choice == service.CASE and not product.size):
                 continue
-            value = {service.CASE: f'case:{product.size}', service.RETAINERS: 'retainers'
-                     }.get(choice, f'{choice}:{product.pk}')
-            rows.append({'variant': variant, 'value': value, 'pk': product.pk, 'group': choice,
+            price = price_of(product, variant, money)
+            if price is None:
+                continue
+            # The row carries its variant: what is ticked is exactly what is added.
+            value = variant + ':' + {service.CASE: f'case:{product.size}',
+                                     service.RETAINERS: 'retainers'
+                                     }.get(choice, f'{choice}:{product.pk}')
+            rows.append({'variant': variant, 'variant_label': labels[variant], 'value': value, 'pk': product.pk, 'group': choice,
                          'size': product.size, 'rank': service.size_rank(product.size),
                          'label': size_label(product.size) if choice == service.CASE
                          else product.public_name,
-                         'price': price_of(product, variant, money),
+                         'price': price,
                          'per_unit': choice == service.SPARK,
                          'min': product.min_quantity, 'max': product.max_quantity,
                          'auto_odb_dt': choice == service.ODB and variant == service.DIGITALTWIN})
-            note_add_ons(product, f'{variant}:{value}')
+            note_add_ons(product, value)
     order = {service.CASE: 0, service.ODB: 1, service.SPARK: 2, service.RETAINERS: 3}
     rows.sort(key=lambda row: (row['variant'], order[row['group']], row['rank'], row['label']))
     return {'variants': [{'code': variant, 'label': labels[variant]} for variant in variants],
@@ -257,8 +266,10 @@ def start_a_case_tps(request, code):
     posted, error = {}, ''
     if request.method == 'POST' and request.POST.get('line') == 'virtuaortho':
         data = request.POST
-        choice, _sep, size = data.get('product', '').partition(':')
-        posted = {'line': 'virtuaortho', 'variant': data.get('variant', ''),
+        # The ticked row is "<variant>:<choice>[:<size or product id>]".
+        variant, _sep, rest = data.get('product', '').partition(':')
+        choice, _sep, size = rest.partition(':')
+        posted = {'form': 'virtuaortho', 'line': 'virtuaortho', 'variant': variant,
                   'product': data.get('product', ''), 'add_ons': data.getlist('add_on'),
                   'quantity': data.get(f'quantity_{size}', ''), 'address': data.get('address_id', '')}
         try:
@@ -274,7 +285,7 @@ def start_a_case_tps(request, code):
             return redirect('cart')
     elif request.method == 'POST':
         data = request.POST
-        posted = {'kind': data.get('kind', ''), 'maker': data.get('maker', ''),
+        posted = {'form': 'tps', 'kind': data.get('kind', ''), 'maker': data.get('maker', ''),
                   'other_name': data.get('other_name', ''), 'size': data.get('size', ''),
                   'add_ons': data.getlist('add_on')}
         try:

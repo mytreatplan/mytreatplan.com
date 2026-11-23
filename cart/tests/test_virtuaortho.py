@@ -189,9 +189,9 @@ def test_retainers_are_not_listed_until_finished(advanced, ready):
     client = Client()
     client.force_login(advanced)
     url = f'/en/start-a-case/{ready.code}/'
-    assert 'value="retainers"' not in client.get(url).content.decode()
+    assert 'value="one:retainers"' not in client.get(url).content.decode()
     live_order(ready, VO_ONE['short'], stage='approved')
-    assert 'value="retainers"' in client.get(url).content.decode()
+    assert 'value="one:retainers"' in client.get(url).content.decode()
 
 
 def test_a_live_ice_work_order_may_take_a_virtuaortho_item(advanced, ready):
@@ -221,6 +221,21 @@ def test_a_tps_service_is_unchanged(advanced, ready):
     makers.save(advanced, 'invisalign', {'username': 'u', 'password': 'p'})
     item = service.add_tps(advanced, ready, maker='invisalign', size='medium')
     assert (item.quantity, item.shipping_address_id) == (1, None)
+
+
+def reload_catalogue(admin, change):
+    from patients.tests.conftest import virtuaortho_catalogue
+    from integration.tests.snapshot_rows import pull
+    section = virtuaortho_catalogue()
+    change(section)
+    assert pull(admin, 3, section) == ('applied', 3)
+
+
+def test_an_empty_size_does_not_pick_an_unsized_product(advanced, ready, admin):
+    reload_catalogue(admin, lambda section: [
+        row.pop('size') for row in section['products'] if row['id'] == VO_TWIN['short']])
+    assert refused(advanced, ready, size='') == service.NOT_OFFERED
+    assert refused(advanced, ready, size='short') == service.NOT_OFFERED
 
 
 # --- The pages -------------------------------------------------------------------------------
@@ -263,7 +278,7 @@ def test_the_branch_is_hidden_when_not_offered(basic):
 
 def test_a_tampered_post_without_the_offer_is_refused(basic):
     doctor, patient = basic, basic.patient
-    response = post(doctor, patient, variant='one', product='case:medium',
+    response = post(doctor, patient, product='one:case:medium',
                     address_id=str(doctor.address.pk))
     assert not CartItem.objects.exists()
     assert response.status_code == 200 and 'data-error' in response.content.decode()
@@ -273,8 +288,8 @@ def test_a_tampered_post_without_the_offer_is_refused(basic):
 def test_step_two_lists_the_products_with_prices_and_the_addresses(advanced, ready):
     html = browser(advanced).get(step2(ready)).content.decode()
     assert 'data-virtuaortho-form' in html and 'data-shipping-block' not in html
-    for text in ('VirtuaOrtho One', 'VirtuaOrtho DigitalTwin', 'value="case:short"',
-                 f'value="odb:{ODB_TWO}"', f'value="spark:{SPARK_ONE}"', 'per aligner',
+    for text in ('VirtuaOrtho One', 'VirtuaOrtho DigitalTwin', 'value="one:case:short"',
+                 f'value="digitaltwin:odb:{ODB_TWO}"', f'value="one:spark:{SPARK_ONE}"', 'per aligner',
                  'Clínica Madrid · Madrid'):
         assert text in html
     assert '1,200.00' in html or '1200' in html
@@ -290,12 +305,12 @@ def test_without_an_address_a_block_links_to_add_one_and_back(advanced, entity, 
     assert f'href="{link}"' in html
     saved = browser(advanced).post(link, {**ADDRESS, 'next': step2(patient)})
     assert saved.status_code == 302 and saved['Location'] == step2(patient)
-    response = post(advanced, patient, variant='one', product='case:short', address_id='')
+    response = post(advanced, patient, product='one:case:short', address_id='')
     assert 'data-error' in response.content.decode()
 
 
 def test_a_post_without_javascript_adds_the_item_and_the_cart_shows_it(advanced, ready):
-    response = post(advanced, ready, variant='digitaltwin', product='case:medium',
+    response = post(advanced, ready, product='digitaltwin:case:medium',
                     add_on='BYTE-SYNC', address_id=str(advanced.address.pk))
     assert response.status_code == 302 and response['Location'] == '/en/cart/'
     html = browser(advanced).get('/en/cart/').content.decode()
@@ -306,7 +321,7 @@ def test_a_post_without_javascript_adds_the_item_and_the_cart_shows_it(advanced,
 
 
 def test_spark_in_the_page_shows_the_aligners_and_the_total(advanced, ready):
-    response = post(advanced, ready, variant='one', product=f'spark:{SPARK_ONE}',
+    response = post(advanced, ready, product=f'one:spark:{SPARK_ONE}',
                     **{f'quantity_{SPARK_ONE}': '5'}, address_id=str(advanced.address.pk))
     assert response.status_code == 302
     html = browser(advanced).get('/en/cart/').content.decode()
@@ -314,7 +329,7 @@ def test_spark_in_the_page_shows_the_aligners_and_the_total(advanced, ready):
 
 
 def test_a_refused_post_shows_the_message_and_adds_nothing(advanced, ready):
-    response = post(advanced, ready, variant='one', product=f'spark:{SPARK_ONE}',
+    response = post(advanced, ready, product=f'one:spark:{SPARK_ONE}',
                     **{f'quantity_{SPARK_ONE}': '10'}, address_id=str(advanced.address.pk))
     assert response.status_code == 200 and not CartItem.objects.exists()
     assert 'data-error' in response.content.decode()
@@ -327,7 +342,7 @@ def test_step_two_is_in_spanish_with_the_virtuaortho_branch(advanced, ready):
 
 
 def test_the_cart_in_spanish_shows_the_address(advanced, ready):
-    post(advanced, ready, variant='one', product=f'spark:{SPARK_TWO}',
+    post(advanced, ready, product=f'one:spark:{SPARK_TWO}',
          **{f'quantity_{SPARK_TWO}': '4'}, address_id=str(advanced.address.pk))
     html = browser(advanced).get('/es/cart/').content.decode()
     assert 'Enviar a' in html and '4 alineadores' in html
@@ -336,3 +351,47 @@ def test_the_cart_in_spanish_shows_the_address(advanced, ready):
 def test_a_patient_of_another_doctor_is_a_404(advanced, ready, other_doctor):
     assert browser(other_doctor).get(step2(ready)).status_code == 404
     assert patients_service.patient_of(other_doctor, ready.code) is None
+
+
+def test_each_variants_rows_have_their_own_heading_and_values(advanced, ready):
+    html = browser(advanced).get(step2(ready)).content.decode()
+    assert html.count('data-vo-group') == 2
+    for value in ('one:case:medium', 'digitaltwin:case:medium', f'one:spark:{SPARK_ONE}',
+                  f'digitaltwin:odb:{ODB_TWO}', f'one:odb:{ODB_TWO}'):
+        assert f'value="{value}"' in html
+    assert 'name="variant"' not in html and f'digitaltwin:spark:{SPARK_ONE}' not in html
+
+
+def test_a_post_of_a_digitaltwin_row_without_javascript_adds_the_digitaltwin_product(
+        advanced, ready):
+    post(advanced, ready, product='digitaltwin:case:medium',
+         address_id=str(advanced.address.pk))
+    assert str(CartItem.objects.get().product_id) == VO_TWIN['medium']
+    CartItem.objects.all().delete()
+    post(advanced, ready, product='one:case:medium', address_id=str(advanced.address.pk))
+    assert str(CartItem.objects.get().product_id) == VO_ONE['medium']
+
+
+def test_a_refused_virtuaortho_post_ticks_the_add_ons_in_its_form_only(advanced, ready):
+    response = post(advanced, ready, product=f'one:spark:{SPARK_ONE}', add_on='BYTE-SYNC',
+                    **{f'quantity_{SPARK_ONE}': '10'}, address_id=str(advanced.address.pk))
+    lines = [line for line in response.content.decode().splitlines()
+             if 'data-add-on="BYTE-SYNC"' in line]
+    assert len(lines) == 2 and ' checked' not in lines[0] and ' checked' in lines[1]
+
+
+def test_a_refused_tps_post_does_not_tick_the_virtuaortho_add_ons(advanced, ready):
+    response = browser(advanced).post(step2(ready), {
+        'kind': 'maker', 'maker': 'invisalign', 'size': 'medium', 'add_on': 'BYTE-SYNC'})
+    lines = [line for line in response.content.decode().splitlines()
+             if 'data-add-on="BYTE-SYNC"' in line]
+    assert len(lines) == 2 and ' checked' in lines[0] and ' checked' not in lines[1]
+
+
+def test_the_digitaltwin_odb_row_is_dropped_without_its_odb_dt(advanced, ready, admin):
+    reload_catalogue(admin, lambda section: [
+        row.update(active=False) for row in section['add_ons'] if row['code'] == 'ODB-DT'])
+    html = browser(advanced).get(step2(ready)).content.decode()
+    assert f'value="digitaltwin:odb:{ODB_TWO}"' not in html
+    assert f'value="one:odb:{ODB_TWO}"' in html
+    assert refused(advanced, ready, choice='odb', size=ODB_TWO) == service.ADD_ON

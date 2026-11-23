@@ -5,29 +5,31 @@
   'use strict';
 
   // The VirtuaOrtho branch (9.4): shows the rows and options of the chosen variant only; a
-  // hidden row is disabled so its radio and aligner count are not posted. The server decides.
+  // hidden group is disabled so its radios and aligner counts are not posted; each row's value carries its variant. The server decides.
   function startVirtuaortho() {
     var form = document.querySelector('[data-virtuaortho-form]');
     if (!form) return;
-    var rows = form.querySelectorAll('[data-vo-row]');
+    var groups = form.querySelectorAll('[data-vo-group]');
     var addOns = form.querySelectorAll('[data-add-on]');
+    var filter = form.querySelector('[data-vo-filter]');
+    if (filter) filter.hidden = false;
 
     function variant() {
-      var input = form.querySelector('input[name="variant"]:checked');
+      var input = form.querySelector('input[name="variant_filter"]:checked');
       return input ? input.value : '';
     }
 
     function update() {
       var chosenVariant = variant();
-      var product = form.querySelector('input[name="product"]:checked');
-      Array.prototype.forEach.call(rows, function (row) {
-        var show = row.getAttribute('data-variant') === chosenVariant;
-        row.hidden = !show;
-        Array.prototype.forEach.call(row.querySelectorAll('input'), function (input) {
+      Array.prototype.forEach.call(groups, function (group) {
+        var show = !filter || group.getAttribute('data-variant') === chosenVariant;
+        group.hidden = !show;
+        Array.prototype.forEach.call(group.querySelectorAll('input'), function (input) {
           input.disabled = !show;
         });
       });
-      var key = product && !product.disabled ? chosenVariant + ':' + product.value : '';
+      var product = form.querySelector('input[name="product"]:checked');
+      var key = product && !product.disabled ? product.value : '';
       Array.prototype.forEach.call(addOns, function (row) {
         var offered = (row.getAttribute('data-offered') || '').split(' ');
         var show = !key || offered.indexOf(key) !== -1;

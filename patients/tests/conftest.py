@@ -86,8 +86,8 @@ VO_ALL = [*VO_ONE.values(), *VO_TWIN.values(), ODB_TWO, ODB_ONE, RETAINERS_3, SP
           SPARK_TWO]
 BYTE_SYNC_VO = 'a1111111-1111-4111-8111-111111111111'
 ODB_DT_ID = 'a5555555-5555-4555-8555-555555555555'
-VO_CATEGORIES = ['tps_branded', 'tps_in_house', 'initial_case_evaluation', 'virtuaortho_one',
-                 'virtuaortho_digitaltwin', 'spark_on_demand']
+VO_CATEGORIES = ['tps_branded', 'tps_in_house', 'virtuaortho_one', 'virtuaortho_digitaltwin',
+                 'spark_on_demand']  # the seed's Byte Sync categories
 PER_ALIGNER = {'min_quantity': 4, 'max_quantity': 9}
 
 

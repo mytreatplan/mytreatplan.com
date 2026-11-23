@@ -188,6 +188,8 @@ def _virtuaortho_product(offered, variant, choice, size, patient):
         raise CartRefused(NOT_OFFERED)
     found = [product for product, _money in offered if product.category == wanted]
     if choice == CASE:
+        if not size:
+            raise CartRefused(NOT_OFFERED)
         found = [product for product in found if product.size == size]
     elif choice in (ODB, SPARK):
         found = [product for product in found if str(product.pk) == str(size)]

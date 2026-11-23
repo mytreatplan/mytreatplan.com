@@ -3,14 +3,14 @@ title: 'Case wizard: VirtuaOrtho'
 type: 'feature'
 ticket: '4'
 created: '2026-11-23'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: '7edc053e24b9bec8f6bdbcff84a57380a52ccc6f'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
