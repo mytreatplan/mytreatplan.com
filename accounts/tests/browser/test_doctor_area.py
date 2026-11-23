@@ -29,7 +29,11 @@ def test_login_lands_on_home_and_an_area_leads_back(live_server, page):
     follow(page, 'patients')
     at(page, live_server, 'en', 'patients/')
     expect(page.locator('h1')).to_have_text('Patients')
+    expect(page.locator('[data-patient-form]')).to_be_hidden()  # in the closed dialog
+    page.locator('[data-add-patient]').click()
     expect(page.locator('[data-patient-form]')).to_be_visible()  # built in 9.1
+    page.keyboard.press('Escape')
+    expect(page.locator('[data-patient-form]')).to_be_hidden()
 
     follow(page, 'Back to home')
     at(page, live_server, 'en', 'home/')
