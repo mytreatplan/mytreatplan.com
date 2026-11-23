@@ -69,6 +69,26 @@ def missing_setting():
     return None
 
 
+ARCHIVE_REQUIRED_SETTINGS = (
+    'STORAGE_ENDPOINT',
+    'STORAGE_REGION',
+    'ARCHIVE_BUCKET',
+    'ARCHIVE_ACCESS_KEY',
+    'ARCHIVE_SECRET_KEY',
+    'ARCHIVE_AGE_RECIPIENT',
+    'ARCHIVE_RETENTION_YEARS',
+)
+
+
+def missing_archive_setting():
+    """The first empty setting the account archive needs (the region's endpoint, the
+    archive bucket and its own keys, the age recipient, the retention), or None."""
+    for name in ARCHIVE_REQUIRED_SETTINGS:
+        if not getattr(settings, name, None):
+            return name
+    return None
+
+
 # A server-side copy of a large object (1 GiB) may take longer than a normal request.
 COPY_READ_TIMEOUT = 15 * 60
 # Bytes per read of a streamed object (storage.clamd sends them on in 1 MiB chunks).
@@ -92,6 +112,30 @@ def make_client(*, read_timeout=30):
             s3={'addressing_style': 'virtual'},
             # No CRC checksums unless the API requires them (as in backupdb): the browser
             # could not send matching checksum headers on a presigned request.
+            request_checksum_calculation='when_required',
+            response_checksum_validation='when_required',
+            retries={'max_attempts': 3, 'mode': 'standard'},
+            connect_timeout=10,
+            read_timeout=read_timeout,
+        ),
+    )
+
+
+def make_archive_client(*, read_timeout=60):
+    """The S3 client for the account archive bucket (archive app): the region's endpoint,
+    the archive bucket's own keys (never the upload bucket's)."""
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client(
+        's3',
+        endpoint_url=settings.STORAGE_ENDPOINT,
+        region_name=settings.STORAGE_REGION,
+        aws_access_key_id=settings.ARCHIVE_ACCESS_KEY,
+        aws_secret_access_key=settings.ARCHIVE_SECRET_KEY,
+        config=Config(
+            signature_version='s3v4',
+            s3={'addressing_style': 'virtual'},
             request_checksum_calculation='when_required',
             response_checksum_validation='when_required',
             retries={'max_attempts': 3, 'mode': 'standard'},
@@ -301,7 +345,9 @@ def presign_download(key, *, content_type='', filename='', inline=False, client=
 def scrub(text):
     """`text` with the bucket keys replaced (for command output)."""
     text = str(text)
-    for secret in (settings.STORAGE_SECRET_KEY, settings.STORAGE_ACCESS_KEY):
+    for secret in (settings.STORAGE_SECRET_KEY, settings.STORAGE_ACCESS_KEY,
+                   getattr(settings, 'ARCHIVE_SECRET_KEY', ''),
+                   getattr(settings, 'ARCHIVE_ACCESS_KEY', '')):
         if secret:
             text = text.replace(secret, '[redacted]')
     return text

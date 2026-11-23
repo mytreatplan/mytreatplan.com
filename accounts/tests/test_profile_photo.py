@@ -591,7 +591,9 @@ def test_row15_erasure_deletes_the_photo_and_the_pending_upload(
     with django_capture_on_commit_callbacks(execute=True):
         assert erase_user(doctor, by=staff)
 
-    assert not Profile.objects.filter(user=doctor).exists()
+    # The profile row stays for the archive (9.12) but no longer links a photo.
+    assert not Profile.objects.filter(user=doctor, photo__isnull=False).exists()
+    assert not Profile.objects.filter(user=doctor, photo_pending__isnull=False).exists()
     assert sorted(run_deletions(stubber)) == sorted(
         [str(obj.pk), 'user', str(staff.uid)] for obj in (current, pending, stray))
     assert {(t.object_id, t.actor_uuid) for t in DeletionTrace.objects.filter(

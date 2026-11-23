@@ -163,11 +163,6 @@ def update_personal_data(user, changes, consents=None, *, now=None):
     return SaveResult(tuple(user_changed + profile_changed), tuple(recorded), emitted)
 
 
-def clear_profile(user):
-    """Erasure: delete the account's profile row (its contact data goes with it)."""
-    Profile.objects.filter(user_id=user.pk).delete()
-
-
 def clear_contact_changes(user):
     """Erasure: delete the account's pending contact changes (their new values)."""
     PendingContactChange.objects.filter(user_id=user.pk).delete()

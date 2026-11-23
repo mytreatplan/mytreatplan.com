@@ -354,6 +354,13 @@ def test_the_invoice_survives_the_erasure_of_the_buyer(doctor, entity, settings)
     staff = User.objects.create_superuser('staff@example.net', 'Sup3r-secret-pass-42!')
     invoice = only_invoice(pay(new(doctor), doctor))
     assert erase_user(doctor, by=staff)
+    # Erasure only hides (9.12); the purge archives, then deletes the entity.
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from accounts.erasure import purge_erased
+    assert purge_erased(now=timezone.now() + timedelta(days=31)) == 1
     assert not FiscalEntity.objects.filter(user=doctor).exists()
     stored = Invoice.objects.get(pk=invoice.pk)
     assert stored.bill_legal_name == 'Clínica Espuny S.L.' and stored.bill_tax_id

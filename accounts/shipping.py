@@ -296,11 +296,6 @@ def mark_used(address, at=None):
         return False
 
 
-def erase(user):
-    """Erasure: delete all of the account's shipping addresses, archived ones included."""
-    ShippingAddress.objects.filter(user_id=user.pk).delete()
-
-
 # --- What the order flows read ---------------------------------------------------------------
 
 def country_allowed(code):

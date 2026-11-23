@@ -232,6 +232,22 @@ ACCOUNT_ERASURE_RETENTION_DAYS = config(
     'ACCOUNT_ERASURE_RETENTION_DAYS', default='',
     cast=lambda value: int(value) if str(value).strip() else None)
 
+# The account archive (archive app, epic-ordering 9.12): an erased account and its patients
+# are written, at purge time, as one `age`-encrypted write-once (S3 Object Lock, COMPLIANCE)
+# object to a second bucket in the same region (STORAGE_ENDPOINT), with its own keys. The
+# bucket is created by hand (deploy/README.md, "Account archive"). ARCHIVE_AGE_RECIPIENT is
+# the public key of the archive identity; ARCHIVE_RETENTION_YEARS has no default (the
+# lawyer's; the purge refuses to run while any ARCHIVE_* setting is unset);
+# ARCHIVE_STORAGE_CLASS is OVH Standard Infrequent Access.
+ARCHIVE_BUCKET = config('ARCHIVE_BUCKET', default='')
+ARCHIVE_ACCESS_KEY = config('ARCHIVE_ACCESS_KEY', default='')
+ARCHIVE_SECRET_KEY = config('ARCHIVE_SECRET_KEY', default='')
+ARCHIVE_AGE_RECIPIENT = config('ARCHIVE_AGE_RECIPIENT', default='')
+ARCHIVE_STORAGE_CLASS = config('ARCHIVE_STORAGE_CLASS', default='STANDARD_IA')
+ARCHIVE_RETENTION_YEARS = config(
+    'ARCHIVE_RETENTION_YEARS', default='',
+    cast=lambda value: int(value) if str(value).strip() else None)
+
 # The database cache (table `django_cache`, created by `createcachetable` in
 # deploy/release.sh), shared by every Gunicorn worker. It holds the signup code resend
 # limits and the per-IP limits (signup.limits), the fake verification provider's state,
@@ -440,6 +456,8 @@ INSTALLED_APPS = [
     # The doctor's cart (epic-ordering 9.3, AD-2): the regional cart items, the case wizard
     # and the cart page.
     'cart.apps.CartConfig',
+    # The account archive (epic-ordering 9.12): write-once encrypted archive of erased accounts.
+    'archive.apps.ArchiveConfig',
     # The interface with the admin site (epic-admin-interface, AD-4): the signed
     # /api/v1/ endpoints, the log of every call received (InterfaceCall), the outbox of
     # events to the admin site (OutboxEvent, entry 3), the configuration snapshot pulled

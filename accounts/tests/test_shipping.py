@@ -389,15 +389,15 @@ def test_the_add_page_returns_to_a_path_of_this_site_and_ignores_others(doctor):
 
 # --- 13. Erasure ---------------------------------------------------------------------------
 
-def test_erasing_the_account_deletes_its_addresses(doctor, other, staff):
+def test_erasing_keeps_the_addresses_and_the_purge_deletes_them(doctor, other, staff):
     _make(doctor), _make(doctor, label='B')
     kept = _make(other)
     archived = _make(doctor, label='C')
     shipping.mark_used(archived)
     shipping.remove(doctor, archived.pk)
     assert erase_user(doctor, by=staff)
-    assert not ShippingAddress.objects.filter(user=doctor).exists()
-    assert list(ShippingAddress.objects.all()) == [kept]
+    # Erasure only hides (9.12): the addresses stay for the archive until the purge.
+    assert ShippingAddress.objects.filter(user=doctor).count() == 3
     User.objects.filter(pk=doctor.pk).update(purge_after=timezone.now() - timedelta(days=1))
     assert purge_erased() == 1
     assert list(ShippingAddress.objects.all()) == [kept]
