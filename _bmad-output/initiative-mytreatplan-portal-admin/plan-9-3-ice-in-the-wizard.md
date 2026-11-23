@@ -3,14 +3,14 @@ title: 'ICE in the case wizard'
 type: 'bugfix'
 ticket: ''
 created: '2026-11-23'
-status: 'in-progress'
+status: 'built'
 baseline_revision: 'b0612812e76b8b481dd93b32214c61f90c33bff6'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -66,6 +66,20 @@ context: []
 
 **Acceptance Criteria:**
 - Given a doctor offered an ICE, when step 2 opens, then ICE is the first choice under both a maker and in-house printing, with its price.
+
+## Review Triage Log
+
+Pass 1 (quick lens, opus): high 0, medium 0, low 7; 4 patched, 3 rejected.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | No view test for "ICE not offered → not listed" | low | patch | Test added. |
+| 2 | Price test matches "50" anywhere | low | patch | Asserts the price inside the ICE row. |
+| 3 | ICE add-on rule untested | low | patch | TPS-only add-on with size `ice` refused, tested. |
+| 4 | Missing-login warning for an ICE tested at service level only | low | reject | Same `maker_rows[].save_url` path as the TPS views tested in 9.3. |
+| 5 | A TPS product with size `ice` would clash with the ICE row | low | reject | Not reachable with today's catalogue; a guard adds a branch. |
+| 6 | `add_tps` docstring says TPS only | low | patch | Corrected. |
+| 7 | Plan checkboxes not ticked | low | reject | Fix edits this plan. |
 
 ## Verification
 

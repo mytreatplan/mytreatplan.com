@@ -52,6 +52,7 @@ offered for the chosen service and size.
     <legend class="text-[22px] font-black leading-[1.2]">{% translate "Size" %}</legend>
     {% for option in sizes %}
     <label class="flex flex-wrap items-center gap-x-3 text-copy" data-size-row="{{ option.size }}"><input type="radio" name="size" value="{{ option.size }}" data-size{% if posted.size == option.size %} checked{% endif %}> <span class="font-semibold">{{ option.label }}</span>
+      {% if option.price %}<span class="text-ink-muted" data-price-ice>{{ option.price|money }}</span>{% endif %}
       {% if option.branded %}<span class="text-ink-muted" data-price-branded>{% translate "Maker" %}: {{ option.branded|money }}</span>{% endif %}
       {% if option.in_house %}<span class="text-ink-muted" data-price-in-house>{% translate "In-house" %}: {{ option.in_house|money }}</span>{% endif %}</label>
     {% endfor %}
