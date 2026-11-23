@@ -122,11 +122,12 @@ def actor_of(actor):
     return DeletionTrace.USER, str(actor.uid)
 
 
-def delete(obj, actor):
+def delete(obj, actor, patient_code=''):
     """Delete `obj` (S3 object, row) after the current transaction commits, leaving a
     DeletionTrace; `actor` is the user who asked, or None for the system. Only the
     object's UUID and the actor go into the task (AD-23). The row is marked in the
-    caller's transaction."""
+    caller's transaction. `patient_code` (optional) is the code of the patient the file
+    belonged to, kept in the trace (AD-9); it is a code, never a name."""
     from .models import StoredObject
     from .tasks import delete_object_task
 
@@ -135,4 +136,9 @@ def delete(obj, actor):
         StoredObject.objects.filter(pk=obj.pk, delete_requested_at__isnull=True).update(
             delete_requested_at=obj.delete_requested_at)
     actor_type, actor_uuid = actor_of(actor)
-    enqueue_on_commit(delete_object_task, str(obj.pk), actor_type, actor_uuid)
+    if patient_code:
+        # attempt 1 positionally, so the code is the task's fifth argument.
+        enqueue_on_commit(delete_object_task, str(obj.pk), actor_type, actor_uuid, 1,
+                          patient_code)
+    else:
+        enqueue_on_commit(delete_object_task, str(obj.pk), actor_type, actor_uuid)

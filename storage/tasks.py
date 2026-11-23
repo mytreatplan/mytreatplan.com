@@ -83,17 +83,18 @@ MISSING = 'missing'
 INVALID_CONTENT = 'invalid_content'
 
 
-def _delete(object_id, actor_type, actor_uuid):
+def _delete(object_id, actor_type, actor_uuid, patient_code=''):
     s3.delete_keys(s3.object_keys(object_id))
     StoredObject.objects.filter(pk=object_id).delete()
     DeletionTrace.objects.get_or_create(
         object_id=object_id,
         defaults={'actor_type': actor_type, 'actor_uuid': actor_uuid or None,
-                  'deleted_at': timezone.now()})
+                  'patient_code': patient_code, 'deleted_at': timezone.now()})
 
 
 @task
-def delete_object_task(object_uuid, actor_type=DeletionTrace.SYSTEM, actor_uuid='', attempt=1):
+def delete_object_task(object_uuid, actor_type=DeletionTrace.SYSTEM, actor_uuid='', attempt=1,
+                       patient_code=''):
     """Delete one stored object for good (see the module docstring). Returns 'deleted',
     'already deleted', 'retry' or 'failed'."""
     object_id = uuid.UUID(str(object_uuid))
@@ -101,15 +102,17 @@ def delete_object_task(object_uuid, actor_type=DeletionTrace.SYSTEM, actor_uuid=
         raise ValueError('unknown actor type')
     actor = uuid.UUID(actor_uuid) if actor_uuid else None
     try:
-        done = run_once(DELETE_EFFECT, object_id, lambda: _delete(object_id, actor_type, actor))
+        done = run_once(DELETE_EFFECT, object_id,
+                        lambda: _delete(object_id, actor_type, actor, patient_code))
     except Exception as exc:  # noqa: BLE001 - S3 or the database failed; nothing was kept
         reason = s3.describe_error(exc)
         logger.warning('storage: deleting object %s failed (%s), attempt %d of %d',
                        object_id, reason, attempt, MAX_ATTEMPTS)
         if attempt < MAX_ATTEMPTS:
             delay = timedelta(minutes=RETRY_BASE_MINUTES * 2 ** (attempt - 1))
+            again = (str(object_id), actor_type, actor_uuid, attempt + 1)
             delete_object_task.using(run_after=timezone.now() + delay).enqueue(
-                str(object_id), actor_type, actor_uuid, attempt + 1)
+                *again, *((patient_code,) if patient_code else ()))
             return 'retry'
         with sentry_sdk.new_scope() as scope:
             scope.set_tag('storage.object', str(object_id))

@@ -27,8 +27,8 @@ class Patient(models.Model):
     # AD-5: crosses sites; the UUID is its global id.
     CROSSES_SITES = True
 
-    ACTIVE, ERASED = 'active', 'erased'
-    STATUSES = [(ACTIVE, 'Active'), (ERASED, 'Erased')]
+    ACTIVE, INACTIVE, ERASED = 'active', 'inactive', 'erased'
+    STATUSES = [(ACTIVE, 'Active'), (INACTIVE, 'Inactive'), (ERASED, 'Erased')]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     # PROTECT: accounts and patients are deleted logically only, never physically (user
@@ -43,6 +43,13 @@ class Patient(models.Model):
     reference = EncryptedCharField(max_length=100, blank=True)
     comments = EncryptedCharField(max_length=2000, blank=True)
     status = models.CharField(max_length=10, choices=STATUSES, default=ACTIVE)
+    # The portrait (epic-ordering 9.2, patients.portrait): `portrait` is shown, `portrait_pending`
+    # is the newest upload waiting for its scan. SET_NULL: the object row is removed by the
+    # deletion task; the patient stays.
+    portrait = models.ForeignKey('storage.StoredObject', on_delete=models.SET_NULL, null=True,
+                                 blank=True, related_name='+')
+    portrait_pending = models.ForeignKey('storage.StoredObject', on_delete=models.SET_NULL,
+                                         null=True, blank=True, related_name='+')
     version = models.PositiveIntegerField(default=1)
     actor_type = models.CharField(max_length=10, choices=ACTOR_TYPES)
     actor_uuid = models.UUIDField(null=True, blank=True)

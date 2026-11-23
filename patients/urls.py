@@ -3,7 +3,10 @@ from django.urls import path
 from . import views
 
 # Not namespaced (the doctor nav links the plain name `patients`); under accounts.page_records'
-# PORTAL_PREFIXES ('patients/').
+# PORTAL_PREFIXES ('patients/'). The patient code is the only thing a URL carries.
 urlpatterns = [
     path('patients/', views.patient_list, name='patients'),
+    path('patients/<str:code>/', views.patient_page, name='patient'),
+    path('patients/<str:code>/portrait/delete/', views.portrait_delete,
+         name='patient_portrait_delete'),
 ]

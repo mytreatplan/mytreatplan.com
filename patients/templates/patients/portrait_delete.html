@@ -1,0 +1,19 @@
+{% extends "doctor_base.html" %}
+{% load i18n %}
+{% comment %}
+The portrait's delete confirmation (patients.views.portrait_delete, epic-ordering 9.2): the
+POST unlinks the portrait and any upload being checked at once and deletes both.
+{% endcomment %}
+
+{% block title %}{% translate "Delete portrait" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,4.4vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Delete the portrait?" %}</h1>
+<p class="mt-3 text-copy text-ink-muted">{% translate "A placeholder will be shown instead. A portrait being checked is deleted too." %}</p>
+
+<form method="post" class="mt-8 flex flex-wrap items-center gap-[clamp(16px,4vw,48px)]" data-portrait-delete-form>
+  {% csrf_token %}
+  <a href="{% url 'patient' patient.code %}" class="inline-flex min-h-[52px] items-center rounded-pill bg-violet px-8 text-[18px] font-black text-white hover:bg-ink" data-cancel>{% translate "Cancel" %}</a>
+  <button type="submit" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-confirm-delete>{% translate "Delete portrait" %}</button>
+</form>
+{% endblock %}
