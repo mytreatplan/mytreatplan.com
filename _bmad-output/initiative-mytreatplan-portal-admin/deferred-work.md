@@ -238,5 +238,5 @@
   summary: Show the remaining included branded-TPS cases in the wizard (9.3 shows the subscription's total per term) once 8.13 counts used cases.
   evidence: 9.3 review finding 2; `resolver.included_cases` returns the term total (catalogue/models.py:221-225).
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-ordering/story-case-wizard-patient-and-tps-plan.md`
-  summary: The case wizard offers no ICE: the catalogue's ICE is category `initial_case_evaluation` with no size, and step 2 lists only `tps_branded`/`tps_in_house` sizes; add an ICE choice (the ICE product, no maker login check needed or the same one, as the user decides) to step 2.
+  summary: DONE by plan-9-3-ice-in-the-wizard.md (PR #132). The case wizard offers no ICE: the catalogue's ICE is category `initial_case_evaluation` with no size, and step 2 lists only `tps_branded`/`tps_in_house` sizes; add an ICE choice (the ICE product, no maker login check needed or the same one, as the user decides) to step 2.
   evidence: 9.3 staging on dev (2026-11-23): `offered_tps` returned only tps_* short/medium/long; `cart.service.SIZE_ORDER` expects an `ice` size that no product carries.

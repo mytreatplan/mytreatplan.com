@@ -3,7 +3,7 @@ title: 'ICE in the case wizard'
 type: 'bugfix'
 ticket: ''
 created: '2026-11-23'
-status: 'built'
+status: 'done'
 baseline_revision: 'b0612812e76b8b481dd93b32214c61f90c33bff6'
 route: 'full'
 route_source: 'auto'
@@ -85,3 +85,9 @@ Pass 1 (quick lens, opus): high 0, medium 0, low 7; 4 patched, 3 rejected.
 
 **Commands:**
 - From the repo root, sandbox disabled: `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib; export DATABASE_URL="sqlite:///$TMPDIR/ice.sqlite3"; ../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line cart patients` -- expected: 0 failures (I run the full suite).
+
+## Staging
+
+- Merged: PR #132 → 2ea1dd9 (2026-11-23); deploy run 45242404281 green; PR CI run 45239507536 green. Local suite 4262 passed, 17 skipped, 0 failed.
+- Checks on dev (server-side test client, one transaction rolled back, nothing left behind): 1. ICE row first with its price, EN and ES — passed. 2. Invisalign + ICE → cart item with maker invisalign; in-house + ICE → no maker — passed. 3. A patient with a live work order is refused an ICE — passed.
+- Owed by the user: by-eye check of step 2 with the ICE row (EN/ES, desktop and phone), together with 9.3's.
