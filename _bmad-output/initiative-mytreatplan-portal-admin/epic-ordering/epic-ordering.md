@@ -70,3 +70,6 @@ Choosing and buying cases. Not the case after purchase (epic-case-lifecycle).
 - Waits on epic 6 because: it needs fiscal data and shipping addresses.
 - Waits on epic 7 because: it needs order model, checkout and invoices.
 - Waits on epic 8 because: it needs subscription discounts and voucher redemption.
+- Decision (user, 2026-11-22, entry 12): a doctor's account and its patients are deleted logically only (legal, audit, compliance); the archive is long-term object storage per region (one encrypted write-once object per erased account, expiry by lifecycle rule, read-only report on an admin-site request with a fresh code), not a separate database. Retention known: Dubai Health Authority keeps telehealth patient data 25 years; the Spanish tax authority needs at least the last 5 years of fiscal data. Interim (9.1): Patient.doctor PROTECT and purge_erased skips erased accounts with patients.
+- Open question (entry 12): retention per data type (EU clinical data 25 years too? fiscal 5 years, or 6 under the commercial code per the accountant), storage tier (cold archive or infrequent access), and the lawyer's view on GDPR Art. 17(3).
+- Source conflict: AD-19 — a patient is physically deleted 48 h after being marked vs the user's decision of 2026-11-22 (logical deletion with an archive); entry 12's plan records the settling decision and AD-19 is updated with it.
