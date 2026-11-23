@@ -3,7 +3,7 @@ title: 'Case wizard: patient and TPS'
 type: 'feature'
 ticket: '3'
 created: '2026-11-23'
-status: 'built'
+status: 'done'
 baseline_revision: '30b005596d209c5faa9a39bdbc0243836684a8ad'
 route: 'full'
 route_source: 'auto'
@@ -106,3 +106,15 @@ Pass 1 (quick lens, opus): high 0, medium 2, low 3, false 0, maybe-false 0; one 
 **Commands:**
 - Work only in this worktree (`.worktrees/9.3`, branch `story/9-3-case-wizard-patient-and-tps`). From its root, sandbox disabled: `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" SECRET_KEY=test-only-worktree-secret DEBUG=False SECURE_SSL_REDIRECT=False ALLOWED_HOSTS=localhost,testserver,127.0.0.1; export DATABASE_URL="sqlite:///$TMPDIR/s93.sqlite3"; ../../../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: 0 failures (run `../../../.venv/bin/python manage.py compilemessages` after editing the .po).
 - `python manage.py makemigrations --check --dry-run` -- expected: no changes after the migration is committed.
+
+## Staging
+
+- Merged: PR #130 → 05e0372 (2026-11-23); deploy run 45230682418 green (dev and dev-ae); PR CI run 45227480102 green. Local suite 4213 passed, 18 skipped, 1 known worktree-only failure (`test_remembered_device`).
+- Checks on dev (server-side, test client, one transaction rolled back, nothing left behind), with patient EU-0BNY91JQ (live ICE work order) and its doctor (usable fiscal entity):
+  1. Invisalign, medium, JUNIOR-2 → 302 to the cart; the cart shows the patient code and "Medium"/"Medio" in EN and ES. Passed (also proves the planning-after-an-ICE rule).
+  2. Smartee without a saved login → refused, warning with the `settings/maker/smartee/?next=` link. Passed.
+  3. "Not decided yet" and "other" + name → added. Passed.
+  4. A patient with a live non-ICE work order → refused (`live_work_order`). Passed.
+  5. No usable fiscal entity → block: covered by tests only.
+- Found at staging: the wizard offers no ICE. The catalogue's ICE is its own category (`initial_case_evaluation`, no size), while the wizard lists only `tps_*` sizes, so the ticket's "ICE, short, medium or long" choice has no ICE (deferred-work).
+- Owed by the user: by-eye check of the wizard and cart, EN/ES, desktop and phone.
