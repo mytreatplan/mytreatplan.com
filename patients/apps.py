@@ -14,6 +14,8 @@ class PatientsConfig(AppConfig):
         from invoices import patients as invoice_patients
         from payments import hooks
 
-        from . import service
+        from . import portrait, service
         hooks.register('paid', 'work_orders', service.create_work_orders_for_order)
         invoice_patients.register(service.names_for_invoice)
+        # The patient portrait's storage purpose (epic-ordering 9.2).
+        portrait.register()

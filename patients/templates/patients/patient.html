@@ -1,0 +1,41 @@
+{% extends "doctor_base.html" %}
+{% load i18n static %}
+{% comment %}
+A patient's page (patients.views.patient_page, epic-ordering 9.2): the details and the
+portrait with its controls (the storage widget for one JPEG, PNG or WebP file of at most
+5 MiB, the hidden form static/js/patient-portrait.js posts the stored object's id with).
+The portrait is shown only once the virus scan and the image check have passed it. Without a
+bucket (storage_available false) the portrait block is not offered.
+{% endcomment %}
+
+{% block title %}{% translate "Patient" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block head %}{{ block.super }}{% if storage_available %}<script src="{% static 'js/patient-portrait.js' %}" defer></script>{% endif %}{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]" data-patient-code>{{ patient.code }}</h1>
+{% if patient.display_name %}<p class="mt-2 text-[20px] font-semibold" data-patient-name>{{ patient.display_name }}</p>{% endif %}
+<p class="mt-2 text-copy text-ink-muted"><span data-status="{{ patient.status }}">{% if patient.status == "inactive" %}{% translate "Inactive" context "patient status" %}{% else %}{% translate "Active" context "patient status" %}{% endif %}</span> &middot; {% translate "Created" context "patient list" %} {{ patient.created_at|date:"DATE_FORMAT" }}</p>
+
+{% if storage_available %}
+<h2 class="mt-10 text-[22px] font-black leading-[1.2]">{% translate "Portrait" %}</h2>
+{% if rejected %}<p class="mt-3 rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert" data-portrait-rejected>{% translate "The portrait could not be accepted; try another file." %}</p>{% endif %}
+<div class="mt-4 flex flex-col gap-6 tablet:flex-row tablet:items-start" data-portrait-page>
+  <span class="flex size-[clamp(120px,16vw,180px)] shrink-0 items-center justify-center self-center overflow-hidden rounded-[50%] bg-violet text-white tablet:self-start" role="img" aria-label="{% translate 'Portrait' %}">{% if portrait.url %}<img src="{{ portrait.url }}" alt="" class="size-full object-cover" data-portrait-image>{% else %}{% include "includes/_icon.html" with name="user" class="size-1/2" %}{% endif %}</span>
+  <div class="min-w-0 flex-1">
+    {% if portrait.pending %}<p class="text-copy font-semibold" data-portrait-pending>{% translate "Portrait being checked" %}</p>{% endif %}
+    <p class="text-copy text-ink-muted">{% translate "Choose one JPEG, PNG or WebP image of up to 5 MB. It appears once it has been checked, which can take a few minutes." %}</p>
+    <div class="mt-4" data-portrait-widget>
+      {% include "storage/_upload_widget.html" with purpose=purpose max_size=max_size allowed_types=allowed_types single_file=True height=300 %}
+    </div>
+    {% if has_portrait %}<p class="mt-4"><a href="{% url 'patient_portrait_delete' patient.code %}" class="font-semibold text-green-deep underline underline-offset-4 hover:text-ink" data-portrait-delete>{% translate "Delete portrait" %}</a></p>{% endif %}
+  </div>
+</div>
+<form method="post" action="{% url 'patient' patient.code %}" hidden data-portrait-attach>
+  {% csrf_token %}
+  <input type="hidden" name="object_id" value="">
+</form>
+{% endif %}
+
+<p class="mt-8"><a href="{% url 'patients' %}" class="text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Back to patients" %}</a></p>
+{% endblock %}

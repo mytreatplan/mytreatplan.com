@@ -225,3 +225,9 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-revolut-adapter-plan.md`
   summary: Revolut webhooks for refund orders (unknown order id) get a 404 from the shared handler, so Revolut retries each one three times; answer 200-ignored for Revolut refund orders if staging shows them arriving.
   evidence: payments/webhooks.py answers 404 (WebhookLog.UNKNOWN) for unknown ids; Revolut retries non-2xx deliveries 3 times, 10 minutes apart; harmless noise only (7.4 review finding 7).
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-ordering/story-patient-list-and-portrait-plan.md`
+  summary: A portrait deletion finished by the hourly sweep (storage/sweep.py requeue_deletions) writes its DeletionTrace with a blank patient code and a system actor.
+  evidence: The sweep re-enqueues delete_object_task with no patient_code after REDELETE_AFTER (45 min); nothing on StoredObject keeps the code. Rare (only when the task's own retries or its first enqueue failed); fixing it needs the code stored on the object or the sweep changed (9.2 review).
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-ordering/story-patient-list-and-portrait-plan.md`
+  summary: Decide what `inactive` means for ordering and invoices before epic-case-lifecycle adds the control that sets it.
+  evidence: patients/service.py filters status=ACTIVE in patient_of (new orders refused), create_work_orders_for_order (payment rolled back) and names_for_invoice (name left off the PDF); latent today because nothing sets inactive (9.2 review).

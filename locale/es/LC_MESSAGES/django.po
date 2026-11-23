@@ -2998,6 +2998,10 @@ msgctxt "invoice PDF"
 msgid "Net"
 msgstr "Neto"
 
+#: patients/templates
+msgid "Patient"
+msgstr "Paciente"
+
 #: invoices/pdf
 msgctxt "invoice PDF"
 msgid "Patient"
@@ -3206,3 +3210,84 @@ msgstr "Paciente (para una ICE)"
 #: payments/templates
 msgid "No patient"
 msgstr "Sin paciente"
+
+#: patients/templates
+msgctxt "patient list"
+msgid "Show"
+msgstr "Mostrar"
+
+#: patients/templates
+msgctxt "patient list"
+msgid "Status"
+msgstr "Estado"
+
+#: patients/templates
+msgctxt "patient status"
+msgid "Active"
+msgstr "Activo"
+
+#: patients/templates
+msgctxt "patient status"
+msgid "Inactive"
+msgstr "Inactivo"
+
+#: patients/templates
+msgctxt "patient status"
+msgid "Erased"
+msgstr "Eliminado"
+
+#: patients/templates
+msgid "Apply"
+msgstr "Aplicar"
+
+#: patients/templates
+msgid "Portrait"
+msgstr "Retrato"
+
+#: patients/templates
+msgid "Pages"
+msgstr "Páginas"
+
+#: patients/templates
+msgid "Showing %(first)s to %(last)s of %(total)s"
+msgstr "Mostrando del %(first)s al %(last)s de %(total)s"
+
+#: patients/templates
+msgid "Back to patients"
+msgstr "Volver a los pacientes"
+
+#: patients/templates
+msgid "Portrait being checked"
+msgstr "Retrato en comprobación"
+
+#: patients/templates
+msgid "Choose one JPEG, PNG or WebP image of up to 5 MB. It appears once it has been checked, which can take a few minutes."
+msgstr "Elija una imagen JPEG, PNG o WebP de hasta 5 MB. Aparece una vez comprobada, lo que puede tardar unos minutos."
+
+#: patients/templates
+msgid "Delete portrait"
+msgstr "Eliminar el retrato"
+
+#: patients/templates
+msgid "Delete the portrait?"
+msgstr "¿Eliminar el retrato?"
+
+#: patients/templates
+msgid "A placeholder will be shown instead. A portrait being checked is deleted too."
+msgstr "Se mostrará una imagen genérica en su lugar. Un retrato en comprobación también se elimina."
+
+#: patients/views.py
+msgid "The portrait could not be accepted; try another file."
+msgstr "No se ha podido aceptar el retrato; pruebe con otro archivo."
+
+#: patients/views.py
+msgid "The portrait has been saved."
+msgstr "El retrato se ha guardado."
+
+#: patients/views.py
+msgid "The portrait is being checked. It will be shown once the check is done."
+msgstr "El retrato se está comprobando. Se mostrará cuando termine la comprobación."
+
+#: patients/views.py
+msgid "The portrait has been deleted."
+msgstr "El retrato se ha eliminado."

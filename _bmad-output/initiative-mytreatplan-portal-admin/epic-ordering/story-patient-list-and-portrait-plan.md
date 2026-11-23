@@ -3,14 +3,14 @@ title: 'Patient list and portrait'
 type: 'feature'
 ticket: '2'
 created: '2026-11-22'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: 'e60c3c70e7878e7eabcc471c284a807c6a554b2d'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -94,3 +94,17 @@ context: []
 
 **Manual checks:**
 - On dev: add a portrait to a test patient, see "being checked", then the portrait in the page and list; replace it; delete it. EN and ES, desktop and phone.
+
+## Review Triage Log
+
+Quick lens (Opus), 2026-11-23. Security focus held (doctor isolation, clean-only owner-only portraits, CSRF, attach limited to the doctor's own unowned `patient_portrait` upload, storage delete unchanged without a patient code).
+
+| # | Finding | Verdict | Evidence | Route |
+|---|---------|---------|----------|-------|
+| 1 | `page=0`/`page=-3` went to the last page, not the nearest | low | `Paginator.get_page` maps every EmptyPage to the last page; the test locked it in | patch: clamp to 1..num_pages |
+| 2 | A deletion finished by the hourly sweep writes its trace without the patient code | low | `storage/sweep.py` requeue passes no code; only after the task's own retries fail | reject (rare; fix changes the storage sweep); recorded in deferred-work.md |
+| 3 | A refused portrait's trace never got the patient code | medium | `_reject` writes the system trace first; the later delete's `get_or_create` keeps it | patch: back-fill the blank code after the delete, scan flow untouched |
+| 4 | Erased patients' codes linked to a page that 404s | low | the list shows erased rows; `_own_patient` excludes them | patch: plain text for erased rows |
+| 5 | Patient page title not translated | low | django.po had "Patient" only with msgctxt "invoice PDF" | patch: no-context entry "Paciente" |
+| 6 | Inline `onchange`/`onclick` handlers | low | no other template uses inline handlers; "Add a patient" was a dead `#` link without JS | patch: static/js/patient-list.js, anchor `#patient-form`, Apply button without JS |
+| 7 | `inactive` treated as unusable by 9.1's ACTIVE filters (ordering, work orders, invoice names) | low | latent: nothing sets inactive until epic-case-lifecycle | reject; recorded in deferred-work.md as a decision for case lifecycle |
