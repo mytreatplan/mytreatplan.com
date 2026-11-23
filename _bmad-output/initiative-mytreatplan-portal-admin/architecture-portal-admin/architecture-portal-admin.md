@@ -88,6 +88,7 @@ flowchart TB
 | Doctor profile photo | Region (object storage) | No | Original file name; object encrypted at rest |
 | Maker logins | Region | No | Username and password |
 | Patients (names, doctor's reference, photo, comments) | Region | No (code only) | First name, surname, reference, comments (no blind index); photo in object storage |
+| Cart items (9.3: doctor, patient, product id, add-on codes, maker choice and other maker's name; written by the case wizard, turned into an order by 9.6) | Region | No | — (no patient name: the patient is a foreign key; the other maker's name is not a credential) |
 | Work orders, stages, assignment, appointments (9.1: the work order and its stage) | Region | Events without patient data (AD-21; none in 9.1, they come with 9.8) | Free-text comments |
 | Records, STL files, photos, ticket attachments | Regional object storage | No | Original file name; objects encrypted at rest |
 | Orders, invoices, credit notes, payments | Region | Accounting copy with patient codes | Buyer fiscal data |

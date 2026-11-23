@@ -53,16 +53,17 @@ def _doctor_only(request):
 
 
 def _create(request, form):
-    """Save the patient when the form is valid (with the success message); True if saved."""
+    """Save the patient when the form is valid (with the success message); the new `Patient`,
+    or None when the form is not valid. The case wizard (cart.views) reuses it."""
     if not form.is_valid():
-        return False
+        return None
     patient = service.create_patient(
         request.user, actor=payments_service.doctor_actor(request.user),
         **{name: form.cleaned_data[name]
            for name in ('first_name', 'surname', 'reference', 'comments')})
     messages.success(request, _('The patient has been saved with the code %(code)s.')
                      % {'code': patient.code})
-    return True
+    return patient
 
 
 @login_required

@@ -437,6 +437,9 @@ INSTALLED_APPS = [
     # Patients and work orders (epic-ordering 9.1, AD-5, AD-21): the regional patient record
     # and its code, the work order of a paid case, the doctor's patients page.
     'patients.apps.PatientsConfig',
+    # The doctor's cart (epic-ordering 9.3, AD-2): the regional cart items, the case wizard
+    # and the cart page.
+    'cart.apps.CartConfig',
     # The interface with the admin site (epic-admin-interface, AD-4): the signed
     # /api/v1/ endpoints, the log of every call received (InterfaceCall), the outbox of
     # events to the admin site (OutboxEvent, entry 3), the configuration snapshot pulled

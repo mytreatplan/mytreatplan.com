@@ -233,7 +233,9 @@ PORTAL_URL_NAMES = ['signup', 'signup_step', 'welcome', 'login', 'logout',
                     'checkout', 'checkout_return', 'checkout_failure', 'checkout_fake',
                     'checkout_test_order',
                     # The invoices (epic-payments entry 10).
-                    'invoices', 'invoice_pdf']
+                    'invoices', 'invoice_pdf',
+                    # The case wizard and the cart (epic-ordering 9.3).
+                    'start_a_case_patient', 'start_a_case_tps', 'cart_remove']
 
 
 def test_portal_patterns_hold_the_signup_routes(settings):

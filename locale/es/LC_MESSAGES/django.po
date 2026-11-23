@@ -3291,3 +3291,158 @@ msgstr "El retrato se está comprobando. Se mostrará cuando termine la comproba
 #: patients/views.py
 msgid "The portrait has been deleted."
 msgstr "El retrato se ha eliminado."
+
+#: cart
+msgid "Only doctors can order."
+msgstr "Solo los médicos pueden hacer pedidos."
+
+#: cart
+msgid "This patient cannot be chosen."
+msgstr "No se puede elegir a este paciente."
+
+#: cart
+msgid "Add a fiscal entity before you order."
+msgstr "Añada una entidad fiscal antes de hacer un pedido."
+
+#: cart
+msgid "Choose a maker, \"Not decided yet\" or \"Other\"."
+msgstr "Elija un fabricante, «Aún no decidido» u «Otro»."
+
+#: cart
+msgid "Save your login for this maker first."
+msgstr "Guarde antes sus datos de acceso para este fabricante."
+
+#: cart
+msgid "Enter the name of the maker (at most 60 characters)."
+msgstr "Introduzca el nombre del fabricante (60 caracteres como máximo)."
+
+#: cart
+msgid "This patient already has a case in progress."
+msgstr "Este paciente ya tiene un caso en curso."
+
+#: cart
+msgid "This patient already has a service in your cart."
+msgstr "Este paciente ya tiene un servicio en su carrito."
+
+#: cart
+msgid "This service is not available in that size."
+msgstr "Este servicio no está disponible en ese tamaño."
+
+#: cart
+msgid "One of the options chosen is not available for this service."
+msgstr "Una de las opciones elegidas no está disponible para este servicio."
+
+#: cart
+msgid "The service has been added to your cart."
+msgstr "El servicio se ha añadido a su carrito."
+
+#: cart
+msgid "In-house printing"
+msgstr "Impresión propia"
+
+#: cart
+msgid "Not decided yet"
+msgstr "Aún no decidido"
+
+#: cart
+msgid "The service has been removed from your cart."
+msgstr "El servicio se ha quitado de su carrito."
+
+#: cart
+msgid "You need a fiscal entity before you can order."
+msgstr "Necesita una entidad fiscal para poder hacer un pedido."
+
+#: cart
+msgid "Step 1 of 2: choose the patient."
+msgstr "Paso 1 de 2: elija al paciente."
+
+#: cart
+msgid "Already in your cart"
+msgstr "Ya está en su carrito"
+
+#: cart
+msgid "Choose"
+msgstr "Elegir"
+
+#: cart
+msgid "Back to the patients"
+msgstr "Volver a los pacientes"
+
+#: cart
+msgid "Step 2 of 2: choose the service."
+msgstr "Paso 2 de 2: elija el servicio."
+
+#: cart
+msgid "No planning service is available for you right now."
+msgstr "Ahora mismo no hay ningún servicio de planificación disponible para usted."
+
+#: cart
+msgid "Who makes the aligners?"
+msgstr "¿Quién fabrica los alineadores?"
+
+#: cart
+msgid "A maker"
+msgstr "Un fabricante"
+
+#: cart
+msgid "You have not saved your login for this maker."
+msgstr "No ha guardado sus datos de acceso para este fabricante."
+
+#: cart
+msgid "Save it"
+msgstr "Guardarlos"
+
+#: cart
+msgid "Name of the maker"
+msgstr "Nombre del fabricante"
+
+#: cart
+msgid "Size"
+msgstr "Tamaño"
+
+#: cart
+msgid "In-house"
+msgstr "Propia"
+
+#: cart
+msgid "Options"
+msgstr "Opciones"
+
+#: cart
+msgid "Add to cart"
+msgstr "Añadir al carrito"
+
+#: cart
+msgid "Remove"
+msgstr "Quitar"
+
+#: cart
+msgid "Your cart is empty."
+msgstr "Su carrito está vacío."
+
+#: cart/templates
+msgid "Your subscription includes %(n)s branded TPS case per year."
+msgid_plural "Your subscription includes %(n)s branded TPS cases per year."
+msgstr[0] "Su suscripción incluye %(n)s caso TPS de marca al año."
+msgstr[1] "Su suscripción incluye %(n)s casos TPS de marca al año."
+msgstr[2] "Su suscripción incluye %(n)s casos TPS de marca al año."
+
+#: cart/views.py
+msgctxt "TPS size"
+msgid "ICE"
+msgstr "ICE"
+
+#: cart/views.py
+msgctxt "TPS size"
+msgid "Short"
+msgstr "Corto"
+
+#: cart/views.py
+msgctxt "TPS size"
+msgid "Medium"
+msgstr "Medio"
+
+#: cart/views.py
+msgctxt "TPS size"
+msgid "Long"
+msgstr "Largo"

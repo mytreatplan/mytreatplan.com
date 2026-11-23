@@ -1259,11 +1259,9 @@ def settings_coming_soon(request, section):
 COMING_SOON_AREAS = {
     'support': gettext_lazy('Support'),
     'messages': gettext_lazy('Messages'),
-    'cart': gettext_lazy('Cart'),
     'tutorials': gettext_lazy('Tutorials'),
     'virtuaortho': 'Virtua ORTHO',
     'planning_services': gettext_lazy('Planning Services'),
-    'start_a_case': gettext_lazy('Request New Planning'),
 }
 
 
