@@ -3,8 +3,8 @@ title: 'Case wizard: patient and TPS'
 type: 'feature'
 ticket: '3'
 created: '2026-11-23'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'in-progress'
+baseline_revision: '30b005596d209c5faa9a39bdbc0243836684a8ad'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
@@ -81,6 +81,7 @@ context: []
 - [ ] `locale/es/LC_MESSAGES/django.po` -- Spanish for every new string.
 - [ ] `architecture-portal-admin/architecture-portal-admin.md` -- AD-2 row for the cart.
 - [ ] `patients/tests/conftest.py`, `cart/tests/` -- TPS branded/in-house × short/medium/long, ONE-ARCH (in-house), JUNIOR-1/2 (medium); one test per matrix row and the views (404 for staff and other doctors, fallback page without JS).
+- [ ] `pytest.ini` -- add `cart` to `testpaths` (a new app is not collected otherwise).
 
 **Acceptance Criteria:**
 - Given a doctor with a saved Invisalign login, when the wizard adds a medium Invisalign TPS with Junior II, then the cart page shows it under the patient and the home's cart link reaches it.
@@ -90,5 +91,5 @@ context: []
 ## Verification
 
 **Commands:**
-- `pytest -q` (suite command in local-dev-notes) -- expected: 0 failures.
+- Work only in this worktree (`.worktrees/9.3`, branch `story/9-3-case-wizard-patient-and-tps`). From its root, sandbox disabled: `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" SECRET_KEY=test-only-worktree-secret DEBUG=False SECURE_SSL_REDIRECT=False ALLOWED_HOSTS=localhost,testserver,127.0.0.1; export DATABASE_URL="sqlite:///$TMPDIR/s93.sqlite3"; ../../../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: 0 failures (run `../../../.venv/bin/python manage.py compilemessages` after editing the .po).
 - `python manage.py makemigrations --check --dry-run` -- expected: no changes after the migration is committed.
