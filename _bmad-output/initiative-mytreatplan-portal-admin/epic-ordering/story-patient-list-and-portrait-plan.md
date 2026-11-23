@@ -3,7 +3,7 @@ title: 'Patient list and portrait'
 type: 'feature'
 ticket: '2'
 created: '2026-11-22'
-status: 'built'
+status: 'done'
 baseline_revision: 'e60c3c70e7878e7eabcc471c284a807c6a554b2d'
 route: 'full'
 route_source: 'auto'
@@ -108,3 +108,15 @@ Quick lens (Opus), 2026-11-23. Security focus held (doctor isolation, clean-only
 | 5 | Patient page title not translated | low | django.po had "Patient" only with msgctxt "invoice PDF" | patch: no-context entry "Paciente" |
 | 6 | Inline `onchange`/`onclick` handlers | low | no other template uses inline handlers; "Add a patient" was a dead `#` link without JS | patch: static/js/patient-list.js, anchor `#patient-form`, Apply button without JS |
 | 7 | `inactive` treated as unusable by 9.1's ACTIVE filters (ordering, work orders, invoice names) | low | latent: nothing sets inactive until epic-case-lifecycle | reject; recorded in deferred-work.md as a decision for case lifecycle |
+
+## Staging
+
+- Merged 2026-11-23: PR #128 → 68d1d41 (build commit 80b561e); deploy run 45147759539 green on dev and dev-ae (CI suite pass). Local suite 4156 passed, 17 skipped, 8 local WeasyPrint failures only.
+- Staging checks run over SSH with the user's delegation (2026-11-23), on test patient EU-0BNY91JQ on dev (server-side upload through the same sign/complete steps, real bucket and clamd scan, pages rendered as its doctor):
+  1. List: status, size selector and "Showing 1 to 1 of 1"; `size=25`, `size=abc&page=-3` and `page=99` answer 200 with the default/nearest page (multi-page cases covered by tests: one patient on dev).
+  2. Upload: "being checked" on the page, then after the clean scan the portrait's object key is on the patient page and the list, EN and ES.
+  3. Replace: the new portrait shown; the old object deleted with a DeletionTrace carrying EU-0BNY91JQ (user actor).
+  4. Remove (confirmation page, POST): placeholder; object deleted with a trace carrying the patient code; only the doctor's own avatar link left on both pages.
+  5. By-eye EN/ES desktop and phone: owed by the user.
+  6. dev-ae (no bucket): the list answers 200 with no portrait controls or links (its doctor has no patients: empty state).
+- Left on dev: three deleted portrait objects' DeletionTraces (f56041d6, c0ea78a1, c7887911) for EU-0BNY91JQ; no portrait linked.
