@@ -96,3 +96,5 @@ Quick lens (Sonnet; low-risk UI change), 2026-11-23. Full suite after the change
 | 3 | `tablet:rounded-16` instead of the plan's `rounded-20` | false | the theme has no `--radius-20` (only 16/24); changed deliberately by the planner, CSS checked | reject |
 | 4 | Thin test for the empty-list row | low | covered by the link assertions; JS rows checked by hand | reject |
 | 5 | `test_list.py` empty-state check satisfied by the header button | low | substring `data-add-patient` now always present | patch: assert the empty-state link's href and `data-opens-dialog` |
+
+CI then failed on `test_lockout_after_five_wrong_passwords[chromium]` (both runs, and every local full run, passing alone): `str(BLOCKED_MESSAGE)` was read in the thread's active language, which the new Spanish page test leaves at `es`, so it waited for the Spanish text on the English login page. Fixed in the test (read it under `translation.override('en')`); full suite 4166 passed. Likely the cause of this test's earlier "flaky" failures too.
