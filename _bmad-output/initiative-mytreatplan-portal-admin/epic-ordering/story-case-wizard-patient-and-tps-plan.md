@@ -3,7 +3,7 @@ title: 'Case wizard: patient and TPS'
 type: 'feature'
 ticket: '3'
 created: '2026-11-23'
-status: 'draft'
+status: 'ready-for-dev'
 baseline_revision: ''
 route: 'full'
 route_source: 'auto'
@@ -38,6 +38,7 @@ context: []
 - Decision (user, 2026-11-23): without a usable fiscal entity (`has_usable_entity`) the wizard shows a block linking to `settings_fiscal_add?next=<wizard>` and refuses items.
 - Decision (user, 2026-11-23): step 2 shows the remaining included branded-TPS cases when there are any; the tick is 9.6's.
 - Decision (user, 2026-11-23): step 1 reuses 9.2's add-patient dialog, posting to a wizard view that reuses `_create` and goes straight to step 2 for the new patient.
+- Decision (user, 2026-11-23): plan kept whole (slightly over 1600 tokens). Approved and continued; merge, staging checks (SSH), pushing the story branch, the mytp-core release tag if needed, and the completion commit to master are DELEGATED for this story.
 
 ## I/O & Edge-Case Matrix
 

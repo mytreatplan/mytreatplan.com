@@ -3,7 +3,7 @@ title: 'Logical account deletion with a regional archive'
 type: 'feature'
 ticket: '12'
 created: '2026-11-23'
-status: 'draft'
+status: 'ready-for-dev'
 baseline_revision: ''
 route: 'full'
 route_source: 'auto'
@@ -38,6 +38,7 @@ context: []
 - Decision (user, 2026-11-23): a second bucket per site in the site's region, created by the user with S3 Object Lock; objects written in COMPLIANCE mode with retain-until = now + retention; a lifecycle Expiration rule removes them after. Storage class OVH Standard Infrequent Access.
 - Decision (user, 2026-11-23): the archive is encrypted with `age` to `ARCHIVE_AGE_RECIPIENT` (identity made with `generate_restore_identity` into its own KMS-wrapped file, kept for 9.13), plus bucket SSE.
 - Decision (user, 2026-11-23): AD-19 becomes "an erased account and its patients are archived per region, then removed from live tables; the 48 h deletion applies only to a single patient the doctor deletes (epic-case-lifecycle)".
+- Decision (user, 2026-11-23): plan kept whole (slightly over 1600 tokens). Approved and continued; merge, staging checks (SSH), pushing the story branch, the mytp-core release tag if needed, and the completion commit to master are DELEGATED for this story.
 
 ## I/O & Edge-Case Matrix
 
