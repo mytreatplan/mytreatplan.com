@@ -19,15 +19,36 @@ context: []
 
 ## Intent
 
-**Problem:** Erasing a doctor today strips the account at once (fiscal entities, shipping, maker logins, photo deleted) and the daily purge then hard-deletes it; accounts with patients are only kept by 9.1's stopgap (Patient.doctor PROTECT, purge skip). The user decided (2026-11-22) that an account and its patients are deleted logically only, kept in a per-region encrypted write-once archive for the legal retention period, and readable by the superuser behind a fresh code.
+**Problem:** Erasing a doctor today strips the account at once (fiscal entities, shipping, maker logins, photo deleted) and the daily purge then hard-deletes it; accounts with patients are only kept by 9.1's stopgap (Patient.doctor PROTECT, purge skip). The user decided (2026-11-22) that an account and its patients are deleted logically only, kept in a per-region encrypted write-once archive for the legal retention period.
 
-**Approach:** Erasure hides the account and its patients from every view; the region then writes one encrypted, write-once archive object per account to an archive bucket in the same region, expired by a lifecycle rule, and only after the object is verified are the live rows removed. Invoices, credit notes and the accounting copy stay as they are.
+**Approach:** Erasure hides the account and its patients; the daily purge, once `purge_after` passes, writes one encrypted write-once archive object per account to an archive bucket in the same region, verifies it, and only then deletes the live rows. The superuser's report is 9.13.
 
 ## Boundaries & Constraints
 
-**Always:** The archive never leaves the region and is never readable without the region's key. No patient name, email or file name in logs, Sentry, task arguments or object keys (key = account uid). An archive failure keeps the live data and retries; nothing is deleted before the archive is verified. Maker-login secrets are never archived. The `client.erased` event and the admin's handling stay as they are.
+**Always:** The archive never leaves the region. No patient name, email or file name in logs, Sentry, task arguments or object keys (key = `accounts/<user uid>.json.age`). An archive failure keeps every live row and is retried by the next run. Invoices, credit notes, payments, refunds, the admin accounting copy, `client.erased` and its admin handling are unchanged.
 
-**Never:** Changing issued invoices, credit notes, payments, refunds or the admin accounting copy. A separate database. Restoring an archive into live tables.
+**Never:** A separate database; restoring an archive into live tables; archiving maker logins or maker names (the maker travels inside work orders) or image bytes; the report (9.13).
+
+## Decisions
+
+- Decision (user, 2026-11-23): split; this story is the portal side only, and new entry 9.13 "Archive report on the admin site" adds the superuser's read-only report behind a fresh code.
+- Decision (user, 2026-11-23): erasure only hides (user inactive, patients `erased`, maker logins and the photo still deleted at once as today, since neither is archived); the purge writes and verifies the archive, then deletes the live rows. Every erased account is archived, with or without patients; the 9.1 purge skip goes.
+- Decision (user, 2026-11-23): the archive holds account and profile, consents, fiscal entities, shipping addresses, patients (names, reference, comments, status, code), work orders with their fields and stages, order and invoice summaries (numbers, dates, amounts, patient codes) and deletion traces. No maker names, no maker logins, no images.
+- Decision (user, 2026-11-23): one expiry per object from `ARCHIVE_RETENTION_YEARS` (no default; the purge refuses to run unset); 25 on dev and dev-ae until the lawyer answers for the EU.
+- Decision (user, 2026-11-23): a second bucket per site in the site's region, created by the user with S3 Object Lock; objects written in COMPLIANCE mode with retain-until = now + retention; a lifecycle Expiration rule removes them after. Storage class OVH Standard Infrequent Access.
+- Decision (user, 2026-11-23): the archive is encrypted with `age` to `ARCHIVE_AGE_RECIPIENT` (identity made with `generate_restore_identity` into its own KMS-wrapped file, kept for 9.13), plus bucket SSE.
+- Decision (user, 2026-11-23): AD-19 becomes "an erased account and its patients are archived per region, then removed from live tables; the 48 h deletion applies only to a single patient the doctor deletes (epic-case-lifecycle)".
+
+## I/O & Edge-Case Matrix
+
+| Scenario | Input / State | Expected Output / Behavior | Error Handling |
+|----------|--------------|---------------------------|----------------|
+| Erase | doctor with patients | user inactive, patients `erased`, gone from every portal view; fiscal, shipping, profile still in DB | — |
+| Purge due | `purge_after` passed | archive written, verified, `AccountArchive` row; live account, patients, work orders, fiscal, shipping deleted; orders keep `user=NULL`, invoices unchanged | — |
+| Bucket down | put or head fails | nothing deleted, count of failures printed, Sentry error without personal data | retried next run |
+| Settings unset | any ARCHIVE_* missing | purge refuses, deletes nothing | non-zero exit |
+| Already archived | row exists from a run that failed after the put | no second object; verify the existing one, then delete live rows | — |
+| Expired | `retain_until` passed | `AccountArchive` row deleted by the purge | — |
 
 </frozen-after-approval>
 
@@ -44,23 +65,24 @@ context: []
 
 ## Tasks & Acceptance
 
-(filled after the Open Questions)
+**Execution:**
+- [ ] `archive/` (new app: models, service, migration) -- `AccountArchive` (user uid, object key, sha256, size, written_at, retain_until; no personal data); `build(user)` returns the versioned JSON (`"schema": 1`) per the Decisions; `write(user)` encrypts with the `age` binary to `ARCHIVE_AGE_RECIPIENT` (as `backupdb` does), puts with `ObjectLockMode=COMPLIANCE`, `ObjectLockRetainUntilDate`, `StorageClass` from `ARCHIVE_STORAGE_CLASS` (default `STANDARD_IA`) and a checksum, then `head_object` checks size, checksum and retain-until -- the archive itself.
+- [ ] `storage/s3.py` -- `make_archive_client()` on `STORAGE_ENDPOINT` with `ARCHIVE_BUCKET`, `ARCHIVE_ACCESS_KEY`, `ARCHIVE_SECRET_KEY`; `missing_archive_setting()` -- separate credentials from the upload bucket.
+- [ ] `storage/management/commands/storage_bucket.py` -- `--archive --apply|--inspect`: lifecycle Expiration of ceil(years × 365.25) + 1 days and SSE on the archive bucket; inspect also shows object-lock configuration -- bucket owner runs it.
+- [ ] `accounts/erasure.py` -- `erase_user`: set patients `erased`, keep fiscal, shipping and profile; keep maker and photo erase. `purge_erased`: drop the patient skip; per account `archive.write` (or verify an existing row), then delete work orders, patients, fiscal, shipping, then today's steps; refuse when `ARCHIVE_*` or `ARCHIVE_RETENTION_YEARS` is unset; delete expired `AccountArchive` rows.
+- [ ] `mytreatplan/settings.py`, `deploy/README.md` -- the settings and a runbook: create the object-lock bucket and keys (user), `generate_restore_identity` into `archive-identity.json`, set the recipient, `storage_bucket --archive --apply`.
+- [ ] `architecture-portal-admin/architecture-portal-admin.md` -- AD-19 and AD-2 rows per the Decisions.
+- [ ] tests (`archive/tests/`, `accounts/tests/test_erasure.py`, `test_client_sync.py`, `patients/tests/test_service.py`) -- every matrix row with a stubbed S3 client and `age`; update the tests that pin the old erase/purge.
 
-## Open Questions
-
-1. **Split.** This needs the portal (erase, archive, bucket), mytp-core (a new remote resource and contract) and the admin site (request page, fresh code). (a) Recommended: this story writes the archive and removes live data (portal only); a new entry 9.13 "Archive report on the admin site" adds the superuser's read-only report behind a fresh code. (b) One story across three repos (well over the plan size limit).
-2. **When the archive is written.** (a) Recommended: erasure only hides (user inactive, patients `erased`, nothing deleted); the daily purge, once `purge_after` passes, writes and verifies the archive, then deletes the live rows — one place, retries for free, every erased account (with or without patients) archived. (b) `erase_user` writes the archive synchronously before clearing — an S3 failure blocks the erasure in Django admin, and a retry can leave a second locked object.
-3. **What is archived.** (a) Recommended: account and profile, consents, fiscal entities, shipping addresses, maker names (no logins), patients (names, reference, comments, status), work orders with stages, order and invoice summaries (numbers, dates, amounts, patient codes), deletion traces; no image bytes (portraits and photo are deleted as today, their traces kept). (b) Same plus portrait and photo files.
-4. **Retention.** One expiry per archive object, set from a per-site setting `ARCHIVE_RETENTION_YEARS` (no default; the purge refuses to run unset, like `ACCOUNT_ERASURE_RETENTION_DAYS`). (a) Recommended: dev and dev-ae 25 years until the lawyer answers for the EU; fiscal data needs no shorter clock because invoices stay in the database and the accounting copy. (b) Two objects per account (clinical 25 years, fiscal 6 years).
-5. **Write-once mechanism.** (a) Recommended: a second bucket per site, created with S3 Object Lock in compliance mode, each object written with retain-until = now + retention, and a lifecycle Expiration rule; the bucket owner (you) creates it, since object lock is only set at bucket creation. The first task checks on dev that OVH refuses an overwrite and a delete. (b) The current bucket under an `archive/` prefix without object lock (write-once by convention only).
-6. **Storage tier.** (a) Recommended: OVH Standard Infrequent Access in the same region (readable in seconds, needed for 9.13's report). (b) OVH Cold Archive (cheapest, hours to restore, separate API, object lock support unverified).
-7. **Encryption of the archive.** (a) Recommended: `age` to a per-site public recipient (setting `ARCHIVE_AGE_RECIPIENT`), its identity wrapped by the site's KMS like the backup restore identity, plus bucket SSE; only the region decrypts. (b) The field-encryption key (`mytp_core.crypto`) on the whole JSON — rotating that key would then need archived objects re-encrypted, which object lock forbids.
-8. **AD-19 conflict.** (a) Recommended: AD-19 changes to "an erased account and its patients are archived per region (this story), then removed from live tables; marked patient deletion at 48 h applies only to a single patient the doctor deletes (epic-case-lifecycle)". (b) Keep AD-19 as is and record an exception for whole-account erasure.
+**Acceptance Criteria:**
+- Given an erased doctor, when the doctor's patients, orders or invoices are viewed by anyone on the portal, then no patient name appears; invoices show the patient code only.
+- Given the archive written on dev, when the object is overwritten or deleted with the archive keys, then OVH refuses both.
+- Given the archive decrypted with the archive identity, then it holds every item of the Decisions and no maker login or name.
 
 ## Verification
 
 **Commands:**
 - `pytest -q` (suite command in local-dev-notes) -- expected: 0 failures.
 
-**Manual checks:**
+**Manual checks (staging, after the user's bucket and settings steps):**
 - On dev: erase a test doctor with one patient, run the purge job after `purge_after`, see one archive object under the account uid with its retain-until date; an overwrite and a delete are refused; the doctor and patient are gone from the portal and from the live tables; invoices still show the patient code.

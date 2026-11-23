@@ -29,6 +29,16 @@ context: []
 
 **Never:** Checkout, vouchers, the ICE deduction, the included-case tick, VirtuaOrtho (9.4–9.7). No catalogue or admin-site code change. No new `OrderLine` or `WorkOrder` field.
 
+## Decisions
+
+- Decision (user, 2026-11-23): 9.3 adds the cart's storage: a regional `CartItem` per doctor and patient (product id, add-on codes, maker choice, other name) with its AD-2 row, and a bare cart page listing items by patient with Remove; 9.6 adds checkout, vouchers and the rest on top.
+- Decision (user, 2026-11-23): the maker choice (a named maker, `undecided` or `other` + name) lives on the cart item; 9.6/9.8 carry it onto the order line and work order.
+- Decision (user, 2026-11-23): the wizard offers exactly the add-ons `resolver.add_ons(product)` returns; nothing is hard-coded (one arch on branded TPS is a catalogue change staff make on the admin site).
+- Decision (user, 2026-11-23): a patient whose live work order is an ICE may get a TPS (planning after an ICE); any other live work order refuses; 9.8 closes the ICE on payment.
+- Decision (user, 2026-11-23): without a usable fiscal entity (`has_usable_entity`) the wizard shows a block linking to `settings_fiscal_add?next=<wizard>` and refuses items.
+- Decision (user, 2026-11-23): step 2 shows the remaining included branded-TPS cases when there are any; the tick is 9.6's.
+- Decision (user, 2026-11-23): step 1 reuses 9.2's add-patient dialog, posting to a wizard view that reuses `_create` and goes straight to step 2 for the new patient.
+
 ## I/O & Edge-Case Matrix
 
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
@@ -41,38 +51,40 @@ context: []
 | Live ICE | patient's live work order is an ICE, new TPS | item added | — |
 | Not offered | no TPS product offered to this doctor in that size | size not listed | tampered POST refused |
 | Other doctor's / inactive patient | code of another doctor or inactive | — | 404 |
+| Patient already in cart | second item for the same patient | — | refused (one service per patient) |
+| No fiscal entity | doctor without a usable entity | block with link | item refused |
 
 </frozen-after-approval>
 
 ## Code Map
 
 - `accounts/urls.py:71`, `accounts/views.py:1266` -- `start_a_case` placeholder; keep the name and path, move the view to the new app.
-- `accounts/urls.py:66` -- `cart` placeholder (depends on Q1).
+- `accounts/urls.py:66` -- `cart` placeholder; replaced by the cart page.
 - `accounts/page_records.py:43` (`PORTAL_PREFIXES`), `mytp_publicsite/tests/test_settings_staging.py` (`PORTAL_URL_NAMES`) -- register every new address.
 - `accounts/makers.py` -- `NAMED`, `MAKER_NAMES`, `has_login`; reuse, do not change.
-- `catalogue/resolver.py:399` `add_ons`, `:410` `price`; `subscriptions/service.py:225` `offers_for` -- what the doctor may buy; `resolver.included_cases` -- remaining count (Q6).
+- `catalogue/resolver.py:399` `add_ons`, `:410` `price`; `subscriptions/service.py:225` `offers_for` -- what the doctor may buy; `resolver.included_cases` -- remaining count.
 - `patients/service.py` -- `patients_of`, `patient_of`, `live_work_order`, `create_patient`; add an "is this work order an ICE" helper reading `resolver.product(wo.product_id).category`.
 - `patients/views.py` `_create`, `patients/templates/patients/_patient_form.html`, `static/js/dialog.js` -- reuse the add-patient dialog inside step 1.
 - `payments/service.py:~259` `_check_patients` -- do not change (TPS lines carry no patient until 9.6/9.8).
-- `accounts/fiscal.py:504` `has_usable_entity` (Q5).
+- `accounts/fiscal.py:504` `has_usable_entity` -- the fiscal block.
 - `signup/steps.py` -- precedent for a server-side wizard with plain-POST fallback.
 - `patients/tests/conftest.py` -- ICE-only catalogue; extend with TPS branded/in-house short/medium/long and ONE-ARCH, JUNIOR-1/2.
 
 ## Tasks & Acceptance
 
-**Execution:** (filled after the Open Questions)
+**Execution:**
+- [ ] `cart/` (new app: models, migration, service, views, urls, templates) -- `CartItem` (uuid, doctor CASCADE, patient CASCADE, product_id, add_on_codes JSON, maker, other_name ≤ 60, created_at; unique doctor+patient). `service.add_tps(doctor, patient, *, maker, other_name, in_house, size, add_on_codes)` raises `CartRefused(code)` for every refusal in the matrix and the Always rules; picks the offered product from `offers_for` by category and size (first by code when several); checks add-ons with `resolver.price`. `items_of(doctor)`, `remove(doctor, item_id)`.
+- [ ] `cart/views.py` + templates -- `start-a-case/` (name `start_a_case`, step 1: active patients via `patients_of`, the dialog, fiscal block), `start-a-case/patient/` (POST, `start_a_case_patient`), `start-a-case/<code>/` (`start_a_case_tps`, step 2: maker or in-house, maker choice incl. "not decided yet" and "other" + name, size with price, offered add-ons, included-cases count, missing-login warning with `settings_maker_save?next=`), `cart/` (`cart`, items by patient: patient code and name, product, add-ons, maker) and `cart/<uuid>/remove/` (POST, `cart_remove`). Plain POST works without JS; a small static JS may hide add-ons not offered for the chosen size.
+- [ ] `accounts/urls.py`, `accounts/views.py` -- drop the two placeholders (names kept by the new app); `mytp_publicsite/tests/test_settings_staging.py` `PORTAL_URL_NAMES` -- add the new names.
+- [ ] `patients/service.py` -- `live_is_ice(patient)`; `patients/views.py` -- let the wizard reuse `_create`.
+- [ ] `locale/es/LC_MESSAGES/django.po` -- Spanish for every new string.
+- [ ] `architecture-portal-admin/architecture-portal-admin.md` -- AD-2 row for the cart.
+- [ ] `patients/tests/conftest.py`, `cart/tests/` -- TPS branded/in-house × short/medium/long, ONE-ARCH (in-house), JUNIOR-1/2 (medium); one test per matrix row and the views (404 for staff and other doctors, fallback page without JS).
 
-**Acceptance Criteria:** (filled after the Open Questions)
-
-## Open Questions
-
-1. **What "add to the cart" means before 9.6 builds the cart.** (a) Recommended: 9.3 adds the cart's storage now, a regional `CartItem` table (doctor, patient, product id, add-on codes, maker, other name, created) with its AD-2 row, and a bare cart page listing items by patient with Remove; 9.6 adds checkout, vouchers and the rest. (b) Keep the wizard's result in the session and show a summary page; 9.6 builds the cart and rewires the wizard. (c) Create an order directly with `create_order` — not possible today, `_check_patients` refuses a TPS line that names a patient.
-2. **Where the maker is kept.** (a) Recommended: on the cart item (maker code, or `undecided`, or `other` + name); 9.6/9.8 carry it onto the order line or work order. (b) Add it to `OrderLine` now — conflicts with Never (no order changes in 9.3).
-3. **One arch.** The catalogue offers ONE-ARCH (−25 %) on in-house TPS only (5.6 decision); Junior I/II on medium branded only. (a) Recommended: the wizard shows what the catalogue offers on the chosen product, nothing hard-coded; if one arch should apply to branded TPS too, staff add the category to ONE-ARCH on the admin site (data, no code). (b) Hard-code one arch on every TPS in the wizard — the resolver would refuse it at pricing.
-4. **Planning after an ICE.** (a) Recommended: allowed when the patient's live work order is an ICE and the new item is a TPS; the ICE work order stays open until 9.8 closes it on payment. (b) Refuse every patient with a live work order until 9.8.
-5. **Fiscal block (epic note: ordering is blocked until `has_usable_entity`).** (a) Recommended: the wizard shows the block with a link to add a fiscal entity (`?next=` back) and refuses items without one. (b) Leave it to 9.6's checkout.
-6. **Included branded-TPS cases (epic handoff: 9.3 shows the remaining count).** (a) Recommended: step 2 shows "N included cases left" when the doctor's subscription has any; no tick (9.6). (b) Leave it to 9.6.
-7. **Creating a patient inside the wizard.** (a) Recommended: the 9.2 dialog on step 1 posts to a wizard view that reuses `_create` and goes straight to step 2 for the new patient. (b) Link to the patient list and back by hand.
+**Acceptance Criteria:**
+- Given a doctor with a saved Invisalign login, when the wizard adds a medium Invisalign TPS with Junior II, then the cart page shows it under the patient and the home's cart link reaches it.
+- Given a missing Smartee login, when the doctor follows the warning's link and saves it, then they land back on step 2 for the same patient.
+- Given a new patient created in step 1, then step 2 opens for that patient and the patient list shows it.
 
 ## Verification
 

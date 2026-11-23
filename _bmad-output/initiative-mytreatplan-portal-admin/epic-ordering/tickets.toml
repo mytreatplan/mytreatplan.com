@@ -35,6 +35,17 @@ risk = "high"
 references = ["epic-ordering/story-patients-work-orders-and-a-first-ice-order-plan.md", "deferred-work.md"]
 
 [[entry]]
+id = 13
+type = "story"
+title = "Archive report on the admin site"
+description = "Lets the superuser request a read-only report of an erased account's archive (9.12) from the admin site behind a fresh code: the admin asks the region through the remote-read path, the region decrypts the archive with its KMS-wrapped archive identity, logs the access, and returns the report without the admin site keeping it."
+verify = "On admindev the superuser opens the report of the archive written on dev after a fresh code; a Commercial Manager is refused; dev logs the access; nothing of the report is stored on admindev."
+covers = ["O1"]
+after = [12, "4.5", "3.5"]
+hitl = false
+risk = "high"
+
+[[entry]]
 id = 3
 type = "story"
 title = "Case wizard: patient and TPS"
@@ -118,7 +129,7 @@ title = "Production checks for the EU go-live"
 description = "Writes this epic's production checks (patients and codes, wizard branches with maker-login warning, cart and checkout with voucher, ICE deduction, work orders and emails, pending-payment list) into epic-eu-golive's Done when."
 verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
 covers = []
-after = [9, 12]
+after = [9, 12, 13]
 hitl = false
 risk = "low"
 
@@ -129,6 +140,6 @@ title = "Refactor sweep"
 description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
 verify = "The portal's and mytp-core's test suites pass; deferred review findings are closed or recorded."
 covers = []
-after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12]
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13]
 hitl = false
 risk = "low"
