@@ -164,3 +164,46 @@ def test_remove_is_the_doctors_own(doctor, other_doctor, ready):
     assert CartItem.objects.count() == 1
     assert service.remove(doctor, item.pk) and not service.remove(doctor, item.pk)
     assert not CartItem.objects.exists()
+
+
+def test_ice_with_a_maker_keeps_the_maker(doctor, ready):
+    item = add(doctor, ready, size='ice', add_on_codes=[])
+    assert str(item.product_id) == ICE and item.maker == 'invisalign'
+
+
+def test_ice_in_house_has_no_maker(doctor, ready):
+    item = add(doctor, ready, size='ice', in_house=True)
+    assert str(item.product_id) == ICE and (item.maker, item.other_name) == ('', '')
+
+
+def test_ice_follows_the_maker_rules(doctor, entity, patient):
+    assert refused(doctor, patient, size='ice', maker='smartee') == service.MAKER_LOGIN
+    assert refused(doctor, patient, size='ice', maker='other', other_name=' ') == service.OTHER_NAME
+    assert add(doctor, patient, size='ice', maker='undecided').maker == 'undecided'
+
+
+def test_ice_with_other_and_a_name_is_added(doctor, entity, patient):
+    item = add(doctor, patient, size='ice', maker='other', other_name='Acme')
+    assert (item.maker, item.other_name) == ('other', 'Acme')
+
+
+@pytest.mark.parametrize('product_id', [ICE, BRANDED['medium']])
+def test_ice_is_refused_with_any_live_work_order(doctor, ready, product_id):
+    live_order(ready, product_id)
+    assert refused(doctor, ready, size='ice') == service.LIVE_WORK_ORDER
+
+
+def test_ice_not_offered_is_refused(doctor, ready, admin):
+    from integration.tests.snapshot_rows import pull
+    from patients.tests.conftest import ice_catalogue
+    section = ice_catalogue()
+    section['products'] = [row for row in section['products'] if row['id'] != ICE]
+    for row in section['subscriptions'] + section.get('manual_subscriptions', []):
+        row['products'] = [pid for pid in row['products'] if pid != ICE]
+    assert pull(admin, 2, section) == ('applied', 2)
+    assert service.offered_ice(doctor) is None
+    assert refused(doctor, ready, size='ice') == service.NOT_OFFERED
+
+
+def test_ice_refuses_a_tps_only_add_on(doctor, ready):
+    assert refused(doctor, ready, size='ice', add_on_codes=['JUNIOR-1']) == service.ADD_ON

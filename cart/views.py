@@ -122,17 +122,27 @@ def start_a_case_patient(request):
 def _options(doctor):
     """What step 2 offers: [{'size', 'prices': {category: Money}}] by size order, and the
     add-ons [{'code', 'name', 'description', 'offered': 'branded:medium ...'}]."""
-    sizes, add_ons = {}, {}
-    for product, money in service.offered_tps(doctor):
-        key = 'branded' if product.category == Product.TPS_BRANDED else 'in_house'
-        sizes.setdefault(product.size, {})[key] = money
+    sizes, add_ons, ice_price = {}, {}, None
+
+    def note_add_ons(product, keys):
         for add_on in resolver.add_ons(product):
             entry = add_ons.setdefault(add_on.code, {
                 'code': add_on.code, 'name': add_on.public_name,
                 'description': add_on.description_in(translation.get_language()), 'offered': set()})
-            entry['offered'].add(f'{key}:{product.size}')
+            entry['offered'].update(keys)
+
+    ice = service.offered_ice(doctor)
+    if ice:
+        ice_price = ice[1]
+        sizes[service.ICE_SIZE] = {}
+        note_add_ons(ice[0], (f'branded:{service.ICE_SIZE}', f'in_house:{service.ICE_SIZE}'))
+    for product, money in service.offered_tps(doctor):
+        key = 'branded' if product.category == Product.TPS_BRANDED else 'in_house'
+        sizes.setdefault(product.size, {})[key] = money
+        note_add_ons(product, (f'{key}:{product.size}',))
     return ([{'size': size, 'label': size_label(size), 'branded': prices.get('branded'),
-              'in_house': prices.get('in_house')}
+              'in_house': prices.get('in_house'),
+              'price': ice_price if size == service.ICE_SIZE else None}
              for size, prices in sorted(sizes.items(), key=lambda pair: service.size_rank(pair[0]))],
             [{**entry, 'offered': ' '.join(sorted(entry['offered']))}
              for entry in sorted(add_ons.values(), key=lambda entry: entry['code'])])
@@ -199,7 +209,8 @@ def _line(item, held):
             price = None
     return {'item': item, 'patient': item.patient,
             'product': product.public_name if product else '',
-            'size': size_label(product.size) if product else '',
+            'size': (size_label(service.ICE_SIZE) if product.category == Product.ICE
+                     else size_label(product.size)) if product else '',
             'add_ons': [add_on.public_name if add_on else code
                         for add_on, code in zip(add_ons, item.add_on_codes)],
             'maker': _maker_label(item), 'price': price}

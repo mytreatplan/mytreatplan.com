@@ -11,7 +11,7 @@ from accounts import makers
 from cart.models import CartItem
 from patients import service as patients_service
 from patients.models import Patient
-from patients.tests.conftest import BRANDED
+from patients.tests.conftest import BRANDED, ICE
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 START, NEW, CART = '/en/start-a-case/', '/en/start-a-case/patient/', '/en/cart/'
@@ -192,3 +192,44 @@ def test_step_two_is_in_spanish(doctor, entity, patient):
     assert 'elija el servicio' in html and 'Añadir al carrito' in html
     assert 'Corto' in html and 'Medio' in html and 'Largo' in html
     assert 'Short' not in html
+
+
+def test_ice_is_the_first_size_with_its_price_and_goes_to_the_cart(doctor, ready):
+    client = browser(doctor)
+    html = page(client.get(step2(ready)))
+    assert html.index('data-size-row="ice"') < html.index('data-size-row="short"')
+    row = html[html.index('data-size-row="ice"'):html.index('</label>', html.index('data-size-row="ice"'))]
+    assert re.search(r'data-price-ice>[^<]*50', row)
+    assert client.post(step2(ready), {'kind': 'in_house', 'size': 'ice'}).status_code == 302
+    item = CartItem.objects.get()
+    assert str(item.product_id) == ICE and item.maker == ''
+    cart = page(client.get(CART))
+    assert 'Initial case evaluation' in cart and '(ICE)' in cart
+
+
+def test_ice_with_a_maker_and_in_spanish(doctor, ready):
+    client = browser(doctor)
+    assert client.post(step2(ready), {'kind': 'maker', 'maker': 'invisalign',
+                                      'size': 'ice'}).status_code == 302
+    assert CartItem.objects.get().maker == 'invisalign'
+    assert '(ICE)' in page(client.get('/es/cart/'))
+
+
+def test_a_tampered_ice_post_is_refused_with_a_live_work_order(doctor, ready):
+    from patients.models import WorkOrder
+    WorkOrder.objects.create(patient=ready, order_line_id=uuid.uuid4(), stage='assigned',
+                             product_id=ICE, actor_type='system')
+    response = browser(doctor).post(step2(ready), {'kind': 'in_house', 'size': 'ice'})
+    assert 'data-error' in page(response) and not CartItem.objects.exists()
+
+
+def test_ice_is_not_listed_when_not_offered(doctor, ready, admin):
+    from integration.tests.snapshot_rows import pull
+    from patients.tests.conftest import ice_catalogue
+    section = ice_catalogue()
+    section['products'] = [row for row in section['products'] if row['id'] != ICE]
+    for row in section['subscriptions'] + section.get('manual_subscriptions', []):
+        row['products'] = [pid for pid in row['products'] if pid != ICE]
+    assert pull(admin, 2, section) == ('applied', 2)
+    html = page(browser(doctor).get(step2(ready)))
+    assert 'data-size-row="short"' in html and 'data-size-row="ice"' not in html

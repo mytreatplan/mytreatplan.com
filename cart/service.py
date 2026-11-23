@@ -6,7 +6,8 @@
 - `items_of(doctor)`, `remove(doctor, item_id)`.
 
 The product is never chosen by code: it is the first (by code) of the products the doctor
-is offered (`subscriptions.service.offers_for`) in the category (`tps_in_house` for
+is offered (`subscriptions.service.offers_for`); size `ice` is the ICE product (either
+branch, the maker kept as for a TPS), else the category (`tps_in_house` for
 printing, else `tps_branded`) and size. The add-ons are only those `resolver.add_ons`
 offers on it, checked by `resolver.price`. A named maker needs a saved login
 (`accounts.makers.has_login`); "not decided yet" and "other" never block. No patient name or
@@ -38,7 +39,8 @@ CODES = (NOT_A_DOCTOR, NO_PATIENT, NO_ENTITY, MAKER_UNKNOWN, MAKER_LOGIN, OTHER_
          LIVE_WORK_ORDER, IN_CART, NOT_OFFERED, ADD_ON)
 
 # The sizes in the order the wizard lists them; any other size follows, by name.
-SIZE_ORDER = ('ice', 'short', 'medium', 'long')
+ICE_SIZE = 'ice'  # step 2's size choice for the ICE (its own category, no size)
+SIZE_ORDER = (ICE_SIZE, 'short', 'medium', 'long')
 
 
 class CartRefused(Exception):
@@ -60,6 +62,14 @@ def offered_tps(doctor, day=None):
     return sorted(((product, money) for product, money in subscriptions.offers_for(doctor, day)
                    if product.category in wanted and product.size),
                   key=lambda pair: (pair[0].code or '', str(pair[0].pk)))
+
+
+def offered_ice(doctor, day=None):
+    """(product, Money) of the doctor's ICE (the first by code), or None."""
+    found = sorted(((product, money) for product, money in subscriptions.offers_for(doctor, day)
+                    if product.category == Product.ICE),
+                   key=lambda pair: (pair[0].code or '', str(pair[0].pk)))
+    return found[0] if found else None
 
 
 def size_rank(size):
@@ -85,7 +95,7 @@ def _maker(doctor, maker, other_name, in_house):
 
 
 def add_tps(doctor, patient, *, maker, other_name='', in_house=False, size, add_on_codes=()):
-    """Put a TPS for `patient` in `doctor`'s cart and return the `CartItem`; `CartRefused`
+    """Put a TPS or an ICE for `patient` in `doctor`'s cart and return the `CartItem`; `CartRefused`
     (see the module docstring and `CODES`) for anything not allowed."""
     if not is_client(doctor) or doctor.is_erased:
         raise CartRefused(NOT_A_DOCTOR)
@@ -96,14 +106,19 @@ def add_tps(doctor, patient, *, maker, other_name='', in_house=False, size, add_
         raise CartRefused(NO_ENTITY)
     maker, other_name = _maker(doctor, maker, other_name, in_house)
     # A live work order refuses, unless it is an ICE (a TPS is the planning after it).
+    # An ICE is refused with any live work order.
     if patients_service.live_work_order(patient) is not None \
-            and not patients_service.live_is_ice(patient):
+            and (size == ICE_SIZE or not patients_service.live_is_ice(patient)):
         raise CartRefused(LIVE_WORK_ORDER)
     if CartItem.objects.filter(doctor_id=doctor.pk, patient_id=patient.pk).exists():
         raise CartRefused(IN_CART)
-    category = category_of(in_house)
-    product = next((offered for offered, _money in offered_tps(doctor)
-                    if offered.category == category and offered.size == size), None)
+    if size == ICE_SIZE:
+        ice = offered_ice(doctor)
+        product = ice[0] if ice else None
+    else:
+        category = category_of(in_house)
+        product = next((offered for offered, _money in offered_tps(doctor)
+                        if offered.category == category and offered.size == size), None)
     if product is None:
         raise CartRefused(NOT_OFFERED)
     codes = [(code or '').strip().upper() for code in add_on_codes]
