@@ -3,8 +3,8 @@ title: 'Logical account deletion with a regional archive'
 type: 'feature'
 ticket: '12'
 created: '2026-11-23'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'in-progress'
+baseline_revision: '30b005596d209c5faa9a39bdbc0243836684a8ad'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
@@ -74,6 +74,7 @@ context: []
 - [ ] `mytreatplan/settings.py`, `deploy/README.md` -- the settings and a runbook: create the object-lock bucket and keys (user), `generate_restore_identity` into `archive-identity.json`, set the recipient, `storage_bucket --archive --apply`.
 - [ ] `architecture-portal-admin/architecture-portal-admin.md` -- AD-19 and AD-2 rows per the Decisions.
 - [ ] tests (`archive/tests/`, `accounts/tests/test_erasure.py`, `test_client_sync.py`, `patients/tests/test_service.py`) -- every matrix row with a stubbed S3 client and `age`; update the tests that pin the old erase/purge.
+- [ ] `pytest.ini` -- add `archive` to `testpaths` (a new app is not collected otherwise).
 
 **Acceptance Criteria:**
 - Given an erased doctor, when the doctor's patients, orders or invoices are viewed by anyone on the portal, then no patient name appears; invoices show the patient code only.
@@ -83,7 +84,7 @@ context: []
 ## Verification
 
 **Commands:**
-- `pytest -q` (suite command in local-dev-notes) -- expected: 0 failures.
+- From the repo root, sandbox disabled: `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU="; export DATABASE_URL="sqlite:///$TMPDIR/s912.sqlite3"; ../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: 0 failures.
 
 **Manual checks (staging, after the user's bucket and settings steps):**
 - On dev: erase a test doctor with one patient, run the purge job after `purge_after`, see one archive object under the account uid with its retain-until date; an overwrite and a delete are refused; the doctor and patient are gone from the portal and from the live tables; invoices still show the patient code.
