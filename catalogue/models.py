@@ -105,7 +105,8 @@ class Product(SnapshotFedModel):
     that has none yet). `valid_from` / `valid_to` are optional, inclusive dates in Madrid
     time: see `offered_on`.
 
-    Entry 6: `size` ('' for none; TPS products only) decides which add-ons are offered;
+    Entry 6: `size` ('' for none; TPS and, since 9.4, VirtuaOrtho One and DigitalTwin
+    products) decides which add-ons are offered;
     `min_quantity` / `max_quantity`, both or neither, make the product priced per unit
     (`net_amount` is the price of one unit, sold in a whole quantity within the range);
     `calls` / `call_minutes`, both or neither, are the calls the product grants and the
@@ -116,6 +117,11 @@ class Product(SnapshotFedModel):
     TPS_BRANDED = 'tps_branded'
     TPS_IN_HOUSE = 'tps_in_house'
     ICE = 'initial_case_evaluation'
+    VIRTUAORTHO_ONE = 'virtuaortho_one'
+    VIRTUAORTHO_DIGITALTWIN = 'virtuaortho_digitaltwin'
+    ODB = 'odb'
+    RETAINERS = 'retainers'
+    SPARK_ON_DEMAND = 'spark_on_demand'
     UNCATEGORISED = 'uncategorised'
     CATEGORIES = (TPS_BRANDED, TPS_IN_HOUSE, ICE, 'virtuaortho_one',
                   'virtuaortho_digitaltwin', 'odb', 'retainers', 'spark_on_demand',

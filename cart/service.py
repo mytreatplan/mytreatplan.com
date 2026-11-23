@@ -3,6 +3,10 @@
 - `add_tps(doctor, patient, *, maker, other_name, in_house, size, add_on_codes)`: put a
   treatment-plan service (TPS) for one of the doctor's active patients in the cart. Every
   refusal is a `CartRefused` with a code (listed in `CODES`); nothing is changed then.
+- `offered_virtuaortho(doctor)`, `add_virtuaortho(doctor, patient, *, variant, choice, size,
+  add_on_codes, quantity, address_id)` (9.4): a VirtuaOrtho One or DigitalTwin service, ODB,
+  retainers or Spark on Demand, shipped to one of the doctor's usable addresses (stored on the
+  item; 9.6 snapshots it and calls `mark_used`). No maker: MyTreatPlan makes it.
 - `items_of(doctor)`, `remove(doctor, item_id)`.
 
 The product is never chosen by code: it is the first (by code) of the products the doctor
@@ -13,9 +17,10 @@ offers on it, checked by `resolver.price`. A named maker needs a saved login
 (`accounts.makers.has_login`); "not decided yet" and "other" never block. No patient name or
 maker credential is read, logged or put in a message here.
 """
+from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
-from accounts import fiscal, makers
+from accounts import fiscal, makers, shipping
 from accounts.client_sync import is_client
 from catalogue import resolver
 from catalogue.models import Product
@@ -35,8 +40,24 @@ LIVE_WORK_ORDER = 'live_work_order'
 IN_CART = 'in_cart'
 NOT_OFFERED = 'not_offered'
 ADD_ON = 'add_on'
+NO_ADDRESS = 'no_address'
+ADDRESS = 'address'
+QUANTITY = 'quantity'
+NOT_FINISHED = 'not_finished'
 CODES = (NOT_A_DOCTOR, NO_PATIENT, NO_ENTITY, MAKER_UNKNOWN, MAKER_LOGIN, OTHER_NAME,
-         LIVE_WORK_ORDER, IN_CART, NOT_OFFERED, ADD_ON)
+         LIVE_WORK_ORDER, IN_CART, NOT_OFFERED, ADD_ON, NO_ADDRESS, ADDRESS, QUANTITY,
+         NOT_FINISHED)
+
+# VirtuaOrtho (9.4). The variants of step 2 and the category each one is sold in.
+ONE, DIGITALTWIN = 'one', 'digitaltwin'
+VARIANTS = {ONE: Product.VIRTUAORTHO_ONE, DIGITALTWIN: Product.VIRTUAORTHO_DIGITALTWIN}
+# What a choice picks: 'case' by the variant's size; 'odb' and 'spark' by the product's id
+# (one arch or two arches); 'retainers' the one product.
+CASE, ODB, RETAINERS, SPARK = 'case', 'odb', 'retainers', 'spark'
+VIRTUAORTHO_CATEGORIES = (Product.VIRTUAORTHO_ONE, Product.VIRTUAORTHO_DIGITALTWIN, Product.ODB,
+                          Product.RETAINERS, Product.SPARK_ON_DEMAND)
+# Under DigitalTwin an ODB always carries this add-on (not a choice); under One never.
+ODB_DT = 'ODB-DT'
 
 # The sizes in the order the wizard lists them; any other size follows, by name.
 ICE_SIZE = 'ice'  # step 2's size choice for the ICE (its own category, no size)
@@ -70,6 +91,21 @@ def offered_ice(doctor, day=None):
                     if product.category == Product.ICE),
                    key=lambda pair: (pair[0].code or '', str(pair[0].pk)))
     return found[0] if found else None
+
+
+def offered_virtuaortho(doctor, day=None):
+    """[(product, Money)] of the VirtuaOrtho products (One, DigitalTwin, ODB, retainers,
+    Spark on Demand) the doctor is offered, by code. The wizard shows its VirtuaOrtho branch
+    only when this holds a One or a DigitalTwin product (`variants_offered`)."""
+    return sorted(((product, money) for product, money in subscriptions.offers_for(doctor, day)
+                   if product.category in VIRTUAORTHO_CATEGORIES),
+                  key=lambda pair: (pair[0].code or '', str(pair[0].pk)))
+
+
+def variants_offered(offered):
+    """The variants (ONE, DIGITALTWIN) with a product in `offered`."""
+    return [variant for variant, category in VARIANTS.items()
+            if any(product.category == category for product, _money in offered)]
 
 
 def size_rank(size):
@@ -141,9 +177,89 @@ def add_tps(doctor, patient, *, maker, other_name='', in_house=False, size, add_
         raise CartRefused(IN_CART) from None
 
 
+def _virtuaortho_product(offered, variant, choice, size, patient):
+    """The offered product a (variant, choice, size) picks, or CartRefused."""
+    if variant not in VARIANTS or variant not in variants_offered(offered):
+        raise CartRefused(NOT_OFFERED)
+    wanted = {CASE: VARIANTS[variant], ODB: Product.ODB, RETAINERS: Product.RETAINERS,
+              SPARK: Product.SPARK_ON_DEMAND}.get(choice)
+    # Spark on Demand is for One only.
+    if wanted is None or (choice == SPARK and variant != ONE):
+        raise CartRefused(NOT_OFFERED)
+    found = [product for product, _money in offered if product.category == wanted]
+    if choice == CASE:
+        found = [product for product in found if product.size == size]
+    elif choice in (ODB, SPARK):
+        found = [product for product in found if str(product.pk) == str(size)]
+    if not found:
+        raise CartRefused(NOT_OFFERED)
+    if choice == RETAINERS and not patients_service.has_finished_treatment(patient):
+        raise CartRefused(NOT_FINISHED)
+    return found[0]
+
+
+def add_virtuaortho(doctor, patient, *, variant, choice, size='', add_on_codes=(), quantity=1,
+                    address_id=''):
+    """Put a VirtuaOrtho item for `patient` in `doctor`'s cart and return the `CartItem`.
+    `variant` is ONE or DIGITALTWIN; `choice` is CASE (with `size`), ODB or SPARK (with
+    `size` the product's id), or RETAINERS (needs a finished treatment). `quantity`: the
+    aligners of a Spark product (within its range), else 1. A live work order refuses unless
+    it is an ICE. `CartRefused` for anything not allowed; nothing is changed then."""
+    if not is_client(doctor) or doctor.is_erased:
+        raise CartRefused(NOT_A_DOCTOR)
+    patient = patients_service.patient_of(doctor, getattr(patient, 'code', None))
+    if patient is None:
+        raise CartRefused(NO_PATIENT)
+    if not fiscal.has_usable_entity(doctor):
+        raise CartRefused(NO_ENTITY)
+    if patients_service.live_work_order(patient) is not None \
+            and not patients_service.live_is_ice(patient):
+        raise CartRefused(LIVE_WORK_ORDER)
+    if CartItem.objects.filter(doctor_id=doctor.pk, patient_id=patient.pk).exists():
+        raise CartRefused(IN_CART)
+    product = _virtuaortho_product(offered_virtuaortho(doctor), variant, choice, size, patient)
+    if not shipping.has_usable_address(doctor):
+        raise CartRefused(NO_ADDRESS)
+    try:
+        address = shipping.usable_addresses(doctor).filter(pk=address_id).first()
+    except (ValueError, ValidationError):
+        address = None
+    if address is None:
+        raise CartRefused(ADDRESS)
+    try:
+        quantity = int(quantity)
+    except (TypeError, ValueError):
+        raise CartRefused(QUANTITY) from None
+    codes = [(code or '').strip().upper() for code in add_on_codes]
+    if choice == ODB and variant == DIGITALTWIN and ODB_DT not in codes:
+        codes.append(ODB_DT)
+    chosen = [resolver.add_on(code) for code in codes]
+    if None in chosen or len(set(codes)) != len(codes):
+        raise CartRefused(ADD_ON)
+    # ODB DigitalTwin is not a choice: never under One, and under DigitalTwin only forced.
+    if ODB_DT in codes and not (choice == ODB and variant == DIGITALTWIN):
+        raise CartRefused(ADD_ON)
+    offered_codes = {add_on.code for add_on in resolver.add_ons(product)}
+    if any(add_on.code not in offered_codes for add_on in chosen):
+        raise CartRefused(ADD_ON)
+    try:
+        resolver.price(product, subscriptions.effective(doctor).subscription, chosen, quantity)
+    except resolver.QuantityRefused:
+        raise CartRefused(QUANTITY) from None
+    except ValueError:
+        raise CartRefused(ADD_ON) from None
+    try:
+        with transaction.atomic():
+            return CartItem.objects.create(
+                doctor=doctor, patient=patient, product_id=product.pk, add_on_codes=codes,
+                maker='', other_name='', quantity=quantity, shipping_address=address)
+    except IntegrityError:
+        raise CartRefused(IN_CART) from None
+
+
 def items_of(doctor):
     """The doctor's cart items, oldest first, with their patients."""
-    return list(CartItem.objects.filter(doctor_id=doctor.pk).select_related('patient'))
+    return list(CartItem.objects.filter(doctor_id=doctor.pk).select_related('patient', 'shipping_address'))
 
 
 def remove(doctor, item_id):

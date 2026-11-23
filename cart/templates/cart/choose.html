@@ -19,9 +19,10 @@ offered for the chosen service and size.
 {% if error %}<p class="mt-6 rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert" data-error>{{ error }}</p>{% endif %}
 
 {% if not fiscal_link %}
-{% if not sizes %}
+{% if not sizes and not virtuaortho %}
 <p class="mt-8 text-copy text-ink-muted" data-no-services>{% translate "No planning service is available for you right now." %}</p>
 {% else %}
+{% if sizes %}
 <form method="post" action="{% url 'start_a_case_tps' patient.code %}" class="mt-8 flex max-w-[720px] flex-col gap-8" data-case-form novalidate>
   {% csrf_token %}
   {% if included %}<p class="rounded-12 bg-card-grey px-5 py-4 text-copy" data-included>{% blocktranslate count n=included %}Your subscription includes {{ n }} branded TPS case per year.{% plural %}Your subscription includes {{ n }} branded TPS cases per year.{% endblocktranslate %}</p>{% endif %}
@@ -71,6 +72,65 @@ offered for the chosen service and size.
     <button type="submit" class="inline-flex min-h-[52px] cursor-pointer items-center rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-add-to-cart>{% translate "Add to cart" %}</button>
   </div>
 </form>
+{% endif %}
+{% if virtuaortho %}
+<h2 class="mt-12 text-[28px] font-black leading-[1.15] tracking-[-0.02em]" data-virtuaortho-title>{% translate "VirtuaOrtho" %}</h2>
+<form method="post" action="{% url 'start_a_case_tps' patient.code %}" class="mt-6 flex max-w-[720px] flex-col gap-8" data-virtuaortho-form novalidate>
+  {% csrf_token %}
+  <input type="hidden" name="line" value="virtuaortho">
+
+  <fieldset class="flex flex-col gap-3">
+    <legend class="text-[22px] font-black leading-[1.2]">{% translate "Which VirtuaOrtho?" %}</legend>
+    {% for variant in virtuaortho.variants %}
+    <label class="flex items-center gap-3 text-copy"><input type="radio" name="variant" value="{{ variant.code }}" data-vo-variant{% if posted.variant == variant.code or not posted.variant and forloop.first %} checked{% endif %}> {{ variant.label }}</label>
+    {% endfor %}
+  </fieldset>
+
+  <fieldset class="flex flex-col gap-3">
+    <legend class="text-[22px] font-black leading-[1.2]">{% translate "Service" %}</legend>
+    {% for row in virtuaortho.rows %}
+    <div data-vo-row="{{ row.variant }}:{{ row.value }}" data-variant="{{ row.variant }}">
+      <label class="flex flex-wrap items-center gap-x-3 text-copy"><input type="radio" name="product" value="{{ row.value }}" data-vo-product{% if posted.product == row.value and posted.variant == row.variant %} checked{% endif %}> <span class="font-semibold">{{ row.label }}</span>
+        {% if row.price %}<span class="text-ink-muted" data-vo-price>{{ row.price|money }}{% if row.per_unit %} {% translate "per aligner" %}{% endif %}</span>{% endif %}
+        {% if row.auto_odb_dt %}<span class="text-[14px] text-ink-muted">{% translate "includes ODB DigitalTwin" %}</span>{% endif %}</label>
+      {% if row.per_unit %}
+      <div class="ml-8 mt-2 flex flex-col gap-1" data-vo-quantity="{{ row.variant }}:{{ row.value }}">
+        <label for="aligners-{{ row.variant }}-{{ forloop.counter }}" class="text-[12px] font-extrabold uppercase tracking-[0.06em] text-ink-muted">{% blocktranslate with min=row.min max=row.max %}Aligners ({{ min }} to {{ max }}){% endblocktranslate %}</label>
+        <input id="aligners-{{ row.variant }}-{{ forloop.counter }}" type="number" name="quantity_{{ row.pk }}" min="{{ row.min }}" max="{{ row.max }}" value="{{ posted.quantity|default:row.min }}" class="min-h-[44px] w-32 rounded-12 border border-ink/30 bg-white px-3">
+      </div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </fieldset>
+
+  {% if virtuaortho.add_ons %}
+  <fieldset class="flex flex-col gap-3">
+    <legend class="text-[22px] font-black leading-[1.2]">{% translate "Options" %}</legend>
+    {% for add_on in virtuaortho.add_ons %}
+    <label class="flex items-start gap-3 text-copy" data-add-on="{{ add_on.code }}" data-offered="{{ add_on.offered }}"><input type="checkbox" name="add_on" value="{{ add_on.code }}" class="mt-1"{% if add_on.code in posted.add_ons %} checked{% endif %}> <span><span class="font-semibold">{{ add_on.name }}</span>{% if add_on.description %}<span class="block text-[14px] text-ink-muted">{{ add_on.description }}</span>{% endif %}</span></label>
+    {% endfor %}
+  </fieldset>
+  {% endif %}
+
+  <fieldset class="flex flex-col gap-3">
+    <legend class="text-[22px] font-black leading-[1.2]">{% translate "Shipping address" %}</legend>
+    {% if shipping_link %}
+    <div class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert" data-shipping-block>
+      {% translate "You need a shipping address before you can order this." %}
+      <a href="{{ shipping_link }}" class="underline underline-offset-4" data-shipping-link>{% translate "Add a shipping address" %}</a>
+    </div>
+    {% else %}
+    {% for address in virtuaortho.addresses %}
+    <label class="flex items-center gap-3 text-copy" data-address="{{ forloop.counter }}"><input type="radio" name="address_id" value="{{ address.id }}"{% if posted.address == address.id or not posted.address and address.default %} checked{% endif %}> {{ address.label }}</label>
+    {% endfor %}
+    {% endif %}
+  </fieldset>
+
+  <div class="flex flex-wrap gap-3">
+    <button type="submit" class="inline-flex min-h-[52px] cursor-pointer items-center rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-add-to-cart-virtuaortho>{% translate "Add to cart" %}</button>
+  </div>
+</form>
+{% endif %}
 {% endif %}
 {% endif %}
 <p class="mt-8"><a href="{% url 'start_a_case' %}" class="text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Back to the patients" %}</a></p>

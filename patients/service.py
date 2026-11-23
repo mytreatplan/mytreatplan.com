@@ -129,6 +129,22 @@ def live_is_ice(patient):
     return product is not None and product.category == Product.ICE
 
 
+# The categories whose approved work order is a "finished treatment" (epic-ordering 9.4):
+# retainers follow one of them.
+FINISHED_CATEGORIES = (Product.VIRTUAORTHO_ONE, Product.VIRTUAORTHO_DIGITALTWIN,
+                       Product.SPARK_ON_DEMAND)
+
+
+def has_finished_treatment(patient):
+    """Whether the patient has a work order in stage `approved` whose product is a
+    VirtuaOrtho One, a DigitalTwin or a Spark on Demand (a cancelled one does not count).
+    Until epic-case-lifecycle moves cases to `approved`, only a fixture has one."""
+    ids = list(WorkOrder.objects.filter(patient_id=patient.pk, stage=stages.APPROVED)
+               .exclude(product_id=None).values_list('product_id', flat=True))
+    return bool(ids) and Product.objects.filter(
+        pk__in=ids, category__in=FINISHED_CATEGORIES).exists()
+
+
 def move_work_order(work_order, to_stage, expected_version, actor):
     """Move `work_order` to `to_stage` if the core's table allows it
     (`InvalidStageTransition`) and `expected_version` is current (`StaleVersion`).
