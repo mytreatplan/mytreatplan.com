@@ -21,12 +21,10 @@ User = get_user_model()
 AREAS = [
     ('support', 'support/', 'Support', 'Soporte'),
     ('messages', 'messages/', 'Messages', 'Mensajes'),
-    ('cart', 'cart/', 'Cart', 'Carrito'),
     ('tutorials', 'tutorials/', 'Tutorials', 'Tutoriales'),
     ('virtuaortho', 'virtuaortho/', 'Virtua ORTHO', 'Virtua ORTHO'),
     ('planning_services', 'planning-services/', 'Planning Services',
      'Servicios de Planificación'),
-    ('start_a_case', 'start-a-case/', 'Request New Planning', 'Solicita Nueva Planificación'),
 ]
 
 

@@ -3,14 +3,14 @@ title: 'Case wizard: patient and TPS'
 type: 'feature'
 ticket: '3'
 created: '2026-11-23'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: '30b005596d209c5faa9a39bdbc0243836684a8ad'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -81,14 +81,28 @@ context: []
 - [ ] `locale/es/LC_MESSAGES/django.po` -- Spanish for every new string.
 - [ ] `architecture-portal-admin/architecture-portal-admin.md` -- AD-2 row for the cart.
 - [ ] `patients/tests/conftest.py`, `cart/tests/` -- TPS branded/in-house × short/medium/long, ONE-ARCH (in-house), JUNIOR-1/2 (medium); one test per matrix row and the views (404 for staff and other doctors, fallback page without JS).
+- [ ] `pytest.ini` -- add `cart` to `testpaths` (a new app is not collected otherwise).
 
 **Acceptance Criteria:**
 - Given a doctor with a saved Invisalign login, when the wizard adds a medium Invisalign TPS with Junior II, then the cart page shows it under the patient and the home's cart link reaches it.
 - Given a missing Smartee login, when the doctor follows the warning's link and saves it, then they land back on step 2 for the same patient.
 - Given a new patient created in step 1, then step 2 opens for that patient and the patient list shows it.
 
+## Review Triage Log
+
+Pass 1 (quick lens, opus): high 0, medium 2, low 3, false 0, maybe-false 0; one low rejected.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | Size names shown as raw codes, English on /es/ | medium | patch | `choose.html`/`cart.html` print `size|capfirst`; no .po entries. Translated size labels added. |
+| 2 | Included-cases number is the term total, not "remaining" | low | patch | `resolver.included_cases` = total (catalogue/models.py:221); used cases are counted in 8.13. Wording changed to what the subscription includes; the remaining count waits for 8.13 (deferred-work). |
+| 3 | `live_is_ice` treats a missing product as ICE | medium | patch | `product is None or …` lets a second TPS in when a live TPS's product left the catalogue. Now refuses; test added. |
+| 4 | Invalid dialog post does not reopen the dialog | low | patch | `open_dialog` always False; 9.2 re-renders with the dialog open. Fixed. |
+| 5 | `?next=` not URL-encoded | low | patch | Precedent `payments/views.py:197` quotes it. Fixed. |
+| 6 | Step 2 shows the form for a patient who will be refused | low | reject | Refusal happens on submit with a message (matrix met); a pre-check adds branches for a rare URL-typed case. |
+
 ## Verification
 
 **Commands:**
-- `pytest -q` (suite command in local-dev-notes) -- expected: 0 failures.
+- Work only in this worktree (`.worktrees/9.3`, branch `story/9-3-case-wizard-patient-and-tps`). From its root, sandbox disabled: `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" SECRET_KEY=test-only-worktree-secret DEBUG=False SECURE_SSL_REDIRECT=False ALLOWED_HOSTS=localhost,testserver,127.0.0.1; export DATABASE_URL="sqlite:///$TMPDIR/s93.sqlite3"; ../../../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: 0 failures (run `../../../.venv/bin/python manage.py compilemessages` after editing the .po).
 - `python manage.py makemigrations --check --dry-run` -- expected: no changes after the migration is committed.

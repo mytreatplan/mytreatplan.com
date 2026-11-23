@@ -63,6 +63,8 @@ portal_patterns = [
     path('', include('invoices.urls')),
     # The doctor's patients (epic-ordering 9.1).
     path('', include('patients.urls')),
+    # The case wizard and the cart (epic-ordering 9.3).
+    path('', include('cart.urls')),
 ]
 
 

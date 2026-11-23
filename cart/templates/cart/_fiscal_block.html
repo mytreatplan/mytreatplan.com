@@ -1,0 +1,4 @@
+{% load i18n %}{% if fiscal_link %}<div class="mt-6 rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert" data-fiscal-block>
+  {% translate "You need a fiscal entity before you can order." %}
+  <a href="{{ fiscal_link }}" class="underline underline-offset-4" data-fiscal-link>{% translate "Add a fiscal entity" %}</a>
+</div>{% endif %}
