@@ -6,6 +6,7 @@ from . import views
 # PORTAL_PREFIXES ('patients/'). The patient code is the only thing a URL carries.
 urlpatterns = [
     path('patients/', views.patient_list, name='patients'),
+    path('patients/new/', views.new_patient, name='patient_new'),
     path('patients/<str:code>/', views.patient_page, name='patient'),
     path('patients/<str:code>/portrait/delete/', views.portrait_delete,
          name='patient_portrait_delete'),

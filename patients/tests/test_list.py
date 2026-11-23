@@ -54,7 +54,9 @@ def test_rows_newest_first_with_status_and_placeholder(doctor):
 
 def test_the_empty_state_offers_adding_a_patient(doctor):
     page = html(browser(doctor).get(URL))
-    assert 'data-no-patients' in page and 'data-add-patient' in page
+    assert 'data-no-patients' in page
+    link = re.search(r'<a [^>]*data-add-patient-empty[^>]*>', page).group(0)
+    assert 'href="/en/patients/new/"' in link and 'data-opens-dialog="add-patient"' in link
     assert 'data-pagination' not in page
 
 

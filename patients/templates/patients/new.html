@@ -1,0 +1,11 @@
+{% extends "doctor_base.html" %}
+{% load i18n %}
+{% comment %}The add-patient form on its own page (patients.views.new_patient): the no-JS fallback of the list's dialog.{% endcomment %}
+
+{% block title %}{% translate "Add a patient" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Add a patient" %}</h1>
+{% url 'patient_new' as new_url %}{% include "patients/_patient_form.html" with action=new_url %}
+<p class="mt-8"><a href="{% url 'patients' %}" class="text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Back to patients" %}</a></p>
+{% endblock %}

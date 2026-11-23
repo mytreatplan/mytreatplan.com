@@ -16,7 +16,7 @@ import pytest
 pytest.importorskip('pytest_playwright')
 
 from django.contrib.auth import get_user_model  # noqa: E402
-from django.utils import timezone  # noqa: E402
+from django.utils import timezone, translation  # noqa: E402
 from playwright.sync_api import expect  # noqa: E402
 
 from accounts.login_failures import LOCK_SECONDS, LOCK_THRESHOLD  # noqa: E402
@@ -144,6 +144,10 @@ def test_lockout_after_five_wrong_passwords(live_server, page, lock_clock):
     """CAP-5, "5 wrong passwords lock the account for 10 minutes": the first four get the
     login error, the fifth the block message, which the right password then gets too;
     10 minutes later (the clock moved) the right password and the code log in."""
+    # The page is in English: read the lazy message in English, whatever language an
+    # earlier test left active in this thread (a Spanish page request leaks it).
+    with translation.override('en'):
+        blocked = str(BLOCKED_MESSAGE)
     sign_up(page, live_server)
     log_out(page, live_server)
 
@@ -151,11 +155,11 @@ def test_lockout_after_five_wrong_passwords(live_server, page, lock_clock):
         submit_password(page, password=WRONG_PASSWORD)
         expect(_alert(page, WRONG_LOGIN)).to_be_visible()
     submit_password(page, password=WRONG_PASSWORD)
-    expect(_alert(page, str(BLOCKED_MESSAGE))).to_be_visible()
+    expect(_alert(page, blocked)).to_be_visible()
 
     submit_password(page)  # the right password, refused while locked
     at(page, live_server, 'en', 'login/')
-    expect(_alert(page, str(BLOCKED_MESSAGE))).to_be_visible()
+    expect(_alert(page, blocked)).to_be_visible()
     expect(page.locator('#id_password')).to_have_value('')
 
     lock_clock.advance(LOCK_SECONDS)

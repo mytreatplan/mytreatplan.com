@@ -1,36 +1,25 @@
 {% extends "doctor_base.html" %}
 {% load i18n static %}
 {% comment %}
-The doctor's patients (patients.views.patient_list, epic-ordering 9.1): the create form and
+The doctor's patients (patients.views.patient_list, epic-ordering 9.1): the add-patient dialog and
 the paginated list of their own patients, newest first (portrait, code, name or reference,
 status, created; 9.2).
 {% endcomment %}
 
 {% block title %}{% translate "Patients" %} &mdash; MyTreatPlan{% endblock %}
 
-{% block head %}{{ block.super }}<script src="{% static 'js/patient-list.js' %}" defer></script>{% endblock %}
+{% block head %}{{ block.super }}<script src="{% static 'js/patient-list.js' %}" defer></script><script src="{% static 'js/dialog.js' %}" defer></script>{% endblock %}
 
 {% block portal_content %}
+<div class="flex flex-wrap items-center justify-between gap-4">
 <h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Patients" %}</h1>
+<a href="{% url 'patient_new' %}" class="inline-flex min-h-[52px] items-center rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-opens-dialog="add-patient" data-add-patient>{% translate "Add a patient" %}</a>
+</div>
 
-<h2 class="mt-8 text-[22px] font-black leading-[1.2]">{% translate "Add a patient" %}</h2>
-<form method="post" class="mt-4 flex max-w-[640px] flex-col gap-5" novalidate id="patient-form" data-patient-form>
-  {% csrf_token %}
-  {% if form.non_field_errors %}
-  <ul class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert">
-    {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
-  </ul>
-  {% endif %}
-  <div class="grid grid-cols-1 gap-4 tablet:grid-cols-2">
-    {% include "includes/_form_field.html" with field=form.first_name %}
-    {% include "includes/_form_field.html" with field=form.surname %}
-  </div>
-  {% include "includes/_form_field.html" with field=form.reference %}
-  {% include "includes/_form_field.html" with field=form.comments %}
-  <div>
-    <button type="submit" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-save>{% translate "Save" %}</button>
-  </div>
-</form>
+<dialog id="add-patient" aria-labelledby="add-patient-title" data-dialog{% if open_dialog %} data-open{% endif %} class="m-0 h-dvh max-h-none w-full max-w-none overflow-y-auto bg-white p-6 text-ink backdrop:bg-ink/60 tablet:m-auto tablet:h-auto tablet:max-h-[90dvh] tablet:max-w-[640px] tablet:rounded-16 tablet:p-8">
+  <h2 id="add-patient-title" class="text-[22px] font-black leading-[1.2]">{% translate "Add a patient" %}</h2>
+  {% url 'patients' as list_url %}{% include "patients/_patient_form.html" with action=list_url cancel=True %}
+</dialog>
 
 <h2 class="mt-12 text-[22px] font-black leading-[1.2]">{% translate "Your patients" %}</h2>
 {% if rows %}
@@ -80,7 +69,7 @@ status, created; 9.2).
   {% endif %}
 </div>
 {% else %}
-<p class="mt-4 text-copy text-ink-muted" data-no-patients>{% translate "You have no patients yet." %} <a href="#patient-form" class="font-semibold text-green-deep underline underline-offset-4" data-add-patient>{% translate "Add a patient" %}</a></p>
+<p class="mt-4 text-copy text-ink-muted" data-no-patients>{% translate "You have no patients yet." %} <a href="{% url 'patient_new' %}" class="font-semibold text-green-deep underline underline-offset-4" data-opens-dialog="add-patient" data-add-patient-empty>{% translate "Add a patient" %}</a></p>
 {% endif %}
 <p class="mt-8"><a href="{% url 'home' %}" class="text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Back to home" %}</a></p>
 {% endblock %}

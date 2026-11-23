@@ -52,22 +52,31 @@ def _doctor_only(request):
         raise Http404('not a doctor')
 
 
+def _create(request, form):
+    """Save the patient when the form is valid (with the success message); True if saved."""
+    if not form.is_valid():
+        return False
+    patient = service.create_patient(
+        request.user, actor=payments_service.doctor_actor(request.user),
+        **{name: form.cleaned_data[name]
+           for name in ('first_name', 'surname', 'reference', 'comments')})
+    messages.success(request, _('The patient has been saved with the code %(code)s.')
+                     % {'code': patient.code})
+    return True
+
+
 @login_required
 @csrf_protect
 @never_cache
 @require_http_methods(['GET', 'HEAD', 'POST'])
 def patient_list(request):
     _doctor_only(request)
+    open_dialog = False
     if request.method == 'POST':
         form = PatientForm(request.POST)
-        if form.is_valid():
-            patient = service.create_patient(
-                request.user, actor=payments_service.doctor_actor(request.user),
-                **{name: form.cleaned_data[name]
-                   for name in ('first_name', 'surname', 'reference', 'comments')})
-            messages.success(request, _('The patient has been saved with the code %(code)s.')
-                             % {'code': patient.code})
+        if _create(request, form):
             return redirect('patients')
+        open_dialog = True
     else:
         form = PatientForm()
     size = _int(request.GET.get('size'), DEFAULT_SIZE)
@@ -83,7 +92,20 @@ def patient_list(request):
     return render(request, 'patients/list.html', {
         'form': form, 'rows': rows, 'page': page, 'size': size, 'sizes': PAGE_SIZES,
         'links': page_links(page.number, paginator.num_pages),
-        'with_portraits': with_portraits})
+        'with_portraits': with_portraits, 'open_dialog': open_dialog})
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_http_methods(['GET', 'HEAD', 'POST'])
+def new_patient(request):
+    """The add-patient form on its own page: the no-JS fallback of the list's dialog."""
+    _doctor_only(request)
+    form = PatientForm(request.POST) if request.method == 'POST' else PatientForm()
+    if request.method == 'POST' and _create(request, form):
+        return redirect('patients')
+    return render(request, 'patients/new.html', {'form': form})
 
 
 def _own_patient(request, code):
