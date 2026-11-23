@@ -231,3 +231,9 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-ordering/story-patient-list-and-portrait-plan.md`
   summary: Decide what `inactive` means for ordering and invoices before epic-case-lifecycle adds the control that sets it.
   evidence: patients/service.py filters status=ACTIVE in patient_of (new orders refused), create_work_orders_for_order (payment rolled back) and names_for_invoice (name left off the PDF); latent today because nothing sets inactive (9.2 review).
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-ordering/story-logical-account-deletion-with-a-regional-archive-plan.md`
+  summary: The superuser's read-only archive report on the admin site behind a fresh code, now epic-ordering entry 13.
+  evidence: Split from 9.12 by the user's answer (2026-11-23): the report needs mytp-core, the admin site and the portal's remote read; 9.12 stays portal-only.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-ordering/story-case-wizard-patient-and-tps-plan.md`
+  summary: Show the remaining included branded-TPS cases in the wizard (9.3 shows the subscription's total per term) once 8.13 counts used cases.
+  evidence: 9.3 review finding 2; `resolver.included_cases` returns the term total (catalogue/models.py:221-225).

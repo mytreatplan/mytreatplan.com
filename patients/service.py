@@ -118,6 +118,17 @@ def live_work_order(patient):
         patient_id=patient.pk, stage__in=sorted(stages.LIVE_STAGES)).first()
 
 
+def live_is_ice(patient):
+    """Whether the patient's live work order is an ICE (the case wizard lets a TPS follow
+    it, epic-ordering 9.3). False without a live work order, and when its product is no longer in the
+    catalogue (it may be a TPS, so a second one is refused)."""
+    work_order = live_work_order(patient)
+    if work_order is None:
+        return False
+    product = resolver.product(work_order.product_id) if work_order.product_id else None
+    return product is not None and product.category == Product.ICE
+
+
 def move_work_order(work_order, to_stage, expected_version, actor):
     """Move `work_order` to `to_stage` if the core's table allows it
     (`InvalidStageTransition`) and `expected_version` is current (`StaleVersion`).

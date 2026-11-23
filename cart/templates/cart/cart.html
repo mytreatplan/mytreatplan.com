@@ -1,0 +1,34 @@
+{% extends "doctor_base.html" %}
+{% load i18n money %}
+{% comment %}
+The cart (cart.views.cart, epic-ordering 9.3): the items by patient (code and name, service,
+size, options, maker, price) with Remove. Checkout is 9.6's.
+{% endcomment %}
+
+{% block title %}{% translate "Cart" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<div class="flex flex-wrap items-center justify-between gap-4">
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Cart" %}</h1>
+<a href="{% url 'start_a_case' %}" class="inline-flex min-h-[52px] cursor-pointer items-center rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-start-a-case>{% translate "Request New Planning" %}</a>
+</div>
+{% if lines %}
+<ul class="mt-8 flex flex-col gap-4" data-cart-items>
+  {% for line in lines %}
+  <li class="flex flex-col gap-2 rounded-[clamp(16px,2vw,24px)] bg-card-grey p-[clamp(16px,2vw,24px)]" data-cart-item="{{ line.patient.code }}">
+    <p class="text-copy"><strong class="font-black" data-item-patient>{{ line.patient.code }}</strong>{% if line.patient.display_name %} &middot; {{ line.patient.display_name }}{% endif %}</p>
+    <p class="text-copy" data-item-product>{{ line.product }}{% if line.size %} ({{ line.size }}){% endif %}</p>
+    <p class="text-copy text-ink-muted" data-item-maker>{{ line.maker }}</p>
+    {% if line.add_ons %}<p class="text-copy text-ink-muted" data-item-add-ons>{{ line.add_ons|join:", " }}</p>{% endif %}
+    {% if line.price %}<p class="text-copy font-semibold" data-item-price>{{ line.price|money }}</p>{% endif %}
+    <form method="post" action="{% url 'cart_remove' line.item.pk %}">{% csrf_token %}
+      <button type="submit" class="cursor-pointer text-[15px] font-semibold text-green-deep underline underline-offset-2 hover:text-ink" data-remove>{% translate "Remove" %}</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="mt-8 text-copy text-ink-muted" data-cart-empty>{% translate "Your cart is empty." %}</p>
+{% endif %}
+<p class="mt-8"><a href="{% url 'home' %}" class="text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Back to home" %}</a></p>
+{% endblock %}
