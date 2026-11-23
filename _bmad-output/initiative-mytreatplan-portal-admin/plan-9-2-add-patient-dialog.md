@@ -3,7 +3,7 @@ title: 'Add a patient in a dialog'
 type: 'bugfix'
 ticket: ''
 created: '2026-11-23'
-status: 'built'
+status: 'done'
 baseline_revision: 'c5d621b60a47607b9e2ae4e2d42e2fb1dc3624ee'
 route: 'full'
 route_source: 'auto'
@@ -98,3 +98,11 @@ Quick lens (Sonnet; low-risk UI change), 2026-11-23. Full suite after the change
 | 5 | `test_list.py` empty-state check satisfied by the header button | low | substring `data-add-patient` now always present | patch: assert the empty-state link's href and `data-opens-dialog` |
 
 CI then failed on `test_lockout_after_five_wrong_passwords[chromium]` (both runs, and every local full run, passing alone): `str(BLOCKED_MESSAGE)` was read in the thread's active language, which the new Spanish page test leaves at `es`, so it waited for the Spanish text on the English login page. Fixed in the test (read it under `translation.override('en')`); full suite 4166 passed. Likely the cause of this test's earlier "flaky" failures too.
+
+## Staging
+
+- Merged 2026-11-23: PR #129 → 79152ab (commits fcb2cda, 9b722b3); deploy run 45189731531 green on dev and dev-ae; CI suite pass. Local suite 4166 passed (8 local WeasyPrint failures only).
+- Checks on dev over SSH with the user's delegation, as the test doctor of EU-0BNY91JQ:
+  1. The list and `patients/new/` answer 200 in EN and ES; the list has the "Add a patient" button, loads dialog.js, and its `<dialog>` is closed (no `data-open`); `patients/new/` shows the form.
+  2. An empty save from the list answers 200 with the dialog marked open and the field error; no patient created.
+  3. By eye, EN/ES desktop and phone (dialog look, Esc/Cancel, a valid save, table right under the title on a phone): owed by the user.
