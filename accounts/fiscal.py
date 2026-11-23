@@ -472,12 +472,6 @@ def mark_used(entity, at=None):
         return False
 
 
-def erase(user):
-    """Erasure: delete all of the account's fiscal entities, archived ones included (the
-    invoices' and the accounting's own snapshots are the legal record)."""
-    FiscalEntity.objects.filter(user_id=user.pk).delete()
-
-
 # --- What the order flows read ---------------------------------------------------------------
 
 def country_allowed(code):

@@ -523,16 +523,16 @@ def test_the_add_page_returns_to_a_path_of_this_site_and_ignores_others(doctor):
 
 # --- 19. Erasure ---------------------------------------------------------------------------
 
-def test_erasing_the_account_deletes_its_fiscal_entities(doctor, other, staff):
+def test_erasing_keeps_the_fiscal_entities_and_the_purge_deletes_them(doctor, other, staff):
     _make(doctor), _make(doctor, _person())
     kept = _make(other)
     archived = _make(doctor, _company(tax_id='ARCH', country='FR'))
     fiscal.mark_used(archived)
     fiscal.remove(doctor, archived.pk)
     assert erase_user(doctor, by=staff)
-    assert not FiscalEntity.objects.filter(user=doctor).exists()
-    assert list(FiscalEntity.objects.all()) == [kept]
-    # The purge of the erased account is unaffected.
+    # Erasure only hides (9.12): the entities stay for the archive until the purge.
+    assert FiscalEntity.objects.filter(user=doctor).count() == 3
+    # The purge archives the account, then deletes them.
     User.objects.filter(pk=doctor.pk).update(purge_after=timezone.now() - timedelta(days=1))
     assert purge_erased() == 1
     assert list(FiscalEntity.objects.all()) == [kept]

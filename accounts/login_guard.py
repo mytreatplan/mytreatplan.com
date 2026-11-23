@@ -70,10 +70,11 @@ BLOCKED_LOCKED = 'blocked: locked'
 INACTIVE_ACCOUNT = 'inactive_account'
 
 
-def report_error(log, prefix, tag, action, error):
+def report_error(log, prefix, tag, action, error, detail=''):
     """Report a failed step without any personal value: `prefix`, the action and the
-    error class only, as a warning on `log` and a Sentry error tagged `tag`: `action`."""
-    message = f'{prefix}: {action} ({type(error).__name__})'
+    error class only (and `detail`, a text the caller knows holds no personal value), as a
+    warning on `log` and a Sentry error tagged `tag`: `action`."""
+    message = f'{prefix}: {action} ({type(error).__name__}{": " + detail if detail else ""})'
     log.warning(message)
     with sentry_sdk.new_scope() as scope:
         scope.set_tag(tag, action)

@@ -3,14 +3,14 @@ title: 'Logical account deletion with a regional archive'
 type: 'feature'
 ticket: '12'
 created: '2026-11-23'
-status: 'in-progress'
+status: 'built'
 baseline_revision: '30b005596d209c5faa9a39bdbc0243836684a8ad'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -80,6 +80,25 @@ context: []
 - Given an erased doctor, when the doctor's patients, orders or invoices are viewed by anyone on the portal, then no patient name appears; invoices show the patient code only.
 - Given the archive written on dev, when the object is overwritten or deleted with the archive keys, then OVH refuses both.
 - Given the archive decrypted with the archive identity, then it holds every item of the Decisions and no maker login or name.
+
+## Review Triage Log
+
+Pass 1 (quick lens, opus, with a data-loss/privacy/S3 focus): high 1, medium 6, low 4, false 0, maybe-false 0; one finding (AC wording) rejected because its fix edits this plan.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | Lifecycle Expiration on a versioned (Object Lock) bucket only adds a delete marker; the locked version stays forever | high | patch | Object Lock implies versioning. Added `NoncurrentVersionExpiration` 1 day and an `ExpiredObjectDeleteMarker` rule; README and AD-19 updated. |
+| 2 | Runbook gives the archive user no retention rights, so every locked put/head would fail | medium | patch | Locked PUT needs `s3:PutObjectRetention`, head lock fields need `s3:GetObjectRetention`. Runbook fixed. |
+| 3 | AC "an overwrite is refused" cannot pass: a PUT adds a new version | medium | reject (plan edit) | Object Lock protects versions, not keys. Runbook and staging check now say "the original version cannot be deleted or overwritten"; the user is told. |
+| 4 | Put ok + head/row failure → next run puts a second locked version | medium | patch | No row → HEAD first, adopt an existing locked object; test added. |
+| 5 | No `Content-MD5`; verification needs `ChecksumSHA256` OVH may not return | medium | patch | Put sends `ContentMD5`; verify accepts SHA-256 or the ETag MD5; both head shapes tested. To confirm on dev. |
+| 6 | Existing-row verify passes `retain=None` | low | patch | Now `retain=existing.retain_until`. |
+| 7 | Sentry/command output lose the `ArchiveError` text | medium | patch | `report_error(detail=…)` for `ArchiveError` only; test checks no personal data. |
+| 8 | Runbook puts bucket-owner keys on the command line, no `sudo -u` | medium | patch | Now the `read -rs` / `sudo -u mytp-<site> env` / `unset` pattern. |
+| 9 | `erasure.py` module docstring contradicts the code | low | patch | Corrected. |
+| 10 | `patients/models.py` "never hard-deleted / never reused" now false | low | patch | Corrected (reuse possible but negligible). |
+| 11 | `clear_profile`, `fiscal.erase`, `shipping.erase` dead | low | patch | Deleted. |
+| 12 | Stale test docstring in `test_erasure.py` | low | patch | Corrected. |
 
 ## Verification
 

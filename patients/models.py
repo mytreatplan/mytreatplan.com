@@ -2,8 +2,11 @@
 
 `Patient`: one per patient of a doctor, regional (AD-2: the names, reference and comments
 are field-encrypted and stay on this site; only the code travels centrally). The code
-(`EU-7K3QX9MD`) is generated, never derived from the patient's data, and never reused:
-patients are never hard-deleted. `WorkOrder`: one case of a patient; `order_line_id` is the
+(`EU-7K3QX9MD`) is generated at random, never derived from the patient's data. It could in principle be
+drawn again after its patient is deleted, which is negligible (and invoices keep only the
+code). A patient is never deleted on its own here: erasing the doctor hides the patients
+(`erased`), and the purge archives them (the archive app) and then deletes them with the
+account. `WorkOrder`: one case of a patient; `order_line_id` is the
 paid order line that started it (unique: the paid hook is idempotent). A patient has at most
 one work order in a live stage (`mytp_core.stages.LIVE_STAGES`), also a partial unique
 constraint.
@@ -31,9 +34,9 @@ class Patient(models.Model):
     STATUSES = [(ACTIVE, 'Active'), (INACTIVE, 'Inactive'), (ERASED, 'Erased')]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    # PROTECT: accounts and patients are deleted logically only, never physically (user
-    # decision 2026-11-22); `accounts.erasure.purge_erased` keeps an account that has
-    # patients.
+    # PROTECT: nothing deletes a doctor under its patients by accident. The purge
+    # (`accounts.erasure.purge_erased`) deletes the work orders and patients explicitly,
+    # only after the account's archive object is written and verified (9.12).
     doctor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
                                related_name='patients')
     code = models.CharField(max_length=11, unique=True)

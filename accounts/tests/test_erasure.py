@@ -335,9 +335,10 @@ def test_erasure_deletes_the_pending_contact_changes(staff):
     assert list(PendingContactChange.objects.values_list('pk', flat=True)) == [kept.pk]
 
 
-def test_erasure_withdraws_whatsapp_and_clears_the_profile(staff):
-    """Epic-doctor-profile entry 2: the personal-data page's profile goes, and the
-    WhatsApp contact consent is withdrawn as the commercial one is."""
+def test_erasure_withdraws_whatsapp_and_keeps_the_profile_for_the_archive(staff):
+    """Epic-doctor-profile entry 2: the personal-data page's profile stays until the purge
+    archives it (9.12), and the WhatsApp contact consent is withdrawn as the commercial
+    one is."""
     from accounts.models import Profile
 
     user = _user()
@@ -357,7 +358,8 @@ def test_erasure_withdraws_whatsapp_and_clears_the_profile(staff):
 
     erase_user(user, by=staff)
 
-    assert not Profile.objects.filter(user=user).exists()
+    # The profile stays until the purge archives it (9.12).
+    assert Profile.objects.get(user=user).city == 'Madrid'
     # Its pending client.updated rows are gone; only the tombstone is left to send.
     assert list(OutboxEvent.objects.filter(aggregate_id=user.uid)
                 .values_list('type', flat=True)) == ['client.erased']
@@ -502,8 +504,8 @@ def test_purge_record_is_kept_5_years_then_deleted(staff):
 
 
 def test_purge_keeps_an_account_whose_email_cannot_be_read(staff, sentry_capture):
-    """An undecryptable email stops only its own account: reported without values, kept
-    for the next run; the rest of the batch is purged."""
+    """An undecryptable email stops only its own account (its archive cannot be built):
+    reported without values, kept for the next run; the rest of the batch is purged."""
     import json
 
     import sentry_sdk
@@ -525,7 +527,7 @@ def test_purge_keeps_an_account_whose_email_cannot_be_read(staff, sentry_capture
     assert record.data == {'email': 'other@example.org'}
     messages = [e.get('logentry', {}).get('message') or e.get('message')
                 for e in sentry_capture.events]
-    assert any(m and m.startswith('Account purge error: read_email (') for m in messages)
+    assert any(m and m.startswith('Account archive error: archive (') for m in messages)
     text = json.dumps(sentry_capture.events)
     assert 'not-a-ciphertext' not in text and 'other@example.org' not in text
 

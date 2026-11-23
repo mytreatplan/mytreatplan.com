@@ -164,8 +164,8 @@ def test_a_doctor_with_patients_cannot_be_deleted(doctor, patient):
     assert Patient.objects.filter(pk=patient.pk).exists()
 
 
-def test_the_purge_keeps_an_erased_doctor_with_patients(doctor, other_doctor, patient,
-                                                        settings):
+def test_the_purge_archives_then_deletes_an_erased_doctor_with_patients(
+        doctor, other_doctor, patient, settings):
     settings.ACCOUNT_ERASURE_RETENTION_DAYS = 30
     from datetime import timedelta
 
@@ -173,10 +173,17 @@ def test_the_purge_keeps_an_erased_doctor_with_patients(doctor, other_doctor, pa
     from django.utils import timezone
 
     from accounts.erasure import erase_user, purge_erased
+    from archive.models import AccountArchive
+    work_order(patient)
     staff = get_user_model().objects.create_superuser('staff@example.net', 'violet-orbit-canyon-42')
     erase_user(doctor, by=staff)
     erase_user(other_doctor, by=staff)
-    assert purge_erased(now=timezone.now() + timedelta(days=3650)) == 1
+    patient.refresh_from_db()
+    assert patient.status == Patient.ERASED and patient.display_name == ''
+    uid = doctor.uid
+    assert purge_erased(now=timezone.now() + timedelta(days=3650)) == 2
     users = get_user_model().objects
-    assert users.filter(pk=doctor.pk).exists() and not users.filter(pk=other_doctor.pk).exists()
-    assert Patient.objects.filter(pk=patient.pk).exists()
+    assert not users.filter(pk=doctor.pk).exists()
+    assert not Patient.objects.filter(pk=patient.pk).exists()
+    assert not WorkOrder.objects.exists()
+    assert AccountArchive.objects.filter(user_uid=uid).exists()

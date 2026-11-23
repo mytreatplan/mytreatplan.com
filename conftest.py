@@ -429,6 +429,84 @@ def stubber(monkeypatch):
     stub.assert_no_pending_responses()
 
 
+# --- The account archive (9.12): an in-memory archive bucket and a stand-in for `age` -----------
+
+ARCHIVE_BUCKET = 'mytp-dev-archive'
+
+
+class FakeArchiveClient:
+    """The archive bucket's S3 client in memory: put_object and head_object with the
+    Object Lock and checksum fields the archive uses. `put_error` / `head_error` make the
+    next calls fail; `objects` maps key -> the put's arguments."""
+
+    def __init__(self):
+        self.objects = {}
+        self.put_error = None
+        self.head_error = None
+        self.puts = 0
+        # False: the store returns no ChecksumSHA256 (only the ETag).
+        self.return_checksum = True
+
+    def put_object(self, **kwargs):
+        if self.put_error:
+            raise self.put_error
+        self.puts += 1
+        self.objects[kwargs['Key']] = kwargs
+        return {}
+
+    def head_object(self, **kwargs):
+        if self.head_error:
+            raise self.head_error
+        if kwargs['Key'] not in self.objects:
+            from botocore.exceptions import ClientError
+            raise ClientError({'Error': {'Code': '404'},
+                               'ResponseMetadata': {'HTTPStatusCode': 404}}, 'HeadObject')
+        item = self.objects[kwargs['Key']]
+        head = {'ContentLength': len(item['Body']),
+                'ETag': '"%s"' % hashlib.md5(item['Body']).hexdigest(),
+                'ObjectLockMode': item['ObjectLockMode'],
+                'ObjectLockRetainUntilDate': item['ObjectLockRetainUntilDate']}
+        if self.return_checksum:
+            head['ChecksumSHA256'] = item['ChecksumSHA256']
+        return head
+
+
+def fake_age_encrypt(plain):
+    """Stands in for the `age` binary: a marker and the plain bytes (tests read it back)."""
+    return b'AGE-STUB:' + plain
+
+
+def read_fake_archive(body):
+    import json
+
+    assert body.startswith(b'AGE-STUB:')
+    return json.loads(body[len(b'AGE-STUB:'):])
+
+
+@pytest.fixture(autouse=True)
+def archive_bucket(settings, monkeypatch):
+    """The archive settings, a FakeArchiveClient behind `make_archive_client` and a
+    stand-in for `age` (a test that needs the real binary calls the real function)."""
+    from archive import service
+    from storage import s3
+
+    settings.STORAGE_ENDPOINT = settings.STORAGE_ENDPOINT or 'https://s3.gra.io.cloud.ovh.net'
+    settings.STORAGE_REGION = settings.STORAGE_REGION or 'gra'
+    settings.ARCHIVE_BUCKET = ARCHIVE_BUCKET
+    settings.ARCHIVE_ACCESS_KEY = 'ARCHIVEACCESSKEYTEST1'
+    settings.ARCHIVE_SECRET_KEY = 'archive-secret-key-for-tests-only-0123456789'
+    settings.ARCHIVE_AGE_RECIPIENT = 'age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+    settings.ARCHIVE_STORAGE_CLASS = 'STANDARD_IA'
+    settings.ARCHIVE_RETENTION_YEARS = 25
+    client = FakeArchiveClient()
+    fake_age_encrypt.real = service.encrypt
+    fake_client_factory = lambda **kwargs: client  # noqa: E731
+    fake_client_factory.real = s3.make_archive_client
+    monkeypatch.setattr(s3, 'make_archive_client', fake_client_factory)
+    monkeypatch.setattr(service, 'encrypt', fake_age_encrypt)
+    return client
+
+
 class FakeClamd:
     """clamd on a unix socket in a thread: reads one INSTREAM (or VERSION) per connection
     and answers `reply`. `reply` may be a callable of the received data; `close_after`

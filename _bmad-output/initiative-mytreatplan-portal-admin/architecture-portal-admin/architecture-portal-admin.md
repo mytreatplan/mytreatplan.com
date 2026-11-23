@@ -85,6 +85,7 @@ flowchart TB
 | Entity | Owner | Central copy | Field-encrypted |
 | --- | --- | --- | --- |
 | Doctor account, profile, fiscal entities, shipping addresses | Region | Client record (encrypted with the admin's keys) | Names, contact data, fiscal ids |
+| Account archive (9.12: an erased account and its patients, work orders, order and invoice summaries) | Region (second object-lock bucket, same region) | No | Whole object `age`-encrypted; bucket SSE; no maker logins or names, no images |
 | Doctor profile photo | Region (object storage) | No | Original file name; object encrypted at rest |
 | Maker logins | Region | No | Username and password |
 | Patients (names, doctor's reference, photo, comments) | Region | No (code only) | First name, surname, reference, comments (no blind index); photo in object storage |
@@ -211,7 +212,7 @@ The admin site keeps no patient data anywhere (AD-23). **[ADOPTED]**
 
 - **Binds:** P9, P10, P13, P14
 - **Prevents:** data kept forever in side tables; deletion windows applied differently by different epics.
-- **Rule:** Regional jobs own physical deletion: a patient 48 h after being marked, records 7 days after being marked uploaded to the maker; marks come from the doctor or staff through AD-15. Admin-site records are deactivated or logically deleted, never hard-deleted (admin users included). Delivered outbox rows are purged after 30 days; the admin's dedupe table keeps only event ids. Backups follow AD-24 and a restore re-applies deletions made since the backup. **[ADOPTED]**
+- **Rule:** Regional jobs own physical deletion: records 7 days after being marked uploaded to the maker; marks come from the doctor or staff through AD-15. An erased account and its patients are archived per region, then removed from live tables: erasure only hides them, and the daily purge writes one `age`-encrypted, write-once (S3 Object Lock, COMPLIANCE) object per account to a second bucket in the same region, verifies it, and only then deletes the live rows; the object's lock lasts `ARCHIVE_RETENTION_YEARS`, and the bucket's lifecycle then removes it (the bucket is versioned: the version goes the day after it becomes noncurrent, its lock having ended). The 48 h deletion applies only to a single patient the doctor deletes (epic-case-lifecycle). Admin-site records are deactivated or logically deleted, never hard-deleted (admin users included). Delivered outbox rows are purged after 30 days; the admin's dedupe table keeps only event ids. Backups follow AD-24 and a restore re-applies deletions made since the backup. **[ADOPTED]**
 
 ### AD-20 — Vouchers
 

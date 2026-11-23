@@ -1,11 +1,11 @@
 """Account erasure: a logical deletion from the admin, then a physical one after retention.
 
 `erase_user` (the admin's "Erase account" action, accounts.admin) deactivates the account
-and keeps only what the evidence needs (email, title, names, country, phone, date joined,
-and the legal choices) until `purge_after`, ACCOUNT_ERASURE_RETENTION_DAYS later; it
-clears the rest (the profile of the personal-data page, the fiscal entities and any pending
-contact change too; the profile photo and its pending upload are deleted through storage.service.delete,
-by the staff member erasing it, accounts.photo) and records the commercial
+and hides it and its patients until `purge_after`, ACCOUNT_ERASURE_RETENTION_DAYS later.
+The account's data (including the profile, the fiscal entities and the shipping addresses)
+stays for the archive (below); at once it deletes the maker logins, any pending contact
+change and the profile photo with its pending upload (through storage.service.delete,
+by the staff member erasing it, accounts.photo), and it records the commercial
 and WhatsApp contact consents as withdrawn. Its `email_index` becomes a tombstone (accounts.models.User), so the same
 email can register again. `purge_erased` (the daily `purgeerased` job, `manage.py
 purge_erased_accounts`) then deletes each erased account with its legal choices once
@@ -19,8 +19,14 @@ activity records (eventlog.retention), so they can still be tied to the person.
 same transaction), which deletes its copy; the purge sends nothing and deletes every
 outbox row of the purged accounts.
 
-An account with patients is kept: logical deletion only, user decision 2026-11-22 (the
-patients' `doctor` link is PROTECT, and `purge_erased` leaves such an account out).
+Logical deletion with a regional archive (epic-ordering 9.12, user decision 2026-11-23):
+`erase_user` only hides the account and its patients (patients `erased`; the fiscal
+entities, shipping addresses and profile stay for the archive; the maker logins and the
+photo still go at once, since neither is archived). The purge, once `purge_after` has
+passed, writes one encrypted write-once archive object per account (archive.service),
+verifies it and only then deletes the live rows (work orders, patients, fiscal entities,
+shipping addresses, then the account). An archive failure keeps every live row of that
+account for the next run. The purge refuses to run while an ARCHIVE_* setting is unset.
 
 Nothing here logs or returns an email or a name.
 """
@@ -32,17 +38,22 @@ from django.contrib.admin.models import CHANGE, LogEntry
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ImproperlyConfigured
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
 from eventlog.models import Attempt
 from eventlog.service import record_activity
 from integration.models import OutboxEvent
 from legal.models import LegalChoice, LegalDocument
+from patients.models import Patient, WorkOrder
 
+from archive import service as archive_service
+from storage import s3 as storage_s3
 from storage import service as storage_service
 from storage.models import StoredObject
 
 from . import client_sync, fiscal, makers, photo, profile, shipping
+from .models import FiscalEntity, ShippingAddress
 
 logger = logging.getLogger(__name__)
 
@@ -106,15 +117,13 @@ def erase_user(user, *, by, now=None):
         # The profile photo and its pending upload (entry 4), deleted with their traces
         # before the profile row that links them goes.
         photo.erase(user, by)
-        # The personal data of the settings page (epic-doctor-profile entry 2), and any
-        # contact change waiting for its code (entry 3): the row stays, so no CASCADE.
-        profile.clear_profile(user)
+        # Only the contact change waiting for its code goes now (epic-doctor-profile entry
+        # 3); the profile, the fiscal entities (entry 5) and the shipping addresses (entry
+        # 7) stay until the purge, which archives them first (9.12).
         profile.clear_contact_changes(user)
-        # The fiscal entities (entry 5): the invoices' and the accounting's own snapshots
-        # are the legal record, so they all go.
-        fiscal.erase(user)
-        # The shipping addresses (entry 7) go too.
-        shipping.erase(user)
+        # The patients are hidden from every portal view (9.12); their rows stay.
+        Patient.objects.filter(doctor_id=user.pk).update(
+            status=Patient.ERASED, version=F('version') + 1, updated_at=now)
         # The maker logins (entry 8) go too.
         makers.erase(user)
         # The admin site deletes its copy (client.erased, epic-admin-interface entry 8).
@@ -154,28 +163,81 @@ def _release_stored_objects(ids):
     owned.update(owner=None)
 
 
-def purge_erased(now=None, batch_size=500):
-    """Delete each erased account whose `purge_after` has passed, with its legal choices
-    (first: the user's are PROTECT) and after detaching and deleting the stored objects
-    it still owns, one transaction per batch, after its purge record
-    (`_record_purge`). An account whose email cannot be read or whose record could not be
-    written is kept for the next run, and so is an account that has patients. Returns how
-    many were deleted."""
+def check_archive_settings():
+    """Raises ImproperlyConfigured naming the first unset ARCHIVE_* (or STORAGE_*) setting
+    the archive needs; the purge refuses to run (and deletes nothing) until all are set."""
+    missing = storage_s3.missing_archive_setting()
+    if missing:
+        raise ImproperlyConfigured(f'{missing} must be set for the account archive.')
+    if settings.ARCHIVE_RETENTION_YEARS < 1:
+        raise ImproperlyConfigured('ARCHIVE_RETENTION_YEARS must be at least 1.')
+
+
+def _archive(pk, client, errors=None):
+    """Write (or verify) the archive of the account `pk`; True when it is safely archived.
+    A failure is reported (the class, and the message of an ArchiveError, which never holds
+    personal data; no other exception's text) and leaves every live row. The ArchiveError
+    messages are added to `errors`, when given."""
+    from .login_guard import report_error
+
+    try:
+        archive_service.write(get_user_model().objects.get(pk=pk), client=client)
+    except Exception as error:  # noqa: BLE001 - one account never stops the purge
+        detail = str(error) if isinstance(error, archive_service.ArchiveError) else ''
+        if detail and errors is not None:
+            errors.add(detail)
+        report_error(logger, 'Account archive error', 'erasure.action', 'archive', error,
+                     detail)
+        return False
+    return True
+
+
+def _delete_live_rows(ids):
+    """The archived accounts' patients, work orders, fiscal entities and shipping
+    addresses (the account itself goes with the caller's later steps)."""
+    WorkOrder.objects.filter(patient__doctor_id__in=ids).delete()
+    Patient.objects.filter(doctor_id__in=ids).delete()
+    FiscalEntity.objects.filter(user_id__in=ids).delete()
+    ShippingAddress.objects.filter(user_id__in=ids).delete()
+
+
+def purge_erased(now=None, batch_size=500, stats=None):
+    """Archive, then delete, each erased account whose `purge_after` has passed.
+
+    Per account: its archive object is written and verified (archive.service.write; an
+    existing row is only verified), and only then, in one transaction per batch and after
+    the purge record (`_record_purge`), are its live rows deleted: work orders, patients,
+    fiscal entities, shipping addresses, its legal choices (first: the user's are
+    PROTECT), the stored objects it still owns (detached and deleted), its outbox rows
+    and the account. An account whose archive failed, whose email cannot be read or whose
+    record could not be written is kept whole for the next run. Archive rows past their
+    `retain_until` are deleted. Refuses (ImproperlyConfigured) while an ARCHIVE_* setting
+    is unset. Returns how many accounts were deleted; `stats`, when given, receives
+    `failed` (accounts kept), `errors` (the archive failures' messages) and `expired` (archive rows deleted)."""
+    check_archive_settings()
     User = get_user_model()
     now = now or timezone.now()
+    client = storage_s3.make_archive_client()
+    stats = stats if stats is not None else {}
     total = 0
-    unrecorded = []
+    skipped = []
+    errors = set()
     while True:
+        pks = list(User.objects.filter(erased_at__isnull=False, purge_after__lte=now)
+                   .exclude(pk__in=skipped).order_by('pk')
+                   .values_list('pk', flat=True)[:batch_size])
+        if not pks:
+            break
+        # The archive puts are not part of the transaction (an object cannot be rolled
+        # back): each is verified and recorded before any live row goes.
+        archived = []
+        for pk in pks:
+            (archived if _archive(pk, client, errors) else skipped).append(pk)
         with transaction.atomic():
-            pks = list(User.objects.filter(erased_at__isnull=False, purge_after__lte=now,
-                                           patients__isnull=True)
-                       .exclude(pk__in=unrecorded).order_by('pk')
-                       .values_list('pk', flat=True)[:batch_size])
-            if not pks:
-                return total
             ids = []
-            for pk in pks:
-                (ids if _record_purge(pk) else unrecorded).append(pk)
+            for pk in archived:
+                (ids if _record_purge(pk) else skipped).append(pk)
+            _delete_live_rows(ids)
             LegalChoice.objects.filter(user_id__in=ids).delete()
             _release_stored_objects(ids)
             # Every outbox row of these accounts, whatever its state (decision 2026-11-06
@@ -184,3 +246,7 @@ def purge_erased(now=None, batch_size=500):
             OutboxEvent.objects.filter(aggregate_id__in=list(uids)).delete()
             User.objects.filter(pk__in=ids).delete()
         total += len(ids)
+    stats['failed'] = len(skipped)
+    stats['errors'] = sorted(errors)
+    stats['expired'] = archive_service.delete_expired(now)
+    return total

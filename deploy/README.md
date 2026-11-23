@@ -1097,8 +1097,9 @@ it is **erased**, for example when the user asks (GDPR art. 17).
   --deploy` fails (`mytp_publicsite.E005`). Staging uses `1` until the lawyer gives the
   value. Restart `mytp-dev-gunicorn` after changing it.
 - **Purge:** the `purgeerased` job (daily at 04:15 UTC, `manage.py purge_erased_accounts`)
-  deletes each erased account with its legal choices once its `purge_after` has passed,
-  and prints only the count. On a server provisioned before it, re-run `provision.sh`
+  archives (see [Account archive](#account-archive)) and then deletes each erased account
+  once its `purge_after` has passed, and prints only the count (and the count kept for the
+  next run when an archive failed). On a server provisioned before it, re-run `provision.sh`
   (see [Scheduled jobs](#scheduled-jobs)), then:
 
   ```sh
@@ -2043,6 +2044,73 @@ sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from storage.models impor
   ran, the object is gone and its trace has `actor_type` `user` and a blank patient code.
 - **Regional:** on admindev, the doctor's client record has no photo field
   (`client.updated` payload keys unchanged).
+
+## Account archive
+
+Epic-ordering 9.12 (AD-19): erasing a doctor in the admin only hides the account and its
+patients (patients become `erased`; fiscal entities, shipping addresses and the profile
+stay; maker logins and the photo still go at once). The daily `purgeerased` job, once
+`purge_after` has passed, writes one `age`-encrypted, write-once object per account to a
+**second bucket in the site's region**, checks it (size, SHA-256, COMPLIANCE lock,
+retain-until) and only then deletes the live rows. A failed put or check keeps every live
+row of that account and is retried by the next run (Sentry error, no personal data, the
+count kept is printed). The job refuses to run (non-zero exit, nothing deleted) while any
+`ARCHIVE_*` setting is unset. The object key is `accounts/<user uid>.json.age`; the
+object holds the account and profile, consents, fiscal entities, shipping addresses,
+patients with their work orders and stages, order and invoice summaries (numbers, dates,
+amounts, patient codes) and deletion traces; never maker logins or names, or images.
+The superuser's report on the archive is 9.13.
+
+Runbook per site (dev, dev-ae), the steps marked (you) are the bucket owner's:
+
+1. (you) OVHcloud Object Storage in the site's region, a **new** container with S3 Object
+   Lock enabled **at creation** (it cannot be added later), private, storage class
+   Standard Infrequent Access, linked to the owner `mytp-backup-admin`. Create an S3 user
+   `mytp-<site>-archive` limited to it, with `s3:PutObject`, `s3:GetObject`,
+   `s3:PutObjectRetention` and `s3:GetObjectRetention` (put, get, head and the retention calls
+   the lock needs); no delete, no lifecycle, no bucket-configuration rights.
+2. The archive identity, made on the server as the site's user, into its own KMS-wrapped
+   file (kept for 9.13); the command prints the public key as `BACKUP_AGE_RESTORE_RECIPIENT=`,
+   which becomes `ARCHIVE_AGE_RECIPIENT=`. Check `age-keygen` and `age` are installed:
+
+   ```sh
+   cd /srv/mytp-dev/current && sudo -u mytp-dev sh -ec \
+       "RESTORE_AGE_IDENTITY_FILE=/srv/mytp-dev/shared/archive-identity.json \
+        ./venv/bin/python manage.py generate_restore_identity | sed 's/^BACKUP_AGE_RESTORE_RECIPIENT=/ARCHIVE_AGE_RECIPIENT=/' \
+        >> /srv/mytp-dev/shared/settings.env"
+   sudo ls -l /srv/mytp-dev/shared/archive-identity.json     # -rw------- mytp-dev
+   ```
+
+3. In `shared/settings.env` (never printed): `ARCHIVE_BUCKET`, `ARCHIVE_ACCESS_KEY`,
+   `ARCHIVE_SECRET_KEY` (the site's archive user), `ARCHIVE_AGE_RECIPIENT` (step 2),
+   `ARCHIVE_RETENTION_YEARS` (no default: 25 on dev and dev-ae until the lawyer answers
+   for the EU) and optionally `ARCHIVE_STORAGE_CLASS` (default `STANDARD_IA`). The
+   endpoint and region are the file bucket's (`STORAGE_ENDPOINT`, `STORAGE_REGION`).
+4. (you) Set the bucket's lifecycle and encryption with the bucket **owner's** keys, typed
+   at a prompt as for the file bucket ("CORS, lifecycle and encryption"), then read it back:
+
+   ```sh
+   cd /srv/mytp-dev/current
+   read -rs OWNER_ACCESS_KEY; read -rs OWNER_SECRET_KEY     # paste each, then Enter
+   sudo -u mytp-dev env ARCHIVE_ACCESS_KEY="$OWNER_ACCESS_KEY" ARCHIVE_SECRET_KEY="$OWNER_SECRET_KEY" \
+       ./venv/bin/python manage.py storage_bucket --archive --apply
+   sudo -u mytp-dev env ARCHIVE_ACCESS_KEY="$OWNER_ACCESS_KEY" ARCHIVE_SECRET_KEY="$OWNER_SECRET_KEY" \
+       ./venv/bin/python manage.py storage_bucket --archive --inspect   # lifecycle, encryption, object lock
+   unset OWNER_ACCESS_KEY OWNER_SECRET_KEY
+   ```
+
+   An Object Lock bucket is versioned, so an Expiration alone would only add a delete
+   marker. `--apply` sets two rules: Expiration after ceil(`ARCHIVE_RETENTION_YEARS` x
+   365.25) + 1 days with `NoncurrentVersionExpiration` of 1 day, and removal of expired
+   delete markers. Each object's own lock (now + the retention) ends first; the version is
+   removed the day after it becomes noncurrent, when its lock has already ended.
+5. Restart `mytp-<site>-gunicorn` and the worker after editing `settings.env`.
+
+Check on dev: erase a test doctor with one patient, run the purge job after `purge_after`
+(`sudo systemctl start mytp-dev-job@purgeerased`), see one object under the account's uid
+with its retain-until date; the original version cannot be deleted or overwritten with the
+archive keys (a new PUT only adds a version); the doctor and the patient are gone from the portal and the live tables;
+invoices still show the patient code.
 
 ## Keys (KMS)
 
