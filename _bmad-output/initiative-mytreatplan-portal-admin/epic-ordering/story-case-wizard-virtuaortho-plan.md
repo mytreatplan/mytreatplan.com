@@ -3,7 +3,7 @@ title: 'Case wizard: VirtuaOrtho'
 type: 'feature'
 ticket: '4'
 created: '2026-11-23'
-status: 'in-review'
+status: 'built'
 baseline_revision: '7edc053e24b9bec8f6bdbcff84a57380a52ccc6f'
 route: 'full'
 route_source: 'auto'
@@ -90,9 +90,23 @@ context: []
 
 ## Implementation Notes
 
+- Portal 27522e3 + c007533; mytp-admin c4b4183 + 43c2f37; mytp-core 55015e6 (docstring, no tag). Row values carry the variant (e.g. `one:case:medium`, `digitaltwin:odb:<product id>`): ODB and Spark arches are told apart by product id. ODB-DT is the one add-on referenced by code. Unsized One/DigitalTwin rows are not listed (admindev before its script). The admin site has no locale catalogue, so its message stays English.
+- Local suites: portal 4307 passed, 17 skipped, 8 failed — all `invoices/tests/test_pdf.py` (WeasyPrint cannot load libgobject on this Mac; same at the baseline); admin 1684 passed, 12 skipped.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Pass 1 (quick lens, opus): high 0, medium 1, low 5, false 0, maybe-false 0; all 6 patched (c007533, admin 43c2f37). The reviewer's note on the admindev script (no transaction) was fixed in the script.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | Without JS both variants' rows share one radio group with equal values; the variant radio decides the product, so the ticked row's price can differ from what is added | medium | patch | Rows grouped per variant; each value carries its variant and the POST derives it; test of a no-JS DigitalTwin POST. |
+| 2 | A refused VO POST pre-ticks the TPS form's add-ons (and back) | low | patch | Add-ons ticked only in the posted form; test. |
+| 3 | Tampered `case:` with an empty size matches an unsized product | low | patch | Empty size refused with not_offered; test. |
+| 4 | DigitalTwin ODB row listed when ODB-DT is unavailable, then always refused | low | patch | Row dropped when ODB-DT is not offered on it; test. |
+| 5 | Admin size help text and docstrings still say TPS only | low | patch | Wording updated (admin 43c2f37). |
+| 6 | Test Byte Sync offered on the ICE, unlike the seed | low | patch | Fixture categories match the seed. |
 
 ## Verification
 
