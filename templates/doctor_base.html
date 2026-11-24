@@ -10,14 +10,13 @@ header holding the page, the handshake band, and the shared footer.
 
 Below the `tablet` breakpoint the links collapse behind the public site's menu button
 (static/js/menu.js: the same `site-menu-toggle` / `site-menu` ids). Pages extend this and
-fill `portal_content`; `portal_width` widens the column (480 px by default, as on
-portal_base); `doctor_band` may drop the handshake band. Not indexed (portal_base's head).
+fill `portal_content`; `portal_width` sets the column width (1280 px, max-w-portal, by default); `doctor_band` may drop the handshake band. Not indexed (portal_base's head).
 {% endcomment %}
 
 {% block header %}
 {% url 'home' as home_url %}{% with here=request.resolver_match.url_name %}
 <header class="bg-linear-to-r from-cornflower via-[#c4d3ee] to-[#f3f7ea] px-gutter pt-[clamp(20px,4vw,56px)] pb-[clamp(64px,9vw,128px)]" data-doctor-header>
-  <div class="mx-auto flex max-w-[1100px] items-center justify-between gap-6">
+  <div class="mx-auto flex max-w-portal items-center justify-between gap-6">
     <a href="{{ home_url }}" class="block shrink-0 text-white" aria-label="{% translate 'MyTreatPlan home' %}" data-isotype>
       <span class="block aspect-[964/1014] w-[clamp(44px,5.4vw,78px)] bg-current" aria-hidden="true"
             style="-webkit-mask:url('{% static 'img/isotype.svg' %}') center/contain no-repeat;mask:url('{% static 'img/isotype.svg' %}') center/contain no-repeat"></span>
@@ -62,8 +61,8 @@ portal_base); `doctor_band` may drop the handshake band. Not indexed (portal_bas
 {% endblock %}
 
 {% block content %}
-<div class="relative -mt-[clamp(40px,5vw,72px)] rounded-t-[clamp(28px,4vw,56px)] bg-surface" data-doctor-panel>
-  <div class="mx-auto {% block portal_width %}max-w-[480px]{% endblock %} px-gutter pt-[clamp(32px,5vw,64px)] pb-[clamp(40px,6vw,72px)]">
+<div class="relative -mt-[clamp(40px,5vw,72px)] rounded-t-[clamp(28px,4vw,56px)] bg-surface px-gutter" data-doctor-panel>
+  <div class="mx-auto {% block portal_width %}max-w-portal{% endblock %} pt-[clamp(32px,5vw,64px)] pb-[clamp(40px,6vw,72px)]">
     {% if messages %}
     <ul class="mb-6 space-y-2">
       {% for message in messages %}

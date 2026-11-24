@@ -255,7 +255,7 @@ def test_the_screen_of_a_basic_doctor(admin):
     assert 'href="/en/upgrade/advanced/"' in page and 'href="/en/upgrade/premium/"' in page
     assert 'Upgrade to Advanced' in page and 'Upgrade to Premium' in page
     assert 'Not now' in page and 'data-manual-note' not in page
-    assert 'max-w-[1040px]' in page and 'max-w-[480px]' not in page
+    assert PANEL in page and 'max-w-[480px]' not in page
 
 
 def test_the_screen_leaves_out_a_missing_period(admin):
@@ -394,6 +394,10 @@ def test_the_money_filter(language, value, text):
 
 # --- The doctor layout (epic-doctor-profile entry 1) -----------------------------------------
 
+# The panel's inner column carries the shared width (a page overriding portal_width fails).
+PANEL = 'data-doctor-panel>\n  <div class="mx-auto max-w-portal pt-'
+
+
 def doctor_layout(page):
     """The page has the doctor area's header and panel, not the light portal header."""
     assert 'data-doctor-header' in page and 'data-doctor-panel' in page
@@ -409,7 +413,7 @@ def test_the_screen_has_the_doctor_layout_and_its_content(admin):
            'tracking-[-0.03em]">Subscription levels</h1>' in page
     assert 'Upgrade to Advanced' in page and 'Upgrade to Premium' in page
     assert 'href="/en/welcome/"' in page and 'Not now' in page
-    assert 'max-w-[1040px]' in page
+    assert PANEL in page
 
 
 def test_the_placeholder_has_the_doctor_layout_and_its_content(admin):

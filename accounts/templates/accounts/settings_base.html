@@ -8,8 +8,6 @@ the personal-data page (accounts.views.personal_data) and the sections not built
 (accounts.views.settings_coming_soon). Below the tablet breakpoint everything stacks.
 {% endcomment %}
 
-{% block portal_width %}max-w-[880px]{% endblock %}
-
 {% block portal_content %}
 <div class="grid grid-cols-1 items-center gap-[clamp(12px,1.6vw,20px)] tablet:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
   <section class="flex items-center gap-[clamp(14px,1.8vw,22px)] rounded-[clamp(20px,2.4vw,32px)] bg-card-grey p-[clamp(14px,1.6vw,20px)]" aria-label="{% translate 'Your profile' %}" data-profile-card>

@@ -16,10 +16,7 @@ status, created; 9.2).
 <a href="{% url 'patient_new' %}" class="inline-flex min-h-[52px] items-center rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-opens-dialog="add-patient" data-add-patient>{% translate "Add a patient" %}</a>
 </div>
 
-<dialog id="add-patient" aria-labelledby="add-patient-title" data-dialog{% if open_dialog %} data-open{% endif %} class="m-0 h-dvh max-h-none w-full max-w-none overflow-y-auto bg-white p-6 text-ink backdrop:bg-ink/60 tablet:m-auto tablet:h-auto tablet:max-h-[90dvh] tablet:max-w-[640px] tablet:rounded-16 tablet:p-8">
-  <h2 id="add-patient-title" class="text-[22px] font-black leading-[1.2]">{% translate "Add a patient" %}</h2>
-  {% url 'patients' as list_url %}{% include "patients/_patient_form.html" with action=list_url cancel=True %}
-</dialog>
+{% url 'patients' as list_url %}{% include "patients/_patient_dialog.html" with action=list_url %}
 
 <h2 class="mt-12 text-[22px] font-black leading-[1.2]">{% translate "Your patients" %}</h2>
 {% if rows %}
