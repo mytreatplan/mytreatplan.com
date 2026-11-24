@@ -354,7 +354,7 @@ class PatientBusy(OrderError):
 def _patients_still_free(order):
     """Whether no patient of the locked service `order` has got a live work order since
     the order was made (a live ICE still lets a TPS or a VirtuaOrtho service through). The
-    patients' ownership was checked at creation."""
+    patient must still be one of the buyer's active patients."""
     from patients import service as patients
     from patients.models import Patient
 
@@ -364,7 +364,7 @@ def _patients_still_free(order):
         patient = Patient.objects.filter(code=line.patient_code, doctor_id=order.user_id,
                                          status=Patient.ACTIVE).first()
         if patient is None:
-            continue
+            return False
         product = resolver.product(line.product_id) if line.product_id else None
         is_ice = product is not None and product.category == Product.ICE
         if not _patient_free(patients, patient, is_ice):

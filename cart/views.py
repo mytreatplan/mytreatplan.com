@@ -25,10 +25,9 @@ from patients import service as patients_service
 from patients.forms import PatientForm
 from patients.models import Patient
 from patients.views import _create
-from subscriptions import service as subscriptions
-
 from payments import service as payments
 from payments.views import _refusal_message
+from subscriptions import service as subscriptions
 
 from . import service
 from .models import OTHER, UNDECIDED, CartItem

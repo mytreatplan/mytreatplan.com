@@ -3,7 +3,8 @@
 {% comment %}
 The cart (cart.views.cart, epic-ordering 9.3): the items by patient (code and name, service,
 size, options, maker, price; a VirtuaOrtho item: aligners and shipping address, no maker) with
-Remove. Checkout is 9.6's.
+Remove; a try-me voucher field and "Finish order" (9.6), which creates the order and goes
+to its checkout.
 {% endcomment %}
 
 {% block title %}{% translate "Cart" %} &mdash; MyTreatPlan{% endblock %}
@@ -13,9 +14,9 @@ Remove. Checkout is 9.6's.
 <h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Cart" %}</h1>
 <a href="{% url 'start_a_case' %}" class="inline-flex min-h-[52px] cursor-pointer items-center rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-start-a-case>{% translate "Request New Planning" %}</a>
 </div>
-{% include "cart/_fiscal_block.html" %}
 {% if error %}<p class="mt-6 rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert" data-error>{{ error }}</p>{% endif %}
 {% if lines %}
+{% include "cart/_fiscal_block.html" %}
 <ul class="mt-8 flex flex-col gap-4" data-cart-items>
   {% for line in lines %}
   <li class="flex flex-col gap-2 rounded-[clamp(16px,2vw,24px)] bg-card-grey p-[clamp(16px,2vw,24px)]" data-cart-item="{{ line.patient.code }}">

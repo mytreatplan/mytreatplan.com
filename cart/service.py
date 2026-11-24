@@ -22,8 +22,7 @@ offers on it, checked by `resolver.price`. A named maker needs a saved login
 (`accounts.makers.has_login`); "not decided yet" and "other" never block. No patient name or
 maker credential is read, logged or put in a message here.
 """
-import logging
-
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
@@ -60,7 +59,6 @@ PAYMENT_OPEN = 'payment_open'
 CODES = (NOT_A_DOCTOR, NO_PATIENT, NO_ENTITY, MAKER_UNKNOWN, MAKER_LOGIN, OTHER_NAME,
          LIVE_WORK_ORDER, IN_CART, NOT_OFFERED, ADD_ON, NO_ADDRESS, ADDRESS, QUANTITY,
          NOT_FINISHED, EMPTY, ADDRESS_GONE, PAYMENT_OPEN)
-logger = logging.getLogger(__name__)
 SOURCE = 'cart'
 
 # VirtuaOrtho (9.4). The variants of step 2 and the category each one is sold in.
@@ -362,7 +360,7 @@ def _cancel_earlier(doctor):
         try:
             payments.cancel(order, expected_version=order.version,
                             actor=payments.doctor_actor(doctor))
-        except payments.OrderError:
+        except payments.AttemptOpen:
             raise CartRefused(PAYMENT_OPEN) from None
 
 
@@ -384,6 +382,8 @@ def finish(doctor, voucher_code=''):
     code = (voucher_code or '').strip()
     voucher = voucher_redemptions.voucher_for_code(code) if code else None
     with transaction.atomic():
+        # One finish at a time per doctor: a second request waits, then cancels this order.
+        get_user_model().objects.select_for_update().get(pk=doctor.pk)
         _cancel_earlier(doctor)
         return payments.create_order(doctor, lines, actor=payments.doctor_actor(doctor),
                                      voucher=voucher, source=SOURCE)

@@ -109,6 +109,15 @@ def test_happy_two_patients_one_order_with_snapshots(ready, patient):
     assert CartItem.objects.count() == 2  # they stay until the order is paid
 
 
+def test_two_patients_and_a_try_me_voucher_pay_with_the_fake_gateway(ready, patient):
+    two_items(ready, patient)
+    order = pay(finish(ready, CODE), ready)
+    assert order.state == 'paid' and Order.objects.count() == 1
+    assert order.lines.count() == 2
+    assert VoucherRedemption.objects.get(order_id=order.pk).state == 'consumed'
+    assert not CartItem.objects.exists()
+
+
 def test_the_page_creates_the_order_and_goes_to_its_checkout(ready, patient):
     tps(ready, patient)
     client = browser(ready)
@@ -288,7 +297,7 @@ def test_a_live_ice_still_lets_a_tps_through(ready, patient):
 def test_a_free_order_is_checked_again_before_it_is_paid(ready, patient):
     tps(ready, patient)
     order = finish(ready)
-    # A zero order that stays in checkout: the entity is gone, so it is not paid at creation.
+    # Force the total to 0.00 on an order still in checkout, as a free order waiting to be paid.
     Order.objects.filter(pk=order.pk).update(total=Decimal('0.00'))
     order.refresh_from_db()
     WorkOrder.objects.create(patient=patient, order_line_id=uuid.uuid4(),
