@@ -31,9 +31,10 @@ node_modules/
 static/css/site.css
 
 # Spec Driven Development: BMAD
-.agents/
-.claude/
-skills-lock.json
+# The BMad skills are committed (.agents/skills, linked from .claude/skills) so web
+# sessions get them; Claude Code's local state in .claude/ stays out.
+.claude/*
+!.claude/skills/
 
 # IDEs
 .vscode/
@@ -51,3 +52,6 @@ id_*
 *_production
 *_production.pub
 test-results/
+
+# Virtual environment made by scripts/web-setup.sh
+.venv/
