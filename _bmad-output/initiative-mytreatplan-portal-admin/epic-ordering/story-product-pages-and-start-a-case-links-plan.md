@@ -3,14 +3,14 @@ title: 'Product pages and start-a-case links'
 type: 'feature'
 ticket: '5'
 created: '2026-11-24'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: '91282f57d2c27d7a50d92439c286dc0568120e45'
 route: 'full'
 route_source: 'auto'
 risk: 'low'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---

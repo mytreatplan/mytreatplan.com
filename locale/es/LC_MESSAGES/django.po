@@ -3512,50 +3512,50 @@ msgstr[0] "%(n)s alineador"
 msgstr[1] "%(n)s alineadores"
 msgstr[2] "%(n)s alineadores"
 
-#: cart/pages.py cart/templates/cart/virtuaortho.html
+#: cart/pages.py
 msgid "Sizes"
 msgstr "Tamaños"
 
-#: cart/pages.py cart/templates/cart/virtuaortho.html
+#: cart/pages.py
 msgid "ODB"
 msgstr "ODB"
 
-#: cart/pages.py cart/templates/cart/virtuaortho.html
+#: cart/pages.py
 msgid "Spark on Demand"
 msgstr "Spark bajo demanda"
 
-#: cart/pages.py cart/templates/cart/virtuaortho.html
+#: cart/pages.py
 msgid "Retainers"
 msgstr "Retenedores"
 
-#: cart/pages.py cart/templates/cart/virtuaortho.html
+#: cart/pages.py
 msgid "After a finished treatment"
 msgstr "Después de un tratamiento terminado"
 
-#: cart/pages.py cart/templates/cart/virtuaortho.html
+#: cart/pages.py
 msgid "Initial case evaluation"
 msgstr "Evaluación inicial del caso"
 
-#: cart/pages.py cart/templates/cart/virtuaortho.html
+#: cart/pages.py
 msgid "Treatment planning by the maker"
 msgstr "Planificación del tratamiento por el fabricante"
 
-#: cart/pages.py cart/templates/cart/virtuaortho.html
+#: cart/pages.py
 msgid "In-house printing treatment planning"
 msgstr "Planificación del tratamiento con impresión propia"
 
-#: cart/pages.py cart/templates/cart/virtuaortho.html
+#: cart/templates/cart/virtuaortho.html
 msgid "Aligners, planning and clinical support, all in one. These are the VirtuaOrtho products your subscription includes, with their prices."
 msgstr "Alineadores, planificación y soporte clínico todo en uno. Estos son los productos VirtuaOrtho que incluye su suscripción, con sus precios."
 
-#: cart/pages.py cart/templates/cart/virtuaortho.html
+#: cart/templates/cart/planning_services.html
 msgid "Expert planning and support at every step. These are the planning services your subscription includes, with their prices."
 msgstr "Planificación y soporte expertos en cada paso. Estos son los servicios de planificación que incluye su suscripción, con sus precios."
 
-#: cart/pages.py cart/templates/cart/virtuaortho.html
+#: cart/templates/cart/planning_services.html cart/templates/cart/virtuaortho.html
 msgid "These products are not included in your subscription."
 msgstr "Estos productos no están incluidos en su suscripción."
 
-#: cart/pages.py cart/templates/cart/virtuaortho.html
+#: cart/templates/cart/planning_services.html cart/templates/cart/virtuaortho.html
 msgid "Start a case"
 msgstr "Iniciar un caso"

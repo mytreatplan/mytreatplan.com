@@ -4,7 +4,7 @@ from . import pages, views
 
 # The product pages (9.5) keep the paths the home tiles always had.
 # Not namespaced (the home and the doctor nav link the plain names `start_a_case` and
-# `cart`); under accounts.page_records' PORTAL_PREFIXES ('start-a-case/', 'cart/'). A
+# `cart`); under accounts.page_records' PORTAL_PREFIXES ('start-a-case/', 'cart/', 'virtuaortho/', 'planning-services/'). A
 # patient's code is the only thing a URL carries.
 urlpatterns = [
     path('start-a-case/', views.start_a_case, name='start_a_case'),

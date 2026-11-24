@@ -15,7 +15,7 @@ note and the add-ons offered with their prices. `section.rows`.
     {% if row.add_ons %}
     <ul class="mt-2 flex flex-col gap-1 text-[14px]" data-product-add-ons>
       {% for add_on in row.add_ons %}
-      <li data-add-on><span class="font-semibold">{{ add_on.name }}</span> <span class="text-ink-muted">{% if add_on.amount %}+{{ add_on.amount|money }}{% else %}{{ add_on.percent|stringformat:"+.2f" }} %{% endif %}</span></li>
+      <li data-add-on><span class="font-semibold">{{ add_on.name }}</span> <span class="text-ink-muted">{% if add_on.amount %}+{{ add_on.amount|money }}{% else %}{% if add_on.percent > 0 %}+{% endif %}{{ add_on.percent|floatformat:2 }} %{% endif %}</span></li>
       {% endfor %}
     </ul>
     {% endif %}

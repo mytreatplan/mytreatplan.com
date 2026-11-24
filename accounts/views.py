@@ -1254,7 +1254,8 @@ def settings_coming_soon(request, section):
 
 
 # The doctor-area addresses not built yet, each served by `coming_soon` until its epic
-# replaces the route of the same name (accounts.urls): the URL name and the area's name,
+# replaces the route of the same name (accounts.urls; the VirtuaOrtho and Planning Services
+# pages, built in 9.5, are in cart.urls): the URL name and the area's name,
 # the one its link on the home shows (the same msgid).
 COMING_SOON_AREAS = {
     'support': gettext_lazy('Support'),
