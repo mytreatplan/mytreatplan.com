@@ -3,7 +3,7 @@ title: 'Responsive layout'
 type: 'feature'
 ticket: '14'
 created: '2026-11-24'
-status: 'built'
+status: 'done'
 baseline_revision: '5ff5ad0cbd3f8fac8a8cd94286f4359924fd5490'
 route: 'full'
 route_source: 'auto'
@@ -113,3 +113,10 @@ Forms in a wide page: a 2-column grid from `tablet` up for paired fields (name/s
 
 **Manual checks (if no CLI):**
 - By eye EN/ES at 1440, 1024, 390 on dev: patient list, wizard, cart, checkout, settings, home; dialog on a 768px-tall window.
+
+## Staging
+
+- Merged: PR #136 → 4a14f047cc607f16b65bbf79e95abd13708686f8 (2026-11-24). CI on the PR green (test job); master deploy run 45475162510 green on dev and dev-ae. Local suite: 4344 passed, 8 failed (known WeasyPrint `test_pdf.py` on this Mac), 17 skipped.
+- Check 1 passed (dev): the built `static/css/site.css` contains `max-w-portal` and the dialog's height cap.
+- Check 2 passed (dev, server-side render for the doctor of EU-0BNY91JQ): home, patients, invoices, cart and settings return 200 with the panel's `mx-auto max-w-portal` div, balanced `<div>` markup, and each table inside an `overflow-x-auto` wrapper. Checkout of the doctor's last order redirected (302: order already paid), not rendered.
+- Check 3 (by eye, EN/ES at 1440/1024/390 px, dialog on a 768 px tall window): owed by the user, not reported yet.
