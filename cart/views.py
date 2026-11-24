@@ -112,7 +112,8 @@ def _step_one(request, form, open_dialog):
                   .values_list('patient__code', flat=True))
     patients = patients_service.patients_of(request.user).filter(status=Patient.ACTIVE)
     return render(request, 'cart/start.html', {
-        'patients': [(patient, patient.code in in_cart) for patient in patients],
+        'rows': [{'patient': patient, 'search': patients_service.search_text(patient),
+                  'in_cart': patient.code in in_cart} for patient in patients],
         'form': form, 'open_dialog': open_dialog,
         'fiscal_link': _fiscal_block(request, reverse('start_a_case'))})
 

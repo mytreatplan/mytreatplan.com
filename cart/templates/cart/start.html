@@ -2,13 +2,13 @@
 {% load i18n static %}
 {% comment %}
 The case wizard's step 1 (cart.views.start_a_case, epic-ordering 9.3): the doctor's active
-patients, each leading to step 2, the add-patient dialog (the 9.2 one, posting to
+patients (the 9.15 chooser: search and paging in the browser), each leading to step 2, the add-patient dialog (the 9.2 one, posting to
 start_a_case_patient) and, without a usable fiscal entity, the block that links to add one.
 {% endcomment %}
 
 {% block title %}{% translate "Request New Planning" %} &mdash; MyTreatPlan{% endblock %}
 
-{% block head %}{{ block.super }}<script src="{% static 'js/dialog.js' %}" defer></script>{% endblock %}
+{% block head %}{{ block.super }}<script src="{% static 'js/patient-list.js' %}" defer></script><script src="{% static 'js/dialog.js' %}" defer></script>{% endblock %}
 
 {% block portal_content %}
 <div class="flex flex-wrap items-center justify-between gap-4">
@@ -21,16 +21,8 @@ start_a_case_patient) and, without a usable fiscal entity, the block that links 
 {% url 'start_a_case_patient' as post_url %}{% include "patients/_patient_dialog.html" with action=post_url %}
 
 <h2 class="mt-12 text-[22px] font-black leading-[1.2]">{% translate "Your patients" %}</h2>
-{% if patients %}
-<ul class="mt-4 flex flex-col gap-3" data-patients>
-  {% for patient, in_cart in patients %}
-  <li class="flex flex-wrap items-center justify-between gap-3 rounded-12 bg-card-grey px-5 py-4 text-copy" data-patient="{{ patient.code }}">
-    <span><strong class="font-black">{{ patient.code }}</strong>{% if patient.display_name %} &middot; {{ patient.display_name }}{% endif %}</span>
-    {% if in_cart %}<span class="font-semibold text-ink-muted" data-in-cart>{% translate "Already in your cart" %}</span>
-    {% else %}<a href="{% url 'start_a_case_tps' patient.code %}" class="font-semibold text-green-deep underline underline-offset-4 hover:text-ink" data-choose>{% translate "Choose" %}</a>{% endif %}
-  </li>
-  {% endfor %}
-</ul>
+{% if rows %}
+{% include "patients/_patient_chooser.html" with mode="choose" %}
 {% else %}
 <p class="mt-4 text-copy text-ink-muted" data-no-patients>{% translate "You have no patients yet." %}</p>
 {% endif %}

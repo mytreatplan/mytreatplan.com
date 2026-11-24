@@ -15,6 +15,7 @@ No patient name or comment is logged here.
 """
 import logging
 import secrets
+import unicodedata
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -99,6 +100,23 @@ def create_patient(doctor, *, first_name='', surname='', reference='', comments=
             # The code is taken: draw again.
             if attempt == _CODE_TRIES - 1:
                 raise
+
+
+def fold(text):
+    """Lower-case `text` and drop its accents (NFKD, combining marks removed), the form the
+    chooser's search compares in (patient-list.js folds the typed term the same way)."""
+    decomposed = unicodedata.normalize('NFKD', text or '')
+    return ''.join(ch for ch in decomposed if not unicodedata.combining(ch)).lower()
+
+
+def search_text(patient):
+    """What the patient chooser searches: the code, first name, surname and reference,
+    folded; an erased patient carries the code only (no name ever matches it)."""
+    if patient.status == Patient.ERASED:
+        return fold(patient.code)
+    return fold(' '.join(
+        part for part in (patient.code, patient.first_name, patient.surname,
+                          patient.reference) if part))
 
 
 def patients_of(doctor):

@@ -3,14 +3,14 @@ title: 'Patient search and paging'
 type: 'feature'
 ticket: '15'
 created: '2026-11-24'
-status: 'in-progress'
+status: 'built'
 baseline_revision: '4a14f047cc607f16b65bbf79e95abd13708686f8'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -82,6 +82,24 @@ context: []
 **Acceptance Criteria:**
 - Given a doctor with 60 patients, when they type part of a surname, then only matching patients show, paged, and the URL holds no part of the name.
 - Given the wizard's patient step with 30 active patients, when it loads, then it shows 10 rows with page links and a search box, and "Choose" still leads to the TPS step.
+
+## Implementation Notes
+
+- Server paging (`Paginator`, `PAGE_SIZES`, `page_links`) removed; all rows rendered with a folded `data-search`; a multi-word term must match every word.
+- Review fix (user decision 2026-11-24, option a): thumbnails now use a stable owner-only URL `patients/<code>/portrait/` (`patient_portrait`, 302 to a fresh 5-minute presigned link, 404 otherwise, no access record) because rows paged in later could outlive the 5-minute presigned link. `portrait_of` returns it for the list and the patient page; a presign failure now shows as a broken image rather than the placeholder (no warning logged).
+- The chooser's translated Next/Previous labels moved to `data-label-next`/`data-label-previous` (they clashed with the `[data-next]` button hook).
+
+## Review Triage Log
+
+Pass 1 (quick, Opus; 2026-11-24): 5 findings — high 0, medium 2, low 3, false 0, maybe-false 0.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---|---|---|---|
+| 1 | Thumbnails on later pages break after the 5-minute presigned link expires | medium | user decision (new URL not in the plan) | `owner_inline_url` is valid ≤5 min and built at page load; the user chose a stable owner-only redirect URL (2026-11-24); implemented with tests. |
+| 2 | Server folds with NFKD, JS with NFD ("Nº" vs "nº") | low | patch | JS now NFKD; browser test types "nº 12". |
+| 3 | `patients/tests/browser/__init__.py` copied the login suite's docstring | low | patch | Replaced with a one-line docstring. |
+| 4 | Focus lost to `<body>` on every page change | medium | patch | `render()` refocuses Previous/Next or the current page button; browser assertion added. |
+| 5 | No-match row `colspan="5"` in every mode | low | patch | Now 5/4/3 by mode and portraits, as the `<thead>`. |
 
 ## Design Notes
 

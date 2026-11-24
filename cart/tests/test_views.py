@@ -45,6 +45,19 @@ def test_step_one_lists_active_patients_and_has_the_dialog(doctor, entity, patie
     assert f'href="{step2(patient)}"' in html
 
 
+def test_step_one_renders_the_chooser_with_active_patients_only(doctor, entity, patient):
+    inactive = patients_service.create_patient(
+        doctor, first_name='Eva', surname='Ruiz',
+        actor=patients_service.Actor('doctor', doctor.uid))
+    inactive.status = 'inactive'
+    inactive.save()
+    html = page(browser(doctor).get(START))
+    assert 'data-patient-chooser' in html and 'data-patient-search' in html
+    assert re.findall(r'data-patient="([^"]+)"', html) == [patient.code]
+    assert inactive.code not in html
+    assert f'data-search="{patient.code.lower()} ana perez"' in html
+
+
 def test_step_one_leaves_out_inactive_patients(doctor, entity, patient):
     patient.status = 'inactive'
     patient.save()
