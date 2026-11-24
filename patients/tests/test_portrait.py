@@ -98,10 +98,14 @@ def test_a_clean_upload_is_checked_then_shown_on_the_page_and_in_the_list(
     stored = reload(patient)
     assert (stored.portrait, stored.portrait_pending) == (obj, None)
     page = html(client.get(page_url(patient)))
-    assert f'/clean/{obj.pk}?' in page and 'data-portrait-delete' in page
-    assert 'being checked' not in page
+    stable = f'/en/patients/{patient.code}/portrait/'
+    assert f'src="{stable}"' in page and 'data-portrait-delete' in page
+    assert 'being checked' not in page and '/clean/' not in page
     listing = html(client.get('/en/patients/'))
-    assert f'/clean/{obj.pk}?' in listing and 'data-portrait-image' in listing
+    assert f'src="{stable}"' in listing and 'data-portrait-image' in listing
+    assert '/clean/' not in listing
+    redirect = client.get(stable)
+    assert redirect.status_code == 302 and f'/clean/{obj.pk}?' in redirect['Location']
     assert NAME not in caplog.text and 'clean/' not in caplog.text and patient.code not in (
         caplog.text)
 
@@ -122,7 +126,7 @@ def test_a_refused_file_clears_pending_and_the_old_portrait_stays(
     assert 'data-portrait-rejected' in page and 'could not be accepted' in page
     stored = reload(patient)
     assert stored.portrait == first and stored.portrait_pending is None
-    assert f'/clean/{first.pk}?' in page
+    assert f'src="{page_url(patient)}portrait/"' in page
     trace = DeletionTrace.objects.get(object_id=bad.pk)
     assert trace.actor_type == 'system' and trace.patient_code == patient.code
     # shown once
@@ -151,7 +155,8 @@ def test_replace_deletes_the_old_object_with_a_trace(
     attach(client, patient, second)
     scan(stubber, fake_clamd, second, two, 'clean', django_capture_on_commit_callbacks)
     assert reload(patient).portrait == second
-    assert f'/clean/{second.pk}?' in html(client.get(page_url(patient)))
+    assert f'src="{page_url(patient)}portrait/"' in html(client.get(page_url(patient)))
+    assert f'/clean/{second.pk}?' in client.get(f'{page_url(patient)}portrait/')['Location']
     assert [args[0] for args in queued_deletions()] == [str(first.pk)]
     assert queued_deletions()[0][4] == patient.code
     run_deletions(stubber)
@@ -240,3 +245,39 @@ def test_the_unattached_upload_is_kept_by_the_purpose_hooks(doctor, patient):
 def test_the_page_is_in_spanish_too(doctor, patient):
     page = html(browser(doctor).get(f'/es/patients/{patient.code}/'))
     assert 'Retrato' in page and '<title>Paciente' in page
+
+
+def _clean_portrait(doctor, patient):
+    obj = uploaded(doctor, b'x')
+    obj.state, obj.owner = StoredObject.CLEAN, doctor
+    obj.save()
+    Patient.objects.filter(pk=patient.pk).update(portrait=obj)
+    return obj
+
+
+def test_the_portrait_url_redirects_to_a_fresh_presigned_link(doctor, patient, monkeypatch):
+    obj = _clean_portrait(doctor, patient)
+    monkeypatch.setattr(storage_service.s3, 'presign_download',
+                        lambda key, **kwargs: f'https://bucket.example/{obj.pk}?sig=1')
+    response = browser(doctor).get(f'{page_url(patient)}portrait/')
+    assert response.status_code == 302
+    assert response['Location'] == f'https://bucket.example/{obj.pk}?sig=1'
+    assert 'no-store' in response['Cache-Control']
+
+
+def test_the_portrait_url_is_404_for_all_but_the_owner_with_a_clean_portrait(
+        doctor, other_doctor, patient, django_user_model):
+    url = f'{page_url(patient)}portrait/'
+    assert browser(doctor).get(url).status_code == 404  # no portrait
+    _clean_portrait(doctor, patient)
+    assert browser(other_doctor).get(url).status_code == 404
+    staff = django_user_model.objects.create_user('staff@example.com', 'violet-orbit-canyon-42',
+                                                  is_staff=True)
+    assert browser(staff).get(url).status_code == 404
+    Patient.objects.filter(pk=patient.pk).update(status=Patient.ERASED)
+    assert browser(doctor).get(url).status_code == 404  # erased
+
+
+def test_the_portrait_url_needs_a_login(patient):
+    response = Client().get(f'{page_url(patient)}portrait/')
+    assert response.status_code == 302 and '/login' in response['Location']

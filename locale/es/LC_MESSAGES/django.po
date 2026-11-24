@@ -3218,6 +3218,15 @@ msgstr "Mostrar"
 
 #: patients/templates
 msgctxt "patient list"
+msgid "Search"
+msgstr "Buscar"
+
+#: patients/templates
+msgid "No patients match your search."
+msgstr "Ningún paciente coincide con su búsqueda."
+
+#: patients/templates
+msgctxt "patient list"
 msgid "Status"
 msgstr "Estado"
 

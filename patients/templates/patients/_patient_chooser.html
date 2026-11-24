@@ -1,0 +1,64 @@
+{% load i18n %}
+{% comment %}
+The patient chooser (epic-ordering 9.15), used by the patient list (mode "list": the code links
+to the patient page) and by the case wizard's step 1 (mode "choose": a Choose link, or the
+in-cart note). `rows` are dicts: patient, search (folded text, patients.service.search_text),
+portrait (list) and in_cart (choose). Every row is rendered; static/js/patient-list.js searches
+and pages them in the browser, so the term never leaves it. Without JS every row shows, unpaged,
+and the search box, size select and pagination stay hidden.
+{% endcomment %}
+{% blocktranslate asvar showing_template with first="{first}" last="{last}" total="{total}" %}Showing {{ first }} to {{ last }} of {{ total }}{% endblocktranslate %}
+<div data-patient-chooser data-showing-template="{{ showing_template }}" data-label-previous="{% translate 'Previous' %}" data-label-next="{% translate 'Next' %}">
+<div class="mt-4 flex flex-wrap items-center justify-between gap-4 text-copy" data-chooser-controls hidden>
+  <div class="flex items-center gap-2">
+    <label for="patients-search-{{ mode }}" class="text-ink-muted">{% translate "Search" context "patient list" %}</label>
+    <input type="search" id="patients-search-{{ mode }}" autocomplete="off" class="min-h-[44px] w-full min-w-[220px] rounded-12 border border-ink/30 bg-white px-3" data-patient-search>
+  </div>
+  <div class="flex items-center gap-2">
+    <label for="patients-size-{{ mode }}" class="text-ink-muted">{% translate "Show" context "patient list" %}</label>
+    <select id="patients-size-{{ mode }}" class="min-h-[44px] rounded-12 border border-ink/30 bg-white px-3" data-page-size>
+      <option value="10" selected>10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option>
+    </select>
+  </div>
+</div>
+<div class="mt-4 overflow-x-auto">
+<table class="w-full text-left text-copy" data-patients>
+  <thead><tr class="border-b border-ink/20 text-ink-muted">
+    {% if mode == "list" and with_portraits %}<th class="py-2 pr-3 font-semibold"><span class="sr-only">{% translate "Portrait" %}</span></th>{% endif %}
+    <th class="py-2 pr-3 font-semibold">{% translate "Code" context "patient list" %}</th>
+    <th class="py-2 pr-3 font-semibold">{% translate "Name or reference" context "patient list" %}</th>
+    {% if mode == "list" %}
+    <th class="py-2 pr-3 font-semibold">{% translate "Status" context "patient list" %}</th>
+    <th class="py-2 font-semibold">{% translate "Created" context "patient list" %}</th>
+    {% else %}
+    <th class="py-2 font-semibold"><span class="sr-only">{% translate "Choose" %}</span></th>
+    {% endif %}
+  </tr></thead>
+  <tbody>
+  {% for row in rows %}{% with patient=row.patient %}
+  <tr class="border-b border-ink/10" data-patient="{{ patient.code }}" data-search="{{ row.search }}">
+    {% if mode == "list" %}
+    {% if with_portraits %}<td class="py-3 pr-3">
+      <span class="flex size-12 items-center justify-center overflow-hidden rounded-[50%] bg-violet text-white" data-portrait-thumb>{% if row.portrait.url %}<img src="{{ row.portrait.url }}" alt="" loading="lazy" class="size-full object-cover" data-portrait-image>{% else %}{% include "includes/_icon.html" with name="user" class="size-6" %}{% endif %}</span>
+    </td>{% endif %}
+    <td class="py-3 pr-3 font-semibold">{% if patient.status == "erased" %}{{ patient.code }}{% else %}<a href="{% url 'patient' patient.code %}" class="text-green-deep underline underline-offset-4 hover:text-ink" data-open>{{ patient.code }}</a>{% endif %}</td>
+    <td class="py-3 pr-3">{{ patient.display_name }}</td>
+    <td class="py-3 pr-3" data-status="{{ patient.status }}">{% if patient.status == "inactive" %}<span class="rounded-pill bg-notice-bg px-3 py-1 text-[14px] font-semibold text-notice-text">{% translate "Inactive" context "patient status" %}</span>{% elif patient.status == "erased" %}{% translate "Erased" context "patient status" %}{% else %}{% translate "Active" context "patient status" %}{% endif %}</td>
+    <td class="py-3">{{ patient.created_at|date:"DATE_FORMAT" }}</td>
+    {% else %}
+    <td class="py-3 pr-3 font-black">{{ patient.code }}</td>
+    <td class="py-3 pr-3">{{ patient.display_name }}</td>
+    <td class="py-3 text-right">{% if row.in_cart %}<span class="font-semibold text-ink-muted" data-in-cart>{% translate "Already in your cart" %}</span>
+      {% else %}<a href="{% url 'start_a_case_tps' patient.code %}" class="font-semibold text-green-deep underline underline-offset-4 hover:text-ink" data-choose>{% translate "Choose" %}</a>{% endif %}</td>
+    {% endif %}
+  </tr>
+  {% endwith %}{% endfor %}
+  <tr data-no-match hidden><td colspan="{% if mode == "list" %}{% if with_portraits %}5{% else %}4{% endif %}{% else %}3{% endif %}" class="py-3 text-ink-muted">{% translate "No patients match your search." %}</td></tr>
+  </tbody>
+</table>
+</div>
+<div class="mt-4 flex flex-wrap items-center justify-between gap-3 text-copy" data-pagination hidden>
+  <p class="text-ink-muted" data-showing>{% blocktranslate with first=1 last=rows|slice:":10"|length total=rows|length %}Showing {{ first }} to {{ last }} of {{ total }}{% endblocktranslate %}</p>
+  <nav aria-label="{% translate 'Pages' %}" data-page-links></nav>
+</div>
+</div>

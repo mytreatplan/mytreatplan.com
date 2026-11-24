@@ -1,4 +1,4 @@
-"""The patient list (epic-ordering 9.2): columns, status, pagination, empty state."""
+"""The patient list (epic-ordering 9.2): columns, status, all rows for the browser to search and page (9.15), empty state."""
 import re
 
 import pytest
@@ -60,38 +60,44 @@ def test_the_empty_state_offers_adding_a_patient(doctor):
     assert 'data-pagination' not in page
 
 
-def test_pages_of_ten_by_default(doctor):
+def test_every_row_is_rendered_for_the_browser_to_page(doctor):
     codes = make(doctor, 30)
-    client = browser(doctor)
-    page = html(client.get(URL))
-    assert rows(page) == list(reversed(codes))[:10]
-    assert 'Showing 1 to 10 of 30' in page
-    assert set(re.findall(r'data-page-link="(\d+)"', page)) == {'1', '2', '3'}
-    second = html(client.get(URL + '?page=2'))
-    assert rows(second) == list(reversed(codes))[10:20] and 'Showing 11 to 20 of 30' in second
+    page = html(browser(doctor).get(URL))
+    assert rows(page) == list(reversed(codes))
+    assert 'data-patient-chooser' in page and 'data-patient-search' in page
+    assert 'data-pagination' in page and 'data-no-match' in page
+    for query in ('size=7', 'page=2', 'size=25&page=2'):
+        assert rows(html(browser(doctor).get(f'{URL}?{query}'))) == list(reversed(codes))
 
 
-def test_a_size_of_25_gives_two_pages(doctor):
-    make(doctor, 30)
-    page = html(browser(doctor).get(URL + '?size=25'))
-    assert len(rows(page)) == 25 and 'Showing 1 to 25 of 30' in page
-    assert set(re.findall(r'data-page-link="(\d+)"', page)) == {'1', '2'}
-    assert '<option value="25" selected>' in page
+def test_each_row_carries_folded_search_text(doctor):
+    service.create_patient(doctor, first_name='Ana', surname='García', reference='Ref ÑU',
+                           actor=service.Actor('doctor', doctor.uid))
+    patient = Patient.objects.get()
+    page = html(browser(doctor).get(URL))
+    search = re.search(r'data-search="([^"]*)"', page).group(1)
+    assert search == f'{patient.code.lower()} ana garcia ref nu'
 
 
-@pytest.mark.parametrize('query, count, shown', [
-    ('size=7', 10, 'Showing 1 to 10 of 30'),
-    ('size=abc', 10, 'Showing 1 to 10 of 30'),
-    ('page=abc', 10, 'Showing 1 to 10 of 30'),
-    ('page=99', 10, 'Showing 21 to 30 of 30'),
-    ('page=-3', 10, 'Showing 1 to 10 of 30'),
-    ('page=0', 10, 'Showing 1 to 10 of 30'),
-    ('size=100&page=2', 30, 'Showing 1 to 30 of 30'),
-])
-def test_invalid_page_or_size_falls_back(doctor, query, count, shown):
-    make(doctor, 30)
-    page = html(browser(doctor).get(f'{URL}?{query}'))
-    assert len(rows(page)) == count and shown in page
+def test_an_erased_row_searches_by_code_only(doctor):
+    service.create_patient(doctor, first_name='Ana', surname='García',
+                           actor=service.Actor('doctor', doctor.uid))
+    patient = Patient.objects.get()
+    Patient.objects.filter(pk=patient.pk).update(status=Patient.ERASED)
+    page = html(browser(doctor).get(URL))
+    search = re.search(r'data-search="([^"]*)"', page).group(1)
+    assert search == patient.code.lower()
+    assert 'garc' not in page.lower().replace('data-search', '')
+
+
+def test_the_page_is_not_cached(doctor, patient):
+    response = browser(doctor).get(URL)
+    assert 'no-store' in response['Cache-Control']
+
+
+def test_the_search_term_is_not_a_server_input(doctor, patient):
+    page = html(browser(doctor).get(URL + '?q=Ana'))
+    assert rows(page) == [patient.code]
 
 
 def test_only_the_doctors_own_patients_are_listed(doctor, other_doctor, patient):

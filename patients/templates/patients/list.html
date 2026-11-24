@@ -2,8 +2,8 @@
 {% load i18n static %}
 {% comment %}
 The doctor's patients (patients.views.patient_list, epic-ordering 9.1): the add-patient dialog and
-the paginated list of their own patients, newest first (portrait, code, name or reference,
-status, created; 9.2).
+the list of their own patients, newest first (portrait, code, name or reference, status,
+created; 9.2), searched and paged in the browser (9.15).
 {% endcomment %}
 
 {% block title %}{% translate "Patients" %} &mdash; MyTreatPlan{% endblock %}
@@ -20,51 +20,7 @@ status, created; 9.2).
 
 <h2 class="mt-12 text-[22px] font-black leading-[1.2]">{% translate "Your patients" %}</h2>
 {% if rows %}
-<form method="get" class="mt-4 flex items-center gap-2 text-copy" data-page-size-form>
-  <label for="patients-size" class="text-ink-muted">{% translate "Show" context "patient list" %}</label>
-  <select id="patients-size" name="size" class="min-h-[44px] rounded-12 border border-ink/30 bg-white px-3" data-page-size>
-    {% for option in sizes %}<option value="{{ option }}"{% if option == size %} selected{% endif %}>{{ option }}</option>{% endfor %}
-  </select>
-  <button type="submit" class="min-h-[44px] rounded-pill border border-ink/30 px-4 font-semibold" data-page-size-apply>{% translate "Apply" %}</button>
-</form>
-<div class="mt-4 overflow-x-auto">
-<table class="w-full text-left text-copy" data-patients>
-  <thead><tr class="border-b border-ink/20 text-ink-muted">
-    {% if with_portraits %}<th class="py-2 pr-3 font-semibold"><span class="sr-only">{% translate "Portrait" %}</span></th>{% endif %}
-    <th class="py-2 pr-3 font-semibold">{% translate "Code" context "patient list" %}</th>
-    <th class="py-2 pr-3 font-semibold">{% translate "Name or reference" context "patient list" %}</th>
-    <th class="py-2 pr-3 font-semibold">{% translate "Status" context "patient list" %}</th>
-    <th class="py-2 font-semibold">{% translate "Created" context "patient list" %}</th>
-  </tr></thead>
-  <tbody>
-  {% for patient, portrait in rows %}
-  <tr class="border-b border-ink/10" data-patient="{{ patient.code }}">
-    {% if with_portraits %}<td class="py-3 pr-3">
-      <span class="flex size-12 items-center justify-center overflow-hidden rounded-[50%] bg-violet text-white" data-portrait-thumb>{% if portrait.url %}<img src="{{ portrait.url }}" alt="" class="size-full object-cover" data-portrait-image>{% else %}{% include "includes/_icon.html" with name="user" class="size-6" %}{% endif %}</span>
-    </td>{% endif %}
-    <td class="py-3 pr-3 font-semibold">{% if patient.status == "erased" %}{{ patient.code }}{% else %}<a href="{% url 'patient' patient.code %}" class="text-green-deep underline underline-offset-4 hover:text-ink" data-open>{{ patient.code }}</a>{% endif %}</td>
-    <td class="py-3 pr-3">{{ patient.display_name }}</td>
-    <td class="py-3 pr-3" data-status="{{ patient.status }}">{% if patient.status == "inactive" %}<span class="rounded-pill bg-notice-bg px-3 py-1 text-[14px] font-semibold text-notice-text">{% translate "Inactive" context "patient status" %}</span>{% elif patient.status == "erased" %}{% translate "Erased" context "patient status" %}{% else %}{% translate "Active" context "patient status" %}{% endif %}</td>
-    <td class="py-3">{{ patient.created_at|date:"DATE_FORMAT" }}</td>
-  </tr>
-  {% endfor %}
-  </tbody>
-</table>
-</div>
-<div class="mt-4 flex flex-wrap items-center justify-between gap-3 text-copy" data-pagination>
-  <p class="text-ink-muted" data-showing>{% blocktranslate with first=page.start_index last=page.end_index total=page.paginator.count %}Showing {{ first }} to {{ last }} of {{ total }}{% endblocktranslate %}</p>
-  {% if page.paginator.num_pages > 1 %}
-  <nav aria-label="{% translate 'Pages' %}"><ul class="flex flex-wrap items-center gap-1">
-    {% if page.has_previous %}<li><a href="?page={{ page.previous_page_number }}&amp;size={{ size }}" class="inline-flex min-h-[44px] items-center px-3 font-semibold text-green-deep underline underline-offset-4" data-prev>{% translate "Previous" %}</a></li>{% endif %}
-    {% for link in links %}
-    {% if link is None %}<li class="px-2 text-ink-muted" aria-hidden="true">&hellip;</li>
-    {% elif link == page.number %}<li><span class="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-pill bg-green-ui px-3 font-black text-white" aria-current="page" data-page-link="{{ link }}">{{ link }}</span></li>
-    {% else %}<li><a href="?page={{ link }}&amp;size={{ size }}" class="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-pill px-3 font-semibold text-green-deep hover:bg-ink/5" data-page-link="{{ link }}">{{ link }}</a></li>{% endif %}
-    {% endfor %}
-    {% if page.has_next %}<li><a href="?page={{ page.next_page_number }}&amp;size={{ size }}" class="inline-flex min-h-[44px] items-center px-3 font-semibold text-green-deep underline underline-offset-4" data-next>{% translate "Next" %}</a></li>{% endif %}
-  </ul></nav>
-  {% endif %}
-</div>
+{% include "patients/_patient_chooser.html" with mode="list" %}
 {% else %}
 <p class="mt-4 text-copy text-ink-muted" data-no-patients>{% translate "You have no patients yet." %} <a href="{% url 'patient_new' %}" class="font-semibold text-green-deep underline underline-offset-4" data-opens-dialog="add-patient" data-add-patient-empty>{% translate "Add a patient" %}</a></p>
 {% endif %}

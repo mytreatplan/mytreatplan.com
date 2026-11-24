@@ -1,5 +1,6 @@
-"""The doctor's patients pages (epic-ordering 9.1, 9.2): the create form and the paginated
-list of their own patients (portrait, code, name or reference, status, created), and a
+"""The doctor's patients pages (epic-ordering 9.1, 9.2, 9.15): the create form and the
+list of their own patients (portrait, code, name or reference, status, created; all rows
+rendered, searched and paged in the browser by patient-list.js), and a
 patient page with the portrait and its controls. A doctor sees only their own patients
 (another doctor's code is a 404); no name is put in a URL, a log line or a message. Writes
 go through `patients.service` and `patients.portrait`."""
@@ -7,7 +8,6 @@ import uuid
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.paginator import Paginator
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -18,33 +18,11 @@ from django.views.decorators.http import require_http_methods
 
 from accounts.client_sync import is_client
 from payments import service as payments_service
+from storage import service as storage_service
 
 from . import portrait, service
 from .forms import PatientForm
 from .models import Patient
-
-PAGE_SIZES = (10, 25, 50, 100)
-DEFAULT_SIZE = 10
-
-
-def _int(value, default):
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def page_links(current, total, spread=2):
-    """The page numbers to link: the first, the last and those near `current`, with None
-    for a gap."""
-    wanted = sorted({1, total, *range(max(1, current - spread), min(total, current + spread) + 1)})
-    links, last = [], 0
-    for number in wanted:
-        if number - last > 1:
-            links.append(None)
-        links.append(number)
-        last = number
-    return links
 
 
 def _doctor_only(request):
@@ -80,20 +58,14 @@ def patient_list(request):
         open_dialog = True
     else:
         form = PatientForm()
-    size = _int(request.GET.get('size'), DEFAULT_SIZE)
-    if size not in PAGE_SIZES:
-        size = DEFAULT_SIZE
-    paginator = Paginator(
-        service.patients_of(request.user).select_related('portrait', 'portrait_pending'), size)
-    number = min(max(_int(request.GET.get('page'), 1), 1), paginator.num_pages)
-    page = paginator.page(number)
     with_portraits = portrait.storage_available()
-    rows = [(patient, portrait.portrait_of(patient, request.user) if with_portraits else None)
-            for patient in page]
+    rows = [{'patient': patient, 'search': service.search_text(patient),
+             'portrait': portrait.portrait_of(patient, request.user) if with_portraits else None}
+            for patient in service.patients_of(request.user)
+            .select_related('portrait', 'portrait_pending')]
     return render(request, 'patients/list.html', {
-        'form': form, 'rows': rows, 'page': page, 'size': size, 'sizes': PAGE_SIZES,
-        'links': page_links(page.number, paginator.num_pages),
-        'with_portraits': with_portraits, 'open_dialog': open_dialog})
+        'form': form, 'rows': rows, 'with_portraits': with_portraits,
+        'open_dialog': open_dialog})
 
 
 @login_required
@@ -155,6 +127,24 @@ def patient_page(request, code):
         'storage_available': available, 'purpose': portrait.PURPOSE,
         'max_size': portrait.MAX_SIZE, 'allowed_types': ' '.join(portrait.CONTENT_TYPES),
         'has_portrait': portrait.has_portrait(patient)})
+
+
+@login_required
+@never_cache
+@require_http_methods(['GET', 'HEAD'])
+def patient_portrait(request, code):
+    """The patient's portrait for the doctor who owns it: a redirect to a fresh presigned
+    inline link (no access record, as `portrait.portrait_of` explains). 404 for anything
+    else: another doctor's or an erased patient, no clean portrait, no bucket."""
+    patient = _own_patient(request, code)
+    shown = patient.portrait
+    if shown is None or not portrait.storage_available():
+        raise Http404
+    try:
+        url = storage_service.owner_inline_url(shown, request.user)
+    except (storage_service.DownloadRefused, storage_service.NotConfigured):
+        raise Http404
+    return redirect(url)
 
 
 @login_required

@@ -22,8 +22,8 @@ owner (the patient's doctor) only. One portrait per patient, on `Patient`: `port
 
 Every deletion goes through storage.service.delete with the patient's code in the
 DeletionTrace (a code, never a name). The doctor's own patient list and patient page show
-the portrait through one presigned inline link per image (`storage.service.owner_inline_url`)
-with no access record: AD-9's exception for the portraits of a doctor's own patients, shown
+the portrait through one stable owner-only URL per image (`patients.views.patient_portrait`, which redirects to
+a presigned inline link from `storage.service.owner_inline_url`) with no access record: AD-9's exception for the portraits of a doctor's own patients, shown
 on the patient list and patient file pages (user decision 2026-11-22). Nothing here logs a
 file name, a key, a URL or a patient's name.
 """
@@ -33,6 +33,7 @@ from dataclasses import dataclass
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Q
+from django.urls import reverse
 
 from accounts import client_sync
 from accounts import photo as profile_photo
@@ -232,9 +233,8 @@ def portrait_of(patient, doctor):
     url = ''
     if (shown is not None and shown.state == StoredObject.CLEAN
             and shown.delete_requested_at is None and shown.owner_id == doctor.pk):
-        try:
-            url = service.owner_inline_url(shown, doctor)
-        except Exception as exc:  # noqa: BLE001 - the page shows the placeholder instead
-            logger.warning('patients: portrait link failed (%s)', type(exc).__name__)
-            url = ''
+        # The stable URL of the owner-only redirect view (patients.views.patient_portrait),
+        # which presigns when the image is fetched: a presigned link lives 5 minutes, too
+        # short for the thumbnails of later pages, loaded lazily.
+        url = reverse('patient_portrait', args=[patient.code])
     return Portrait(url=url, pending=is_pending)
