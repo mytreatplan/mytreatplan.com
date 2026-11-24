@@ -8,6 +8,11 @@
   retainers or Spark on Demand, shipped to one of the doctor's usable addresses (stored on the
   item; 9.6 snapshots it and calls `mark_used`). No maker: MyTreatPlan makes it.
 - `items_of(doctor)`, `remove(doctor, item_id)`.
+- `finish(doctor, voucher_code='')` (9.6): turn the cart into one service order through
+  `payments.service.create_order` (patient code, maker and shipping address copied per line),
+  cancelling the doctor's earlier unpaid cart order first (all or nothing); the items stay
+  until the order is paid (`paid`, the receiver of the order's `paid` hook, then removes the
+  paid patients' items and marks the snapshotted addresses used).
 
 The product is never chosen by code: it is the first (by code) of the products the doctor
 is offered (`subscriptions.service.offers_for`); size `ice` is the ICE product (either
@@ -17,6 +22,8 @@ offers on it, checked by `resolver.price`. A named maker needs a saved login
 (`accounts.makers.has_login`); "not decided yet" and "other" never block. No patient name or
 maker credential is read, logged or put in a message here.
 """
+import logging
+
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 
@@ -25,7 +32,10 @@ from accounts.client_sync import is_client
 from catalogue import resolver
 from catalogue.models import Product
 from patients import service as patients_service
+from payments import service as payments
+from payments.models import Order
 from subscriptions import service as subscriptions
+from subscriptions import vouchers as voucher_redemptions
 
 from .models import MAKER_CHOICES, OTHER, OTHER_NAME_MAX_LENGTH, UNDECIDED, CartItem
 
@@ -44,9 +54,14 @@ NO_ADDRESS = 'no_address'
 ADDRESS = 'address'
 QUANTITY = 'quantity'
 NOT_FINISHED = 'not_finished'
+EMPTY = 'empty'
+ADDRESS_GONE = 'address_gone'
+PAYMENT_OPEN = 'payment_open'
 CODES = (NOT_A_DOCTOR, NO_PATIENT, NO_ENTITY, MAKER_UNKNOWN, MAKER_LOGIN, OTHER_NAME,
          LIVE_WORK_ORDER, IN_CART, NOT_OFFERED, ADD_ON, NO_ADDRESS, ADDRESS, QUANTITY,
-         NOT_FINISHED)
+         NOT_FINISHED, EMPTY, ADDRESS_GONE, PAYMENT_OPEN)
+logger = logging.getLogger(__name__)
+SOURCE = 'cart'
 
 # VirtuaOrtho (9.4). The variants of step 2 and the category each one is sold in.
 ONE, DIGITALTWIN = 'one', 'digitaltwin'
@@ -300,3 +315,92 @@ def remove(doctor, item_id):
     """Delete the doctor's item `item_id`; False when it is not theirs (or unknown)."""
     deleted, _ = CartItem.objects.filter(doctor_id=doctor.pk, pk=item_id).delete()
     return bool(deleted)
+
+
+# --- Finishing the order (9.6) ---------------------------------------------------------------
+
+_SHIPPING_FIELDS = ('label', 'recipient_name', 'clinic_name', 'contact_phone', 'address_line1',
+                    'address_line2', 'city', 'postal_code', 'province')
+
+
+def _shipping_snapshot(address):
+    """A copy of the address as it is now (and its id, to mark it used when paid)."""
+    snapshot = {name: getattr(address, name) or '' for name in _SHIPPING_FIELDS}
+    snapshot['id'] = str(address.pk)
+    snapshot['country'] = address.country.code if address.country else ''
+    return snapshot
+
+
+def _order_lines(items):
+    """The `OrderLine`s of the cart items, or `CartRefused`."""
+    lines = []
+    for item in items:
+        product = resolver.product(item.product_id)
+        if product is None:
+            raise CartRefused(NOT_OFFERED)
+        add_ons = [resolver.add_on(code) for code in item.add_on_codes]
+        if None in add_ons:
+            raise CartRefused(ADD_ON)
+        snapshot = None
+        if product.category in VIRTUAORTHO_CATEGORIES:
+            address = item.shipping_address
+            if address is None or not shipping.is_usable(address):
+                raise CartRefused(ADDRESS_GONE)
+            snapshot = _shipping_snapshot(address)
+        lines.append(resolver.OrderLine(
+            product, item.quantity, tuple(add_ons), None, item.patient.code, item.maker,
+            item.other_name, snapshot))
+    return lines
+
+
+def _cancel_earlier(doctor):
+    """Cancel the doctor's earlier unpaid cart orders (their vouchers are released)."""
+    earlier = Order.objects.filter(
+        user_id=doctor.pk, kind=Order.SERVICE, state__in=Order.OPEN_STATES,
+        changes__event=payments.CREATED, changes__detail__source=SOURCE).distinct()
+    for order in earlier:
+        try:
+            payments.cancel(order, expected_version=order.version,
+                            actor=payments.doctor_actor(doctor))
+        except payments.OrderError:
+            raise CartRefused(PAYMENT_OPEN) from None
+
+
+def finish(doctor, voucher_code=''):
+    """Create the service order of the doctor's cart and return it (in `checkout`, or paid
+    at once when it comes to 0.00). `CartRefused` (`EMPTY`, `NO_ENTITY`, `ADDRESS_GONE`,
+    `PAYMENT_OPEN`, `NOT_OFFERED`, `ADD_ON`), `catalogue.pricing.OrderRefused` (a voucher
+    refusal, two companies, two currencies, a patient with a case in progress...) or a
+    `payments.service.OrderError`: nothing is changed then, the earlier order included. The
+    items stay in the cart until the order is paid."""
+    if not is_client(doctor) or doctor.is_erased:
+        raise CartRefused(NOT_A_DOCTOR)
+    items = items_of(doctor)
+    if not items:
+        raise CartRefused(EMPTY)
+    if not fiscal.has_usable_entity(doctor):
+        raise CartRefused(NO_ENTITY)
+    lines = _order_lines(items)
+    code = (voucher_code or '').strip()
+    voucher = voucher_redemptions.voucher_for_code(code) if code else None
+    with transaction.atomic():
+        _cancel_earlier(doctor)
+        return payments.create_order(doctor, lines, actor=payments.doctor_actor(doctor),
+                                     voucher=voucher, source=SOURCE)
+
+
+def paid(order):
+    """The receiver of the order's `paid` hook: the items of the paid patients leave the
+    cart and each shipping address the order snapshotted is marked used. Idempotent."""
+    if order.user_id is None:
+        return
+    for line in order.lines.exclude(patient_code=''):
+        CartItem.objects.filter(doctor_id=order.user_id, patient__code=line.patient_code,
+                                product_id=line.product_id).delete()
+    for line in order.lines.all():
+        if not line.shipping:  # an encrypted column: read here, never queried
+            continue
+        address = shipping.ShippingAddress.objects.filter(
+            pk=line.shipping.get('id'), user_id=order.user_id).first()
+        if address is not None:
+            shipping.mark_used(address)

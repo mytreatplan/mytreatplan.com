@@ -243,3 +243,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-ordering/story-product-pages-and-start-a-case-links-plan.md`
   summary: Education page (parked): the home has no education tile or page; 9.5 builds only the VirtuaOrtho and Planning Services product pages.
   evidence: User decision 2026-11-24: no products, no billing rule and no order path without a patient exist for education yet; plan it when its products and billing rule exist.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-ordering/story-cart-and-checkout-plan.md`
+  summary: The "use an included case" tick on a branded-TPS cart item waits for 8.13 (it counts the used cases); until then 9.6 prices every case normally.
+  evidence: User decision 2026-11-24 (9.6 plan, Decisions); `payments.models.OrderLine.included_case` exists but nothing sets it from the cart.

@@ -19,13 +19,16 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from accounts import fiscal, makers, shipping
 from accounts.client_sync import is_client
-from catalogue import resolver
+from catalogue import pricing, resolver
 from catalogue.models import Product
 from patients import service as patients_service
 from patients.forms import PatientForm
 from patients.models import Patient
 from patients.views import _create
 from subscriptions import service as subscriptions
+
+from payments import service as payments
+from payments.views import _refusal_message
 
 from . import service
 from .models import OTHER, UNDECIDED, CartItem
@@ -47,6 +50,12 @@ def _refusal_texts():
         service.ADDRESS: _('Choose one of your shipping addresses.'),
         service.QUANTITY: _('Choose a number of aligners within the range offered.'),
         service.NOT_FINISHED: _('Retainers are for a patient whose treatment is finished.'),
+        service.EMPTY: _('Your cart is empty.'),
+        service.ADDRESS_GONE: _('The shipping address of one item is no longer available. '
+                                'Remove that item and add it again.'),
+        service.PAYMENT_OPEN: _('A payment for your earlier order is in progress. Please wait '
+                                'a few minutes, or check that payment before you finish '
+                                'again.'),
     }
 
 
@@ -312,16 +321,54 @@ def _line(item, held):
             'price': price}
 
 
+def _cart_page(request, error='', voucher_code=''):
+    held = subscriptions.effective(request.user).subscription
+    return render(request, 'cart/cart.html', {
+        'lines': [_line(item, held) for item in service.items_of(request.user)],
+        'error': error, 'voucher_code': voucher_code,
+        'fiscal_link': _fiscal_block(request, reverse('cart'))})
+
+
 @login_required
 @csrf_protect
 @never_cache
 @require_http_methods(['GET', 'HEAD'])
 def cart(request):
-    """The cart: the items by patient, each with Remove."""
+    """The cart: the items by patient, each with Remove, a try-me voucher field and
+    "Finish order" (9.6)."""
     _doctor_only(request)
-    held = subscriptions.effective(request.user).subscription
-    return render(request, 'cart/cart.html', {
-        'lines': [_line(item, held) for item in service.items_of(request.user)]})
+    return _cart_page(request)
+
+
+def _finish_error(refused):
+    """The text of a refused "Finish order" (never a patient's name or code)."""
+    if isinstance(refused, service.CartRefused):
+        return _refusal_texts()[refused.code]
+    if isinstance(refused, payments.NoPaymentMethod):
+        return _('There is no payment method for this order yet.')
+    if isinstance(refused, payments.OrderError):
+        return _('Something went wrong. Please try again in a moment.')
+    if refused.reason == pricing.PATIENT_REFUSED:
+        return _('A patient in your cart now has a case in progress. Remove that item and '
+                 'try again.')
+    return _refusal_message(refused)
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_POST
+def cart_finish(request):
+    """Finish the order: the cart becomes one service order (with the optional voucher
+    code) and the doctor goes to its checkout; a refusal shows the cart again with the
+    reason."""
+    _doctor_only(request)
+    voucher_code = (request.POST.get('voucher') or '').strip()[:40]
+    try:
+        order = service.finish(request.user, voucher_code)
+    except (service.CartRefused, pricing.OrderRefused, payments.OrderError) as refused:
+        return _cart_page(request, _finish_error(refused), voucher_code)
+    return redirect('checkout', pk=order.pk)
 
 
 @login_required

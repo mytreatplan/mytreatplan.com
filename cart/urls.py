@@ -13,5 +13,6 @@ urlpatterns = [
     path('virtuaortho/', pages.virtuaortho_page, name='virtuaortho'),
     path('planning-services/', pages.planning_services_page, name='planning_services'),
     path('cart/', views.cart, name='cart'),
+    path('cart/finish/', views.cart_finish, name='cart_finish'),
     path('cart/<uuid:item_id>/remove/', views.cart_remove, name='cart_remove'),
 ]

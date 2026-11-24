@@ -196,6 +196,8 @@ def _line_rows(order, priced, asked):
                            for add_on in wanted.add_ons]
             row.ice_asked = None if wanted.ice is None else wanted.ice.amount
             row.patient_code = wanted.patient_code
+            row.maker, row.other_name = wanted.maker, wanted.other_name
+            row.shipping = wanted.shipping
             cost = resolver.cost(product)
             row.provider_cost = (cost.total * line.quantity).amount
             row.cost_complete = bool(cost.complete)
@@ -234,7 +236,8 @@ def _inputs(order):
                                        subject=product)
         ice = None if row.ice_asked is None else Money(row.ice_asked, order.currency)
         asked.append(pricing.OrderLine(product, row.quantity, add_ons, ice,
-                                       row.patient_code))
+                                       row.patient_code, row.maker, row.other_name,
+                                       row.shipping))
     return asked
 
 
@@ -311,32 +314,65 @@ def _usable(user, entity):
 
 
 def _check_patients(user, asked):
-    """A case line (an ICE) must name one of the user's own active patients that has no
-    live work order, once per order and in quantity 1; any other line must name none
-    (epic-ordering 9.1; 9.8 extends this to every service). Raises `OrderRefused`
+    """Every line that names a patient (a case: epic-ordering 9.1, 9.6) must name one of the
+    user's own active patients, once per order, in any quantity, and the patient must have
+    no live work order; a live ICE is the one exception, for a line that is not an ICE (a TPS
+    or a VirtuaOrtho service follows it). An ICE line must name a patient. A line without a
+    patient code is any other product (the test order). Raises `OrderRefused`
     `patient_refused`."""
     from patients import service as patients
 
     seen = set()
     for wanted in asked:
         code = wanted.patient_code
-        if wanted.product.category != Product.ICE:
-            if code:
+        is_ice = wanted.product.category == Product.ICE
+        if not code:
+            if is_ice:
                 raise pricing.OrderRefused(
-                    pricing.PATIENT_REFUSED, 'only a case line names a patient',
+                    pricing.PATIENT_REFUSED, 'a case needs one of your patients',
                     subject=wanted.product)
             continue
-        patient = patients.patient_of(user, code) if code else None
-        if (patient is None or code in seen or wanted.quantity != 1
-                or patients.live_work_order(patient) is not None):
+        patient = patients.patient_of(user, code)
+        if patient is None or code in seen or not _patient_free(patients, patient, is_ice):
             raise pricing.OrderRefused(
                 pricing.PATIENT_REFUSED,
-                'a case needs one of your patients with no case in progress',
+                'a service needs one of your patients with no case in progress',
                 subject=wanted.product)
         seen.add(code)
 
 
-def _create(user, kind, asked, *, actor, voucher, entity):
+def _patient_free(patients, patient, is_ice):
+    live = patients.live_work_order(patient)
+    return live is None or (not is_ice and patients.live_is_ice(patient))
+
+
+class PatientBusy(OrderError):
+    """A patient of the order got a live work order after the order was made: the order was
+    cancelled (epic-ordering 9.6). Carries no patient name or code."""
+
+
+def _patients_still_free(order):
+    """Whether no patient of the locked service `order` has got a live work order since
+    the order was made (a live ICE still lets a TPS or a VirtuaOrtho service through). The
+    patients' ownership was checked at creation."""
+    from patients import service as patients
+    from patients.models import Patient
+
+    if order.kind != Order.SERVICE or order.user_id is None:
+        return True
+    for line in order.lines.exclude(patient_code=''):
+        patient = Patient.objects.filter(code=line.patient_code, doctor_id=order.user_id,
+                                         status=Patient.ACTIVE).first()
+        if patient is None:
+            continue
+        product = resolver.product(line.product_id) if line.product_id else None
+        is_ice = product is not None and product.category == Product.ICE
+        if not _patient_free(patients, patient, is_ice):
+            return False
+    return True
+
+
+def _create(user, kind, asked, *, actor, voucher, entity, source=''):
     _check_actor(actor)
     if kind == Order.SERVICE:
         _check_patients(user, asked)  # OrderRefused: no order
@@ -369,7 +405,8 @@ def _create(user, kind, asked, *, actor, voucher, entity):
                 _snapshot_entity(order, entity)
                 order.save()
                 OrderLine.objects.bulk_create(_line_rows(order, priced, asked))
-                _change(order, actor, CREATED, '', now)
+                _change(order, actor, CREATED, '', now,
+                        **({'source': source} if source else {}))
                 _fire('created', order)
                 if not priced.needs_payment and entity is not None:
                     _pay_free(order, actor, now)
@@ -380,14 +417,16 @@ def _create(user, kind, asked, *, actor, voucher, entity):
                 raise
 
 
-def create_order(user, lines, *, actor, voucher=None, entity=None):
+def create_order(user, lines, *, actor, voucher=None, entity=None, source=''):
     """Create the service order of `user` for `lines` (`catalogue.pricing.OrderLine`s),
     optionally with a voucher (`catalogue.models.Voucher`) and a fiscal entity (the
     default usable one when None); see the module docstring. A line's `patient_code` is the
-    patient of a case (an ICE needs one of the user's own). Raises `pricing.OrderRefused`,
-    `EntityRefused` or `NoPaymentMethod`, creating nothing."""
+    patient of a case (an ICE needs one of the user's own; any other service may name one,
+    and then the same rules hold). `source` (a short word, `cart`) is kept in the `created`
+    change's detail. Raises `pricing.OrderRefused`, `EntityRefused` or `NoPaymentMethod`,
+    creating nothing."""
     return _create(user, Order.SERVICE, list(lines), actor=actor, voucher=voucher,
-                   entity=entity)
+                   entity=entity, source=source)
 
 
 def create_subscription_order(user, subscription, period, *, actor, voucher=None,
@@ -443,7 +482,21 @@ def start_payment(order, gateway, *, expected_version, actor):
     """Freeze the order as `pending_payment` with `gateway` (one of `gateways.offered`)
     and mark its fiscal entity used, in one transaction; from `pending_payment` (a retry
     after a failure) only the gateway may change. A 0.00 order needs no gateway
-    (`gateway` ''): it is paid here. Returns the order."""
+    (`gateway` ''): it is paid here. Every patient of a service order is checked again
+    first (epic-ordering 9.6): one that got a live work order since cancels the order
+    (when it can be cancelled) and raises `PatientBusy`. Returns the order."""
+    try:
+        return _start_payment(order, gateway, expected_version=expected_version, actor=actor)
+    except PatientBusy:
+        pk = getattr(order, 'pk', order)
+        try:
+            cancel(pk, expected_version=Order.objects.get(pk=pk).version, actor=actor)
+        except OrderError:
+            logger.warning('order %s: busy patient, and the order could not be cancelled', pk)
+        raise
+
+
+def _start_payment(order, gateway, *, expected_version, actor):
     _check_actor(actor)
     # Gateway calls, outside the lock. A bank transfer attempt is closed later, under the
     # lock, once every check has passed (a refused request must not lose it).
@@ -453,6 +506,8 @@ def start_payment(order, gateway, *, expected_version, actor):
         _check_version(locked, expected_version)
         if locked.state not in Order.OPEN_STATES:
             raise InvalidTransition(f'an order that is {locked.state} cannot be paid')
+        if not _patients_still_free(locked):
+            raise PatientBusy('a patient of the order has a case in progress')
         entity = locked.fiscal_entity
         now = timezone.now()
         if locked.state == Order.CHECKOUT:

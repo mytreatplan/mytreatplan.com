@@ -78,7 +78,7 @@ __all__ = ['OrderLine', 'OrderRefused', 'PLANNING_CATEGORIES', 'PricedLine', 'Pr
            'ICE_TWICE', 'ICE_NOT_PLANNING', 'ICE_CURRENCY', 'VOUCHER_NOT_USABLE',
            'VOUCHER_TYPE', 'VOUCHER_CURRENCY', 'VOUCHER_DOCTOR', 'VOUCHER_USED',
            'VOUCHER_UNKNOWN', 'SUBSCRIPTION_NOT_OFFERED', 'PERIOD_NOT_OFFERED',
-           'PATIENT_REFUSED']
+           'PATIENT_REFUSED', 'VOUCHER_NOTHING_TO_COVER']
 
 VIES_VALID, VIES_INVALID = 'valid', 'invalid'
 VIES_PENDING, VIES_NOT_APPLICABLE = 'pending', 'not_applicable'
@@ -109,6 +109,7 @@ VOUCHER_CURRENCY = 'voucher_currency'
 VOUCHER_DOCTOR = 'voucher_doctor'
 VOUCHER_USED = 'voucher_used'
 VOUCHER_UNKNOWN = 'voucher_unknown'
+VOUCHER_NOTHING_TO_COVER = 'voucher_nothing_to_cover'
 SUBSCRIPTION_NOT_OFFERED = 'subscription_not_offered'
 PERIOD_NOT_OFFERED = 'period_not_offered'
 # A case line without one of the doctor's own patients that is free to order a case for
@@ -118,7 +119,8 @@ REFUSALS = (NO_LINES, COUNTRY_NOT_SERVED, NO_BILLING_RULES, PRODUCT_NOT_OFFERED,
             QUANTITY_REFUSED, ADD_ON_REFUSED, TWO_COMPANIES, TWO_CURRENCIES, ICE_TWICE,
             ICE_NOT_PLANNING, ICE_CURRENCY, VOUCHER_NOT_USABLE, VOUCHER_TYPE,
             VOUCHER_CURRENCY, VOUCHER_DOCTOR, VOUCHER_USED, VOUCHER_UNKNOWN,
-            SUBSCRIPTION_NOT_OFFERED, PERIOD_NOT_OFFERED, PATIENT_REFUSED)
+            SUBSCRIPTION_NOT_OFFERED, PERIOD_NOT_OFFERED, PATIENT_REFUSED,
+            VOUCHER_NOTHING_TO_COVER)
 
 
 class OrderRefused(ValueError):
@@ -141,6 +143,11 @@ class OrderLine:
     add_ons: tuple = ()
     ice: Money | None = None
     patient_code: str = ''
+    # Epic-ordering 9.6: the maker chosen, its name for `other`, and a copy of the shipping
+    # address (a dict) of a VirtuaOrtho line; the pricing ignores them, the order keeps them.
+    maker: str = ''
+    other_name: str = ''
+    shipping: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -340,6 +347,11 @@ def _price(billing_country, lines, vies, voucher, voucher_type, doctor, day):
     shares = [zero] * len(lines)
     if voucher is not None:
         _check_voucher(voucher, voucher_type, currency, doctor, day)
+        if not any(base.amount > 0 for base in bases):
+            # Epic-ordering 9.6: a voucher is not spent on an order that costs nothing.
+            raise OrderRefused(VOUCHER_NOTHING_TO_COVER,
+                               f'the order is already 0.00: the voucher {voucher.display_code}'
+                               ' would cover nothing', subject=voucher)
         shares = _spread(min(voucher.money, sum(bases, zero)), bases)
 
     country = resolver.normal_country(billing_country)

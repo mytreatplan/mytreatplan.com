@@ -13,6 +13,8 @@ Remove. Checkout is 9.6's.
 <h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Cart" %}</h1>
 <a href="{% url 'start_a_case' %}" class="inline-flex min-h-[52px] cursor-pointer items-center rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-start-a-case>{% translate "Request New Planning" %}</a>
 </div>
+{% include "cart/_fiscal_block.html" %}
+{% if error %}<p class="mt-6 rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert" data-error>{{ error }}</p>{% endif %}
 {% if lines %}
 <ul class="mt-8 flex flex-col gap-4" data-cart-items>
   {% for line in lines %}
@@ -30,6 +32,15 @@ Remove. Checkout is 9.6's.
   </li>
   {% endfor %}
 </ul>
+<form method="post" action="{% url 'cart_finish' %}" class="mt-8 flex flex-col gap-4" data-finish-form>{% csrf_token %}
+  <label class="flex flex-col gap-2 text-copy" for="cart-voucher"><span class="font-semibold">{% translate "Voucher code (optional)" %}</span>
+    <input id="cart-voucher" type="text" name="voucher" value="{{ voucher_code }}" maxlength="40" autocomplete="off" class="min-h-[52px] max-w-[320px] rounded-12 border border-ink-muted bg-white px-4 text-copy" data-voucher>
+  </label>
+  <div class="flex flex-wrap items-center gap-6">
+    {% if not fiscal_link %}<button type="submit" class="inline-flex min-h-[52px] cursor-pointer items-center rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-finish>{% translate "Finish order" %}</button>{% endif %}
+    <a href="{% url 'start_a_case' %}" class="text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink" data-add-another>{% translate "Add another" %}</a>
+  </div>
+</form>
 {% else %}
 <p class="mt-8 text-copy text-ink-muted" data-cart-empty>{% translate "Your cart is empty." %}</p>
 {% endif %}
