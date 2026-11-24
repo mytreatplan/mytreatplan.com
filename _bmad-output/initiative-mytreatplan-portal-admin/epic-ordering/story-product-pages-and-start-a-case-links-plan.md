@@ -3,7 +3,7 @@ title: 'Product pages and start-a-case links'
 type: 'feature'
 ticket: '5'
 created: '2026-11-24'
-status: 'built'
+status: 'done'
 baseline_revision: '91282f57d2c27d7a50d92439c286dc0568120e45'
 route: 'full'
 route_source: 'auto'
@@ -102,3 +102,15 @@ Pass 1 (quick lens, opus): high 0, medium 1, low 5, false 0, maybe-false 0; all 
 **Commands (sandbox disabled):**
 - Portal, from the repo root: `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU="; export DATABASE_URL="sqlite:///$TMPDIR/s95.sqlite3"; ../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: 0 failures except the 8 local-only `invoices/tests/test_pdf.py` WeasyPrint failures (run `../.venv/bin/python manage.py compilemessages` after editing the .po); `makemigrations --check --dry-run` -- no changes.
 - Branch `story/9-5-product-pages` already exists in this checkout. Commit on it (new commits); never push, tag or amend.
+
+## Staging
+
+- Merged: PR #134 → 1cd06bc (2026-11-24); deploy run 45370354547 green (dev and dev-ae); PR CI green on both runs. Local suite 4312 passed (8 local-only WeasyPrint PDF failures).
+- Checks on dev (server-side, test client, one transaction rolled back, nothing left behind), doctor of patient EU-0BNY91JQ switched inside the transaction:
+  1. SEED-ADV-IBERIA (ES): the VirtuaOrtho page lists One and DigitalTwin with sizes and prices (e.g. DigitalTwin Medium 1,549.00 EUR), Byte Sync and Junior on medium, ODB (DigitalTwin price includes ODB DigitalTwin), Spark per aligner under One only, retainers with their note; Spanish page with localized amounts; "Start a case" links to the wizard. Passed.
+  2. SEED-ADV-ROEU (DE): "not included in your subscription", no Start button. Passed.
+  3. Planning Services: ICE, branded and in-house TPS with prices and add-ons (One arch -25.00 %). Passed.
+  4. The home (/en/home/) links both pages and the wizard; the wizard opens (200). Passed.
+- Seen: free add-ons (Junior I/II) read "0.00 %"; a wording such as "included" may read better (by-eye check).
+- Owed by the user: by-eye check of both pages, EN/ES, desktop and phone.
+
