@@ -3,7 +3,7 @@ title: 'Cart and checkout'
 type: 'feature'
 ticket: '6'
 created: '2026-11-24'
-status: 'built'
+status: 'done'
 baseline_revision: '0b99db7dfd261695501dbde6066918726004f493'
 route: 'full'
 route_source: 'auto'
@@ -117,3 +117,15 @@ Quick lens (Opus), iteration 0.
 - Commit on the story branch (new commits); never push, tag or amend.
 
 **Result (2026-11-24):** full suite 4341 passed, 17 skipped, 8 failed (the known local WeasyPrint `invoices/tests/test_pdf.py` failures only); `makemigrations --check` clean. The per-doctor lock in `finish` needs PostgreSQL to be exercised (CI/staging).
+
+## Staging
+
+- Merge: PR #135 → 8774e5c; deploy run 45403665465 green (dev + dev-ae); CI test job passed on both PR runs (45401012456, 45401049927). Local suite 4341 passed, 17 skipped, 8 local-only WeasyPrint failures.
+- Checks on dev (2026-11-24), doctor pk 18 (ES, Premium), run over SSH:
+  1. Two patients' items (TPS + VirtuaOrtho DigitalTwin medium) shown in two fresh sessions, EN and ES: passed (rolled back).
+  2. "Finish order" with try-me voucher EHKPU-FDSDJ: checkout with 50.00 EUR deducted, gateways redsys/bank_transfer/fake; fake-gateway payment paid, voucher consumed, cart empty (rolled back). Real Redsys test payment by the user (public test terminal, test card): order d01d7c71 (three patients, 1937.24 EUR) paid once by Redsys's notification, one confirmed attempt, one invoice, voucher consumed, cart empty, shipping address marked used, VirtuaOrtho line snapshotted.
+  3. The same voucher on a second order refused (`voucher_used`), reason shown on the cart page: passed (rolled back).
+  4. A second service for the same patient refused at add (`in_cart`) and at order creation (`patient_refused`): passed (rolled back).
+  5. Maker and shipping snapshots on the lines, address marked used, no patient name in the order changes, no address on the invoice lines: passed.
+- Left on dev: paid order d01d7c71 with its invoice, shipping address "Staging96" of doctor pk 18, voucher EHKPU-FDSDJ consumed by that doctor.
+- Follow-ups decided by the user (deferred-work.md, 2026-11-24): bank-transfer order flow (cart emptied on transfer approval, pending-payment work orders, no automatic expiry, admin confirm button).
