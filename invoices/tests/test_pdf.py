@@ -50,6 +50,9 @@ def browser(user):
 
 
 def invoice_with_patient(doctor, code=CODE):
+    from patients.models import Patient
+    Patient.objects.get_or_create(code=code, defaults={
+        'doctor': doctor, 'actor_type': 'doctor', 'actor_uuid': doctor.uid})
     order = new(doctor)
     OrderLine.objects.filter(order=order).update(patient_code=code)
     return Invoice.objects.get(order_id=pay(order, doctor).pk)

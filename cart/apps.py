@@ -8,3 +8,10 @@ class CartConfig(AppConfig):
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'cart'
     verbose_name = 'Cart'
+
+    def ready(self):
+        from payments import hooks
+
+        from . import service
+        # Epic-ordering 9.6: a paid order empties the cart of its patients.
+        hooks.register('paid', 'cart_paid', service.paid)

@@ -3559,3 +3559,55 @@ msgstr "Estos productos no están incluidos en su suscripción."
 #: cart/templates/cart/planning_services.html cart/templates/cart/virtuaortho.html
 msgid "Start a case"
 msgstr "Iniciar un caso"
+
+#: cart/views.py
+msgid ""
+"The shipping address of one item is no longer available. Remove that item and "
+"add it again."
+msgstr ""
+"La dirección de envío de uno de los artículos ya no está disponible. Elimine "
+"ese artículo y vuelva a añadirlo."
+
+#: cart/views.py
+msgid ""
+"A payment for your earlier order is in progress. Please wait a few minutes, "
+"or check that payment before you finish again."
+msgstr ""
+"Hay un pago de su pedido anterior en curso. Espere unos minutos o compruebe "
+"ese pago antes de finalizar de nuevo."
+
+#: cart/views.py
+msgid ""
+"A patient in your cart now has a case in progress. Remove that item and try "
+"again."
+msgstr ""
+"Un paciente de su carrito ya tiene un caso en curso. Elimine ese artículo e "
+"inténtelo de nuevo."
+
+#: cart/templates/cart/cart.html
+msgid "Voucher code (optional)"
+msgstr "Código de cupón (opcional)"
+
+#: cart/templates/cart/cart.html
+msgid "Finish order"
+msgstr "Finalizar pedido"
+
+#: cart/templates/cart/cart.html
+msgid "Add another"
+msgstr "Añadir otro"
+
+#: payments/views.py
+msgid ""
+"A patient of this order now has a case in progress, so the order has been "
+"cancelled. Check your cart and finish the order again."
+msgstr ""
+"Un paciente de este pedido ya tiene un caso en curso, por lo que el pedido "
+"se ha cancelado. Revise su carrito y finalice el pedido de nuevo."
+
+#: payments/views.py
+msgid ""
+"This order costs nothing already, so the voucher is not needed and stays "
+"unused."
+msgstr ""
+"Este pedido ya no tiene coste, así que el cupón no hace falta y queda sin "
+"usar."

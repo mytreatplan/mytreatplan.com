@@ -131,6 +131,9 @@ def test_a_manual_sale_has_no_client_and_a_line_without_a_code_has_no_key(catalo
 
 
 def test_an_order_line_patient_code_travels(doctor, entity):
+    from patients.models import Patient
+    Patient.objects.create(code='EU-7K3QX9MD', doctor=doctor, actor_type='doctor',
+                           actor_uuid=doctor.uid)
     order = new(doctor)
     OrderLine.objects.filter(order=order).update(patient_code='EU-7K3QX9MD')
     pay(order, doctor)

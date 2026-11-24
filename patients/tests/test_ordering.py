@@ -84,12 +84,23 @@ def test_an_ice_for_a_patient_with_a_live_case_is_refused(doctor, entity, fake_o
     refused(doctor, [ice_line(patient.code)])
 
 
-def test_a_patient_on_another_product_is_refused(doctor, entity, fake_on, patient):
-    refused(doctor, [resolver.OrderLine(resolver.product(TPS), patient_code=patient.code)])
+def test_a_patient_on_another_product_is_allowed_since_9_6(doctor, entity, fake_on, patient):
+    order = payments.create_order(
+        doctor, [resolver.OrderLine(resolver.product(TPS), patient_code=patient.code)],
+        actor=actor(doctor))
+    assert order.lines.get().patient_code == patient.code
 
 
-def test_an_ice_in_quantity_two_is_refused(doctor, entity, fake_on, patient):
-    refused(doctor, [ice_line(patient.code, quantity=2)])
+def test_an_ice_in_quantity_two_is_still_refused(doctor, entity, fake_on, patient):
+    with pytest.raises(pricing.OrderRefused) as error:
+        payments.create_order(doctor, [ice_line(patient.code, quantity=2)],
+                              actor=actor(doctor))
+    assert error.value.reason == pricing.QUANTITY_REFUSED
+    assert not Order.objects.exists()
+
+
+def test_a_patient_named_twice_is_refused(doctor, entity, fake_on, patient):
+    refused(doctor, [ice_line(patient.code), ice_line(patient.code)])
 
 
 def test_the_patient_survives_choosing_the_fiscal_entity_again(doctor, entity, fake_on,
@@ -122,9 +133,9 @@ def test_a_replayed_paid_hook_adds_nothing(doctor, entity, fake_on, patient):
 def test_a_second_live_case_at_payment_rolls_the_payment_back(doctor, entity, fake_on, patient):
     first = order_ice(doctor, patient.code)
     second = order_ice(doctor, patient.code)  # no live case yet: allowed
-    pay(first, doctor)
     second = payments.start_payment(second, 'fake', expected_version=second.version,
                                     actor=actor(doctor))
+    pay(first, doctor)
     with pytest.raises(payments.HookFailed):
         payments.mark_paid(second, expected_version=second.version,
                            actor=payments.SYSTEM_ACTOR)
@@ -133,15 +144,15 @@ def test_a_second_live_case_at_payment_rolls_the_payment_back(doctor, entity, fa
     assert WorkOrder.objects.count() == 1 and not Invoice.objects.filter(order=second).exists()
 
 
-def test_a_line_naming_no_patient_of_the_buyer_rolls_the_payment_back(doctor, entity,
+def test_a_line_naming_no_patient_of_the_buyer_cancels_the_order_at_payment(doctor, entity,
                                                                       fake_on, patient):
     order = order_ice(doctor, patient.code)
     OrderLine.objects.filter(order=order).update(patient_code='EU-ZZZZZZZZ')
-    order = payments.start_payment(order, 'fake', expected_version=order.version,
-                                   actor=actor(doctor))
-    with pytest.raises(payments.HookFailed):
-        payments.mark_paid(order, expected_version=order.version, actor=payments.SYSTEM_ACTOR)
-    assert not WorkOrder.objects.exists()
+    with pytest.raises(payments.PatientBusy):
+        payments.start_payment(order, 'fake', expected_version=order.version,
+                               actor=actor(doctor))
+    order.refresh_from_db()
+    assert order.state == 'cancelled' and not WorkOrder.objects.exists()
 
 
 def test_a_paid_order_without_patients_has_no_work_order(doctor, entity, fake_on):

@@ -24,7 +24,7 @@ from django.db import models
 from django.utils import timezone
 from django_countries.fields import CountryField
 
-from accounts.crypto import EncryptedCharField, EncryptedEmailField
+from accounts.crypto import EncryptedCharField, EncryptedEmailField, EncryptedJSONField
 
 # Who made a change (AD-22).
 ACTOR_TYPES = [('doctor', 'Doctor'), ('admin', 'Admin user'), ('system', 'System')]
@@ -160,6 +160,16 @@ class OrderLine(models.Model):
     # fills it), copied to the invoice line. A database default too, so the release before
     # this one can still insert rows while this one is being deployed.
     patient_code = models.CharField(max_length=32, blank=True, default='', db_default='')
+    # The maker the doctor chose for a planning line (a named maker, `undecided`, `other`,
+    # or '' for in-house printing / no maker) and the name given with `other` (epic-ordering
+    # 9.6; the work order of 9.8 reads them). Database defaults, as `patient_code`.
+    maker = models.CharField(max_length=20, blank=True, default='', db_default='')
+    other_name = models.CharField(max_length=60, blank=True, default='', db_default='')
+    # Where a VirtuaOrtho line is shipped: a copy of the doctor's address when the order was
+    # made (`id`, `label`, `recipient_name`, `clinic_name`, `contact_phone`, `address_line1`,
+    # `address_line2`, `city`, `postal_code`, `province`, `country`), encrypted; None for any
+    # other line. Never copied to an invoice.
+    shipping = EncryptedJSONField(null=True, blank=True)
     # The provider cost of the line (the product's `resolver.cost` total times the
     # quantity) in the order's currency, and whether every cost link had a price.
     provider_cost = models.DecimalField(max_digits=17, decimal_places=2, default=0)

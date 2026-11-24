@@ -3,14 +3,14 @@ title: 'Cart and checkout'
 type: 'feature'
 ticket: '6'
 created: '2026-11-24'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: '0b99db7dfd261695501dbde6066918726004f493'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -92,8 +92,28 @@ context: []
 
 ## Review Triage Log
 
+Quick lens (Opus), iteration 0.
+
+| # | Finding | Verdict | Route | Evidence |
+|---|---------|---------|-------|----------|
+| 1 | `_is_case` reads a product missing from the snapshot as a case; TPS/VO lines now carry patient codes, so such a line would get a work order | low | reject | `resolver.product` returns inactive products too; None only when the snapshot row is deleted between finish and payment (rare). The fix touches `_is_case`, which the plan reserves for 9.8, where it is rewritten anyway. |
+| 2 | Two concurrent "Finish order" requests both create an open order for the same patients | medium | patch | `_cancel_earlier` reads without a lock; without a voucher both orders survive and both can be paid. Lock the doctor's row inside the transaction. |
+| 3 | A pending bank transfer order is cancelled silently by a second finish | medium | defer | `cancel` closes a bank-transfer attempt locally. Matches the user's decision ("cancels the earlier unpaid order"); whether a transfer in progress should refuse instead is the user's call (asked). |
+| 4 | Every `OrderError` in `_cancel_earlier` is shown as "payment in progress" | low | patch | StaleVersion/HookFailed also map to `PAYMENT_OPEN`; catch only `AttemptOpen`. |
+| 5 | A patient archived/erased after finish passes the payment re-check | low | patch | `_patients_still_free` `continue`s on a missing active patient; creation refuses the same state. One-line fix. |
+| 6 | `VOUCHER_NOTHING_TO_COVER` in the shared `_price` also hits subscriptions and `choose_entity` re-pricing | low | reject | Consistent with the user's decision (a voucher is never spent on a zero order); the re-pricing case needs a catalogue change making a reserved order free mid-checkout (unlikely). |
+| 7 | Fiscal block shows on an empty cart | low | patch | Include sits outside `{% if lines %}`. |
+| 8 | Template header comment out of date | low | patch | Still says "Checkout is 9.6's." |
+| 9 | Unused `logging`/`logger` in cart/service.py | low | patch | Never referenced. |
+| 10 | cart/views.py import order; private `_refusal_message` imported across apps | low | patch (order only) | Order fixed; the private import reuses the one refusal table rather than duplicating it (kept). |
+| 11 | No end-to-end test of AC 1 | low | patch | Pieces tested separately; add one test. |
+| 12 | Misleading comment in `test_a_free_order_is_checked_again_before_it_is_paid` | low | patch | Only `total` is forced to 0. |
+| 13 | ICE quantity-2 guard test deleted | low | patch | The guard now lives in the resolver only; add a test back. |
+
 ## Verification
 
 **Commands (sandbox disabled):**
 - Portal, from the repo root: `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU="; export DATABASE_URL="sqlite:///$TMPDIR/s96.sqlite3"; ../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: 0 failures except the 8 local-only `invoices/tests/test_pdf.py` WeasyPrint failures (run `compilemessages` after editing the .po); `makemigrations --check --dry-run` -- no changes after the migration is committed.
 - Commit on the story branch (new commits); never push, tag or amend.
+
+**Result (2026-11-24):** full suite 4341 passed, 17 skipped, 8 failed (the known local WeasyPrint `invoices/tests/test_pdf.py` failures only); `makemigrations --check` clean. The per-doctor lock in `finish` needs PostgreSQL to be exercised (CI/staging).

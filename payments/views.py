@@ -82,6 +82,8 @@ REFUSALS = {
     pricing.PERIOD_NOT_OFFERED: gettext_lazy('This subscription is not sold for that period.'),
     pricing.PATIENT_REFUSED: gettext_lazy(
         'Choose one of your patients that has no case in progress.'),
+    pricing.VOUCHER_NOTHING_TO_COVER: gettext_lazy(
+        'This order costs nothing already, so the voucher is not needed and stays unused.'),
 }
 
 
@@ -165,6 +167,9 @@ def _failed(request, error):
     elif isinstance(error, service.AttemptOpen):
         text = _('A payment for this order is in progress. Please wait a few minutes, '
                  'or check your payment before trying again.')
+    elif isinstance(error, service.PatientBusy):
+        text = _('A patient of this order now has a case in progress, so the order has been '
+                 'cancelled. Check your cart and finish the order again.')
     elif isinstance(error, service.InvalidTransition):
         text = _('This order can no longer be changed.')
     elif isinstance(error, service.HookFailed):
