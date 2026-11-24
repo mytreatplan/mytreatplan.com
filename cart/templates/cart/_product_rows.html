@@ -1,0 +1,24 @@
+{% load i18n money %}{% comment %}
+The rows of one product-page section (cart.pages): name, description, net price, retainers
+note and the add-ons offered with their prices. `section.rows`.
+{% endcomment %}
+<ul class="mt-3 flex flex-col gap-4">
+  {% for row in section.rows %}
+  <li class="rounded-12 bg-card-grey px-5 py-4" data-product-row>
+    <div class="flex flex-wrap items-baseline justify-between gap-x-4">
+      <span class="text-[18px] font-black" data-product-name>{{ row.name }}</span>
+      <span class="text-copy font-semibold" data-product-price>{{ row.price|money }}{% if row.per_unit %} {% translate "per aligner" %}{% endif %}</span>
+    </div>
+    {% if row.description %}<p class="mt-1 text-[14px] text-ink-muted" data-product-description>{{ row.description|linebreaksbr }}</p>{% endif %}
+    {% if row.includes_odb_dt %}<p class="mt-1 text-[14px] text-ink-muted">{% translate "includes ODB DigitalTwin" %}</p>{% endif %}
+    {% if row.note %}<p class="mt-1 text-[14px] font-semibold text-ink-muted" data-product-note>{{ row.note }}</p>{% endif %}
+    {% if row.add_ons %}
+    <ul class="mt-2 flex flex-col gap-1 text-[14px]" data-product-add-ons>
+      {% for add_on in row.add_ons %}
+      <li data-add-on><span class="font-semibold">{{ add_on.name }}</span> <span class="text-ink-muted">{% if add_on.amount %}+{{ add_on.amount|money }}{% else %}{{ add_on.percent|stringformat:"+.2f" }} %{% endif %}</span></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>

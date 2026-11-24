@@ -64,9 +64,6 @@ urlpatterns = [
     path('settings/shipping/<uuid:pk>/delete/', views.settings_shipping_delete,
          name='settings_shipping_delete'),
     path('tutorials/', views.coming_soon, {'area': 'tutorials'}, name='tutorials'),
-    path('virtuaortho/', views.coming_soon, {'area': 'virtuaortho'}, name='virtuaortho'),
-    path('planning-services/', views.coming_soon, {'area': 'planning_services'},
-         name='planning_services'),
     # The password reset (accounts.password_reset): the request, its one answer, the
     # emailed link's page (the uid and token come in its fragment, posted by its script;
     # no route takes them), and the new password (the link from the session). Their names

@@ -240,3 +240,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-ordering/story-case-wizard-patient-and-tps-plan.md`
   summary: DONE by plan-9-3-ice-in-the-wizard.md (PR #132). The case wizard offers no ICE: the catalogue's ICE is category `initial_case_evaluation` with no size, and step 2 lists only `tps_branded`/`tps_in_house` sizes; add an ICE choice (the ICE product, no maker login check needed or the same one, as the user decides) to step 2.
   evidence: 9.3 staging on dev (2026-11-23): `offered_tps` returned only tps_* short/medium/long; `cart.service.SIZE_ORDER` expects an `ice` size that no product carries.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-ordering/story-product-pages-and-start-a-case-links-plan.md`
+  summary: Education page (parked): the home has no education tile or page; 9.5 builds only the VirtuaOrtho and Planning Services product pages.
+  evidence: User decision 2026-11-24: no products, no billing rule and no order path without a patient exist for education yet; plan it when its products and billing rule exist.

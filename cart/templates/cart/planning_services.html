@@ -1,0 +1,33 @@
+{% extends "doctor_base.html" %}
+{% load i18n %}
+{% comment %}
+The Planning Services product page (cart.pages.planning_services_page, epic-ordering 9.5):
+the ICE and the branded and in-house TPS sizes the doctor's subscription offers with their
+net prices and add-ons, and a button to the case wizard. Nothing is ordered here.
+{% endcomment %}
+
+{% block title %}{% translate "Planning Services" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Planning Services" %}</h1>
+<p class="mt-3 max-w-[720px] text-copy text-ink-muted">{% translate "Expert planning and support at every step. These are the planning services your subscription includes, with their prices." %}</p>
+
+{% if not sections %}
+<p class="mt-8 text-copy text-ink-muted" data-not-included>{% translate "These products are not included in your subscription." %}</p>
+{% else %}
+<div class="mt-8 flex max-w-[720px] flex-col gap-8">
+  {% for section in sections %}
+  <section>
+    <h2 class="text-[24px] font-black leading-[1.15] tracking-[-0.02em]">{{ section.title }}</h2>
+    {% include "cart/_product_rows.html" %}
+  </section>
+  {% endfor %}
+</div>
+<p class="mt-10">
+  <a href="{% url 'start_a_case' %}" class="inline-flex min-h-[52px] items-center rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-start-a-case>{% translate "Start a case" %}</a>
+</p>
+{% endif %}
+<p class="mt-8">
+  <a href="{% url 'home' %}" class="text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink" data-back-home>{% translate "Back to home" %}</a>
+</p>
+{% endblock %}

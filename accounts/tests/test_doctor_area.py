@@ -17,14 +17,11 @@ pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
 
 User = get_user_model()
 
-# Each "coming soon" area: its URL name, its address, and its name in EN and ES.
+# Each "coming soon" area (VirtuaOrtho and Planning Services are product pages since 9.5): its URL name, its address, and its name in EN and ES.
 AREAS = [
     ('support', 'support/', 'Support', 'Soporte'),
     ('messages', 'messages/', 'Messages', 'Mensajes'),
     ('tutorials', 'tutorials/', 'Tutorials', 'Tutoriales'),
-    ('virtuaortho', 'virtuaortho/', 'Virtua ORTHO', 'Virtua ORTHO'),
-    ('planning_services', 'planning-services/', 'Planning Services',
-     'Servicios de Planificación'),
 ]
 
 
@@ -201,6 +198,17 @@ def test_area_not_built_is_coming_soon_in_both_languages(doctor, name, path, en,
         assert soon in html
         assert re.search(rf'href="/{lang}/home/"[^>]*data-back-home', html)
         assert 'noindex' in html
+
+
+def test_home_tiles_reach_the_product_pages_and_the_bar_the_wizard(doctor):
+    html = _html(_browser(doctor).get('/en/home/'))
+
+    assert re.search(r'href="/en/virtuaortho/"[^>]*data-tile="virtuaortho"', html)
+    assert re.search(r'href="/en/planning-services/"[^>]*data-tile="planning_services"', html)
+    assert re.search(r'href="/en/start-a-case/"[^>]*data-tile="start_a_case"', html)
+    for path in ('virtuaortho/', 'planning-services/'):
+        assert _browser(doctor).get(f'/en/{path}').status_code == 200
+    assert _browser(doctor).get('/en/start-a-case/').status_code == 200
 
 
 def test_every_area_has_a_route():

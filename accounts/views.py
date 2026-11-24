@@ -1260,8 +1260,6 @@ COMING_SOON_AREAS = {
     'support': gettext_lazy('Support'),
     'messages': gettext_lazy('Messages'),
     'tutorials': gettext_lazy('Tutorials'),
-    'virtuaortho': 'Virtua ORTHO',
-    'planning_services': gettext_lazy('Planning Services'),
 }
 
 
