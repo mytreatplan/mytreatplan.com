@@ -3,7 +3,7 @@ title: 'Patient search and paging'
 type: 'feature'
 ticket: '15'
 created: '2026-11-24'
-status: 'built'
+status: 'done'
 baseline_revision: '4a14f047cc607f16b65bbf79e95abd13708686f8'
 route: 'full'
 route_source: 'auto'
@@ -112,3 +112,11 @@ Rendering every row trades one decryption per patient per page load for zero sea
 
 **Manual checks (if no CLI):**
 - On dev, EN/ES: search by code and by name on the patient list and the wizard's first step; the address bar never changes while searching.
+
+## Staging
+
+- Merged: PR #138 → 83b840da7df43daa4f6a9f968cbc0766a64f547b (2026-11-24). CI on the PR green (test job); master deploy run 45484963485 green on dev and dev-ae. Local suite: 4349 passed, 8 failed (known WeasyPrint `test_pdf.py` on this Mac), 17 skipped.
+- Check 1 passed: deploy green, dev serves 83b840d.
+- Check 2 passed (dev, server-side render for the doctor of EU-0BNY91JQ): `/en/patients/` and `/en/start-a-case/` return 200 with all 3 of the doctor's patients rendered, each `data-search` folded to lower case, no `?page=` links. No erased patient exists on dev, so the code-only row is covered by tests only.
+- Check 3 partly passed: `patients/EU-0BNY91JQ/portrait/` gives 404 to the owner (that patient has no portrait on dev) and 404 to another dev doctor; the 302 to a fresh presigned link is covered by tests only (`patients/tests/test_portrait.py`).
+- Check 4 (by eye, EN/ES search and paging on the list and the wizard step): owed by the user, not reported yet.
