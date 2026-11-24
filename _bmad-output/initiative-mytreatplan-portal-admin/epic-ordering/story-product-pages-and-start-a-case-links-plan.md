@@ -3,7 +3,7 @@ title: 'Product pages and start-a-case links'
 type: 'feature'
 ticket: '5'
 created: '2026-11-24'
-status: 'in-review'
+status: 'built'
 baseline_revision: '91282f57d2c27d7a50d92439c286dc0568120e45'
 route: 'full'
 route_source: 'auto'
@@ -79,9 +79,23 @@ context: []
 
 ## Implementation Notes
 
+- 722f0e6 + c3bffb4. `cart/service.virtuaortho_lines` holds the wizard's VO row/price rule, shared by the wizard and the VO page; views in `cart/pages.py`, routes moved to `cart/urls.py` (same names and paths). ODB is listed under One and DigitalTwin (DigitalTwin price includes ODB-DT), as in the wizard. Education entry added to deferred-work.
+- Local suite: 4312 passed, 17 skipped; 8 local-only `invoices/tests/test_pdf.py` WeasyPrint failures.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Pass 1 (quick lens, opus): high 0, medium 1, low 5, false 0, maybe-false 0; all 6 patched (c3bffb4).
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | Rest-of-EU Advanced row tested with a Basic doctor | medium | patch | DE doctor moved to a rest-of-EU Advanced; EU VO rules removed as in the real catalogue. |
+| 2 | Spanish row never checks catalogue texts or the English fallback | low | patch | ES name/description and EN fallback asserted. |
+| 3 | Percentage add-ons not localized ("+10.00 %" on /es/) | low | patch | `floatformat:2` with sign; test on /en/ and /es/. |
+| 4 | `cart/urls.py` comment lists only two prefixes | low | patch | Updated. |
+| 5 | New .po entries carry wrong `#:` locations | low | patch | Corrected. |
+| 6 | `accounts/views.py` comment points at accounts.urls | low | patch | Updated. |
 
 ## Verification
 
