@@ -51,3 +51,4 @@ The admin side of sales and money. The services underneath are epic-payments's.
 - Waits on epic 7 because: it needs invoices, refunds, credit notes, paid state.
 - Waits on epic 9 because: it needs orders and work orders.
 - Waits on epic 11 because: it needs admin-side patient creation.
+- Handoff (user, 2026-11-24): the bank-transfer 'mark as paid' button and a cancel button for pending transfer orders are built early by epic-ordering entry 18 (a 'Pending bank transfers' list, fresh code, audit log); this epic's orders view reuses or replaces them. Cancel with a refund or credit note for paid orders stays here.

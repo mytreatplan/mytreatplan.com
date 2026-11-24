@@ -71,3 +71,4 @@ The subscription a doctor holds. Not defining subscriptions (epic-catalogue).
 - Handoff: epic-ordering reuses the voucher redemption logic for try-me vouchers.
 - Waits on epic 5 because: it needs subscriptions, vouchers and the resolver.
 - Waits on epic 7 because: it needs order model, payments, invoices.
+- Decision (user, 2026-11-24): monthly billing (S6) is offered only where the doctor's gateway can save cards (the registry's save-card flag from 7.11, on for Redsys); Revolut-country doctors get annual upfront only until 7.16 turns the flag on for Revolut. Done when 2 is checked on Redsys.

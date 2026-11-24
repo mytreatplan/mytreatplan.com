@@ -114,14 +114,26 @@ risk = "medium"
 [[entry]]
 id = 11
 type = "story"
-title = "Saved cards and repeat charges"
-description = "Adds saving a card at checkout and the 'charge saved card for order and period' service (idempotent per order and period, AD-8) on Redsys and Revolut, with a declined state the caller handles; epic-subscriptions owns the renewal job and the renewal order, and entry 6 invoices it on payment."
-verify = "A saved card on each sandbox is charged again by a task without the doctor; rerunning for the same period does not charge twice; a declined charge leaves the order in the declined state."
+title = "Saved cards and repeat charges on Redsys"
+description = "Adds saving a card at checkout and the gateway-neutral 'charge saved card for order and period' service (idempotent per order and period, AD-8) with its Redsys implementation (Santander 'Servicios Venta +', COF/MIT charges), a declined state the caller handles, and a save-card capability flag in the gateway registry (on for Redsys) that 8.5 reads; entry 16 adds the Revolut implementation; epic-subscriptions owns the renewal job and the renewal order, and entry 6 invoices it on payment."
+verify = "A card saved on the Redsys test terminal is charged again by a task without the doctor, and rerunning the same period does not charge twice."
 covers = ["Y9"]
-after = [4]
+after = [3]
 hitl = true
 risk = "high"
-unknown = "Whether Santander enables recurring charges on the Redsys merchant account and Revolut supports them on ours."
+notes = ["Santander: recurring charges need the paid add-on 'Servicios Venta +' (per month: 0-300 stored cards 8 EUR, 301-600 11 EUR, 601-1000 15 EUR); it covers merchant-initiated charges without the doctor present, also in test; pre-authorisation is possible; test credentials come after the contract is signed (user, 2026-11-21 and 2026-11-24)."]
+
+[[entry]]
+id = 16
+type = "story"
+title = "Saved cards and repeat charges on Revolut"
+description = "Adds the Revolut implementation of entry 11's 'charge saved card for order and period' service (saved payment method, merchant-initiated charge) and turns on the registry's save-card flag for Revolut, so Revolut-country doctors are offered monthly subscriptions."
+verify = "A card saved in the Revolut sandbox is charged again by a task without the doctor, and rerunning the same period does not charge twice."
+covers = ["Y9"]
+after = [4, 11]
+hitl = true
+risk = "high"
+unknown = "Whether Revolut Merchant supports saved cards and merchant-initiated charges on our account."
 
 [[entry]]
 id = 12
@@ -130,7 +142,7 @@ title = "Production checks for the EU go-live"
 description = "Writes this epic's production checks (live gateways per company, webhooks, bank transfer flow, invoice series per company, credit notes, restore-safe numbering, PDF download, accounting copy, repeat charges) into epic-eu-golive's Done when."
 verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
 covers = []
-after = [9, 10, 11, 15]
+after = [9, 10, 11, 15, 16]
 hitl = false
 risk = "low"
 
@@ -141,7 +153,7 @@ title = "Refactor sweep"
 description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
 verify = "The portal's, the admin repo's and mytp-core's test suites pass; deferred review findings are closed or recorded."
 covers = []
-after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15]
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16]
 hitl = false
 risk = "low"
 

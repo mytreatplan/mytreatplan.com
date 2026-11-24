@@ -86,8 +86,8 @@ title = "Doctors order and pay for cases"
 covers = ["P8"]
 after = [
   { epic = 1, needs = "storage and virus scan (1.11, 1.12)" },
-  { epic = 3, needs = "fresh-code check for the archive report (3.5, entry 12)" },
-  { epic = 4, needs = "remote reads and erasure for the archive report (4.5, 4.8, entry 12)" },
+  { epic = 3, needs = "fresh-code check, permission matrix and audit log for the archive report and the transfer buttons (3.5, 3.6, 3.8; entries 12, 18)" },
+  { epic = 4, needs = "remote reads, versioned remote writes and erasure (4.5, 4.6, 4.8; entries 12, 18)" },
   { epic = 5, needs = "resolver and products" },
   { epic = 6, needs = "fiscal data and shipping addresses" },
   { epic = 7, needs = "order model, checkout and invoices" },

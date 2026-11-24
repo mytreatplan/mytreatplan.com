@@ -90,6 +90,41 @@ hitl = false
 risk = "high"
 
 [[entry]]
+id = 14
+type = "story"
+title = "Responsive layout"
+description = "Makes content width follow the screen on every doctor-facing portal page and the public site (tables, forms, cards, product pages, the case wizard, cart, checkout, settings) instead of a narrow fixed column, and makes dialogs (the 'Add a patient' dialog first) fit the viewport with their own scroll; mytp-admin (AdminLTE) is out of scope."
+verify = "At 1440, 1024 and 390 px wide the patient list, wizard, cart and settings pages fill the available width without horizontal page scroll, and the 'Add a patient' dialog fits a 768 px tall screen with its buttons visible."
+covers = ["O1", "O2", "O3", "O4"]
+after = []
+hitl = false
+risk = "low"
+notes = ["Content (tables, forms, pages) must be responsive: width adjusts to the screen, never a narrow fixed column stretched down the page; modals must fit the viewport (user, 2026-11-24)."]
+
+[[entry]]
+id = 15
+type = "story"
+title = "Patient search and paging"
+description = "Adds a search box (code or part of the name, matched on the decrypted fields in the region) and paging to the patient list (entry 2), as a reusable patient-chooser fragment the redesigned wizard (entry 16) embeds."
+verify = "With 60 patients on dev the list shows one page of results with page links, and a search by code or by part of a name finds the patient."
+covers = ["O1"]
+after = [2, 14]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 16
+type = "story"
+title = "Case wizard redesign with django-formtools"
+description = "Rebuilds the case wizard (entries 3, 4) as step-by-step pages on django-formtools: patient (add new in the dialog, or choose an existing one through entry 15's chooser), product (two cards with a short explanation: Treatment Planning or VirtuaOrtho), TPS maker (in-house printing or brand-made aligners, brand revealing a select of makers), VirtuaOrtho type (One 'without patient monitoring' or DigitalTwin 'with patient monitoring'), then a last page with lengths and prices, add-ons and, for VirtuaOrtho, ODB, Spark on Demand and the shipping address as a select, ending in 'Add to cart'; a choice of three or more options is a select; every existing rule is kept (maker-login warning, one live work order, planning after ICE, VirtuaOrtho only where offered, retainers after a finished treatment, included cases)."
+verify = "On dev a doctor adds a medium Invisalign TPS with Junior II and a DigitalTwin medium with Byte Sync to the cart through the new steps, and the existing wizard rule tests pass against the new flow."
+covers = ["O3"]
+after = [4, 6, 15]
+hitl = false
+risk = "high"
+references = ["epic-ordering/story-case-wizard-patient-and-tps-plan.md", "epic-ordering/story-case-wizard-virtuaortho-plan.md"]
+
+[[entry]]
 id = 7
 type = "story"
 title = "ICE deduction"
@@ -101,13 +136,35 @@ hitl = false
 risk = "medium"
 
 [[entry]]
+id = 17
+type = "story"
+title = "Cart on transfer approval, no transfer expiry"
+description = "When a doctor approves a cart order by bank transfer the order is closed as pending payment and the cart is emptied; bank-transfer orders no longer expire automatically (7.5's day-14 expiry removed; staff cancel through entry 18) and the reminder email is sent every 7 days until the order is paid or cancelled; the voucher and ICE reservations stay held until payment or cancel."
+verify = "On dev approving a bank-transfer order empties the cart and leaves the order pending, and the expiry job no longer expires a 20-day-old transfer order."
+covers = ["O4"]
+after = [6, 14, "7.5"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 18
+type = "story"
+title = "Pending bank transfers on the admin site"
+description = "Brings forward from epic-sales-finance a small 'Pending bank transfers' list on the admin site, read from each region's pending transfer orders over remote reads, with a 'confirm payment received' button (calls the region's `payments.service.mark_transfer_paid` over versioned remote writes: the order is paid, the invoice issued and the paid hook fired) and a 'cancel order' button (cancelled hook releases voucher and ICE reservations), both behind a fresh code, allowed by role and audit-logged."
+verify = "On admindev a finance user confirms a pending dev transfer order after a fresh code, and dev shows it paid with one invoice."
+covers = ["O4"]
+after = [17, "4.5", "4.6", "3.5", "3.6", "3.8"]
+hitl = false
+risk = "medium"
+
+[[entry]]
 id = 8
 type = "story"
 title = "Work orders per service and order emails"
-description = "On the paid hook creates one work order per patient-service in 'pending assignment', closes a live ICE work order when its planning is paid, emits work-order events without patient data (stage, product category, region; a contract type) for epic-clinical-ops' workload figures, and sends the order confirmation and payment receipt emails (patients by code; epic-payments sends no such emails)."
+description = "Creates one work order per patient-service: on the paid hook in 'pending assignment'; for a bank-transfer order at the doctor's approval in 'pending payment' (blocking the patient like a live work order), turned live on the paid hook and cancelled with the order; closes a live ICE work order when its planning is paid, emits work-order events without patient data (stage, product category, region; a contract type) for epic-clinical-ops' workload figures, and sends the order confirmation and payment receipt emails (patients by code; epic-payments sends no such emails)."
 verify = "Paying an order for two patients creates two work orders; paying a planning after an ICE closes the ICE work order; admindev receives the events without names; the emails name patients by code only."
 covers = ["O6"]
-after = [7]
+after = [7, 17]
 hitl = false
 risk = "high"
 
@@ -115,7 +172,7 @@ risk = "high"
 id = 9
 type = "story"
 title = "Pending-payment work orders"
-description = "Adds the create-manual-work-order service epic-clinical-ops calls over remote writes and shows those work orders on 6.1's home page as 'pending payment' (not live until paid), each addable to the cart and priced with the doctor's effective tier when added (8.1)."
+description = "Adds the create-manual-work-order service epic-clinical-ops calls over remote writes and shows those work orders on 6.1's home page as 'pending payment' (not live until paid; unlike entry 8's transfer work orders these do not block other services), each addable to the cart and priced with the doctor's effective tier when added (8.1)."
 verify = "A manual work order created through the service appears on the home page, is added to the cart at the doctor's current tier price, does not block other services, and once paid becomes a live work order."
 covers = ["O7"]
 after = [8]
@@ -129,7 +186,7 @@ title = "Production checks for the EU go-live"
 description = "Writes this epic's production checks (patients and codes, wizard branches with maker-login warning, cart and checkout with voucher, ICE deduction, work orders and emails, pending-payment list) into epic-eu-golive's Done when."
 verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
 covers = []
-after = [9, 12, 13]
+after = [9, 12, 13, 14, 15, 16, 17, 18]
 hitl = false
 risk = "low"
 
@@ -140,6 +197,6 @@ title = "Refactor sweep"
 description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
 verify = "The portal's and mytp-core's test suites pass; deferred review findings are closed or recorded."
 covers = []
-after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13]
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18]
 hitl = false
 risk = "low"
