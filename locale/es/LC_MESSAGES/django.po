@@ -3446,3 +3446,68 @@ msgstr "Medio"
 msgctxt "TPS size"
 msgid "Long"
 msgstr "Largo"
+
+#: cart/views.py
+msgid "Add a shipping address before you order."
+msgstr "Añada una dirección de envío antes de hacer el pedido."
+
+#: cart/views.py
+msgid "Choose one of your shipping addresses."
+msgstr "Elija una de sus direcciones de envío."
+
+#: cart/views.py
+msgid "Choose a number of aligners within the range offered."
+msgstr "Elija un número de alineadores dentro del rango ofrecido."
+
+#: cart/views.py
+msgid "Retainers are for a patient whose treatment is finished."
+msgstr "Los retenedores son para un paciente cuyo tratamiento ha terminado."
+
+#: cart/views.py
+msgid "VirtuaOrtho One"
+msgstr "VirtuaOrtho One"
+
+#: cart/views.py
+msgid "VirtuaOrtho DigitalTwin"
+msgstr "VirtuaOrtho DigitalTwin"
+
+#: cart/views.py
+msgid "Shipping address"
+msgstr "Dirección de envío"
+
+#: cart/templates/cart/choose.html
+msgid "Which VirtuaOrtho?"
+msgstr "¿Qué VirtuaOrtho?"
+
+#: cart/templates/cart/choose.html
+msgid "Service"
+msgstr "Servicio"
+
+#: cart/templates/cart/choose.html
+msgid "per aligner"
+msgstr "por alineador"
+
+#: cart/templates/cart/choose.html
+msgid "includes ODB DigitalTwin"
+msgstr "incluye ODB DigitalTwin"
+
+#: cart/templates/cart/choose.html
+#, python-format
+msgid "Aligners (%(min)s to %(max)s)"
+msgstr "Alineadores (de %(min)s a %(max)s)"
+
+#: cart/templates/cart/choose.html
+msgid "You need a shipping address before you can order this."
+msgstr "Necesita una dirección de envío para poder pedir esto."
+
+#: cart/templates/cart/cart.html
+msgid "Ship to"
+msgstr "Enviar a"
+
+#: cart/templates/cart/cart.html
+#, python-format
+msgid "%(n)s aligner"
+msgid_plural "%(n)s aligners"
+msgstr[0] "%(n)s alineador"
+msgstr[1] "%(n)s alineadores"
+msgstr[2] "%(n)s alineadores"

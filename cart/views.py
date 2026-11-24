@@ -17,7 +17,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_http_methods, require_POST
 
-from accounts import fiscal, makers
+from accounts import fiscal, makers, shipping
 from accounts.client_sync import is_client
 from catalogue import resolver
 from catalogue.models import Product
@@ -43,6 +43,10 @@ def _refusal_texts():
         service.IN_CART: _('This patient already has a service in your cart.'),
         service.NOT_OFFERED: _('This service is not available in that size.'),
         service.ADD_ON: _('One of the options chosen is not available for this service.'),
+        service.NO_ADDRESS: _('Add a shipping address before you order.'),
+        service.ADDRESS: _('Choose one of your shipping addresses.'),
+        service.QUANTITY: _('Choose a number of aligners within the range offered.'),
+        service.NOT_FINISHED: _('Retainers are for a patient whose treatment is finished.'),
     }
 
 
@@ -78,6 +82,21 @@ def _fiscal_block(request, here):
     if fiscal.has_usable_entity(request.user):
         return None
     return reverse('settings_fiscal_add') + '?next=' + quote(here, safe='')
+
+
+def _shipping_block(request, here):
+    """The link of the shipping-address block (the wizard page to come back to), or None
+    when the doctor has a usable address."""
+    if shipping.has_usable_address(request.user):
+        return None
+    return reverse('settings_shipping_add') + '?next=' + quote(here, safe='')
+
+
+def address_label(address):
+    """How an address reads in the wizard and the cart: its label or recipient, and its
+    city; the doctor's own, never in a URL or a log."""
+    return ' · '.join(part for part in (address.display_name, address.city) if part) \
+        or _('Shipping address')
 
 
 def _step_one(request, form, open_dialog):
@@ -148,6 +167,79 @@ def _options(doctor):
              for entry in sorted(add_ons.values(), key=lambda entry: entry['code'])])
 
 
+def _virtuaortho_options(request, patient):
+    """What the VirtuaOrtho branch of step 2 offers, or None when the doctor is not offered
+    One or DigitalTwin: {'variants': [{'code', 'label'}], 'rows': [{'variant', 'value',
+    'label', 'price', 'unit', 'min', 'max'}], 'add_ons': [...], 'addresses': [...]}."""
+    offered = service.offered_virtuaortho(request.user)
+    variants = service.variants_offered(offered)
+    if not variants:
+        return None
+    held = subscriptions.effective(request.user).subscription
+    finished = patients_service.has_finished_treatment(patient)
+    twin = resolver.add_on(service.ODB_DT)
+    rows, add_ons = [], {}
+
+    def note_add_ons(product, key):
+        for add_on in resolver.add_ons(product):
+            if add_on.code == service.ODB_DT:
+                continue  # under DigitalTwin it is added by itself, under One it is not sold
+            entry = add_ons.setdefault(add_on.code, {
+                'code': add_on.code, 'name': add_on.public_name,
+                'description': add_on.description_in(translation.get_language()),
+                'offered': set()})
+            entry['offered'].add(key)
+
+    def price_of(product, variant, money):
+        """The row's price; None when the row cannot be sold (under DigitalTwin an ODB needs
+        its ODB-DT add-on, offered on it)."""
+        if product.category == Product.ODB and variant == service.DIGITALTWIN:
+            if twin is None or twin not in resolver.add_ons(product):
+                return None
+            try:
+                return resolver.price(product, held, [twin])
+            except ValueError:
+                return None
+        return money
+
+    labels = {service.ONE: _('VirtuaOrtho One'), service.DIGITALTWIN: _('VirtuaOrtho DigitalTwin')}
+    for variant in variants:
+        category = service.VARIANTS[variant]
+        for product, money in offered:
+            choice = {category: service.CASE, Product.ODB: service.ODB,
+                      Product.RETAINERS: service.RETAINERS,
+                      Product.SPARK_ON_DEMAND: service.SPARK}.get(product.category)
+            if choice is None or (choice == service.SPARK and variant != service.ONE) \
+                    or (choice == service.RETAINERS and not finished) \
+                    or (choice == service.CASE and not product.size):
+                continue
+            price = price_of(product, variant, money)
+            if price is None:
+                continue
+            # The row carries its variant: what is ticked is exactly what is added.
+            value = variant + ':' + {service.CASE: f'case:{product.size}',
+                                     service.RETAINERS: 'retainers'
+                                     }.get(choice, f'{choice}:{product.pk}')
+            rows.append({'variant': variant, 'variant_label': labels[variant], 'value': value, 'pk': product.pk, 'group': choice,
+                         'size': product.size, 'rank': service.size_rank(product.size),
+                         'label': size_label(product.size) if choice == service.CASE
+                         else product.public_name,
+                         'price': price,
+                         'per_unit': choice == service.SPARK,
+                         'min': product.min_quantity, 'max': product.max_quantity,
+                         'auto_odb_dt': choice == service.ODB and variant == service.DIGITALTWIN})
+            note_add_ons(product, value)
+    order = {service.CASE: 0, service.ODB: 1, service.SPARK: 2, service.RETAINERS: 3}
+    rows.sort(key=lambda row: (row['variant'], order[row['group']], row['rank'], row['label']))
+    return {'variants': [{'code': variant, 'label': labels[variant]} for variant in variants],
+            'rows': rows,
+            'add_ons': [{**entry, 'offered': ' '.join(sorted(entry['offered']))}
+                        for entry in sorted(add_ons.values(), key=lambda entry: entry['code'])],
+            'addresses': [{'id': str(address.pk), 'label': address_label(address),
+                           'default': address.is_default}
+                          for address in shipping.usable_addresses(request.user)]}
+
+
 def _step_two_context(request, patient, posted=None, error=''):
     here = request.path
     held = subscriptions.effective(request.user).subscription
@@ -158,7 +250,9 @@ def _step_two_context(request, patient, posted=None, error=''):
     included = resolver.included_cases(held, Product.TPS_BRANDED) if held else 0
     return {'patient': patient, 'sizes': sizes, 'add_ons': add_ons, 'makers': maker_rows,
             'included': included, 'fiscal_link': _fiscal_block(request, here),
-            'posted': posted or {}, 'error': error, 'undecided': UNDECIDED, 'other': OTHER}
+            'posted': posted or {}, 'error': error, 'undecided': UNDECIDED, 'other': OTHER,
+            'virtuaortho': _virtuaortho_options(request, patient),
+            'shipping_link': _shipping_block(request, here)}
 
 
 @login_required
@@ -170,9 +264,28 @@ def start_a_case_tps(request, code):
     POST puts the item in the cart."""
     patient = _own_patient(request, code)
     posted, error = {}, ''
-    if request.method == 'POST':
+    if request.method == 'POST' and request.POST.get('line') == 'virtuaortho':
         data = request.POST
-        posted = {'kind': data.get('kind', ''), 'maker': data.get('maker', ''),
+        # The ticked row is "<variant>:<choice>[:<size or product id>]".
+        variant, _sep, rest = data.get('product', '').partition(':')
+        choice, _sep, size = rest.partition(':')
+        posted = {'form': 'virtuaortho', 'line': 'virtuaortho', 'variant': variant,
+                  'product': data.get('product', ''), 'add_ons': data.getlist('add_on'),
+                  'quantity': data.get(f'quantity_{size}', ''), 'address': data.get('address_id', '')}
+        try:
+            service.add_virtuaortho(
+                request.user, patient, variant=posted['variant'], choice=choice, size=size,
+                add_on_codes=posted['add_ons'],
+                quantity=posted['quantity'] if choice == service.SPARK else 1,
+                address_id=posted['address'])
+        except service.CartRefused as refused:
+            error = _refusal_texts()[refused.code]
+        else:
+            messages.success(request, _('The service has been added to your cart.'))
+            return redirect('cart')
+    elif request.method == 'POST':
+        data = request.POST
+        posted = {'form': 'tps', 'kind': data.get('kind', ''), 'maker': data.get('maker', ''),
                   'other_name': data.get('other_name', ''), 'size': data.get('size', ''),
                   'add_ons': data.getlist('add_on')}
         try:
@@ -204,16 +317,22 @@ def _line(item, held):
     price = None
     if product is not None and held is not None:
         try:
-            price = resolver.price(product, held, [add_on for add_on in add_ons if add_on])
+            price = resolver.price(product, held, [add_on for add_on in add_ons if add_on],
+                                   item.quantity)
         except ValueError:
             price = None
+    # MyTreatPlan makes a VirtuaOrtho item: no maker to show.
+    virtuaortho = product is not None and product.category in service.VIRTUAORTHO_CATEGORIES
     return {'item': item, 'patient': item.patient,
             'product': product.public_name if product else '',
             'size': (size_label(service.ICE_SIZE) if product.category == Product.ICE
                      else size_label(product.size)) if product else '',
             'add_ons': [add_on.public_name if add_on else code
                         for add_on, code in zip(add_ons, item.add_on_codes)],
-            'maker': _maker_label(item), 'price': price}
+            'maker': '' if virtuaortho else _maker_label(item),
+            'aligners': item.quantity if product is not None and product.per_unit else None,
+            'address': address_label(item.shipping_address) if item.shipping_address_id else '',
+            'price': price}
 
 
 @login_required

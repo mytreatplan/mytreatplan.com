@@ -3,12 +3,14 @@
 `CartItem`: one planning service (a TPS) chosen for one patient of the doctor, written only
 by `cart.service`. The product is stored by id (the wizard picks it by category and size,
 never by code); the maker choice is a named maker (`accounts.makers.NAMED`), `undecided`,
-`other` with `other_name`, or '' for in-house printing. 9.6 turns the items into an order;
+`other` with `other_name`, or '' for in-house printing (a VirtuaOrtho item, 9.4, has no maker:
+MyTreatPlan makes it; it carries the `quantity` of aligners and the `shipping_address`). 9.6 turns the items into an order;
 9.6/9.8 carry the maker choice onto the order line and the work order.
 """
 import uuid
 
 from django.conf import settings
+from django.core.validators import MinValueValidator
 from django.db import models
 
 from accounts.makers import MAKER_NAMES
@@ -30,6 +32,11 @@ class CartItem(models.Model):
     # '' for in-house printing.
     maker = models.CharField(max_length=20, choices=MAKER_CHOICES, blank=True, default='')
     other_name = models.CharField(max_length=OTHER_NAME_MAX_LENGTH, blank=True, default='')
+    # Aligners for a Spark on Demand item (9.4), 1 for every other.
+    quantity = models.PositiveIntegerField(default=1, validators=[MinValueValidator(1)])
+    # Where a VirtuaOrtho item is shipped (9.4); None for a TPS or an ICE. 9.6 snapshots it.
+    shipping_address = models.ForeignKey('accounts.ShippingAddress', null=True, blank=True,
+                                         on_delete=models.SET_NULL, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
