@@ -3,7 +3,7 @@ title: 'Case wizard: VirtuaOrtho'
 type: 'feature'
 ticket: '4'
 created: '2026-11-23'
-status: 'built'
+status: 'done'
 baseline_revision: '7edc053e24b9bec8f6bdbcff84a57380a52ccc6f'
 route: 'full'
 route_source: 'auto'
@@ -116,3 +116,15 @@ Branches already exist: portal `story/9-4-case-wizard-virtuaortho` (this checkou
 - Portal, from the repo root: `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU="; export DATABASE_URL="sqlite:///$TMPDIR/s94.sqlite3"; ../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: 0 failures (run `../.venv/bin/python manage.py compilemessages` after editing the .po); `../.venv/bin/python manage.py makemigrations --check --dry-run` -- no changes.
 - mytp-admin, from `../mytp-admin`: `SECRET_KEY=ci-only-not-a-secret DEBUG=False SECURE_SSL_REDIRECT=False ALLOWED_HOSTS=localhost,127.0.0.1,testserver DATABASE_URL=sqlite:///$TMPDIR/adm94.sqlite3 FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" ALLOW_FAKE_VERIFICATION=True /private/tmp/claude-501/admin-venv/bin/python -m pytest -q -p no:cacheprovider` -- expected: 0 failures; `makemigrations --check --dry-run` there too (a migration is fine if the validation change needs one; compile the admin .po after editing).
 - Write the admindev data script (sizes on the six VO products, both VO categories added to JUNIOR-1/2, `odb` removed from BYTE-SYNC/-USD/-AED; under `audit.command_actor('staging-9.4')`; prints what it would change and only writes when `APPLY = True` at its top, default False) to `/private/tmp/claude-501/s94_admindev.py`. Do not run it anywhere.
+
+## Staging
+
+- Merged: admin PR #49 → eb5c47e (admindev deploy run 45358264652 green); portal PR #133 → 4191068 (deploy run 45360679426 green, dev and dev-ae). PR CI green on both (portal: one run hit the known flaky `test_makers.py` `p2` test, green on re-run). mytp-core 55015e6 (docstring) pushed to master, no release. Local suites: portal 4307 passed (8 local-only WeasyPrint PDF failures), admin 1684 passed.
+- admindev data script (command actor `staging-9.4`): dry run listed the 11 intended changes (six VO sizes, VO categories on JUNIOR-1/2, `odb` removed from BYTE-SYNC/-USD/-AED); applied; a second run found nothing left.
+- Checks on dev (server-side, test client, one transaction rolled back, nothing left behind), doctor of patient EU-0BNY91JQ switched to SEED-ADV-IBERIA inside the transaction:
+  1. dev's snapshot has the six sized VO products. Passed.
+  2. DigitalTwin medium + Byte Sync added with the chosen address; the cart shows the patient and the address in EN and ES. Passed.
+  3. Spark on Demand: 3 and 10 aligners refused (`quantity`), 6 added at 50.00 per aligner. Passed.
+  4. Without a usable address: block with the `settings/shipping/add/?next=` link; item refused (`no_address`). Passed.
+  5. A DE doctor on SEED-ADV-ROEU: 0 VO products offered, no VirtuaOrtho branch; the same doctor in ES on SEED-ADV-IBERIA sees it. Passed.
+- Owed by the user: by-eye check of step 2's VirtuaOrtho branch and the cart, EN/ES, desktop and phone.
