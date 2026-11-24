@@ -1,0 +1,6 @@
+{% load i18n %}{% comment %}
+The add-patient dialog (epic-ordering 9.2), shared by the patient list and the case wizard's first step. `action` is where the form posts. Height is capped to the viewport: the form's fields scroll, its buttons stay in view.
+{% endcomment %}<dialog id="add-patient" aria-labelledby="add-patient-title" data-dialog{% if open_dialog %} data-open{% endif %} class="m-0 h-dvh max-h-none w-full max-w-none bg-white p-6 text-ink backdrop:bg-ink/60 open:flex open:flex-col tablet:m-auto tablet:h-auto tablet:max-h-[calc(100dvh-2rem)] tablet:max-w-[640px] tablet:rounded-16 tablet:p-8">
+  <h2 id="add-patient-title" class="shrink-0 text-[22px] font-black leading-[1.2]">{% translate "Add a patient" %}</h2>
+  {% include "patients/_patient_form.html" with action=action cancel=True %}
+</dialog>

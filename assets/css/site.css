@@ -11,6 +11,11 @@
 @source "../../signup/templates";
 @source "../../regions/templates";
 @source "../../subscriptions/templates";
+@source "../../patients/templates";
+@source "../../cart/templates";
+@source "../../payments/templates";
+@source "../../invoices/templates";
+@source "../../storage/templates";
 /* Field classes are set on the form widgets. */
 @source "../../signup/forms.py";
 /* Only the scripts that build markup; htmx.min.js is deliberately not scanned. */
@@ -109,6 +114,8 @@
   /* Layout measures (design/tokens.json → size.tokens) */
   --container-canvas: 1440px;
   --container-legal: 760px;
+  /* The doctor area: header and panel share it (epic-ordering 9.14). */
+  --container-portal: 1280px;
 }
 
 @layer base {

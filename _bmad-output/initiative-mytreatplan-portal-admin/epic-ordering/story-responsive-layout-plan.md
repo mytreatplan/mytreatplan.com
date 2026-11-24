@@ -3,14 +3,14 @@ title: 'Responsive layout'
 type: 'feature'
 ticket: '14'
 created: '2026-11-24'
-status: 'in-progress'
+status: 'built'
 baseline_revision: '5ff5ad0cbd3f8fac8a8cd94286f4359924fd5490'
 route: 'full'
 route_source: 'auto'
 risk: 'low'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -80,6 +80,25 @@ context: []
 - Given a doctor at 1440px, when they open the patient list, home, cart, checkout or settings, then the content column has the same width as the header.
 - Given a phone at 390px, when any doctor page with a table loads, then the page does not scroll sideways.
 - Given `npm run build:css`, when the built CSS is searched, then the dialog's height-cap class is present.
+
+## Implementation Notes
+
+- Paired short fields (name/surname, city/postcode) already sat side by side from `tablet` up in the patient, fiscal and shipping forms; no form change was needed beyond the checkout cap.
+- The browser layout test builds a paid and an open order through the catalogue fixtures (`interface_settings`, `admin`) so the patients, invoices and checkout tables render.
+
+## Review Triage Log
+
+Pass 1 (quick, Opus; 2026-11-24): 7 findings — high 1, medium 3, low 3, false 0, maybe-false 0. All patched by the implementer.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---|---|---|---|
+| 1 | `invoices/list.html` scroll wrapper never closed | high | patch | `</table>` ran straight into `{% else %}`, breaking the panel nesting for any doctor with invoices; `</div>` added. |
+| 2 | Header and panel not aligned (panel inner div held both `max-w-portal` and `px-gutter`) | medium | patch | Panel content was 1280 − 2 gutters; `px-gutter` moved to `[data-doctor-panel]`, as on the header. |
+| 3 | Laptop test did not compare with the header, skipped checkout | medium | patch | Test now compares content boxes within 1px and visits a checkout page. |
+| 4 | Phone test never rendered a table | medium | patch | Test now creates a patient, a paid order (invoice) and an open order, and asserts the tables are visible. |
+| 5 | Checkout form stretched to the full width | low | patch | Against the 640px forms decision; form capped at `max-w-[640px]`, order table stays full width. |
+| 6 | `test_upgrade.py` assertions always true (header carries `max-w-portal`) | low | patch | Assertions now match the panel's own markup. |
+| 7 | `doctor_base.html` comment wrong about portal_base | low | patch | Comment corrected. |
 
 ## Design Notes
 

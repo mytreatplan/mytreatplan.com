@@ -18,10 +18,7 @@ start_a_case_patient) and, without a usable fiscal entity, the block that links 
 <p class="mt-3 text-copy text-ink-muted">{% translate "Step 1 of 2: choose the patient." %}</p>
 {% include "cart/_fiscal_block.html" %}
 
-<dialog id="add-patient" aria-labelledby="add-patient-title" data-dialog{% if open_dialog %} data-open{% endif %} class="m-0 h-dvh max-h-none w-full max-w-none overflow-y-auto bg-white p-6 text-ink backdrop:bg-ink/60 tablet:m-auto tablet:h-auto tablet:max-h-[90dvh] tablet:max-w-[640px] tablet:rounded-16 tablet:p-8">
-  <h2 id="add-patient-title" class="text-[22px] font-black leading-[1.2]">{% translate "Add a patient" %}</h2>
-  {% url 'start_a_case_patient' as post_url %}{% include "patients/_patient_form.html" with action=post_url cancel=True %}
-</dialog>
+{% url 'start_a_case_patient' as post_url %}{% include "patients/_patient_dialog.html" with action=post_url %}
 
 <h2 class="mt-12 text-[22px] font-black leading-[1.2]">{% translate "Your patients" %}</h2>
 {% if patients %}

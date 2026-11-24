@@ -9,8 +9,6 @@ longer open shows what became of it.
 
 {% block title %}{% translate "Checkout" %} &mdash; MyTreatPlan{% endblock %}
 
-{% block portal_width %}max-w-[760px]{% endblock %}
-
 {% block portal_content %}
 <h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Checkout" %}</h1>
 <p class="mt-3 text-copy text-ink-muted">{% blocktranslate with reference=order.reference %}Order reference <strong class="text-ink" data-order-reference>{{ reference }}</strong>{% endblocktranslate %}</p>
@@ -19,7 +17,8 @@ longer open shows what became of it.
 {% elif order.state == "expired" %}<p class="mt-6 text-copy font-semibold" data-order-state="expired">{% translate "This order expired. Please start it again." %}</p>
 {% endif %}
 
-<table class="mt-8 w-full text-left text-copy" data-order-lines>
+<div class="mt-8 overflow-x-auto">
+<table class="w-full text-left text-copy" data-order-lines>
   <thead><tr class="border-b border-line text-[14px] text-ink-muted"><th class="py-2 font-semibold">{% translate "Item" %}</th><th class="py-2 text-right font-semibold">{% translate "Net" %}</th></tr></thead>
   <tbody>
   {% for line in lines %}
@@ -30,6 +29,7 @@ longer open shows what became of it.
   {% endfor %}
   </tbody>
 </table>
+</div>
 <dl class="mt-4 space-y-1 text-copy" data-order-totals>
   <div class="flex justify-between"><dt>{% translate "Net total" %}</dt><dd>{{ order.net_total }} {{ order.currency }}</dd></div>
   {% for group in vat_groups %}
@@ -39,7 +39,7 @@ longer open shows what became of it.
 </dl>
 
 {% if order.state == "checkout" or order.state == "pending_payment" %}
-<form method="post" class="mt-8 space-y-6" data-checkout-form>
+<form method="post" class="mt-8 max-w-[640px] space-y-6" data-checkout-form>
   {% csrf_token %}
   <input type="hidden" name="version" value="{{ order.version }}">
   <input type="hidden" name="total" value="{{ order.total }}">

@@ -1,8 +1,9 @@
 {% load i18n %}{% comment %}
 The add-patient form (epic-ordering 9.1), shown in the list's dialog and on patients/new/.
 `action` is where it posts; `cancel` adds a Cancel button that closes the dialog.
-{% endcomment %}<form method="post" action="{{ action }}" class="mt-4 flex max-w-[640px] flex-col gap-5" novalidate id="patient-form" data-patient-form>
+{% endcomment %}<form method="post" action="{{ action }}" class="mt-4 flex min-h-0 max-w-[640px] flex-1 flex-col gap-5" novalidate id="patient-form" data-patient-form>
   {% csrf_token %}
+  <div class="-mx-1 flex min-h-0 flex-col gap-5 overflow-y-auto px-1 py-1">
   {% if form.non_field_errors %}
   <ul class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert">
     {% for error in form.non_field_errors %}<li>{{ error }}</li>{% endfor %}
@@ -14,7 +15,8 @@ The add-patient form (epic-ordering 9.1), shown in the list's dialog and on pati
   </div>
   {% include "includes/_form_field.html" with field=form.reference %}
   {% include "includes/_form_field.html" with field=form.comments %}
-  <div class="flex flex-wrap gap-3">
+  </div>
+  <div class="flex shrink-0 flex-wrap gap-3">
     <button type="submit" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-save>{% translate "Save" %}</button>
     {% if cancel %}<button type="button" class="min-h-[52px] cursor-pointer rounded-pill border-2 border-ink/30 px-8 text-[18px] font-black text-ink transition hover:bg-ink/5 focus-visible:shadow-focus-pill focus-visible:outline-none" data-dialog-close>{% translate "Cancel" %}</button>{% endif %}
   </div>

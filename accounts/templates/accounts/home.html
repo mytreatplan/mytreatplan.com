@@ -10,8 +10,6 @@ epic builds it). Below the tablet breakpoint everything stacks in one column.
 
 {% block title %}{% translate "Home" %} &mdash; MyTreatPlan{% endblock %}
 
-{% block portal_width %}max-w-[1080px]{% endblock %}
-
 {% block portal_content %}
 <h1 class="text-[clamp(34px,5vw,58px)] font-black leading-[1.05] tracking-[-0.04em]" data-greeting>{% if greeting_name %}{% blocktranslate with name=greeting_name %}Hello, {{ name }}{% endblocktranslate %}{% else %}{% translate "Hello" %}{% endif %}</h1>
 <p class="mt-2 text-[clamp(14px,1.4vw,16px)] font-medium">{% translate "Here are some quick links that may help you." %}</p>
