@@ -108,6 +108,38 @@ def variants_offered(offered):
             if any(product.category == category for product, _money in offered)]
 
 
+def virtuaortho_lines(doctor, offered=None, held=None):
+    """[(variant, choice, product, Money)] the VirtuaOrtho rows a doctor can buy, the wizard's
+    and the product page's one rule: each variant (`variants_offered`) with its sizes, the ODB
+    (under DigitalTwin priced with its ODB-DT add-on, and left out without it), retainers and
+    Spark on Demand (under One only). Unsized One/DigitalTwin rows and rows with no price are
+    left out. Retainers are listed whatever the patient: the wizard drops them itself."""
+    offered = offered if offered is not None else offered_virtuaortho(doctor)
+    held = held if held is not None else subscriptions.effective(doctor).subscription
+    twin = resolver.add_on(ODB_DT)
+    lines = []
+    for variant in variants_offered(offered):
+        category = VARIANTS[variant]
+        for product, money in offered:
+            choice = {category: CASE, Product.ODB: ODB, Product.RETAINERS: RETAINERS,
+                      Product.SPARK_ON_DEMAND: SPARK}.get(product.category)
+            if choice is None or (choice == SPARK and variant != ONE) \
+                    or (choice == CASE and not product.size):
+                continue
+            price = money
+            if choice == ODB and variant == DIGITALTWIN:
+                if twin is None or twin not in resolver.add_ons(product):
+                    continue
+                try:
+                    price = resolver.price(product, held, [twin])
+                except ValueError:
+                    continue
+            if price is None:
+                continue
+            lines.append((variant, choice, product, price))
+    return lines
+
+
 def size_rank(size):
     return (SIZE_ORDER.index(size), size) if size in SIZE_ORDER else (len(SIZE_ORDER), size)
 

@@ -177,7 +177,6 @@ def _virtuaortho_options(request, patient):
         return None
     held = subscriptions.effective(request.user).subscription
     finished = patients_service.has_finished_treatment(patient)
-    twin = resolver.add_on(service.ODB_DT)
     rows, add_ons = [], {}
 
     def note_add_ons(product, key):
@@ -190,45 +189,23 @@ def _virtuaortho_options(request, patient):
                 'offered': set()})
             entry['offered'].add(key)
 
-    def price_of(product, variant, money):
-        """The row's price; None when the row cannot be sold (under DigitalTwin an ODB needs
-        its ODB-DT add-on, offered on it)."""
-        if product.category == Product.ODB and variant == service.DIGITALTWIN:
-            if twin is None or twin not in resolver.add_ons(product):
-                return None
-            try:
-                return resolver.price(product, held, [twin])
-            except ValueError:
-                return None
-        return money
-
     labels = {service.ONE: _('VirtuaOrtho One'), service.DIGITALTWIN: _('VirtuaOrtho DigitalTwin')}
-    for variant in variants:
-        category = service.VARIANTS[variant]
-        for product, money in offered:
-            choice = {category: service.CASE, Product.ODB: service.ODB,
-                      Product.RETAINERS: service.RETAINERS,
-                      Product.SPARK_ON_DEMAND: service.SPARK}.get(product.category)
-            if choice is None or (choice == service.SPARK and variant != service.ONE) \
-                    or (choice == service.RETAINERS and not finished) \
-                    or (choice == service.CASE and not product.size):
-                continue
-            price = price_of(product, variant, money)
-            if price is None:
-                continue
-            # The row carries its variant: what is ticked is exactly what is added.
-            value = variant + ':' + {service.CASE: f'case:{product.size}',
-                                     service.RETAINERS: 'retainers'
-                                     }.get(choice, f'{choice}:{product.pk}')
-            rows.append({'variant': variant, 'variant_label': labels[variant], 'value': value, 'pk': product.pk, 'group': choice,
-                         'size': product.size, 'rank': service.size_rank(product.size),
-                         'label': size_label(product.size) if choice == service.CASE
-                         else product.public_name,
-                         'price': price,
-                         'per_unit': choice == service.SPARK,
-                         'min': product.min_quantity, 'max': product.max_quantity,
-                         'auto_odb_dt': choice == service.ODB and variant == service.DIGITALTWIN})
-            note_add_ons(product, value)
+    for variant, choice, product, price in service.virtuaortho_lines(request.user, offered, held):
+        if choice == service.RETAINERS and not finished:
+            continue
+        # The row carries its variant: what is ticked is exactly what is added.
+        value = variant + ':' + {service.CASE: f'case:{product.size}',
+                                 service.RETAINERS: 'retainers'
+                                 }.get(choice, f'{choice}:{product.pk}')
+        rows.append({'variant': variant, 'variant_label': labels[variant], 'value': value, 'pk': product.pk, 'group': choice,
+                     'size': product.size, 'rank': service.size_rank(product.size),
+                     'label': size_label(product.size) if choice == service.CASE
+                     else product.public_name,
+                     'price': price,
+                     'per_unit': choice == service.SPARK,
+                     'min': product.min_quantity, 'max': product.max_quantity,
+                     'auto_odb_dt': choice == service.ODB and variant == service.DIGITALTWIN})
+        note_add_ons(product, value)
     order = {service.CASE: 0, service.ODB: 1, service.SPARK: 2, service.RETAINERS: 3}
     rows.sort(key=lambda row: (row['variant'], order[row['group']], row['rank'], row['label']))
     return {'variants': [{'code': variant, 'label': labels[variant]} for variant in variants],

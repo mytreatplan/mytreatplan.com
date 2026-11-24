@@ -1,0 +1,36 @@
+{% extends "doctor_base.html" %}
+{% load i18n %}
+{% comment %}
+The VirtuaOrtho product page (cart.pages.virtuaortho_page, epic-ordering 9.5): the One and
+DigitalTwin products the doctor's subscription offers with their net prices, and a button to
+the case wizard. Nothing is ordered here.
+{% endcomment %}
+
+{% block title %}Virtua ORTHO &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">Virtua ORTHO</h1>
+<p class="mt-3 max-w-[720px] text-copy text-ink-muted">{% translate "Aligners, planning and clinical support, all in one. These are the VirtuaOrtho products your subscription includes, with their prices." %}</p>
+
+{% if not groups %}
+<p class="mt-8 text-copy text-ink-muted" data-not-included>{% translate "These products are not included in your subscription." %}</p>
+{% else %}
+<div class="mt-8 flex max-w-[720px] flex-col gap-10">
+  {% for group in groups %}
+  <section data-vo-group="{{ group.label }}">
+    <h2 class="text-[28px] font-black leading-[1.15] tracking-[-0.02em]">{{ group.label }}</h2>
+    {% for section in group.sections %}
+    <h3 class="mt-6 text-[18px] font-black">{{ section.title }}</h3>
+    {% include "cart/_product_rows.html" %}
+    {% endfor %}
+  </section>
+  {% endfor %}
+</div>
+<p class="mt-10">
+  <a href="{% url 'start_a_case' %}" class="inline-flex min-h-[52px] items-center rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-start-a-case>{% translate "Start a case" %}</a>
+</p>
+{% endif %}
+<p class="mt-8">
+  <a href="{% url 'home' %}" class="text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink" data-back-home>{% translate "Back to home" %}</a>
+</p>
+{% endblock %}
