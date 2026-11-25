@@ -3,7 +3,7 @@ title: 'ICE deduction'
 type: 'feature'
 ticket: '7'
 created: '2026-11-25'
-status: 'built'
+status: 'done'
 baseline_revision: 'a1323173ee371c462473d9e44cd2f332581ce2b0'
 route: 'full'
 route_source: 'auto'
@@ -121,3 +121,15 @@ The ICE line is re-derived in the hooks (oldest paid, non-refunded ICE line of t
 - `python manage.py makemigrations --check --dry-run` -- expected: no changes.
 
 **Result (2026-11-25):** full suite 4410 passed, 18 skipped (PostgreSQL-only and no ../mytp-admin checkout), 0 failed; `makemigrations --check` clean. The race between two orders is exercised on SQLite only; CI runs PostgreSQL.
+
+## Staging
+
+- Merge: PR #144 → 2aeeb4e (2026-11-25 16:15 UTC; the GitHub merge API answered 500/502 twice, so the same merge commit was pushed with git and GitHub marked the PR merged). Deploy run 45652106347 green: test passed, dev and dev-ae released (Upload release + Release ran, 16:29 UTC). PR CI passed on both runs of baa541c (45642042468, 45642089872).
+- Checks on dev (2026-11-25), `.handoff`-style read-only script over SSH, doctor pk 18 (ES Premium):
+  0. Migration applied (0 deductions); receivers `ice_reserve` (created), `ice_consume` (paid), `ice_release` (cancelled, expired): passed. Existing data: 1 paid ICE on dev, already followed by a planning paid in full, not offered as a credit (0 offered although used): passed.
+  1. ICE paid through the cart with the fake gateway: 80.00 EUR, company ES (rolled back).
+  2. Medium TPS for that patient: line ICE credit 80.00, net and total 139.12, deduction reserved: passed (rolled back).
+  3. Finish again: earlier order cancelled and its deduction released, new order credited 80.00 with a reserved deduction: passed (rolled back).
+  4. Cancel: deduction released, credit offered again: passed (rolled back).
+  5. Pay with the fake gateway: order paid, deduction consumed, no credit offered again: passed (rolled back).
+- Left on dev: nothing (every check rolled back).
