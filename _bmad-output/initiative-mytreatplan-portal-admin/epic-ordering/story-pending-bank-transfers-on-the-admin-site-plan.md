@@ -3,7 +3,7 @@ title: 'Pending bank transfers on the admin site'
 type: 'feature'
 ticket: '18'
 created: '2026-11-25'
-status: 'built'
+status: 'done'
 baseline_revision: 'fc109a4d68307af79c8ba4b8664345e120fd5230'
 route: 'full'
 route_source: 'auto'
@@ -116,3 +116,12 @@ The write is modelled as a field change (`state` to `paid` or `cancelled`) becau
 - Admin: its pytest suite (see its CI workflow) -- expected 0 failures; `makemigrations --check` clean.
 
 **Result (2026-11-25):** mytp-core 1774 passed, 4 skipped; portal full suite 4439 passed, 17 skipped, `makemigrations --check` clean; admin full suite on PostgreSQL 1727 passed, `makemigrations --check` clean. Apps vendor a local build of v0.34.0 until the mytp-core PR merges and the tag is pushed.
+
+## Staging
+
+- Merges (2026-11-25, user's "merge when they are ready"): mytreatplan/mytp-core#1 → 57ebe03; release `v0.34.0` on 57ebe03 published by the user from GitHub's web page (the session's proxy refused the tag push, HTTP 403). Both apps vendor the wheel built from 57ebe03 (sha256 b8283205…). Portal PR #145 → ec61cb6 (one CI run had failed on a flaky test from before this story, `accounts/tests/test_shipping.py::test_the_model_never_shows_a_value_as_text`, '612' found in the address's random UUID; fixed in 299ce25 on the PR). Admin PR mytreatplan/mytp-admin#50 → 8dce127.
+- Deploys: portal run 45680142348 (dev, dev-ae released 19:11 UTC); admin run 45680160292 (admindev released 19:01 UTC).
+- Checks on dev, read-only script over SSH (rolled back), doctor pk 18: 0. mytp_core 0.34.0, route `/api/v1/remote/pending-transfers`, resource `pending_transfer` in `sales_orders`: passed. 1. a new transfer order listed, row fields without patient data, `client_uid` is the doctor: passed. 2. confirm: paid, one invoice, off the list: passed. 3. cancel after paid refused as stale: passed. 4. cancel of another transfer order: cancelled, no invoice: passed.
+- Acceptance on admindev (user, browser): a Financial Manager listed the doctor's pending transfer order and confirmed it after a fresh code; dev shows order CY-800532 `paid` by an admin actor at 22:06 UTC with one invoice: passed.
+- Left on dev: order CY-800532 paid with its invoice (doctor pk 18).
+- Found during the check (user, 2026-11-25): the doctor has no place to find a pending transfer order after approval (only the transfer page itself and the 7-day reminder). New entry 9.19: pending-payment documents in the doctor's invoices list.
