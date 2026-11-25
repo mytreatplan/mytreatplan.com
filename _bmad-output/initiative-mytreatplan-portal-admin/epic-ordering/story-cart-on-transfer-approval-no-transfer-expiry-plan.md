@@ -106,6 +106,14 @@ context: []
 
 ## Review Triage Log
 
+Quick lens, iteration 0. Verdicts: 1 medium, 2 low, 0 false, 0 maybe-false.
+
+| # | Finding | Verdict | Route | Evidence |
+|---|---------|---------|-------|----------|
+| 1 | `paid` deletes a cart item the doctor re-added for a patient whose transfer is pending | medium | patch | `_remove_ordered` deletes by (doctor, patient code, product). `CartItem` is unique on (doctor, patient), and the transfer approval already removed the ordered item, so a re-added item (Decision 2 allows it) is silently lost when the transfer order is paid. Fix: `paid` skips the removal for an order that ever had a transfer attempt. Test added. |
+| 2 | `deploy/jobs.conf` comments for `expireorders` / `remindtransfers` describe the old rules | low | patch | :66-70 still say all pending orders expire after 24 h and a day-7 reminder goes once per attempt. Comment correction. |
+| 3 | Reminders count 7 days from the last reminder, not from `pending_at`; a late reminder shifts the later ones | low | reject | On the hourly job the two rules agree to within an hour. They differ only after a missed run or a transfer re-chosen after a switch to card, and it is still one reminder per 7 days. Anchoring to `pending_at` would need extra period arithmetic in `_due` and the recheck, so it is not a direct correction. |
+
 ## Verification
 
 **Commands:**
