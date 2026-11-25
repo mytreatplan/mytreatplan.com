@@ -25,6 +25,12 @@ context: []
 
 ## Decisions
 
+- Decision (user, 2026-11-25): the list is a new list answer in mytp-core (`RemoteList`: resource, region, records each with object id, version, data); the region logs every listed order in its access log.
+- Decision (user, 2026-11-25): "Confirm payment received" confirms the order total; finance types nothing. The write sends the total the list showed; the region passes the order's own total to `mark_transfer_paid`.
+- Decision (user, 2026-11-25): a row shows region, order reference, doctor name (admin's client record by uid), billing company, total, pending since, last reminder sent; never patient data.
+- Decision (user, 2026-11-25): delivery DELEGATED for all three repos (one branch and one PR each): push and open the PRs; when the user says "merge", merge mytp-core first and push its `v0.34.0` tag, vendor the tag into the portal and admin PRs, then merge them; give the user read-only checks for dev over SSH; the user runs the admindev check (finance user, fresh code) in the browser; push the completion commit to master.
+- Decision (user, 2026-11-25): plan kept whole (~2300 tokens).
+
 ## Boundaries & Constraints
 
 **Always:** Live reads only, nothing kept on the admin site (AD-3.3); `Cache-Control: no-store`. No patient name or patient code anywhere on the page, in URLs, logs or audit entries (AD-17, AD-23). Mark paid and cancel stay with Financial Manager and Sysadmin (matrix `sales_orders` change); commercial roles see the list only. The confirm/cancel URL carries region, order id, expected version and idempotency key, because the step-up re-post drops the form body. The region refuses a stale version (409), and the page reloads with a message. Actor recorded as `admin_actor(<staff uuid>)`. EN only on the admin site (as its other pages).
@@ -43,7 +49,7 @@ context: []
 | Repeat | same form posted twice | applied once (idempotency key) | — |
 | No permission | commercial manager | list visible, no buttons | POST: 403 |
 | No fresh code | button pressed | code page, then the action | wrong code: nothing applied |
-| Amount | per Open Question 2 | — | mismatch refused, nothing applied |
+| Amount | confirm, nothing typed | region marks paid with the order's own total | — |
 | Already paid | order paid meanwhile by another staff user | — | stale version, list reloaded |
 
 </frozen-after-approval>
@@ -52,7 +58,7 @@ context: []
 
 **mytp-core** (`/home/user/mytp-core`, at v0.33.0; release v0.34.0):
 - `mytp_core/access.py:95-117` `_RESOURCES`: add the resource (area `sales_orders`, fields, `financial`, rules: Sysadmin and Financial Manager all + writable, commercial roles view only). It must match the admin matrix exactly (`permissions/matrix.py:225` `remote_access_mismatches`).
-- `mytp_core/contracts/remote.py`: `RESOURCE_READERS` :120, `RESOURCE_WRITERS` :159 (closed changes model, e.g. `state` ∈ {paid, cancelled} plus amount), the module docstring, and the list contract (Open Question 1). Version bump in `pyproject.toml`, README release notes (:1294 precedent). Tests in `tests/`.
+- `mytp_core/contracts/remote.py`: `RESOURCE_READERS` :120, `RESOURCE_WRITERS` :159 (closed changes model: `state` ∈ {paid, cancelled}), the module docstring, and the list contract `RemoteList` (records each with object id, version, data; the region's access log records every listed object). Version bump in `pyproject.toml`, README release notes (:1294 precedent). Tests in `tests/`.
 
 **Portal** (`/home/user/mytreatplan.com`):
 - `integration/remote.py:107` `remote_read`, `:235` `remote_write` (the adapter translates `payments.service.StaleVersion.current` to `integration.remote.StaleVersion`). Precedent: `integration/sample.py`, `integration/views.py:135`, `integration/urls.py`. Mounted at `/api/v1/`.
@@ -78,24 +84,6 @@ context: []
 **Acceptance Criteria:**
 - Given a pending transfer order on dev, when a financial manager on admindev confirms it after a fresh code, then dev shows it paid with one invoice and the admin audit log has one entry naming the actor, region and order id.
 
-## Open Questions
-
-1. **How the list is read.** The remote-read contract returns one record per call; the access log records one object.
-   - (a) *Recommended:* a list answer in mytp-core (`RemoteList`: resource, region, records each with object id, version, data). The region logs every listed order in its access log.
-   - (b) No contract change: one synthetic record whose `data` holds an array of orders. Faster, but the access log names no real order.
-2. **Confirming the amount.** `mark_transfer_paid` takes the amount received and refuses a mismatch.
-   - (a) *Recommended:* finance types the amount received; it goes in the URL with the rest; a mismatch is refused and nothing changes.
-   - (b) The button confirms the order total; nothing to type.
-3. **What a row shows.**
-   - (a) *Recommended:* region, order reference, doctor name (admin's client record), billing company, total, pending since, last reminder sent.
-   - (b) The same without the doctor name (reference and doctor's account id only).
-4. **Delivery.** Three repos: mytp-core, the portal and the admin site, one branch and one PR each.
-   - (a) The same delegation as 9.7, for all three. Push and open the PRs. When you say "merge", merge mytp-core first and push its `v0.34.0` tag. Then vendor the tag into the two apps' PRs and merge them. Give you read-only checks for dev over SSH. You run the admindev check (finance user with a fresh code) in the browser. Push the completion commit to master.
-   - (b) Stop at open PRs; you merge and tag.
-5. **Size.** The plan is about 2,300 tokens across three repos.
-   - (a) Keep it whole.
-   - (b) Split: 9.18 the read-only list, then a new entry for the two buttons.
-
 ## Implementation Notes
 
 ## Plan Change Log
@@ -104,7 +92,7 @@ context: []
 
 ## Design Notes
 
-The write is modelled as a field change (`state` to `paid` or `cancelled`, plus `amount` for paid) because `access.decide_write` allows only field-style changes. The portal adapter turns it into the one service call.
+The write is modelled as a field change (`state` to `paid` or `cancelled`) because `access.decide_write` allows only field-style changes. The portal adapter turns it into the one service call.
 
 ## Verification
 
