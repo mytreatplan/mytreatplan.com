@@ -3,7 +3,7 @@ title: 'ICE deduction'
 type: 'feature'
 ticket: '7'
 created: '2026-11-25'
-status: 'in-review'
+status: 'built'
 baseline_revision: 'a1323173ee371c462473d9e44cd2f332581ce2b0'
 route: 'full'
 route_source: 'auto'
@@ -119,3 +119,5 @@ The ICE line is re-derived in the hooks (oldest paid, non-refunded ICE line of t
 **Commands:**
 - `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU="; . .venv/bin/activate && python manage.py compilemessages -v 0 && python -m pytest -q -p no:cacheprovider --tb=line` -- expected: 0 failures (18 local skips normal).
 - `python manage.py makemigrations --check --dry-run` -- expected: no changes.
+
+**Result (2026-11-25):** full suite 4410 passed, 18 skipped (PostgreSQL-only and no ../mytp-admin checkout), 0 failed; `makemigrations --check` clean. The race between two orders is exercised on SQLite only; CI runs PostgreSQL.
