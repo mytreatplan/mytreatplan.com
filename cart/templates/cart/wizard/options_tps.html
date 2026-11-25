@@ -1,0 +1,25 @@
+{% extends "cart/wizard/_step.html" %}
+{% load i18n money %}
+{% comment %}
+Treatment Planning, step 3 of 3: the length as a priced option list (one row per length: radio and
+price; ICE first), the add-ons (arches, Junior I/II, Byte Sync: what the catalogue offers on the
+chosen length) and "Add to cart". A refusal of the service shows here with the choices kept.
+{% endcomment %}
+
+{% block submit_attrs %}data-add-to-cart{% endblock %}
+{% block submit_label %}{% translate "Add to cart" %}{% endblock %}
+
+{% block fields %}
+{% with form=wizard.form %}
+{% if included %}<p class="rounded-12 bg-card-grey px-5 py-4 text-copy" data-included>{% blocktranslate count n=included %}Your subscription includes {{ n }} branded TPS case per year.{% plural %}Your subscription includes {{ n }} branded TPS cases per year.{% endblocktranslate %}</p>{% endif %}
+<fieldset class="flex flex-col gap-3">
+  <legend class="mb-1 text-[22px] font-black leading-[1.2]">{% translate "Length" %}</legend>
+  {% for option in form.sizes %}
+  <label class="flex flex-wrap items-center gap-x-3 text-copy" data-size-row="{{ option.value }}"><input type="radio" name="size" value="{{ option.value }}" data-size{% if option.checked %} checked{% endif %}> <span class="font-semibold">{{ option.label }}</span>{% if option.price %} <span class="text-ink-muted" data-price>{{ option.price|money }}</span>{% endif %}</label>
+  {% empty %}
+  <p class="text-copy text-ink-muted" data-no-services>{% translate "No planning service is available for you right now." %}</p>
+  {% endfor %}
+</fieldset>
+{% include "cart/wizard/_add_ons.html" with add_ons=form.add_ons %}
+{% endwith %}
+{% endblock %}

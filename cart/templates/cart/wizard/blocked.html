@@ -1,0 +1,12 @@
+{% extends "doctor_base.html" %}
+{% load i18n %}
+{% comment %}A wizard step without a usable fiscal entity (cart.wizard): only the block that links to add one and back to this step.{% endcomment %}
+
+{% block title %}{% translate "Request New Planning" %} &mdash; MyTreatPlan{% endblock %}
+
+{% block portal_content %}
+<h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Request New Planning" %}</h1>
+<p class="mt-3 text-copy text-ink-muted"><span data-patient-code>{{ patient.code }}</span>{% if patient.display_name %} &middot; {{ patient.display_name }}{% endif %}</p>
+{% include "cart/_fiscal_block.html" %}
+<p class="mt-8"><a href="{% url 'start_a_case' %}" class="text-copy font-semibold text-ink-muted underline underline-offset-4 hover:text-ink">{% translate "Back to the patients" %}</a></p>
+{% endblock %}

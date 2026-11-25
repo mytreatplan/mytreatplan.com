@@ -423,6 +423,8 @@ INSTALLED_APPS = [
     'django.contrib.sitemaps',
     # Countries and their names in English and Spanish (signup step 1).
     'django_countries',
+    # The step engine of the case wizard (epic-ordering 9.16).
+    'formtools',
     # Shared code (mytp-core, AD-10): field encryption, blind index, KMS, Sentry, jobs,
     # /healthz, backups; its field key checks (mytp_core.E001, E002) and the commands
     # generate_field_keys, generate_kms_field_key, kmscheck, runjob and backupdb.
