@@ -26,6 +26,11 @@ context: []
 ## Decisions
 
 - Decision (user, 2026-11-25): merge, staging and completion are DELEGATED for this story: push the story branch and open the PR; merge when the user says "merge"; give the user a read-only script for the dev checks over SSH (a cloud session has no SSH); push the completion commit to master.
+- Decision (user, 2026-11-25): plan kept whole (~2400 tokens).
+- Decision (user, 2026-11-25): 5.12's `ICE_TWICE` becomes one credited line per patient code; each patient's planning in one order can take that patient's own ICE.
+- Decision (user, 2026-11-25): the checkout page shows "ICE deducted −80.00 EUR" under a credited line, whose amount is its reduced net; no change on the cart page.
+- Decision (user, 2026-11-25): a refunded planning order keeps its deduction consumed (like a voucher); the ICE is not offered again.
+- Decision (user, 2026-11-25): an ICE order refunded while a pending order holds its deduction changes nothing; that order can still be paid with the credit.
 
 ## Boundaries & Constraints
 
@@ -54,7 +59,7 @@ context: []
 
 ## Code Map
 
-- `catalogue/pricing.py:327-345` `_price` — the ICE credit. `ICE_TWICE` (:103, :330) limits an order to one credited line: change it to one credited line **per patient code** (see Open Question 1). Keep `ICE_NOT_PLANNING`, `ICE_CURRENCY`, and the cap. `PLANNING_CATEGORIES` :88. Tests: `catalogue/tests/test_pricing.py:284-306` (the test ICE is 80 EUR, `ICE-EVAL`).
+- `catalogue/pricing.py:327-345` `_price` — the ICE credit. `ICE_TWICE` (:103, :330) limits an order to one credited line: change it to one credited line **per patient code**. Keep `ICE_NOT_PLANNING`, `ICE_CURRENCY`, and the cap. `PLANNING_CATEGORIES` :88. Tests: `catalogue/tests/test_pricing.py:284-306` (the test ICE is 80 EUR, `ICE-EVAL`).
 - `cart/service.py:334` `_order_lines(items)` passes `None` as the ICE: look up the credit here. `:373` `finish` → `payments.create_order` (`payments/service.py:422`). To know a line's company and currency before pricing, use the resolver rule for the product and the billing country. If that is awkward, price once without credits, read `company_code`/`currency`, then build the credited lines.
 - `payments/models.py`:
   - `Order.state` (PAID, REFUNDED :43-48), `company_code` :64, `currency` :63.
@@ -73,31 +78,15 @@ context: []
 - [ ] `patients/models.py` + migration -- `IceDeduction`: `ice_line_id`, `order_id`, `order_line_id`, `doctor_uid` (UUIDs), `patient_code`, `state` (reserved/consumed/released), `amount`, `currency`, timestamps; unique on `order_line_id`; unique on `ice_line_id` where state is live.
 - [ ] `patients/ice.py` (new) -- `available_credit(doctor, patient_code, company_code, currency)` → (ICE line, Money) or None. Plus `reserve`, `consume`, and `release` order receivers. The receivers re-derive each credited line's ICE line, find nothing for an order without `ice_asked`, and are idempotent.
 - [ ] `patients/apps.py` -- register the receivers: `created` → reserve, `paid` → consume, `cancelled`/`expired` → release.
-- [ ] `catalogue/pricing.py` -- relax `ICE_TWICE` per Open Question 1; update `payments/views.py:71`'s text.
+- [ ] `catalogue/pricing.py` -- `ICE_TWICE` per patient code; update `payments/views.py:71`'s text.
 - [ ] `cart/service.py` -- `_order_lines` asks `available_credit` for planning lines; a `HookFailed` from a taken ICE maps to a cart message.
-- [ ] `payments/templates/payments/checkout.html` (+ `cart/templates/cart/cart.html` if Open Question 2 says so) -- display per Open Question 2.
+- [ ] `payments/templates/payments/checkout.html` -- "ICE deducted −X" note under a credited line (`line.ice` > 0).
 - [ ] `locale/es/LC_MESSAGES/django.po` -- Spanish for new strings.
 - [ ] `patients/tests/test_ice_deduction.py`, `catalogue/tests/test_pricing.py`, `cart/tests/test_checkout.py` -- one test per matrix row; race (two orders) → `HookFailed`; idempotent hooks.
 
 **Acceptance Criteria:**
 - Given a patient with a paid 80 EUR ICE, when the doctor orders a medium TPS for that patient and pays with the fake gateway, then the line's `ice` is 80, the order total is reduced by 80 plus VAT, the deduction is consumed, and a later TPS for the patient gets no credit.
 - Given a pending order holding the ICE, when it is cancelled, then a new order for the patient gets the credit again.
-
-## Open Questions
-
-1. **`ICE_TWICE` (5.12 rule: one credited line per order).** Carts hold several patients (9.6), each possibly with an ICE.
-   - (a) *Recommended:* one credited line per patient code. Each patient's planning can take its own ICE.
-   - (b) Keep one per order. Only the first patient's planning is credited, and the rest pay full price.
-2. **Where the doctor sees the deduction.**
-   - (a) *Recommended:* on the checkout page, an "ICE deducted −80.00 EUR" note under the line (the line shows its reduced net).
-   - (b) The same on the checkout page, plus a note on the cart item ("an ICE of 80.00 EUR will be deducted").
-   - (c) Nowhere new: only the lower net amount.
-3. **The planning order is refunded after it consumed the ICE.**
-   - (a) *Recommended:* the deduction stays consumed (like a voucher). The ICE is not offered again.
-   - (b) Release it on `refunded`, so the next planning gets the credit again.
-4. **The ICE order is refunded while a pending planning order holds its deduction.**
-   - (a) *Recommended:* nothing changes. The order can be paid with the credit (rare; staff handle it in the refund).
-   - (b) Check again when payment starts (like 9.6's live-work-order check). Cancel the order with a message; the next "Finish order" prices without the credit.
 
 ## Implementation Notes
 
