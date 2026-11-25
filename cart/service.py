@@ -414,10 +414,13 @@ def transfer_approved(order):
 
 def paid(order):
     """The receiver of the order's `paid` hook: the items of the paid patients leave the
-    cart and each shipping address the order snapshotted is marked used. Idempotent."""
+    cart and each shipping address the order snapshotted is marked used. Idempotent. An order
+    that ever had a bank transfer attempt removed its items at approval (9.17): an item added
+    since for the same patient belongs to no paid order and stays."""
     if order.user_id is None:
         return
-    _remove_ordered(order)
+    if not order.payments.filter(gateway=payments.BANK_TRANSFER).exists():
+        _remove_ordered(order)
     for line in order.lines.all():
         if not line.shipping:  # an encrypted column: read here, never queried
             continue

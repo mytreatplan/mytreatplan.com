@@ -254,6 +254,17 @@ def test_approving_by_transfer_keeps_the_items_of_other_patients(bank, patient):
     assert list(CartItem.objects.values_list('patient__code', flat=True)) == [third.code]
 
 
+def test_paying_a_transfer_order_keeps_an_item_added_since_for_its_patient(bank, patient):
+    tps(bank, patient)
+    order = by_transfer(finish(bank), bank)
+    assert not CartItem.objects.exists()
+    tps(bank, patient)  # the same patient and product again (not blocked in 9.17)
+    payments.mark_transfer_paid(order, order.total, expected_version=order.version,
+                                actor=payments.SYSTEM_ACTOR)
+    assert Order.objects.get(pk=order.pk).state == 'paid'
+    assert list(CartItem.objects.values_list('patient__code', flat=True)) == [patient.code]
+
+
 def test_paying_by_card_leaves_the_cart_until_paid(bank, patient):
     two_items(bank, patient)
     order = payments.start_payment(finish(bank), 'fake', expected_version=1,
