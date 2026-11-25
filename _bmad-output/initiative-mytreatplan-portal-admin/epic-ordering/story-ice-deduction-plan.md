@@ -3,14 +3,14 @@ title: 'ICE deduction'
 type: 'feature'
 ticket: '7'
 created: '2026-11-25'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: 'a1323173ee371c462473d9e44cd2f332581ce2b0'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
