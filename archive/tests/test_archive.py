@@ -39,6 +39,8 @@ PATIENT_SURNAME = 'Quintanilla'
 MAKER_USER = 'maker-login-name-77'
 MAKER_NAME = 'Acme Aligners'
 NOW = timezone.now()
+# The order of the archived work order (9.8: an order's work order keeps its order id).
+WO_ORDER = uuid.UUID('9e8d7c6b-5a49-4382-8170-6f5e4d3c2b1a')
 
 
 @pytest.fixture(autouse=True)
@@ -77,7 +79,7 @@ def make_account(email=EMAIL, phone='+34622918374', code='EU-AAAAAAAA'):
     patient = Patient.objects.create(doctor=doctor, code=code, first_name=PATIENT_NAME,
                                      surname=PATIENT_SURNAME, reference='REF-9',
                                      comments='Allergic to latex', actor_type='doctor')
-    WorkOrder.objects.create(patient=patient, order_line_id=uuid.uuid4(),
+    WorkOrder.objects.create(patient=patient, order_line_id=uuid.uuid4(), order_id=WO_ORDER,
                              stage='pending_assignment', code='WO-1', actor_type='system')
     MakerLogin.objects.create(user=doctor, maker='other', other_name=MAKER_NAME,
                               username=MAKER_USER, password='s3cret-pass', saved_at=NOW)
@@ -138,6 +140,7 @@ def test_the_archive_holds_every_item_of_the_decisions_and_no_maker_data(staff):
         PATIENT_NAME, PATIENT_SURNAME, 'REF-9', 'Allergic to latex', 'erased', patient.code)
     [work_order] = archived_patient['work_orders']
     assert work_order['stage'] == 'pending_assignment'
+    assert str(work_order['order_id']) == str(WO_ORDER)
     [archived_order] = document['orders']
     assert archived_order['reference'] == order.reference
     assert archived_order['lines'][0]['patient_code'] == patient.code

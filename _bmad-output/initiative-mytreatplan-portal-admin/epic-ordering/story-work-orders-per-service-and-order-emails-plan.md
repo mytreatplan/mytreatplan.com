@@ -3,14 +3,14 @@ title: 'Work orders per service and order emails'
 type: 'feature'
 ticket: '8'
 created: '2026-11-25'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: '880340869a1ee974c14f87664675384436ad084c'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/initiative-mytreatplan-portal-admin/architecture-portal-admin/architecture-portal-admin.md'
@@ -88,13 +88,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `mytp-core` -- `closed` stage, contract, schemas, tests, and the 0.35.0 release commit; the tag is created by the user (the proxy refuses tag pushes) -- the contract comes first
-- [ ] `patients/models.py` + migration -- `WorkOrder.order_id`, set on every order-created row
-- [ ] `patients/service.py` + `patients/apps.py` -- blocking check, hold, cancel, paid conversion, ICE `closed`, events, hook registrations
-- [ ] `payments/service.py`, `cart/service.py` -- switch to the blocking check
-- [ ] `vendor/` + `requirements.txt` (both apps) -- vendor the 0.35.0 wheel
-- [ ] `mytp-admin/work_orders/` -- model, migration, applier, registration, tests
-- [ ] tests in each repo -- every row of the matrix, the replay of each hook, the blocking check in cart, order and start_payment, and an event payload check showing no name or code
+- [x] `mytp-core` -- `closed` stage, contract, schemas, tests, and the 0.35.0 release commit; the tag is created by the user (the proxy refuses tag pushes) -- the contract comes first
+- [x] `patients/models.py` + migration -- `WorkOrder.order_id`, set on every order-created row
+- [x] `patients/service.py` + `patients/apps.py` -- blocking check, hold, cancel, paid conversion, ICE `closed`, events, hook registrations
+- [x] `payments/service.py`, `cart/service.py` -- switch to the blocking check
+- [x] `vendor/` + `requirements.txt` (both apps) -- vendor the 0.35.0 wheel
+- [x] `mytp-admin/work_orders/` -- model, migration, applier, registration, tests
+- [x] tests in each repo -- every row of the matrix, the replay of each hook, the blocking check in cart, order and start_payment, and an event payload check showing no name or code
 
 **Acceptance Criteria:**
 - Given a paid order for two patients, when the paid hook runs, then each patient has one work order and two `work_order.created` events are in the outbox, with no patient name or code in them.
@@ -103,9 +103,26 @@ context:
 
 ## Implementation Notes
 
+- mytp-core 0.35.0 release commit 221f4e9 on `feat/9-8-work-orders-and-order-emails` (local tag `v0.35.0`, not pushed: the user creates the tag). `closed` is last in `STAGES`, in `FINAL_STAGES`; every live stage may move to it. Contract `contracts/work_orders.py`: the writer's `stage` is a Literal of `STAGES`; the reader takes any lowercase code (AD-12), so a later stage still reads. `product_category` may be `''`.
+- Both apps vendor the same wheel (sha256 f085a28d…), built from that commit with `MYTP_CORE_REPO=/home/user/mytp-core`. If the release commit changes before tagging, re-vendor both.
+- Portal: `blocking_work_order` returns a pending transfer row of another order first (it always blocks), else the live row; callers use `is_live_ice` for the planning exception. `create_work_orders_for_order` finds a line's row by line id, else by order id and patient. `move_work_order` and the hooks share `_move_locked`, which records `work_order.stage_changed`. Hooks use the system actor.
+- Existing tests that relied on a paid planning leaving the patient free (9.7 ICE tests, a 9.17 cart test, a voucher test; an invoice test that put a made-up patient code on a paid line now uses a real patient), and the vendored-core version tests of both apps moved to 0.35.0 were adjusted: they now cancel the planning's work order, use the second patient, or assert the new refusal.
+- Admin: new app `work_orders` (`WorkloadEntry`), appliers in `interface.events.appliers()`. No screens.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Pass 1 (quick, 2026-11-25): high 0, medium 2, low 4, false 0, maybe-false 0.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | The purge deletes work orders with no event, so admin rows go stale | medium | defer | `accounts/erasure.py:195` predates 9.8 (9.12); needs a decision on what the purge sends. Added to deferred-work.md |
+| 2 | No backfill for existing rows or open 9.17 transfers at deploy | medium | defer | The migration has no data step; only staging data exists. A one-off command is noted in deferred-work.md |
+| 3 | `live_is_ice` dead code | low | patch | No production caller after the switch to `blocking_work_order`; deleted, and its tests moved |
+| 4 | `PatientBusy` / `start_payment` docstrings say "live" only | low | patch | Docstrings corrected |
+| 5 | The admin cancel row is tested with a direct `cancel` call | low | patch | Test now goes through the `integration/transfers.py` staff path |
+| 6 | The archive omits `order_id` | low | patch | `archive/service.py:112` field added |
 
 ## Design Notes
 

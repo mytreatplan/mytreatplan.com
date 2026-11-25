@@ -318,10 +318,11 @@ def _usable(user, entity):
 def _check_patients(user, asked):
     """Every line that names a patient (a case: epic-ordering 9.1, 9.6) must name one of the
     user's own active patients, once per order, in any quantity, and the patient must have
-    no live work order; a live ICE is the one exception, for a line that is not an ICE (a TPS
-    or a VirtuaOrtho service follows it). An ICE line must name a patient. A line without a
-    patient code is any other product (the test order). Raises `OrderRefused`
-    `patient_refused`."""
+    no blocking work order (`patients.service.blocking_work_order`: a live one, or one
+    waiting for another order's bank transfer, 9.8); a live ICE is the one exception, for a
+    line that is not an ICE (a TPS or a VirtuaOrtho service follows it). An ICE line must
+    name a patient. A line without a patient code is any other product (the test order).
+    Raises `OrderRefused` `patient_refused`."""
     from patients import service as patients
 
     seen = set()
@@ -343,20 +344,25 @@ def _check_patients(user, asked):
         seen.add(code)
 
 
-def _patient_free(patients, patient, is_ice):
-    live = patients.live_work_order(patient)
-    return live is None or (not is_ice and patients.live_is_ice(patient))
+def _patient_free(patients, patient, is_ice, exclude_order=None):
+    """No blocking work order, or a live ICE followed by a line that is not an ICE. A
+    pending bank-transfer work order of another order always blocks; `exclude_order`'s
+    own never do (9.8)."""
+    blocking = patients.blocking_work_order(patient, exclude_order=exclude_order)
+    return blocking is None or (not is_ice and patients.is_live_ice(blocking))
 
 
 class PatientBusy(OrderError):
-    """A patient of the order got a live work order after the order was made: the order was
-    cancelled (epic-ordering 9.6). Carries no patient name or code."""
+    """A patient of the order got a blocking work order (a live one, or another order's
+    pending bank-transfer work order) after the order was made: the order was cancelled
+    (epic-ordering 9.6, 9.8). Carries no patient name or code."""
 
 
 def _patients_still_free(order):
-    """Whether no patient of the locked service `order` has got a live work order since
-    the order was made (a live ICE still lets a TPS or a VirtuaOrtho service through). The
-    patient must still be one of the buyer's active patients."""
+    """Whether no patient of the locked service `order` has got a blocking work order since
+    the order was made (a live ICE still lets a TPS or a VirtuaOrtho service through; the
+    order's own pending bank-transfer work orders never block it, 9.8). The patient must
+    still be one of the buyer's active patients."""
     from patients import service as patients
     from patients.models import Patient
 
@@ -369,7 +375,7 @@ def _patients_still_free(order):
             return False
         product = resolver.product(line.product_id) if line.product_id else None
         is_ice = product is not None and product.category == Product.ICE
-        if not _patient_free(patients, patient, is_ice):
+        if not _patient_free(patients, patient, is_ice, exclude_order=order):
             return False
     return True
 
@@ -486,8 +492,9 @@ def start_payment(order, gateway, *, expected_version, actor):
     after a failure) only the gateway may change. A 0.00 order needs no gateway
     (`gateway` ''): it is paid here. Choosing the bank transfer opens an attempt with no
     session end and fires `transfer_approved` (each time it is chosen). Every patient of a
-    service order is checked again first (epic-ordering 9.6): one that got a live work order
-    since cancels the order (when it can be cancelled) and raises `PatientBusy`. Returns the
+    service order is checked again first (epic-ordering 9.6): one that got a blocking work
+    order since (a live one, or another order's pending bank-transfer work order, 9.8)
+    cancels the order (when it can be cancelled) and raises `PatientBusy`. Returns the
     order."""
     try:
         return _start_payment(order, gateway, expected_version=expected_version, actor=actor)

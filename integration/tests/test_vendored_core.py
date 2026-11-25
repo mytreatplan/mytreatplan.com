@@ -20,7 +20,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.34.0'
+    assert mytp_core.__version__ == '0.35.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -38,7 +38,8 @@ def test_vendored_mytp_core_has_the_client_events_and_no_sample():
                                             'contact_message.deleted',
                                             'contact_message.updated',
                                             'invoice.issued', 'payment.confirmed',
-                                            'refund.completed', 'voucher.redeemed', 'voucher.released']
+                                            'refund.completed', 'voucher.redeemed', 'voucher.released',
+                                            'work_order.created', 'work_order.stage_changed']
     assert not hasattr(contracts, 'SAMPLE_RECORDED')
 
 
@@ -204,3 +205,13 @@ def test_vendored_mytp_core_has_the_pending_transfers():
     assert 'pending_transfer' in RESOURCE_WRITERS
     assert RemoteList.model_fields['truncated'].default is False
     assert callable(remote_list)
+
+
+def test_vendored_mytp_core_has_the_work_order_events():
+    """Epic-ordering 9.8 (0.35.0): the work-order events and the final `closed` stage."""
+    from mytp_core import stages
+    from mytp_core.contracts import (WORK_ORDER_READERS, WorkOrderCreatedReader,
+                                     WorkOrderStageChangedReader)
+    assert stages.CLOSED in stages.FINAL_STAGES and stages.CLOSED not in stages.LIVE_STAGES
+    assert WORK_ORDER_READERS == {'work_order.created': WorkOrderCreatedReader,
+                                  'work_order.stage_changed': WorkOrderStageChangedReader}
