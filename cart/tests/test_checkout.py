@@ -538,4 +538,4 @@ def test_the_ice_taken_refusal_is_translated(ready, patient, monkeypatch):
         raise service.CartRefused(service.ICE_TAKEN)
     monkeypatch.setattr(service, 'finish', taken)
     html = browser(ready).post('/es/cart/finish/', {}).content.decode()
-    assert 'lo está usando otro pedido' in html
+    assert 'está reservado por otro de sus' in html and 'se calcula sin él' in html

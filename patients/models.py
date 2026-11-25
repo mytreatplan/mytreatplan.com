@@ -9,10 +9,12 @@ code). A patient is never deleted on its own here: erasing the doctor hides the 
 account. `WorkOrder`: one case of a patient; `order_line_id` is the
 paid order line that started it (unique: the paid hook is idempotent). A patient has at most
 one work order in a live stage (`mytp_core.stages.LIVE_STAGES`), also a partial unique
-constraint.
+constraint. `IceDeduction` (epic-ordering 9.7): one ICE credit taken by a planning line,
+following the planning order through its hooks.
 
-Written only by `patients.service`: a change locks the row, checks the version, raises it
-by one and stores who made it.
+`Patient` and `WorkOrder` are written only by `patients.service`: a change locks the row,
+checks the version, raises it by one and stores who made it. `IceDeduction` is written only
+by `patients.ice`.
 """
 import uuid
 

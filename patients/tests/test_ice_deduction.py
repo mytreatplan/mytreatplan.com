@@ -134,7 +134,7 @@ def test_the_cart_shows_a_message_when_the_ice_is_taken(doc, patient, monkeypatc
     monkeypatch.setattr(cart, '_cancel_earlier', lambda doctor: None)
     monkeypatch.setattr(ice, '_ice_lines', lambda *args: [ice_line])
     html = browser(doc).post(FINISH, {}).content.decode()
-    assert 'being used by another order' in html and 'data-error' in html
+    assert 'held by another of your orders' in html and 'data-error' in html
     assert patient.code not in html.split('data-error', 1)[1].split('</', 1)[0]
 
 
@@ -221,6 +221,46 @@ def test_an_ice_bigger_than_the_line_is_capped(doc, patient):
     assert deduction(order).amount == Decimal('75.20')
     assert order.state == 'paid'  # 0.00: paid at once
     assert deduction(order).state == 'consumed'
+
+
+def test_an_ice_already_followed_by_a_paid_planning_gives_no_credit(doc, patient,
+                                                                    monkeypatch):
+    # An ICE paid before 9.7, its first later planning paid in full (no deduction then).
+    paid_ice(doc, patient)
+    with monkeypatch.context() as patched:
+        patched.setattr(ice, 'credited_lines', lambda doctor, lines, country: lines)
+        tps(doc, patient)
+        earlier = pay(finish(doc), doc)
+    assert planning(earlier).ice == Decimal('0.00') and not IceDeduction.objects.exists()
+    tps(doc, patient)
+    order = finish(doc)
+    assert planning(order).ice == Decimal('0.00') and order.total == Decimal('94.00')
+    assert not IceDeduction.objects.exists()
+    # Refunded, that planning still used the ICE.
+    payments.cancel(order, expected_version=order.version, actor=actor(doc))
+    Order.objects.filter(pk=earlier.pk).update(state=Order.REFUNDED)
+    assert planning(finish(doc)).ice == Decimal('0.00')
+
+
+def test_the_credit_comes_off_before_vat_under_a_vat_charging_rule(doc, patient, admin):
+    def vat(section):
+        eighty(section)
+        for row in section['billing_rules']:
+            if row['category'] == 'tps_branded' and row['vat_percent'] == '0.00' \
+                    and row['company'] != IRELAND:
+                # As Iberia's subscription rule: the Spanish company, 21 %.
+                row['vat_percent'] = '21.00'
+                row.pop('exemption_text', None)
+    paid_ice(doc, patient)
+    load(admin, vat, version=5)
+    tps(doc, patient)
+    order = finish(doc)
+    line = planning(order)
+    assert (line.ice, line.net, line.vat_percent) == (
+        Decimal('80.00'), Decimal('14.00'), Decimal('21.00'))
+    assert (order.vat_total, order.total) == (Decimal('2.94'), Decimal('16.94'))
+    # Without the credit: 94.00 + 19.74 VAT = 113.74, so it drops by 80.00 plus 16.80 VAT.
+    assert Decimal('113.74') - order.total == Decimal('80.00') * Decimal('1.21')
 
 
 def test_two_patients_each_take_their_own_ice(doc, patient):

@@ -4,7 +4,8 @@ initial case evaluation (ICE) for a patient gets its net amount off that patient
 
 - `available_credit(doctor, patient_code, company_code, currency)`: (the ICE order line,
   its `net` as `Money`) of the oldest ICE the doctor paid for the patient, billed by that
-  company in that currency, that no live deduction holds; None otherwise. Only an order
+  company in that currency, that no live deduction holds and no planning paid after it
+  without a deduction used (an ICE paid before 9.7); None otherwise. Only an order
   that is `paid` gives one (a `refunded` order gives none). `cart.service` asks it for each
   planning line when the cart becomes an order; the pricing caps the credit at the line.
 - `reserve(order)`, `consume(order)` and `release(order)`: the receivers of the order hooks
@@ -47,17 +48,39 @@ def _is_ice(line):
     return product is not None and product.category == Product.ICE
 
 
-def _ice_lines(doctor_id, patient_code, company_code, currency):
+def _planned_since(ice_line, order_id=None):
+    """Whether a planning line of the same doctor and patient, billed by the same company in
+    the same currency, was paid after the ICE (its order paid or refunded since) with no
+    deduction pointing at it: a planning paid in full before 9.7 was the ICE's first later
+    planning, so the ICE is used. A line with `included_case` set, or of the order
+    `order_id` (the one being reserved or consumed), does not count."""
+    order = ice_line.order
+    planning = Product.objects.filter(category__in=pricing.PLANNING_CATEGORIES).values('pk')
+    deducted = IceDeduction.objects.values('order_line_id')
+    after = ({'order__paid_at__gt': order.paid_at} if order.paid_at is not None
+             else {'order__created_at__gt': order.created_at})
+    return (OrderLine.objects
+            .filter(order__user_id=order.user_id, order__kind=Order.SERVICE,
+                    order__state__in=(Order.PAID, Order.REFUNDED),
+                    order__company_code=order.company_code, order__currency=order.currency,
+                    patient_code=ice_line.patient_code, product_id__in=planning,
+                    included_case=False, **after)
+            .exclude(pk__in=deducted).exclude(order_id=order_id).exists())
+
+
+def _ice_lines(doctor_id, patient_code, company_code, currency, order_id=None):
     """The paid ICE lines of the doctor for the patient, billed by that company in that
-    currency, that no live deduction holds, oldest first (an ICE paid at 0.00 gives none)."""
+    currency, that no live deduction holds and no later planning used (`_planned_since`),
+    oldest first (an ICE paid at 0.00 gives none)."""
     held = IceDeduction.objects.filter(state__in=IceDeduction.LIVE_STATES).values('ice_line_id')
-    candidates = (OrderLine.objects
+    candidates = (OrderLine.objects.select_related('order')
                   .filter(order__user_id=doctor_id, order__kind=Order.SERVICE,
                           order__state=Order.PAID, order__company_code=company_code,
                           order__currency=currency, patient_code=patient_code)
                   .exclude(product_id=None).exclude(pk__in=held)
                   .order_by('order__paid_at', 'order__created_at', 'position'))
-    return [line for line in candidates if _is_ice(line) and line.net > 0]
+    return [line for line in candidates
+            if _is_ice(line) and line.net > 0 and not _planned_since(line, order_id)]
 
 
 def available_credit(doctor, patient_code, company_code, currency):
@@ -89,7 +112,8 @@ def _deductions(order):
 def _reserve_line(order, line, now):
     if order.user is None:
         raise IceTaken(f'order {order.pk}: an ICE credit is reserved for an account')
-    found = _ice_lines(order.user_id, line.patient_code, order.company_code, order.currency)
+    found = _ice_lines(order.user_id, line.patient_code, order.company_code, order.currency,
+                       order.pk)
     if not line.patient_code or not found or found[0].net != line.ice_asked:
         raise IceTaken(f'order {order.pk}: line {line.position} asked for an ICE credit '
                        'that is no longer available')
