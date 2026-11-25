@@ -158,6 +158,17 @@ hitl = false
 risk = "medium"
 
 [[entry]]
+id = 19
+type = "story"
+title = "Pending-payment documents in the doctor's invoices list"
+description = "A doctor's unpaid bank-transfer orders (pending payment, 9.17) appear in the doctor's invoices list (epic-payments 7.10) as pending-payment documents, clearly marked unpaid and stated not to be an invoice (a proforma or order document, not legally an invoice), and downloadable as a PDF that looks like the invoice: the same seller, buyer, lines and totals, plus the order reference to quote in the transfer and the bank details. Once the order is paid the document gives way to the real invoice; a cancelled order's document leaves the list. Decision (user, 2026-11-25, found during 9.18's staging check): no separate orders page; the invoices list is the one place."
+verify = "On dev a doctor who approves a bank-transfer order sees it in the invoices list marked pending payment, downloads a PDF headed as a pending-payment document (not an invoice) with the reference and bank details, and after staff confirm the payment the list shows the real invoice instead."
+covers = ["O4"]
+after = [17, 8, "7.10"]
+hitl = false
+risk = "medium"
+
+[[entry]]
 id = 8
 type = "story"
 title = "Work orders per service and order emails"
@@ -186,7 +197,7 @@ title = "Production checks for the EU go-live"
 description = "Writes this epic's production checks (patients and codes, wizard branches with maker-login warning, cart and checkout with voucher, ICE deduction, work orders and emails, pending-payment list) into epic-eu-golive's Done when."
 verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
 covers = []
-after = [9, 12, 13, 14, 15, 16, 17, 18]
+after = [9, 12, 13, 14, 15, 16, 17, 18, 19]
 hitl = false
 risk = "low"
 
@@ -197,6 +208,6 @@ title = "Refactor sweep"
 description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
 verify = "The portal's and mytp-core's test suites pass; deferred review findings are closed or recorded."
 covers = []
-after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18]
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19]
 hitl = false
 risk = "low"
