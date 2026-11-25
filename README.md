@@ -386,11 +386,12 @@ basic auth (entry 3; deploy/README.md "Payment webhooks").
 
 ## Payments: bank transfer (epic-payments entry 5)
 
-`payments.bank_transfer` is an adapter that calls no gateway. Paying by transfer opens a 14-day
-attempt (`session_lifetime`; the days run from the order's first freeze, `pending_at`, so choosing
-transfer again never renews them) and sends the doctor to `/<lang>/checkout/<id>/transfer/`: the
-billing company's holder, IBAN (in groups of four), BIC and bank, the amount, the order reference
-as the transfer concept and the last day to pay. The checkout and return pages lead there while the
+`payments.bank_transfer` is an adapter that calls no gateway. Paying by transfer opens an attempt
+with no session end (epic-ordering 9.17), fires the `transfer_approved` hook (each time the
+transfer is chosen; the cart app removes the order's patients' items there) and sends the doctor
+to `/<lang>/checkout/<id>/transfer/`: the billing company's holder, IBAN (in groups of four), BIC
+and bank, the amount and the order reference as the transfer concept, with a line saying the
+order stays pending until the transfer is received (no deadline). The checkout and return pages lead there while the
 attempt is open (`?change=1` on the checkout picks another method). The order stays
 `pending_payment`. `Adapter.accepts(order)` is a new optional hook: `gateways.offered` keeps a
 gateway only when it returns true; transfer accepts an order whose company
@@ -403,11 +404,13 @@ Staff record a received transfer with `payments.service.mark_transfer_paid(order
 transaction; refused unless the order is `pending_payment` with an open transfer attempt and the
 amount (and currency, for a `Money`) equals the total; a repeat returns the order unchanged. The
 doctor can cancel a pending transfer order: `cancel` closes the transfer attempt and cancels the
-order (an open attempt of another gateway still refuses with `AttemptOpen`). After the 14 days
-`expire_orders` expires the order as usual. The `remind_transfers` job (`remindtransfers` in
-`deploy/jobs.conf`, hourly) sends one plain-text reminder per order, from day 7 of the freeze, to
-the login email in the doctor's language (`Profile.language`); `Payment.reminded_at` records it, set
-only after a successful send, so a failed send is retried by the next run.
+order (an open attempt of another gateway still refuses with `AttemptOpen`). `expire_orders` never
+expires a `pending_payment` order that ever had a transfer attempt (even after a switch to card),
+and "Finish order" in the cart never cancels one: staff cancel it by hand. The `remind_transfers`
+job (`remindtransfers` in `deploy/jobs.conf`, hourly) sends one plain-text reminder per order every
+7 days from the freeze (`pending_at`) while a transfer attempt is open, to the login email in the
+doctor's language (`Profile.language`); `Payment.reminded_at` records each one, set only after a
+successful send, so a failed send is retried by the next run.
 
 ## Invoices (epic-payments entry 6)
 

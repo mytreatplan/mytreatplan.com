@@ -10,9 +10,11 @@
 - `items_of(doctor)`, `remove(doctor, item_id)`.
 - `finish(doctor, voucher_code='')` (9.6): turn the cart into one service order through
   `payments.service.create_order` (patient code, maker and shipping address copied per line),
-  cancelling the doctor's earlier unpaid cart order first (all or nothing); the items stay
-  until the order is paid (`paid`, the receiver of the order's `paid` hook, then removes the
-  paid patients' items and marks the snapshotted addresses used).
+  cancelling the doctor's earlier unpaid cart order first (all or nothing), except one
+  waiting for a bank transfer (9.17); the items stay until the order is paid (`paid`, the
+  receiver of the order's `paid` hook, then removes the paid patients' items and marks the
+  snapshotted addresses used) or approved by bank transfer (`transfer_approved`, the receiver
+  of the `transfer_approved` hook, removes the same items).
 
 The product is never chosen by code: it is the first (by code) of the products the doctor
 is offered (`subscriptions.service.offers_for`); size `ice` is the ICE product (either
@@ -352,10 +354,14 @@ def _order_lines(items):
 
 
 def _cancel_earlier(doctor):
-    """Cancel the doctor's earlier unpaid cart orders (their vouchers are released)."""
+    """Cancel the doctor's earlier unpaid cart orders (their vouchers are released). A
+    `pending_payment` order that ever had a bank transfer attempt is left alone (epic-ordering
+    9.17): its items already left the cart and the doctor may have sent the money."""
+    transfer = Order.objects.filter(payments__gateway=payments.BANK_TRANSFER).values('pk')
     earlier = Order.objects.filter(
         user_id=doctor.pk, kind=Order.SERVICE, state__in=Order.OPEN_STATES,
-        changes__event=payments.CREATED, changes__detail__source=SOURCE).distinct()
+        changes__event=payments.CREATED, changes__detail__source=SOURCE).exclude(
+        state=Order.PENDING_PAYMENT, pk__in=transfer).distinct()
     for order in earlier:
         try:
             payments.cancel(order, expected_version=order.version,
@@ -370,7 +376,8 @@ def finish(doctor, voucher_code=''):
     `PAYMENT_OPEN`, `NOT_OFFERED`, `ADD_ON`), `catalogue.pricing.OrderRefused` (a voucher
     refusal, two companies, two currencies, a patient with a case in progress...) or a
     `payments.service.OrderError`: nothing is changed then, the earlier order included. The
-    items stay in the cart until the order is paid."""
+    items stay in the cart until the order is paid or approved by bank transfer (9.17); an
+    order waiting for a transfer is not cancelled here."""
     if not is_client(doctor) or doctor.is_erased:
         raise CartRefused(NOT_A_DOCTOR)
     items = items_of(doctor)
@@ -389,14 +396,31 @@ def finish(doctor, voucher_code=''):
                                      voucher=voucher, source=SOURCE)
 
 
-def paid(order):
-    """The receiver of the order's `paid` hook: the items of the paid patients leave the
-    cart and each shipping address the order snapshotted is marked used. Idempotent."""
-    if order.user_id is None:
-        return
+def _remove_ordered(order):
+    """Delete the cart items of the order's patients (each line's patient and product)."""
     for line in order.lines.exclude(patient_code=''):
         CartItem.objects.filter(doctor_id=order.user_id, patient__code=line.patient_code,
                                 product_id=line.product_id).delete()
+
+
+def transfer_approved(order):
+    """The receiver of the order's `transfer_approved` hook (epic-ordering 9.17): the doctor
+    chose the bank transfer, so the items of the order's patients leave the cart (the
+    addresses are marked used only when it is paid). Idempotent."""
+    if order.user_id is None:
+        return
+    _remove_ordered(order)
+
+
+def paid(order):
+    """The receiver of the order's `paid` hook: the items of the paid patients leave the
+    cart and each shipping address the order snapshotted is marked used. Idempotent. An order
+    that ever had a bank transfer attempt removed its items at approval (9.17): an item added
+    since for the same patient belongs to no paid order and stays."""
+    if order.user_id is None:
+        return
+    if not order.payments.filter(gateway=payments.BANK_TRANSFER).exists():
+        _remove_ordered(order)
     for line in order.lines.all():
         if not line.shipping:  # an encrypted column: read here, never queried
             continue

@@ -25,7 +25,9 @@ Payments (entry 2): `start_payment` also opens a `Payment` (one attempt at the g
 open attempt per order: a retry first closes the previous one at the gateway, or is refused
 while its session may still be live: `AttemptOpen`). While an attempt is open the order is
 frozen: `cancel` is refused and `expire` / `expire_stale` skip it until the attempt's
-session timed out. `confirm_payment` is the one way a gateway's payment pays an order (the
+session timed out. A bank transfer attempt has no session end (epic-ordering 9.17): choosing
+it fires `transfer_approved`, `cancel` closes it locally, and `expire_stale` never expires an
+order that ever had one. `confirm_payment` is the one way a gateway's payment pays an order (the
 webhook task and the return page): the payment was re-read from the gateway, its amount and
 currency equal the order's, and it is the order's open attempt; anything else is a payment
 that needs staff attention.
@@ -63,8 +65,8 @@ CREATED, ENTITY_CHOSEN, PAYMENT_STARTED = 'created', 'entity_chosen', 'payment_s
 BANK_TRANSFER = 'bank_transfer'
 PAID, CANCELLED, EXPIRED = 'paid', 'cancelled', 'expired'
 # How long an order may stay unpaid in `checkout` or `pending_payment` before the
-# `expire_orders` job expires it (a bank transfer's 14 days: its attempt's session keeps the
-# order open).
+# `expire_orders` job expires it (an order that ever had a bank transfer attempt is never
+# expired by the job: epic-ordering 9.17).
 EXPIRY_HOURS = 24
 _REFERENCE_TRIES = 5
 
@@ -482,9 +484,11 @@ def start_payment(order, gateway, *, expected_version, actor):
     """Freeze the order as `pending_payment` with `gateway` (one of `gateways.offered`)
     and mark its fiscal entity used, in one transaction; from `pending_payment` (a retry
     after a failure) only the gateway may change. A 0.00 order needs no gateway
-    (`gateway` ''): it is paid here. Every patient of a service order is checked again
-    first (epic-ordering 9.6): one that got a live work order since cancels the order
-    (when it can be cancelled) and raises `PatientBusy`. Returns the order."""
+    (`gateway` ''): it is paid here. Choosing the bank transfer opens an attempt with no
+    session end and fires `transfer_approved` (each time it is chosen). Every patient of a
+    service order is checked again first (epic-ordering 9.6): one that got a live work order
+    since cancels the order (when it can be cancelled) and raises `PatientBusy`. Returns the
+    order."""
     try:
         return _start_payment(order, gateway, expected_version=expected_version, actor=actor)
     except PatientBusy:
@@ -529,13 +533,10 @@ def _start_payment(order, gateway, *, expected_version, actor):
         live = _live_attempts(locked, now)
         if [payment for payment in live if payment.gateway != BANK_TRANSFER]:
             raise AttemptOpen('a payment attempt of the order is open')  # one opened since
-        lifetime = gateways.adapter(gateway).session_lifetime
-        session_ends = now + lifetime
-        if gateway == BANK_TRANSFER:
-            # The 14 days run from the first freeze: choosing transfer again never renews them.
-            session_ends = min(session_ends, (locked.pending_at or now) + lifetime)
-            if session_ends <= now:
-                raise GatewayRefused('the 14 days of the bank transfer have ended')
+        # A bank transfer has no session end (epic-ordering 9.17): the order waits for the
+        # money until staff record it or someone cancels it.
+        session_ends = (None if gateway == BANK_TRANSFER
+                        else now + gateways.adapter(gateway).session_lifetime)
         for payment in live:  # the open transfer attempt: closed locally, nothing to cancel
             _set_payment_state(payment, Payment.CLOSED, now)
         before = locked.state
@@ -550,6 +551,8 @@ def _start_payment(order, gateway, *, expected_version, actor):
             order=locked, gateway=gateway, amount=locked.total, currency=locked.currency,
             session_expires_at=session_ends,
             created_at=now, updated_at=now)
+        if gateway == BANK_TRANSFER:
+            _fire('transfer_approved', locked)
         return locked
 
 
@@ -606,7 +609,8 @@ def expire(order, *, expected_version, actor=SYSTEM_ACTOR, now=None):
 
 def expire_stale(now=None):
     """Expire every `checkout` order created, and every `pending_payment` order frozen,
-    more than EXPIRY_HOURS ago (the `expire_orders` job, every 15 minutes); each in its own
+    more than EXPIRY_HOURS ago (the `expire_orders` job, every 15 minutes), except a
+    `pending_payment` order that ever had a bank transfer attempt; each in its own
     transaction, a failing one logged by its UUID and skipped. Returns how many were
     expired. Running it again expires none more. Expires nothing while invoice numbering is
     on hold after a restore: a payment made meanwhile is confirmed once the hold lifts."""
@@ -616,8 +620,11 @@ def expire_stale(now=None):
     now = now or timezone.now()
     cutoff = now - timedelta(hours=EXPIRY_HOURS)
     expired = 0
+    # An order that ever had a bank transfer attempt is never expired here (epic-ordering
+    # 9.17): staff cancel it by hand.
+    transfer = Order.objects.filter(payments__gateway=BANK_TRANSFER).values('pk')
     stale = (Q(state=Order.CHECKOUT, created_at__lt=cutoff)
-             | Q(state=Order.PENDING_PAYMENT, pending_at__lt=cutoff))
+             | (Q(state=Order.PENDING_PAYMENT, pending_at__lt=cutoff) & ~Q(pk__in=transfer)))
     for pk, version in list(Order.objects.filter(stale).values_list('pk', 'version')):
         try:
             expire(pk, expected_version=version, now=now)

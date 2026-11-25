@@ -15,3 +15,5 @@ class CartConfig(AppConfig):
         from . import service
         # Epic-ordering 9.6: a paid order empties the cart of its patients.
         hooks.register('paid', 'cart_paid', service.paid)
+        # Epic-ordering 9.17: so does an order the doctor approved by bank transfer.
+        hooks.register('transfer_approved', 'cart_transfer_approved', service.transfer_approved)

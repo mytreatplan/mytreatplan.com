@@ -147,17 +147,17 @@ def test_a_cancelled_or_expired_order_releases_the_voucher(loaded, doctor, other
         'released', 'reserved']
 
 
-def test_a_bank_transfer_order_releases_its_voucher_when_the_14_days_end(
+def test_a_bank_transfer_order_keeps_its_voucher_until_cancelled(
         loaded, doctor, entity, bank):
     order = new(doctor)
     order = service.start_payment(order, 'bank_transfer', expected_version=order.version,
                                   actor=actor(doctor))
-    backdate(order, 13)
-    assert service.expire_stale() == 0
+    backdate(order, 20)
+    assert service.expire_stale() == 0  # a transfer order never expires (epic-ordering 9.17)
     assert redemption(order).state == 'reserved'  # held as long as its order
-    backdate(order, 14)
-    assert service.expire_stale() == 1
-    assert Order.objects.get(pk=order.pk).state == 'expired'
+    order = service.cancel(order, expected_version=Order.objects.get(pk=order.pk).version,
+                           actor=actor(doctor))
+    assert order.state == 'cancelled'
     assert redemption(order).state == 'released'
     assert sent()[-1][:3] == ('voucher.released', 2, 'released')
     assert new(doctor)  # the voucher can be used again

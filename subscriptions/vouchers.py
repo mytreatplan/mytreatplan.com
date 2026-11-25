@@ -20,8 +20,9 @@ orders. The reusable API (epic-ordering's try-me vouchers call it too):
   (consumed), `voucher.released` version 2, aggregated by the redemption's id. A
   consumed redemption is never released. The payload has no patient data.
 
-A reservation lasts as long as its order (24 hours in checkout, 14 days for a bank
-transfer); the holder frees the voucher by cancelling the order.
+A reservation lasts as long as its order (24 hours in checkout; an order waiting for a bank
+transfer never expires: epic-ordering 9.17); the holder frees the voucher by cancelling the
+order.
 """
 import logging
 from decimal import Decimal

@@ -2,8 +2,8 @@
 {% load i18n money %}
 {% comment %}
 The bank transfer page (payments.views.transfer_page, epic-payments entry 5): the billing
-company's bank details, the amount, the order's reference as the transfer concept and the
-deadline; the order stays pending until staff record the transfer. Cancel posts to the
+company's bank details, the amount and the order's reference as the transfer concept; the
+order stays pending until staff record the transfer (no deadline: epic-ordering 9.17). Cancel posts to the
 checkout; "Choose another payment method" goes back to the checkout (`?change=1`).
 {% endcomment %}
 
@@ -23,9 +23,7 @@ checkout; "Choose another payment method" goes back to the checkout (`?change=1`
   <div class="flex justify-between gap-4"><dt>{% translate "Amount" %}</dt><dd class="font-semibold" data-transfer-amount>{{ details.amount }} {{ details.currency }}</dd></div>
   <div class="flex justify-between gap-4"><dt>{% translate "Transfer concept" %}</dt><dd class="font-semibold" data-transfer-concept>{{ details.concept }}</dd></div>
 </dl>
-{% if details.deadline %}
-<p class="mt-4 text-copy" data-transfer-deadline>{% blocktranslate with date=details.deadline|date:"DATE_FORMAT" %}Please pay by {{ date }} at the latest; after that the order expires.{% endblocktranslate %}</p>
-{% endif %}
+<p class="mt-4 text-copy" data-transfer-pending>{% translate "Your order stays pending until we receive the transfer." %}</p>
 {% else %}
 <p class="mt-6 text-copy" data-transfer-unavailable>{% translate "The bank details are not available right now. Please contact us." %}</p>
 {% endif %}

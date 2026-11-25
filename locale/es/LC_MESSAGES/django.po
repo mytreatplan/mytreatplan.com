@@ -2888,9 +2888,8 @@ msgid "Transfer concept"
 msgstr "Concepto de la transferencia"
 
 #: payments/templates
-#, python-format
-msgid "Please pay by %(date)s at the latest; after that the order expires."
-msgstr "Pague como muy tarde el %(date)s; después, el pedido caduca."
+msgid "Your order stays pending until we receive the transfer."
+msgstr "Su pedido queda pendiente hasta que recibamos la transferencia."
 
 #: payments/templates
 msgid "You can see these details again here:"
