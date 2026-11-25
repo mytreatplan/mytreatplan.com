@@ -11,6 +11,9 @@ cssselect2==0.10.1
 cryptography==50.0.2
 dj-database-url==3.1.2
 django-countries==9.1.0
+# The case wizard's step engine (epic-ordering 9.16, NamedUrlSessionWizardView): declares
+# Django 5.2/6.0; Django 6.1 is proven by the suite.
+django-formtools==2.7
 django-stubs-ext==6.1.2
 # The django.tasks database backend (AD-8, epic-platform entry 9): declares Django
 # 5.2/6.0; Django 6.1 is proven by the tests (they run its worker) and CI on PostgreSQL 17.

@@ -1,0 +1,31 @@
+{% extends "cart/wizard/_step.html" %}
+{% load i18n %}
+{% comment %}
+Treatment Planning, step 2 of 3: in-house printing or brand-made aligners (two cards). A brand
+reveals the select of the makers ("Not decided yet" and "Other" with a name never block); a named
+maker without a saved login shows a warning with a link to save it (coming back to this step).
+Without JavaScript the select and the name are always shown, and every warning is listed.
+{% endcomment %}
+
+{% block fields %}
+{% with form=wizard.form %}
+<fieldset class="flex flex-col gap-3">
+  <legend class="mb-3 text-[22px] font-black leading-[1.2]">{% translate "Who makes the aligners?" %}</legend>
+  {% include "cart/wizard/_cards.html" with name="kind" cards=form.kinds %}
+</fieldset>
+
+<div class="flex flex-col gap-3" data-maker-choices>
+  <label for="id-maker" class="text-[22px] font-black leading-[1.2]">{% translate "Which brand?" %}</label>
+  <select id="id-maker" name="maker" class="min-h-[44px] rounded-12 border border-ink/30 bg-white px-3 text-copy" data-maker-select>
+    {% for value, label in form.fields.maker.choices %}<option value="{{ value }}"{% if value in form.selected_maker %} selected{% endif %}>{{ label }}</option>{% endfor %}
+  </select>
+  {% for maker in maker_rows %}{% if not maker.has_login %}
+  <p class="text-[14px] font-semibold text-notice-text" data-missing-login="{{ maker.code }}">{% blocktranslate with name=maker.name %}You have not saved your login for {{ name }}.{% endblocktranslate %} <a href="{{ maker.save_url }}" class="underline underline-offset-4">{% translate "Save it" %}</a></p>
+  {% endif %}{% endfor %}
+  <div class="flex flex-col gap-1" data-other-name>
+    <label for="id-other-name" class="text-[12px] font-extrabold uppercase tracking-[0.06em] text-ink-muted">{% translate "Name of the maker" %}</label>
+    <input id="id-other-name" type="text" name="other_name" maxlength="60" value="{{ form.other_name.value|default_if_none:'' }}" autocomplete="off" class="min-h-[44px] rounded-12 border border-ink/30 bg-white px-3">
+  </div>
+</div>
+{% endwith %}
+{% endblock %}

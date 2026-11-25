@@ -1,0 +1,16 @@
+{% extends "cart/wizard/_step.html" %}
+{% load i18n %}
+{% comment %}Step 1 of the wizard's three: Treatment Planning or VirtuaOrtho as two cards. A product the doctor is not offered is greyed out with a link to the subscription levels.{% endcomment %}
+
+{% block fields %}
+{% with cards=wizard.form.cards %}
+{% if not wizard.form.fields.product.choices %}
+<p class="text-copy text-ink-muted" data-no-services>{% translate "No planning service is available for you right now." %}</p>
+{% endif %}
+<fieldset class="flex flex-col gap-3">
+  <legend class="mb-3 text-[22px] font-black leading-[1.2]">{% translate "What do you want to order?" %}</legend>
+  {% include "cart/wizard/_cards.html" with name="product" cards=cards %}
+  {% for card in cards %}{% if card.available == False and card.value == "vo" %}<p class="text-copy text-ink-muted" data-upgrade><a href="{{ upgrade_url }}" class="font-semibold text-green-deep underline underline-offset-4 hover:text-ink">{% translate "See the subscription levels" %}</a></p>{% endif %}{% endfor %}
+</fieldset>
+{% endwith %}
+{% endblock %}

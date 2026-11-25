@@ -1,0 +1,9 @@
+{% load i18n %}{% comment %}The add-ons of the options step: `add_ons` ({code, name, description, offered, checked}); data-offered lists the lengths (or rows) each goes with, for static/js/case-wizard.js to hide the others.{% endcomment %}
+{% if add_ons %}
+<fieldset class="flex flex-col gap-3" data-add-ons>
+  <legend class="mb-1 text-[22px] font-black leading-[1.2]">{% translate "Options" %}</legend>
+  {% for add_on in add_ons %}
+  <label class="flex items-start gap-3 text-copy" data-add-on="{{ add_on.code }}" data-offered="{{ add_on.offered }}"><input type="checkbox" name="add_on" value="{{ add_on.code }}" class="mt-1"{% if add_on.checked %} checked{% endif %}> <span><span class="font-semibold">{{ add_on.name }}</span>{% if add_on.description %}<span class="block text-[14px] text-ink-muted">{{ add_on.description }}</span>{% endif %}</span></label>
+  {% endfor %}
+</fieldset>
+{% endif %}
