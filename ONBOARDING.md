@@ -88,8 +88,7 @@ The environment caches the setup only when the script finishes within about 5 mi
 - Rebuild the CSS (`npm run build:css`) after adding Tailwind classes. The built `static/css/site.css` is never committed.
 
 Known flaky tests, worth one re-run before you investigate:
-- the `p2` substring test in `accounts/tests/test_makers.py`;
-- `test_remembered_device` (depends on `SECRET_KEY`).
+- the `p2` substring test in `accounts/tests/test_makers.py`.
 
 A browser test that turns a lazy translation into a string must wrap it in `translation.override('en')`.
 

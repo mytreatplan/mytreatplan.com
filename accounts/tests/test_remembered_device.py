@@ -2,6 +2,8 @@
 Ticking "Remember me on this device/browser for 90 days" with the right code gives the
 browser a signed mark for that account (accounts.devices, decision 1); a later right
 password and CAPTCHA with a valid mark logs in at once, through `finish_login`."""
+import re
+
 import pytest
 from django.contrib.auth import get_user_model
 from django.core import signing
@@ -80,7 +82,9 @@ def test_ticked_right_code_logs_in_and_sets_the_mark(client, doctor, login_clock
     assert set(data) == {'u', 't', 'h'}
     for text in (cookie.key, cookie.value, str(data)):
         assert NORMALIZED not in text and MOBILE_E164 not in text
-    assert str(doctor.pk) not in cookie.key
+    # The name is the prefix and a keyed 24-hex-digit digest of the id, never the id itself.
+    # (A bare "id not in name" check fails whenever the digest happens to hold that digit.)
+    assert re.fullmatch(re.escape(devices.COOKIE_PREFIX) + r'[0-9a-f]{24}', cookie.key)
 
 
 def test_mark_is_secure_when_debug_is_off(client, doctor, settings):
