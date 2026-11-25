@@ -252,7 +252,8 @@ class Payment(models.Model):
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(default=timezone.now)
     confirmed_at = models.DateTimeField(null=True, blank=True)
-    # Bank transfer (entry 5): when the day-7 reminder was sent (null: not yet).
+    # Bank transfer (entry 5, 9.17): when this attempt's latest 7-day reminder was sent (null:
+    # none yet).
     reminded_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:

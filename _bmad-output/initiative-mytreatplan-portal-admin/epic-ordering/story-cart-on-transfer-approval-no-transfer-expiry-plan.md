@@ -3,14 +3,14 @@ title: 'Cart on transfer approval, no transfer expiry'
 type: 'feature'
 ticket: '17'
 created: '2026-11-25'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: '21296449105a1bf6a1bec1a965815720ab57ce32'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -82,19 +82,25 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `payments/hooks.py`, `payments/service.py`, `payments/bank_transfer.py`: new event, no transfer session end, fire on transfer choice.
-- [ ] `payments/transfers.py`: the 7-day repeating reminder.
-- [ ] `payments/migrations/` (data migration), `payments/views.py` docstring.
-- [ ] Templates and `locale/es/LC_MESSAGES/django.po`: deadline text removed or replaced (EN + ES); run `compilemessages`.
-- [ ] `cart/apps.py`, `cart/service.py`: the receiver, and `_cancel_earlier` skipping transfer orders.
-- [ ] `payments/tests/test_bank_transfer.py`, `payments/tests/test_service.py`, `cart/tests/test_checkout.py`: one test per matrix row. The receiver raising rolls the approval back.
-- [ ] `_bmad-output/initiative-mytreatplan-portal-admin/deferred-work.md`: mark :250 and the day-7 re-check (:254) resolved by 9.17.
+- [x] `payments/hooks.py`, `payments/service.py`, `payments/bank_transfer.py`: new event, no transfer session end, fire on transfer choice.
+- [x] `payments/transfers.py`: the 7-day repeating reminder.
+- [x] `payments/migrations/` (data migration), `payments/views.py` docstring.
+- [x] Templates and `locale/es/LC_MESSAGES/django.po`: deadline text removed or replaced (EN + ES); run `compilemessages`.
+- [x] `cart/apps.py`, `cart/service.py`: the receiver, and `_cancel_earlier` skipping transfer orders.
+- [x] `payments/tests/test_bank_transfer.py`, `payments/tests/test_service.py`, `cart/tests/test_checkout.py`: one test per matrix row. The receiver raising rolls the approval back.
+- [x] `_bmad-output/initiative-mytreatplan-portal-admin/deferred-work.md`: mark :250 and the day-7 re-check (:254) resolved by 9.17.
 
 **Acceptance Criteria:**
 - Given a doctor with two patients' items, when they approve the order by bank transfer, then the order is `pending_payment`, the cart has no items for those patients, and the transfer page shows no deadline.
 - Given a transfer order frozen 20 days ago, when `expire_orders` runs, then the order is still `pending_payment` and its voucher is still reserved.
 
 ## Implementation Notes
+
+- `bank_transfer` registers with the default `session_lifetime` (unused): `_start_payment` sets `session_expires_at=None` for a transfer. `details()` no longer returns a `deadline` key.
+- `expire_stale` and `cart.service._cancel_earlier` exclude orders with any `bank_transfer` payment by a `pk__in` subquery (no join duplicates).
+- `transfers._due` annotates the order's latest transfer `reminded_at` (subquery `Max`); the per-row recheck under the lock uses the same rule. A late order (never reminded, frozen > 7 days ago) gets one at the next run.
+- Data migration: `payments/migrations/0008_transfer_no_expiry.py` (open transfer attempts only; closed ones keep their value).
+- Also updated (stale text, not in the Code Map): `README.md` bank-transfer section, `subscriptions/vouchers.py` docstring, `remind_transfers` command help, `Payment.reminded_at` comment.
 
 ## Plan Change Log
 

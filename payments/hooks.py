@@ -4,17 +4,21 @@ once, in their AppConfig.ready, as storage registers its purposes:
     payments.hooks.register('paid', 'subscriptions_activate', receiver)
 
 `event` is one of EVENTS: `created` (the order exists, in `checkout`; the place to reserve
-a voucher or an included case), `paid`, `cancelled`, `expired` and `refunded` (a paid order was fully refunded and its
-credit note issued; the place to give back what the order granted, in later stories).
+a voucher or an included case), `transfer_approved` (the doctor chose the bank transfer: the
+order is `pending_payment` and waits for the money; fired each time the transfer is chosen, so
+a receiver is idempotent per order; epic-ordering 9.17 empties the cart here and 9.8 hangs its
+pending-payment work orders here), `paid`, `cancelled`, `expired` and `refunded` (a paid order
+was fully refunded and its credit note issued; the place to give back what the order granted,
+in later stories).
 `receiver(order)` gets the locked `payments.models.Order`; it runs INSIDE the transition's transaction, so a
 receiver that raises rolls the whole transition back (`payments.service.HookFailed`), and
 it must be idempotent, keyed by `order.id` (the UUID). Receivers of one event run in the
 order they were registered. Only `payments.service` calls `fire`, exactly once per
-transition.
+transition (`transfer_approved`: once per choice of the bank transfer).
 """
 import re
 
-EVENTS = ('created', 'paid', 'cancelled', 'expired', 'refunded')
+EVENTS = ('created', 'transfer_approved', 'paid', 'cancelled', 'expired', 'refunded')
 NAME_RE = re.compile(r'^[a-z][a-z0-9_]{0,39}$')
 
 _registry = {event: {} for event in EVENTS}

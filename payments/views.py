@@ -114,7 +114,9 @@ def _version(request, order):
 
 
 def _open_transfer(order):
-    """The order's open bank transfer attempt whose 14 days have not ended, else None."""
+    """The order's open bank transfer attempt, else None (a transfer attempt has no session
+    end since epic-ordering 9.17; one opened earlier with a session end that passed is not
+    shown)."""
     if order.state != Order.PENDING_PAYMENT:
         return None
     payment = service.open_payment(order)

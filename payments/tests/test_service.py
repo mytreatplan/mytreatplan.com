@@ -288,6 +288,13 @@ def test_a_stale_version_changes_nothing_and_fires_nothing(doctor, entity, fake_
     assert [event for event, *_ in events] == ['created']
 
 
+def test_choosing_a_card_fires_no_transfer_approved(doctor, entity, fake_on, events):
+    assert 'transfer_approved' in hooks.EVENTS
+    order = service.start_payment(new(doctor), 'fake', expected_version=1, actor=actor(doctor))
+    assert [event for event, *_ in events] == ['created']
+    assert Payment.objects.get(order=order).session_expires_at is not None  # 30 minutes
+
+
 def test_a_paid_hook_that_raises_rolls_the_move_back(doctor, entity, fake_on, caplog):
     order = service.start_payment(new(doctor), 'fake', expected_version=1,
                                   actor=actor(doctor))

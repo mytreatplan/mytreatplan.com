@@ -1,16 +1,17 @@
-"""The bank transfer adapter (epic-payments entry 5, user decisions 2026-11-19).
+"""The bank transfer adapter (epic-payments entry 5, user decisions 2026-11-19; epic-ordering
+9.17, user decisions 2026-11-24/25).
 
-No gateway is called: paying opens a 14-day attempt (`SESSION_LIFETIME`) and the doctor is
-sent to a page with the billing company's bank details, the amount and the order's
-reference as the transfer concept. The order stays `pending_payment`; staff record the
-transfer as received with `payments.service.mark_transfer_paid`, a reminder goes on day 7
-(`payments.transfers`) and the `expire_orders` job expires the order when the attempt's
-session ends. Offered only when the order's company has all its bank details
-(`catalogue.BillingCompany.has_bank_details`). No settings and no secrets; the bank details
-are shown to the order's own doctor only and are never logged.
+No gateway is called: paying opens an attempt with no session end and the doctor is sent to
+a page with the billing company's bank details, the amount and the order's reference as the
+transfer concept. The order stays `pending_payment` until the transfer is received: staff
+record it with `payments.service.mark_transfer_paid`, or the order is cancelled (by the doctor
+or by staff). It never expires automatically; a reminder goes every 7 days (`REMIND_AFTER`,
+`payments.transfers`) while the transfer attempt is open. Offered only when the order's
+company has all its bank details (`catalogue.BillingCompany.has_bank_details`). No settings
+and no secrets; the bank details are shown to the order's own doctor only and are never
+logged.
 """
 from datetime import timedelta
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.urls import reverse
 
@@ -19,7 +20,7 @@ from catalogue.models import BillingCompany
 from . import gateways
 
 NAME = 'bank_transfer'
-SESSION_LIFETIME = timedelta(days=14)
+# The interval of the reminders: every 7 days from the order's freeze (`pending_at`).
 REMIND_AFTER = timedelta(days=7)
 
 
@@ -50,24 +51,16 @@ def grouped_iban(iban):
 
 def details(order, payment):
     """What the doctor needs to pay: the company's holder, IBAN (grouped), BIC and bank, the
-    amount, the order's reference as the concept and the deadline (the last full day to pay:
-    a date in the company's time zone, the day before the attempt's session ends), or None when
-    the company has no bank details."""
+    amount and the order's reference as the concept (no deadline: the order stays pending
+    until the transfer is received), or None when the company has no bank details."""
     company = company_of(order)
     if company is None or not company.has_bank_details:
         return None
-    deadline = payment.session_expires_at
-    if deadline is not None:
-        try:
-            deadline = deadline.astimezone(ZoneInfo(company.time_zone))
-        except (ZoneInfoNotFoundError, ValueError):
-            pass
-        deadline = (deadline - timedelta(days=1)).date()
     return {'holder': company.bank_account_holder, 'iban': grouped_iban(company.iban),
             'bic': company.bic, 'bank_name': company.bank_name, 'amount': order.total,
-            'currency': order.currency, 'concept': order.reference, 'deadline': deadline}
+            'currency': order.currency, 'concept': order.reference}
 
 
 def register():
-    gateways.register(NAME, start, cancel_attempt=cancel_attempt, accepts=accepts,
-                      session_lifetime=SESSION_LIFETIME)
+    # No session lifetime: `payments.service` opens a transfer attempt with no session end.
+    gateways.register(NAME, start, cancel_attempt=cancel_attempt, accepts=accepts)

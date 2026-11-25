@@ -2,21 +2,24 @@
 the pages and the payment hooks. The admin site is the fake of
 integration/tests/snapshot_rows.py (no network)."""
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 
 import pytest
 from django.test import Client
+from django.utils import timezone
 
 from accounts import fiscal, shipping
 from cart import service
 from cart.models import CartItem
 from catalogue import pricing
-from integration.tests.snapshot_rows import IRELAND, pull, voucher
+from catalogue.models import BillingCompany
+from integration.tests.snapshot_rows import IRELAND, pull, snapshot_writes, voucher
 from patients import service as patients_service
 from patients.models import WorkOrder
 from patients.tests.conftest import (BRANDED, ICE, SPARK_ONE, VO_TWIN, virtuaortho_catalogue)
 from payments import service as payments
-from payments.models import Order
+from payments.models import Order, Payment
 from subscriptions.models import VoucherRedemption
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls')]
@@ -91,6 +94,28 @@ def pay(order, user):
 def two_items(doctor, patient):
     tps(doctor, patient)
     twin(doctor, doctor.second)
+
+
+BANK = {'bank_account_holder': 'MyTPDSO Spain S.L.', 'iban': 'ES9121000418450200051332',
+        'bic': 'CAIXESBBXXX', 'bank_name': 'CaixaBank'}
+
+
+@pytest.fixture
+def bank(ready):
+    with snapshot_writes():
+        BillingCompany.objects.update(**BANK)
+    return ready
+
+
+def by_transfer(order, user):
+    return payments.start_payment(order, 'bank_transfer', expected_version=order.version,
+                                  actor=actor(user))
+
+
+def third_patient(doctor):
+    return patients_service.create_patient(
+        doctor, first_name='Eva', surname='Ruiz', actor=patients_service.Actor(
+            'doctor', doctor.uid))
 
 
 # --- The matrix ---------------------------------------------------------------------------
@@ -199,6 +224,84 @@ def test_finishing_twice_cancels_the_earlier_order_and_frees_its_voucher(ready, 
     states = dict(VoucherRedemption.objects.values_list('order_id', 'state'))
     assert states == {first.pk: 'released', second.pk: 'reserved'}
     assert CartItem.objects.count() == 2
+
+
+def test_approving_by_transfer_empties_the_cart_of_its_patients(bank, patient):
+    two_items(bank, patient)
+    order = finish(bank)
+    client = browser(bank)
+    response = client.post(f'/en/checkout/{order.pk}/', {
+        'action': 'pay', 'entity': str(order.fiscal_entity_id), 'gateway': 'bank_transfer',
+        'version': order.version, 'total': str(order.total)})
+    assert response['Location'] == f'/en/checkout/{order.pk}/transfer/'
+    order.refresh_from_db()
+    assert order.state == 'pending_payment' and not CartItem.objects.exists()
+    html = client.get(response['Location']).content.decode()
+    assert 'stays pending until we receive the transfer' in html
+    assert 'data-transfer-deadline' not in html and 'expires' not in html
+    assert 'data-transfer-pending' in html
+    bank.address.refresh_from_db()
+    assert bank.address.used_at is None  # marked used only when paid
+
+
+def test_approving_by_transfer_keeps_the_items_of_other_patients(bank, patient):
+    tps(bank, patient)
+    order = finish(bank)
+    third = third_patient(bank)
+    tps(bank, third)
+    by_transfer(order, bank)
+    by_transfer(Order.objects.get(pk=order.pk), bank)  # chosen again: idempotent
+    assert list(CartItem.objects.values_list('patient__code', flat=True)) == [third.code]
+
+
+def test_paying_by_card_leaves_the_cart_until_paid(bank, patient):
+    two_items(bank, patient)
+    order = payments.start_payment(finish(bank), 'fake', expected_version=1,
+                                   actor=actor(bank))
+    assert order.state == 'pending_payment' and CartItem.objects.count() == 2
+
+
+def test_a_cart_receiver_that_raises_rolls_the_transfer_approval_back(bank, patient,
+                                                                      monkeypatch):
+    two_items(bank, patient)
+    order = finish(bank)
+
+    def boom(order):
+        raise RuntimeError('boom')
+    monkeypatch.setattr(service, '_remove_ordered', boom)
+    with pytest.raises(payments.HookFailed):
+        by_transfer(order, bank)
+    order.refresh_from_db()
+    assert order.state == 'checkout' and CartItem.objects.count() == 2
+    assert not Payment.objects.filter(order=order).exists()
+
+
+@pytest.mark.parametrize('switched', [False, True])
+def test_finishing_again_leaves_a_transfer_order_alone(bank, patient, switched):
+    tps(bank, patient)
+    first = by_transfer(finish(bank, CODE), bank)
+    if switched:  # the doctor switched to a card and left it open
+        first = payments.start_payment(first, 'fake', expected_version=first.version,
+                                       actor=actor(bank))
+    tps(bank, third_patient(bank))
+    second = finish(bank)
+    assert second.pk != first.pk and second.state == 'checkout'
+    fresh = Order.objects.get(pk=first.pk)
+    assert (fresh.state, fresh.version) == ('pending_payment', first.version)
+    assert VoucherRedemption.objects.get(order_id=first.pk).state == 'reserved'
+
+
+def test_a_transfer_order_frozen_20_days_ago_does_not_expire(bank, patient):
+    two_items(bank, patient)
+    order = by_transfer(finish(bank, CODE), bank)
+    Order.objects.filter(pk=order.pk).update(pending_at=timezone.now() - timedelta(days=20))
+    from django.core.management import call_command
+    call_command('expire_orders')
+    order.refresh_from_db()
+    assert order.state == 'pending_payment'
+    assert VoucherRedemption.objects.get(order_id=order.pk).state == 'reserved'
+    payments.cancel(order, expected_version=order.version, actor=actor(bank))
+    assert VoucherRedemption.objects.get(order_id=order.pk).state == 'released'
 
 
 def test_a_refused_second_finish_leaves_the_earlier_order_alone(ready, patient):

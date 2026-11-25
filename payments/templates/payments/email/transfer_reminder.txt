@@ -8,7 +8,7 @@ BIC: {{ details.bic }}
 {% translate "Bank" %}: {{ details.bank_name }}
 {% translate "Amount" %}: {{ details.amount }} {{ details.currency }}
 {% translate "Transfer concept" %}: {{ details.concept }}
-{% blocktranslate with date=details.deadline|date:"DATE_FORMAT" %}Please pay by {{ date }} at the latest; after that the order expires.{% endblocktranslate %}
+{% translate "Your order stays pending until we receive the transfer." %}
 {% endif %}
 {% translate "You can see these details again here:" %}
 
