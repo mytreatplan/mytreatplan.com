@@ -8,7 +8,8 @@ the in-house TPS discount, epic-catalogue entry 5; add-ons, sizes, per-unit quan
 calls and cost links, entry 6; subscriptions in full, entry 8; billing companies and
 billing rules, entry 9; voucher definitions, entry 10; the catalogue per region, entry
 16; the client's personal-data fields, epic-doctor-profile entry 2; the included cases of
-a subscription, epic-catalogue story 5.17)."""
+a subscription, epic-catalogue story 5.17; remote lists and the pending bank transfers,
+epic-ordering 9.18)."""
 
 from decimal import Decimal
 
@@ -19,7 +20,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.33.0'
+    assert mytp_core.__version__ == '0.34.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -78,7 +79,7 @@ def test_vendored_mytp_core_has_remote_writes():
     from mytp_core import access
     from mytp_core.contracts import RESOURCE_WRITERS, errors, stale_version_body
     assert access.writable('sample_record', 'clinical_manager') == {'note'}
-    assert set(RESOURCE_WRITERS) == {'sample_record'}
+    assert set(RESOURCE_WRITERS) == {'sample_record', 'pending_transfer'}
     assert errors.REMOTE_WRITE_STATUS['stale_version'] == 409
     assert errors.REMOTE_WRITE_STATUS['idempotency_key_reused'] == 422
     assert stale_version_body(2)['current_version'] == 2
@@ -192,3 +193,14 @@ def test_vendored_mytp_core_has_the_included_cases():
     assert MAX_INCLUDED_CASES == 1000
     assert included_cases({'tps_branded': 12}, 'tps') == 12
     assert included_cases(None, 'tps_branded') == 0
+
+
+def test_vendored_mytp_core_has_the_pending_transfers():
+    """Epic-ordering 9.18 (0.34.0): remote lists and the `pending_transfer` resource."""
+    from mytp_core import access
+    from mytp_core.contracts import RESOURCE_WRITERS, RemoteList, remote_list
+    assert access.writable('pending_transfer', 'financial_manager') == {'state'}
+    assert access.writable('pending_transfer', 'commercial_manager') == frozenset()
+    assert 'pending_transfer' in RESOURCE_WRITERS
+    assert RemoteList.model_fields['truncated'].default is False
+    assert callable(remote_list)

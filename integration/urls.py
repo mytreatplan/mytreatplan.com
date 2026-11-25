@@ -11,4 +11,6 @@ urlpatterns = [
          name='interface_contact_messages_resync'),
     path('remote/sample-record', views.remote_sample_record,
          name='interface_remote_sample_record'),
+    path('remote/pending-transfers', views.remote_pending_transfers,
+         name='interface_remote_pending_transfers'),
 ]
