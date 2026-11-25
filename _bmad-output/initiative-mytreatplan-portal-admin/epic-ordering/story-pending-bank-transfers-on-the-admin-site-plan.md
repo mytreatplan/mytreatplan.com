@@ -3,7 +3,7 @@ title: 'Pending bank transfers on the admin site'
 type: 'feature'
 ticket: '18'
 created: '2026-11-25'
-status: 'in-review'
+status: 'built'
 baseline_revision: 'fc109a4d68307af79c8ba4b8664345e120fd5230'
 route: 'full'
 route_source: 'auto'
@@ -114,3 +114,5 @@ The write is modelled as a field change (`state` to `paid` or `cancelled`) becau
 - mytp-core: `python -m pytest -q` -- expected 0 failures.
 - Portal: `. .venv/bin/activate && python manage.py compilemessages -v 0 && python -m pytest -q -p no:cacheprovider --tb=line` (with the test FIELD_ENCRYPTION_KEYS/BLIND_INDEX_KEY of the 9.7 plan) -- expected 0 failures; `makemigrations --check --dry-run` clean.
 - Admin: its pytest suite (see its CI workflow) -- expected 0 failures; `makemigrations --check` clean.
+
+**Result (2026-11-25):** mytp-core 1774 passed, 4 skipped; portal full suite 4439 passed, 17 skipped, `makemigrations --check` clean; admin full suite on PostgreSQL 1727 passed, `makemigrations --check` clean. Apps vendor a local build of v0.34.0 until the mytp-core PR merges and the tag is pushed.
