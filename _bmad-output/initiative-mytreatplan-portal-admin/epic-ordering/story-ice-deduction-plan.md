@@ -100,6 +100,16 @@ context: []
 
 ## Review Triage Log
 
+Quick lens, iteration 0: medium 1, low 4 (1 rejected), false 0.
+
+| # | Finding | Verdict | Route | Evidence |
+|---|---------|---------|-------|----------|
+| 1 | `included_case` lines still take the credit in pricing; only the receivers skip them | low | reject | Nothing writes `included_case` today (no writer in the repo); fixing it needs the flag in the pricing dataclass. 8.13 sets the flag and must keep the credit off those lines (Implementation Notes). |
+| 2 | An ICE paid before 9.7 whose patient already had a planning paid at full price is still offered | medium | patch | No backfill of `IceDeduction`; `_ice_lines` only excludes held ICEs. Dev has 9.1 ICEs and 9.6 plannings. Exclude an ICE followed by a paid planning of the same patient, company and currency that no deduction points at. |
+| 3 | AC 1 "plus VAT" untested: all tests use the exempt company | low | patch | Add one test under a VAT-charging billing. |
+| 4 | ICE_TAKEN text says "try again in a moment", but a retry prices without the credit | low | patch | `_ice_lines` excludes held ICEs; the other order keeps it. Reword (EN, ES). |
+| 5 | `patients/models.py` module docstring out of date | low | patch | Lists only Patient and WorkOrder, writer `patients.service`. |
+
 ## Design Notes
 
 The ICE line is re-derived in the hooks (oldest paid, non-refunded ICE line of the doctor with that patient code, company and currency, without a live deduction) rather than stored on the order line. This avoids a new `OrderLine` field and pricing-dataclass change. The partial unique constraint turns a race between two orders into `HookFailed`, exactly as for try-me vouchers. If the re-derived ICE amount differs from `ice_asked` (e.g. the earlier choice was taken meanwhile), reserve fails and no order is created.
