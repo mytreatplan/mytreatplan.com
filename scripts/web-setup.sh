@@ -11,27 +11,39 @@ cd "$(git rev-parse --show-toplevel)"
 
 say() { printf '\n== %s\n' "$*"; }
 
-PY="${PYTHON:-}"
-if [ -z "$PY" ]; then
-  for candidate in python3.13 python3; do
-    if command -v "$candidate" >/dev/null 2>&1; then PY="$candidate"; break; fi
-  done
-fi
-[ -n "$PY" ] || { echo "No python3 found" >&2; exit 1; }
-"$PY" -c 'import sys; v=sys.version_info; print(f"Python {v.major}.{v.minor}"); sys.exit(0 if v >= (3, 13) else 1)' \
-  || { echo "Python 3.13 or newer is required (CI uses 3.13)" >&2; exit 1; }
-
-say "System packages (gettext, Pango)"
+say "System packages (gettext, Pango, venv)"
 if command -v apt-get >/dev/null 2>&1; then
   SUDO=""; [ "$(id -u)" -eq 0 ] || SUDO="sudo"
   $SUDO apt-get update -qq
-  $SUDO apt-get install -y -qq gettext libpango-1.0-0 libpangoft2-1.0-0 >/dev/null
+  $SUDO apt-get install -y -qq gettext libpango-1.0-0 libpangoft2-1.0-0 python3-venv >/dev/null
 else
   echo "apt-get not found: install gettext and Pango yourself"
 fi
 
+is_313() { "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 13) else 1)' 2>/dev/null; }
+
+say "Python 3.13"
+PY="${PYTHON:-}"
+if [ -z "$PY" ]; then
+  for candidate in python3.13 python3; do
+    if command -v "$candidate" >/dev/null 2>&1 && is_313 "$candidate"; then PY="$candidate"; break; fi
+  done
+fi
+if [ ! -d .venv ]; then
+  if [ -n "$PY" ]; then
+    "$PY" -m venv .venv
+  else
+    # Ubuntu 24.04 (Claude Code cloud sessions) ships Python 3.12: fetch 3.13 through uv.
+    # Needs the python-build-standalone download domains in the environment's allowlist.
+    python3 -m venv /tmp/mytp-uv
+    /tmp/mytp-uv/bin/pip install -q uv
+    /tmp/mytp-uv/bin/uv python install 3.13
+    /tmp/mytp-uv/bin/uv venv --seed --python 3.13 .venv
+  fi
+fi
+.venv/bin/python -c 'import sys; print("Python", sys.version.split()[0])'
+
 say "Python packages"
-[ -d .venv ] || "$PY" -m venv .venv
 # shellcheck disable=SC1091
 . .venv/bin/activate
 pip install -q --upgrade pip
