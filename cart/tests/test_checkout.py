@@ -503,3 +503,39 @@ def test_the_cart_texts_are_translated(ready, patient):
     html = browser(ready).get('/es/cart/').content.decode()
     assert 'Finalizar pedido' in html and 'Añadir otro' in html
     assert 'Código de cupón' in html
+
+
+# --- The ICE deduction (epic-ordering 9.7) ------------------------------------------------
+
+def test_the_checkout_shows_the_ice_deducted_under_its_line(ready, patient):
+    service.add_tps(ready, patient, maker='undecided', size='ice')  # 50.00 EUR here
+    pay(finish(ready), ready)
+    tps(ready, patient)
+    cart_html = browser(ready).get(CART).content.decode()
+    assert 'ICE deducted' not in cart_html  # the cart page is unchanged
+    order = finish(ready)
+    line = order.lines.get()
+    assert (line.ice, line.net) == (Decimal('50.00'), Decimal('44.00'))
+    client = browser(ready)
+    html = client.get(f'/en/checkout/{order.pk}/').content.decode()
+    assert html.count('data-ice-deducted') == 1
+    assert 'ICE deducted &minus;50.00 EUR' in html and '44.00 EUR' in html
+    spanish = client.get(f'/es/checkout/{order.pk}/').content.decode()
+    assert 'ICE descontado &minus;50,00 EUR' in spanish
+
+
+def test_a_line_without_an_ice_credit_shows_no_note(ready, patient):
+    tps(ready, patient)
+    order = finish(ready)
+    html = browser(ready).get(f'/en/checkout/{order.pk}/').content.decode()
+    assert 'data-ice-deducted' not in html
+
+
+def test_the_ice_taken_refusal_is_translated(ready, patient, monkeypatch):
+    tps(ready, patient)
+
+    def taken(*args, **kwargs):
+        raise service.CartRefused(service.ICE_TAKEN)
+    monkeypatch.setattr(service, 'finish', taken)
+    html = browser(ready).post('/es/cart/finish/', {}).content.decode()
+    assert 'lo está usando otro pedido' in html

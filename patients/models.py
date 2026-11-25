@@ -98,3 +98,53 @@ class WorkOrder(models.Model):
         constraints = [models.UniqueConstraint(
             fields=('patient',), condition=Q(stage__in=sorted(stages.LIVE_STAGES)),
             name='patients_one_live_work_order')]
+
+
+class IceDeduction(models.Model):
+    """One ICE credit taken by a planning line (epic-ordering 9.7; user decisions
+    2026-11-25). It follows the planning order through the `payments.hooks` receivers of
+    `patients.ice`, as a voucher redemption does: `reserved` when the order is created,
+    `consumed` when it is paid, `released` when it is cancelled or expires before payment.
+    A released row stays as history and never counts as a use; a consumed one is never
+    released (a refunded planning order keeps it: the ICE is not offered again).
+
+    `ice_line_id` is the paid ICE order line whose `net` is the credit; `order_id` and
+    `order_line_id` the planning order and line that take it (`order_line_id` is the line's
+    id when the deduction was reserved or consumed: re-choosing the fiscal entity re-creates
+    the lines). All plain UUIDs, with no database link (the doctor's account may go). The
+    database allows one live (reserved or consumed) deduction per ICE line, so two orders
+    racing for one ICE fail as `payments.service.HookFailed`. `amount` is the credit the
+    planning line took (its `ice`, at most the ICE line's net). No patient name is kept."""
+
+    CROSSES_SITES = True
+
+    RESERVED, CONSUMED, RELEASED = 'reserved', 'consumed', 'released'
+    STATES = [(RESERVED, 'Reserved'), (CONSUMED, 'Consumed'), (RELEASED, 'Released')]
+    LIVE_STATES = (RESERVED, CONSUMED)
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    ice_line_id = models.UUIDField()
+    order_id = models.UUIDField()
+    order_line_id = models.UUIDField()
+    doctor_uid = models.UUIDField()
+    patient_code = models.CharField(max_length=32)
+    state = models.CharField(max_length=10, choices=STATES)
+    amount = models.DecimalField(max_digits=17, decimal_places=2)
+    currency = models.CharField(max_length=3)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+        indexes = [models.Index(fields=['order_id'], name='ice_deduction_order')]
+        constraints = [
+            models.UniqueConstraint(fields=['order_line_id'], name='ice_deduction_one_per_line'),
+            models.UniqueConstraint(
+                fields=['ice_line_id'], condition=Q(state__in=['reserved', 'consumed']),
+                name='ice_deduction_live_once'),
+            models.CheckConstraint(condition=Q(state__in=['reserved', 'consumed', 'released']),
+                                   name='ice_deduction_state'),
+        ]
+
+    def __str__(self):
+        return f'ICE deduction {self.pk} ({self.state})'

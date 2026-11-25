@@ -75,20 +75,26 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `patients/models.py` + migration -- `IceDeduction`: `ice_line_id`, `order_id`, `order_line_id`, `doctor_uid` (UUIDs), `patient_code`, `state` (reserved/consumed/released), `amount`, `currency`, timestamps; unique on `order_line_id`; unique on `ice_line_id` where state is live.
-- [ ] `patients/ice.py` (new) -- `available_credit(doctor, patient_code, company_code, currency)` → (ICE line, Money) or None. Plus `reserve`, `consume`, and `release` order receivers. The receivers re-derive each credited line's ICE line, find nothing for an order without `ice_asked`, and are idempotent.
-- [ ] `patients/apps.py` -- register the receivers: `created` → reserve, `paid` → consume, `cancelled`/`expired` → release.
-- [ ] `catalogue/pricing.py` -- `ICE_TWICE` per patient code; update `payments/views.py:71`'s text.
-- [ ] `cart/service.py` -- `_order_lines` asks `available_credit` for planning lines; a `HookFailed` from a taken ICE maps to a cart message.
-- [ ] `payments/templates/payments/checkout.html` -- "ICE deducted −X" note under a credited line (`line.ice` > 0).
-- [ ] `locale/es/LC_MESSAGES/django.po` -- Spanish for new strings.
-- [ ] `patients/tests/test_ice_deduction.py`, `catalogue/tests/test_pricing.py`, `cart/tests/test_checkout.py` -- one test per matrix row; race (two orders) → `HookFailed`; idempotent hooks.
+- [x] `patients/models.py` + migration -- `IceDeduction`: `ice_line_id`, `order_id`, `order_line_id`, `doctor_uid` (UUIDs), `patient_code`, `state` (reserved/consumed/released), `amount`, `currency`, timestamps; unique on `order_line_id`; unique on `ice_line_id` where state is live.
+- [x] `patients/ice.py` (new) -- `available_credit(doctor, patient_code, company_code, currency)` → (ICE line, Money) or None. Plus `reserve`, `consume`, and `release` order receivers. The receivers re-derive each credited line's ICE line, find nothing for an order without `ice_asked`, and are idempotent.
+- [x] `patients/apps.py` -- register the receivers: `created` → reserve, `paid` → consume, `cancelled`/`expired` → release.
+- [x] `catalogue/pricing.py` -- `ICE_TWICE` per patient code; update `payments/views.py:71`'s text.
+- [x] `cart/service.py` -- `_order_lines` asks `available_credit` for planning lines; a `HookFailed` from a taken ICE maps to a cart message.
+- [x] `payments/templates/payments/checkout.html` -- "ICE deducted −X" note under a credited line (`line.ice` > 0).
+- [x] `locale/es/LC_MESSAGES/django.po` -- Spanish for new strings.
+- [x] `patients/tests/test_ice_deduction.py`, `catalogue/tests/test_pricing.py`, `cart/tests/test_checkout.py` -- one test per matrix row; race (two orders) → `HookFailed`; idempotent hooks.
 
 **Acceptance Criteria:**
 - Given a patient with a paid 80 EUR ICE, when the doctor orders a medium TPS for that patient and pays with the fake gateway, then the line's `ice` is 80, the order total is reduced by 80 plus VAT, the deduction is consumed, and a later TPS for the patient gets no credit.
 - Given a pending order holding the ICE, when it is cancelled, then a new order for the patient gets the credit again.
 
 ## Implementation Notes
+
+- `patients/ice.py`: `available_credit` plus `credited_lines(doctor, lines, country)`, which `cart.service._order_lines(items, doctor)` calls. The company comes from the resolver rule of the product's category in the doctor's country group, the currency from the product's price. An ICE paid at 0.00 gives no credit.
+- `cart.service.finish` looks up the credits inside its transaction, after `_cancel_earlier`, so a re-finish takes the ICE the cancelled order just released (matrix row "Finish again"). A `HookFailed` caused by `patients.ice.IceTaken` becomes `CartRefused('ice_taken')`, with its own cart message (EN/ES).
+- The receivers match a deduction to its line by patient code (one per order). `choose_entity` re-creates the lines, so `consume` re-points `order_line_id` (and `amount`) to the paid line. `amount` is the credit the line took (capped), not the ICE's net.
+- `included_case`: nothing sets it at cart time yet (8.13), so the pricing may still credit such a line; the receivers skip it (no deduction). 8.13 must keep a credit off an included-case line when it lands.
+- `catalogue.pricing._Line` carries `patient_code`; `ICE_TWICE` now means two credited lines with the same patient code (lines without one count as one patient, as before).
 
 ## Plan Change Log
 

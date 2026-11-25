@@ -54,6 +54,8 @@ def _refusal_texts():
         service.PAYMENT_OPEN: _('A payment for your earlier order is in progress. Please wait '
                                 'a few minutes, or check that payment before you finish '
                                 'again.'),
+        service.ICE_TAKEN: _('The ICE credit of a patient in your cart is being used by '
+                             'another order. Please try again in a moment.'),
     }
 
 

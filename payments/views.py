@@ -68,7 +68,7 @@ REFUSALS = {
         'These items are billed by different companies; order them separately.'),
     pricing.TWO_CURRENCIES: gettext_lazy(
         'These items are in different currencies; order them separately.'),
-    pricing.ICE_TWICE: gettext_lazy('Only one item can take the ICE credit.'),
+    pricing.ICE_TWICE: gettext_lazy('Only one item per patient can take the ICE credit.'),
     pricing.ICE_NOT_PLANNING: gettext_lazy('The ICE credit applies to planning items only.'),
     pricing.ICE_CURRENCY: gettext_lazy('The ICE credit is in another currency.'),
     pricing.VOUCHER_NOT_USABLE: gettext_lazy('This voucher cannot be used.'),

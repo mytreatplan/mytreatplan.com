@@ -28,8 +28,9 @@ Each line, in this order (AD-16):
 1. its list amount: net price × quantity with its add-ons (`resolver.price` without the
    discount), and its price after the subscription discount (`resolver.price`); the
    discount amount is the difference;
-2. the ICE credit, on the one line the caller names: a planning line only
-   (`PLANNING_CATEGORIES`), in the order's currency; what exceeds the line is lost;
+2. the ICE credit, on the lines the caller names (at most one per patient code:
+   epic-ordering 9.7): a planning line only (`PLANNING_CATEGORIES`), in the order's
+   currency; what exceeds the line is lost;
 3. the voucher, spread over the lines in proportion to each line's amount after the
    discount and the ICE credit: each share rounded down to the cent, the remaining cents
    given one by one to the lines in order, never past a line's amount; what exceeds the
@@ -137,7 +138,8 @@ class OrderRefused(ValueError):
 class OrderLine:
     """One line asked for: a product (a `Product`), its quantity, its add-ons (`AddOn`
     rows) and the ICE credit it takes (`Money`, or None). `patient_code` (epic-ordering
-    9.1) is the patient the line is a case for; the pricing ignores it, the order keeps it."""
+    9.1) is the patient the line is a case for: the order keeps it, and the pricing allows one
+    ICE credit per patient code (9.7)."""
     product: Product
     quantity: int = 1
     add_ons: tuple = ()
@@ -211,6 +213,7 @@ class _Line:
     rule: object
     ice: Money | None = None
     period: str | None = None
+    patient_code: str = ''
 
 
 def _group(billing_country):
@@ -264,7 +267,7 @@ def price_order(billing_country, subscription, lines, *, vies, voucher=None, doc
         priced.append(_Line(product, asked.quantity, list_amount,
                             resolver.discount_percent(product, subscription), discounted,
                             resolver.billing_rule_for(group, product.category),
-                            ice=asked.ice))
+                            ice=asked.ice, patient_code=asked.patient_code or ''))
     return _price(billing_country, priced, vies, voucher, Voucher.TRY_ME, doctor, day)
 
 
@@ -324,10 +327,11 @@ def _price(billing_country, lines, vies, voucher, voucher_type, doctor, day):
     company = lines[0].rule.company
     zero = Money.zero(currency)
 
-    # The ICE credit, on the one line the caller names.
-    credited = [line for line in lines if line.ice is not None]
-    if len(credited) > 1:
-        raise OrderRefused(ICE_TWICE, 'only one line may take the ICE credit')
+    # The ICE credit, on the lines the caller names: one per patient code (epic-ordering
+    # 9.7; lines without a patient code count as one patient).
+    credited = [line.patient_code for line in lines if line.ice is not None]
+    if len(credited) != len(set(credited)):
+        raise OrderRefused(ICE_TWICE, 'only one line per patient may take the ICE credit')
     bases = []
     for line in lines:
         taken = zero
