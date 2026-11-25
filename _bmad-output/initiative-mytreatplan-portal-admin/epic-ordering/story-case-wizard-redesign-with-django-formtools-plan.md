@@ -3,7 +3,7 @@ title: 'Case wizard redesign with django-formtools'
 type: 'feature'
 ticket: '16'
 created: '2026-11-24'
-status: 'built'
+status: 'done'
 baseline_revision: '98bbfb5b489d73d439c8166fcb8432478a22419d'
 route: 'full'
 route_source: 'auto'
@@ -106,3 +106,9 @@ context: []
 | 3 | `test_retainers_are_not_listed_until_finished` removed from the protected first block of `test_virtuaortho.py` | false | reject | It was an HTTP test of the old `start-a-case/<code>/` page markup, which this story replaces by intent; its check moved to `test_wizard.py::test_retainers_are_listed_only_after_a_finished_treatment`; every service test in the file is unchanged. |
 | 4 | Step-1 fiscal-entity block lost its only test | low | patch | `test_without_a_fiscal_entity_a_block_links_to_add_one` was deleted; no test greps `start-a-case%2F` with `data-fiscal-link`; restoring the assertion is a direct correction. |
 | 5 | `cart/tests/test_views.py` ends without a newline | low | patch | `\ No newline at end of file` in the diff. |
+
+## Staging
+
+- Merged as PR #141 → fb596f0 (2026-11-25); CI run 45600038715 green on the branch; deploy run 45606343058 green (dev and dev-ae). Local suite 4350 passed, 17 skipped, 8 known WeasyPrint failures on the Mac.
+- Checks 1-4 passed on dev over SSH, inside one rolled-back transaction: (1) formtools 2.7 imported, `manage.py check` clean; (2) TPS → brand/Invisalign → medium + Junior II reached the cart at the offered price 219.12 EUR, maker invisalign, add-on JUNIOR-2; (3) VirtuaOrtho → DigitalTwin → medium + Byte Sync reached the cart with the default address preselected and stored, ODB-DT not offered as a choice; (4) the old `start-a-case/<code>/` URL and a direct `options` URL both redirect to `product/`.
+- Check 5 (by eye, EN/ES, desktop and phone, both branches, Back, maker-login return link) owed by the user; the priced length list is re-evaluated after it (plan decision).
