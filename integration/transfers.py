@@ -108,6 +108,11 @@ def update(object_id, expected_version, changes, *, actor):
             raise RecordGone(object_id)
         if order.version != expected_version:
             raise StaleVersion(order.version)
+        if order.state != Order.PENDING_PAYMENT or not order.payments.filter(
+                gateway=BANK_TRANSFER, state=Payment.OPEN).exists():
+            # Not a pending transfer (a doctor's checkout order, or switched to another
+            # method): never confirmed or cancelled from here; nothing changed.
+            raise StaleVersion(order.version)
         state = changes['state']
         try:
             if state == TRANSFER_PAID:

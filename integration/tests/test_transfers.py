@@ -19,7 +19,8 @@ from mytp_core import interface
 from mytp_core.contracts import PendingTransferData, RemoteList, RemoteRecord
 from payments.models import Order, OrderChange, Payment
 from payments.tests.conftest import *  # noqa: F401,F403  (the doctor, catalogue, hooks)
-from payments.tests.test_bank_transfer import attempt, backdate, bank, start_transfer
+from payments.tests.test_bank_transfer import (BANK, attempt, backdate, bank, start_transfer,
+                                               switch_to_card)
 from payments.tests.test_service import new
 
 __all__ = ['bank']
@@ -28,6 +29,7 @@ pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('portal_urls', 'adm
 
 URL = '/api/v1/remote/pending-transfers'
 ME = '6f1c2b8a-3d4e-4f5a-9b6c-7d8e9f0a1b2c'
+TRY_ME = 'f0000001-0000-4000-8000-000000000001'
 FIELDS = ['client_uid', 'company_code', 'last_reminder_at', 'pending_at', 'reference',
           'state', 'total']
 
@@ -81,6 +83,7 @@ def pending(doctor, entity, bank):
     second = start_transfer(doctor)
     order = new(doctor)
     Order.objects.filter(pk=order.pk).update(state=Order.PAID)
+    switch_to_card(start_transfer(doctor))
     first.refresh_from_db()
     second.refresh_from_db()
     return first, second
@@ -98,6 +101,10 @@ def test_the_list_has_the_pending_transfer_orders_oldest_first(client, doctor, p
     assert (answer['resource'], answer['region'], answer['fields'], answer['truncated']) == (
         'pending_transfer', 'eu', FIELDS, False)
     assert [r['object_id'] for r in answer['records']] == [str(first.pk), str(second.pk)]
+    # The order switched to card is pending_payment too, without an open transfer.
+    switched = Order.objects.get(state=Order.PENDING_PAYMENT, gateway='fake')
+    assert not switched.payments.filter(gateway='bank_transfer', state='open').exists()
+    assert str(switched.pk) not in [r['object_id'] for r in answer['records']]
     record = answer['records'][0]
     assert record['version'] == first.version
     reminded = Payment.objects.get(order=first).reminded_at
@@ -212,7 +219,6 @@ def test_a_financial_manager_confirms_the_payment(client, pending, events):
     assert (row.operation, row.outcome, row.access_reason, row.object_id) == (
         'write', 'granted', 'write:state', str(order.pk))
     # The order left the list.
-    assert [r['object_id'] for r in read(client).json()['records']] != [str(order.pk)]
     assert str(order.pk) not in [r['object_id'] for r in read(client).json()['records']]
 
 
@@ -297,10 +303,24 @@ def test_a_write_must_name_its_order(client, pending):
 
 # --- Cancel -----------------------------------------------------------------------------
 
-def test_a_financial_manager_cancels_the_order(client, pending, events):
-    order, _ = pending
-    response = post(client, body(order, 'cancelled'), role='sysadmin')
+def test_a_financial_manager_cancels_the_order(client, doctor, pending, events, admin):
+    from catalogue import resolver
+    from catalogue.models import BillingCompany
+    from integration.tests.snapshot_rows import pull, snapshot_writes, voucher
+    from subscriptions.models import VoucherRedemption
+    from subscriptions.tests.helpers import catalogue
+    assert pull(admin, 2, catalogue(), vouchers=[voucher(TRY_ME, 'TRYME23456')]) == (
+        'applied', 2)
+    with snapshot_writes():  # the pull replaced the company: its bank details again
+        BillingCompany.objects.filter(code='ES').update(**BANK)
+    order = new(doctor, voucher=resolver.voucher_by_code('TRYME23456'))
+    order = transfers.service.start_payment(order, 'bank_transfer',
+                                            expected_version=order.version,
+                                            actor=transfers.service.doctor_actor(doctor))
+    assert VoucherRedemption.objects.get(order_id=order.pk).state == 'reserved'
+    response = post(client, body(order, 'cancelled'), role='financial_manager')
     assert response.status_code == 200
+    assert VoucherRedemption.objects.get(order_id=order.pk).state == 'released'
     assert response.json()['data']['state'] == 'cancelled'
     order.refresh_from_db()
     assert order.state == 'cancelled' and attempt(order).state == 'closed'
@@ -328,3 +348,18 @@ def test_an_order_no_longer_waiting_for_a_transfer_is_stale(client, pending):
     assert response.status_code == 409
     order.refresh_from_db()
     assert order.state == 'pending_payment'
+
+
+@pytest.mark.parametrize('state', ['paid', 'cancelled'])
+def test_an_order_that_is_not_a_pending_transfer_is_refused(client, doctor, pending,
+                                                            events, state):
+    checkout = new(doctor)  # a doctor's order still in checkout
+    switched = Order.objects.get(state=Order.PENDING_PAYMENT, gateway='fake')
+    for order in (checkout, switched):
+        response = post(client, body(order, state))
+        assert response.status_code == 409
+        assert response.json()['error']['code'] == 'stale_version'
+        before = order.state
+        order.refresh_from_db()
+        assert order.state == before
+    assert not [e for e, *_ in events if e in ('paid', 'cancelled')]
