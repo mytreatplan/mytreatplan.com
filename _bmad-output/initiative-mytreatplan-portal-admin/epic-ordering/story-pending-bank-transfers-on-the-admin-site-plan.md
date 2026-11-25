@@ -26,7 +26,7 @@ context: []
 ## Decisions
 
 - Decision (user, 2026-11-25): the list is a new list answer in mytp-core (`RemoteList`: resource, region, records each with object id, version, data); the region logs every listed order in its access log.
-- Decision (user, 2026-11-25): "Confirm payment received" confirms the order total; finance types nothing. The write sends the total the list showed; the region passes the order's own total to `mark_transfer_paid`.
+- Decision (user, 2026-11-25): "Confirm payment received" confirms the order total; finance types nothing. The expected version guards against a changed order; the region passes the order's own total to `mark_transfer_paid`.
 - Decision (user, 2026-11-25): a row shows region, order reference, doctor name (admin's client record by uid), billing company, total, pending since, last reminder sent; never patient data.
 - Decision (user, 2026-11-25): delivery DELEGATED for all three repos (one branch and one PR each): push and open the PRs; when the user says "merge", merge mytp-core first and push its `v0.34.0` tag, vendor the tag into the portal and admin PRs, then merge them; give the user read-only checks for dev over SSH; the user runs the admindev check (finance user, fresh code) in the browser; push the completion commit to master.
 - Decision (user, 2026-11-25): plan kept whole (~2300 tokens).
