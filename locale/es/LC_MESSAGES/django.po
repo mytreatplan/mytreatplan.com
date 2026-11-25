@@ -2613,8 +2613,8 @@ msgid "These items are in different currencies; order them separately."
 msgstr "Estos artículos están en monedas distintas; pídalos por separado."
 
 #: payments/views.py
-msgid "Only one item can take the ICE credit."
-msgstr "Solo un artículo puede llevar el crédito ICE."
+msgid "Only one item per patient can take the ICE credit."
+msgstr "Solo un artículo por paciente puede llevar el crédito ICE."
 
 #: payments/views.py
 msgid "The ICE credit applies to planning items only."
@@ -3669,3 +3669,16 @@ msgstr "¿Qué marca?"
 #, python-format
 msgid "You have not saved your login for %(name)s."
 msgstr "No ha guardado sus datos de acceso para %(name)s."
+
+#: payments/templates/payments/checkout.html
+#, python-format
+msgid "ICE deducted &minus;%(amount)s %(currency)s"
+msgstr "ICE descontado &minus;%(amount)s %(currency)s"
+
+#: cart/views.py
+msgid ""
+"The ICE credit of a patient in your cart is held by another of your orders. If "
+"you finish again, this order is priced without it."
+msgstr ""
+"El crédito ICE de un paciente de su carrito está reservado por otro de sus "
+"pedidos. Si finaliza de nuevo, este pedido se calcula sin él."

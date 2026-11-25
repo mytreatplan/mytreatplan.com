@@ -23,7 +23,8 @@ longer open shows what became of it.
   <tbody>
   {% for line in lines %}
   <tr class="border-b border-line align-top" data-order-line>
-    <td class="py-3">{{ line.name }}{% if line.quantity > 1 %} &times; {{ line.quantity }}{% endif %}</td>
+    <td class="py-3">{{ line.name }}{% if line.quantity > 1 %} &times; {{ line.quantity }}{% endif %}{% if line.ice > 0 %}
+      <p class="mt-1 text-[14px] text-ink-muted" data-ice-deducted>{% blocktranslate with amount=line.ice currency=order.currency %}ICE deducted &minus;{{ amount }} {{ currency }}{% endblocktranslate %}</p>{% endif %}</td>
     <td class="py-3 text-right">{{ line.net }} {{ order.currency }}</td>
   </tr>
   {% endfor %}

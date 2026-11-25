@@ -165,8 +165,9 @@ def eur(amount):
     return Money(amount, 'EUR')
 
 
-def line(product_id, quantity=1, add_ons=(), ice=None):
-    return resolver.OrderLine(resolver.product(product_id), quantity, tuple(add_ons), ice)
+def line(product_id, quantity=1, add_ons=(), ice=None, patient_code=''):
+    return resolver.OrderLine(resolver.product(product_id), quantity, tuple(add_ons), ice,
+                              patient_code)
 
 
 def order(country, tier, *lines, vies=resolver.VIES_NOT_APPLICABLE, voucher=None,
@@ -311,6 +312,34 @@ def test_an_ice_credit_on_another_line_or_currency_is_refused(priced_catalogue):
             line(TPS_M, ice=Money('80.00', 'AED')))
     refused(resolver.ICE_TWICE, order, 'ES', 'basic', line(TPS_M, ice=eur('80.00')),
             line(TPS_S, ice=eur('80.00')))
+    # One credited line per patient code (epic-ordering 9.7).
+    refused(resolver.ICE_TWICE, order, 'ES', 'basic',
+            line(TPS_M, ice=eur('80.00'), patient_code='EU-AAAAAAAA'),
+            line(IN_HOUSE, ice=eur('30.00'), patient_code='EU-AAAAAAAA'))
+
+
+@pytest.mark.django_db
+def test_each_patient_s_planning_takes_its_own_ice_credit(priced_catalogue):
+    # Epic-ordering 9.7: two patients, each with an ICE credit, in one order.
+    priced = holds(order('ES', 'basic',
+                         line(TPS_M, ice=eur('80.00'), patient_code='EU-AAAAAAAA'),
+                         line(TPS_S, ice=eur('30.00'), patient_code='EU-BBBBBBBB'),
+                         line(RETAINER, patient_code='EU-CCCCCCCC')))
+    assert [(found.ice, found.net) for found in priced.lines] == [
+        (eur('80.00'), eur('169.00')), (eur('30.00'), eur('169.00')),
+        (eur('0.00'), eur('100.00'))]
+    assert priced.ice_total == eur('110.00')
+
+
+@pytest.mark.django_db
+def test_an_ice_credit_comes_before_the_voucher_per_patient(priced_catalogue):
+    # The voucher is spread on what the two credits leave (169.00 + 169.00).
+    priced = holds(order('ES', 'basic',
+                         line(TPS_M, ice=eur('80.00'), patient_code='EU-AAAAAAAA'),
+                         line(TPS_S, ice=eur('30.00'), patient_code='EU-BBBBBBBB'),
+                         voucher='TRYME-23456'))
+    assert [found.voucher for found in priced.lines] == [eur('25.00'), eur('25.00')]
+    assert priced.net_total == eur('288.00')
 
 
 @pytest.mark.django_db

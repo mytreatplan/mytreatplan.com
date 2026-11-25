@@ -9,7 +9,8 @@
   item; 9.6 snapshots it and calls `mark_used`). No maker: MyTreatPlan makes it.
 - `items_of(doctor)`, `remove(doctor, item_id)`.
 - `finish(doctor, voucher_code='')` (9.6): turn the cart into one service order through
-  `payments.service.create_order` (patient code, maker and shipping address copied per line),
+  `payments.service.create_order` (patient code, maker and shipping address copied per line;
+  each planning line takes the ICE credit of its patient's paid ICE: 9.7, `patients.ice`),
   cancelling the doctor's earlier unpaid cart order first (all or nothing), except one
   waiting for a bank transfer (9.17); the items stay until the order is paid (`paid`, the
   receiver of the order's `paid` hook, then removes the paid patients' items and marks the
@@ -32,6 +33,7 @@ from accounts import fiscal, makers, shipping
 from accounts.client_sync import is_client
 from catalogue import resolver
 from catalogue.models import Product
+from patients import ice as ice_credits
 from patients import service as patients_service
 from payments import service as payments
 from payments.models import Order
@@ -58,9 +60,10 @@ NOT_FINISHED = 'not_finished'
 EMPTY = 'empty'
 ADDRESS_GONE = 'address_gone'
 PAYMENT_OPEN = 'payment_open'
+ICE_TAKEN = 'ice_taken'
 CODES = (NOT_A_DOCTOR, NO_PATIENT, NO_ENTITY, MAKER_UNKNOWN, MAKER_LOGIN, OTHER_NAME,
          LIVE_WORK_ORDER, IN_CART, NOT_OFFERED, ADD_ON, NO_ADDRESS, ADDRESS, QUANTITY,
-         NOT_FINISHED, EMPTY, ADDRESS_GONE, PAYMENT_OPEN)
+         NOT_FINISHED, EMPTY, ADDRESS_GONE, PAYMENT_OPEN, ICE_TAKEN)
 SOURCE = 'cart'
 
 # VirtuaOrtho (9.4). The variants of step 2 and the category each one is sold in.
@@ -331,8 +334,10 @@ def _shipping_snapshot(address):
     return snapshot
 
 
-def _order_lines(items):
-    """The `OrderLine`s of the cart items, or `CartRefused`."""
+def _order_lines(items, doctor=None):
+    """The `OrderLine`s of the cart items, or `CartRefused`. With `doctor`, each TPS or
+    VirtuaOrtho line of a patient takes the ICE credit the doctor may deduct for that
+    patient (`patients.ice.available_credit`, epic-ordering 9.7)."""
     lines = []
     for item in items:
         product = resolver.product(item.product_id)
@@ -350,6 +355,9 @@ def _order_lines(items):
         lines.append(resolver.OrderLine(
             product, item.quantity, tuple(add_ons), None, item.patient.code, item.maker,
             item.other_name, snapshot))
+    if doctor is not None:
+        country = doctor.country.code if doctor.country else ''
+        lines = ice_credits.credited_lines(doctor, lines, country)
     return lines
 
 
@@ -373,7 +381,8 @@ def _cancel_earlier(doctor):
 def finish(doctor, voucher_code=''):
     """Create the service order of the doctor's cart and return it (in `checkout`, or paid
     at once when it comes to 0.00). `CartRefused` (`EMPTY`, `NO_ENTITY`, `ADDRESS_GONE`,
-    `PAYMENT_OPEN`, `NOT_OFFERED`, `ADD_ON`), `catalogue.pricing.OrderRefused` (a voucher
+    `PAYMENT_OPEN`, `NOT_OFFERED`, `ADD_ON`, `ICE_TAKEN`: an ICE credit was taken by another
+    order meanwhile), `catalogue.pricing.OrderRefused` (a voucher
     refusal, two companies, two currencies, a patient with a case in progress...) or a
     `payments.service.OrderError`: nothing is changed then, the earlier order included. The
     items stay in the cart until the order is paid or approved by bank transfer (9.17); an
@@ -385,15 +394,22 @@ def finish(doctor, voucher_code=''):
         raise CartRefused(EMPTY)
     if not fiscal.has_usable_entity(doctor):
         raise CartRefused(NO_ENTITY)
-    lines = _order_lines(items)
+    _order_lines(items)  # CartRefused before anything is locked
     code = (voucher_code or '').strip()
     voucher = voucher_redemptions.voucher_for_code(code) if code else None
     with transaction.atomic():
         # One finish at a time per doctor: a second request waits, then cancels this order.
         get_user_model().objects.select_for_update().get(pk=doctor.pk)
         _cancel_earlier(doctor)
-        return payments.create_order(doctor, lines, actor=payments.doctor_actor(doctor),
-                                     voucher=voucher, source=SOURCE)
+        # The ICE credits are looked up once the earlier order released its own (9.7).
+        lines = _order_lines(items, doctor)
+        try:
+            return payments.create_order(doctor, lines, actor=payments.doctor_actor(doctor),
+                                         voucher=voucher, source=SOURCE)
+        except payments.HookFailed as failure:
+            if isinstance(failure.__cause__, ice_credits.IceTaken):
+                raise CartRefused(ICE_TAKEN) from None
+            raise
 
 
 def _remove_ordered(order):
