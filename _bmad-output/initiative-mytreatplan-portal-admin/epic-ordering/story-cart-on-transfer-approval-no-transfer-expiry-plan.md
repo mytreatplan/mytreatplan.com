@@ -3,7 +3,7 @@ title: 'Cart on transfer approval, no transfer expiry'
 type: 'feature'
 ticket: '17'
 created: '2026-11-25'
-status: 'built'
+status: 'done'
 baseline_revision: '21296449105a1bf6a1bec1a965815720ab57ce32'
 route: 'full'
 route_source: 'auto'
@@ -119,3 +119,19 @@ Quick lens, iteration 0. Verdicts: 1 medium, 2 low, 0 false, 0 maybe-false.
 **Commands:**
 - `. .venv/bin/activate && python -m pytest -q -p no:cacheprovider --tb=line`: expected 0 failures (18 local skips).
 - `python manage.py makemigrations --check --dry-run`: expected no changes once the data migration is committed.
+
+**Result (2026-11-25):**
+- Full suite: 4371 passed, 18 skipped, 1 failed. The failure was the `SECRET_KEY`-dependent `test_remembered_device`, fixed separately in PR #140.
+- `makemigrations --check`: clean.
+- After master (9.16) was merged in: cart, payments and subscriptions passed (705).
+
+## Staging
+
+- **Merge:** PR #142 → a1323173. Master run 45611804611 was green: tests passed and dev and dev-ae were released at 12:31 UTC. The CI test job passed on both PR runs (45609092455, 45609100035).
+- **Checks on dev (2026-11-25),** doctor pk 18 (ES, Premium), run by the user over SSH with a read-only shell script. Everything was rolled back.
+  0. Data migration: 0 open transfer attempts still have a deadline. The `transfer_approved` receivers are `['cart_transfer_approved']`. Passed.
+  1. A new patient's TPS was finished and approved by bank transfer: order `pending_payment`, 0 cart items for that patient, attempt deadline None. Passed.
+  2. "Finish order" again after re-adding the patient: the transfer order stayed `pending_payment` and the new order is in `checkout`. Passed.
+  3. With the order's `pending_at` moved back 20 days, `expire_stale()` left it `pending_payment`. Passed.
+  4. The 7-day reminder is due for it. The reminder was not sent. Passed.
+- **Left on dev:** nothing.
