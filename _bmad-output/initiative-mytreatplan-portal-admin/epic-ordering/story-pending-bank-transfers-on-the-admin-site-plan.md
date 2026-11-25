@@ -86,6 +86,8 @@ context: []
 
 ## Implementation Notes
 
+- Baselines of the other repos (branch `feat/9-18-pending-transfers` in each, created locally from these): mytp-core `55015e64c8a17864df5c311a3835c60d68664c75` (v0.33.0), mytp-admin `eb5c47ede38ae94a418ca7a4b3f114bfa2da28dd`. Commit in each repo on that branch when its part is done (no push). Until `v0.34.0` is tagged, vendor the apps from a local build of the mytp-core branch (`MYTP_CORE_REPO=/home/user/mytp-core`, a local tag `v0.34.0` that is not pushed); the real tag is vendored again after the mytp-core PR merges.
+
 ## Plan Change Log
 
 ## Review Triage Log
