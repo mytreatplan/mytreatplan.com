@@ -3,14 +3,14 @@ title: 'Pending bank transfers on the admin site'
 type: 'feature'
 ticket: '18'
 created: '2026-11-25'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: 'fc109a4d68307af79c8ba4b8664345e120fd5230'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
