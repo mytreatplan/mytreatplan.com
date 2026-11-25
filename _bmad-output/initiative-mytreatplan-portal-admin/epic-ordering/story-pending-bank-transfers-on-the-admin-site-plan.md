@@ -92,6 +92,18 @@ context: []
 
 ## Review Triage Log
 
+Quick lens, iteration 0: high 1, low 6, false 0. All patched.
+
+| # | Finding | Verdict | Route | Evidence |
+|---|---------|---------|-------|----------|
+| 1 | Portal `transfers.update` cancels any open order (checkout, or pending without a transfer attempt) | high | patch | `service.cancel` accepts `Order.OPEN_STATES` with no transfer check; `load` returns any order. Check pending_payment + open bank_transfer under the lock first. |
+| 2 | Fixture `pending` promises a switched-to-card order it never creates; the `open_transfer` filter is untested | low | patch | Fixture creates only the paid one. |
+| 3 | Cancel test runs as sysadmin and never checks voucher/ICE release | low | patch | Plan's Cancel row. |
+| 4 | Always-true assertion in the confirm test | low | patch | `!=` against a two-item list. |
+| 5 | Admin "send the form again" advice after `unavailable` cannot be followed from the reloaded list | low | patch | `_rows` makes fresh keys; message reworded for this page. |
+| 6 | Admin list answers HEAD, signing list reads to every region | low | patch | `require_safe`; precedent refuses HEAD. |
+| 7 | Admin README omits "No account" | low | patch | `_rows` shows it when no `client_uid`. |
+
 ## Design Notes
 
 The write is modelled as a field change (`state` to `paid` or `cancelled`) because `access.decide_write` allows only field-style changes. The portal adapter turns it into the one service call.
