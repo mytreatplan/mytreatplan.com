@@ -1,7 +1,8 @@
 """The interface endpoints the admin site calls (epic-admin-interface, AD-4): the ping
 (entry 1), the configuration snapshot's nudge (entry 4), the client re-sync (entry 8),
 the contact message re-sync (entry 9), the remote reads (entry 5) and the remote writes
-(entry 6; integration.remote)."""
+(entry 6; integration.remote), and the pending bank transfers (epic-ordering 9.18:
+integration.transfers)."""
 import json
 import logging
 
@@ -14,9 +15,11 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from mytp_core.contracts import errors as contract_errors
 from mytp_core.contracts import error_body, utc_text
 from mytp_core.contracts.events import UUID_RE
+from mytp_core.interface import remote_actor
 from mytp_publicsite.models import ContactMessage
+from payments.service import admin_actor
 
-from . import config, remote, sample
+from . import config, remote, sample, transfers
 from .calls import not_the_admin_site, signed_endpoint
 
 logger = logging.getLogger('integration.config')
@@ -152,3 +155,26 @@ def remote_sample_record(request):
                                    assignee=sample.assignee, version=sample.version)
     return remote.remote_read(request, sample.RESOURCE, None, sample.load, sample.build,
                               assignee=sample.assignee, version=sample.version)
+
+
+@require_http_methods(['GET', 'POST'])
+@signed_endpoint
+def remote_pending_transfers(request):
+    """/api/v1/remote/pending-transfers, signed by the admin site with the admin user's
+    access (epic-ordering 9.18, resource `pending_transfer`, area `sales_orders`). GET:
+    this region's orders waiting for a bank transfer, a `RemoteList` with the fields the
+    role sees, each order logged (integration.remote.remote_list). POST: a remote write
+    of one order's `state`, `paid` or `cancelled` (`RemoteWriteRequest` with the order's
+    `object_id` and `expected_version`; idempotent, versioned:
+    integration.remote.remote_write), through `integration.transfers.update`, which calls
+    `payments.service.mark_transfer_paid` or `cancel` as `admin_actor(<staff uuid>)`."""
+    if request.method == 'POST':
+        def update(object_id, expected_version, changes):
+            # remote_write calls this only once the token's actor was granted the write.
+            actor = remote_actor(request.interface_claims)
+            return transfers.update(object_id, expected_version, changes,
+                                    actor=admin_actor(actor.sub))
+        return remote.remote_write(request, transfers.RESOURCE, transfers.load, update,
+                                   transfers.build, version=transfers.version)
+    return remote.remote_list(request, transfers.RESOURCE, transfers.load_all,
+                              transfers.build, version=transfers.version)

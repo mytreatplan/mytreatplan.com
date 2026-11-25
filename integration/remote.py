@@ -20,6 +20,10 @@ site reads one record of this region live; this region decides and logs.
 
 A versioned resource (`version(record)`, entry 6) adds the record's version to the answer.
 
+`remote_list(request, resource, load_all, build, version=None)` (epic-ordering 9.18,
+mytp_core 0.34.0) is the same flow for a list (`RemoteList`): the rules first, then every
+listed record logged granted and committed in one go before any data is built.
+
 `remote_write(request, resource, load, update, build, ...)` is the whole flow of a write
 endpoint (entry 6, interface I7, AD-3, AD-15), in the order of the plan:
 
@@ -66,8 +70,9 @@ from pydantic import ValidationError
 
 from eventlog.service import client_ip
 from mytp_core import access, interface
-from mytp_core.contracts import (RemoteWriteRequest, canonical_json, changes_for,
-                                 remote_record, stale_version_body)
+from mytp_core.contracts import (MAX_LIST_RECORDS, RemoteWriteRequest, canonical_json,
+                                 changes_for, remote_record, stale_version_body)
+from mytp_core.contracts import remote_list as remote_list_body
 from mytp_core.contracts import errors as contract_errors
 
 from . import access_log
@@ -151,6 +156,57 @@ def remote_read(request, resource, object_id, load, build, assignee=None, versio
     return no_store(JsonResponse(remote_record(
         resource, settings.REGION, object_id, data,
         version=version(record) if version else None)))
+
+
+# --- Remote lists (epic-ordering 9.18) --------------------------------------------------
+
+LIST_REASON = 'list'  # the access reason of a listed record's granted row
+
+
+def remote_list(request, resource, load_all, build, version=None):
+    """The answer to a remote list read of `resource` (mytp_core 0.34.0, `RemoteList`).
+    As `remote_read`: only the admin site, the actor, this region and the role first
+    (403 ``forbidden``, logged refused; a resource whose rule for the role is the
+    ``assigned`` scope is refused too: a list has no per-record check). Then
+    `load_all(limit)` gives at most `limit` records (its own order); one more than
+    MAX_LIST_RECORDS is asked for, to know whether the answer is ``truncated``. Every
+    listed record is logged granted (reason ``list``, the field names) and committed
+    before any data is built (`access_log.record_granted_list`; an empty list logs one
+    row without an object id); if that fails, 503 ``access_log_unavailable``, no data.
+    Then `build(record)` gives each record's fields, the answer keeps only the role's,
+    ``Cache-Control: no-store``."""
+    refused = not_the_admin_site(request)
+    if refused is not None:
+        return refused
+    claims = request.interface_claims
+    actor = interface.remote_actor(claims)
+    who = {'actor_type': RemoteAccess.ADMIN, **_actor_values(actor, claims),
+           **_source(request)}
+    decision = access.decide(resource, actor, settings.REGION, assignee=None)
+    if not decision.granted:
+        access_log.record_refused(resource=resource, object_id=None,
+                                  reason=decision.reason, **who)
+        logger.info('remote list refused: %s (%s) by %s', resource, decision.reason,
+                    who['actor_uuid'] or '?')
+        return error(contract_errors.FORBIDDEN)
+    records = list(load_all(MAX_LIST_RECORDS + 1))
+    truncated = len(records) > MAX_LIST_RECORDS
+    records = records[:MAX_LIST_RECORDS]
+    object_ids = [str(record.pk) for record in records] or ['']
+    try:
+        access_log.record_granted_list(resource=resource, object_ids=object_ids,
+                                       fields=decision.fields, access_reason=LIST_REASON,
+                                       **who)
+    except access_log.AccessLogUnavailable:
+        return error(contract_errors.ACCESS_LOG_UNAVAILABLE)
+    listed = []
+    for record in records:
+        full = build(record)
+        listed.append((str(record.pk), {name: full[name] for name in decision.fields},
+                       version(record) if version else None))
+    logger.info('remote list: %s, %d record(s) by %s', resource, len(listed), actor.sub)
+    return no_store(JsonResponse(remote_list_body(
+        resource, settings.REGION, decision.fields, listed, truncated=truncated)))
 
 
 # --- Remote writes (entry 6) ------------------------------------------------------------

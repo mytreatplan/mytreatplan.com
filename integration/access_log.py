@@ -6,6 +6,8 @@
   `access_log_unavailable`; a download gives no URL). Fail closed. Call it outside any
   transaction: inside one, the durable block refuses (so no data either), since a row
   that a later rollback could undo would not be "written first".
+- `record_granted_list(...)` (epic-ordering 9.18): a list read, one granted row per listed
+  record, committed together, under the same fail-closed rule.
 - `record_refused(...)`: best effort. A failure is logged (its error class only) and
   never changes the refusal the caller gives.
 
@@ -50,6 +52,27 @@ def record_granted(*, actor_type, actor_uuid, resource, object_id, fields, role=
                        outcome=RemoteAccess.GRANTED, reason='')
     except Exception as error:  # noqa: BLE001 - any failure means no data
         logger.error('access log write failed: %s %s (%s)', resource, object_id,
+                     type(error).__name__)
+        raise AccessLogUnavailable('the access could not be logged') from None
+
+
+def record_granted_list(*, actor_type, actor_uuid, resource, object_ids, fields, role='',
+                        source_site='', source_ip='', user_agent='', access_reason=''):
+    """A granted list read (epic-ordering 9.18): one granted row per listed record (each
+    with the sorted names of the fields returned), all written and committed together;
+    AccessLogUnavailable on any failure (then nothing is written and no data leaves)."""
+    rows = [RemoteAccess(operation=RemoteAccess.READ, actor_type=actor_type,
+                         actor_uuid=actor_uuid, role=role, source_site=source_site,
+                         source_ip=source_ip, user_agent=user_agent[:512],
+                         resource=resource, object_id=str(object_id), purpose='',
+                         access_reason=access_reason, fields=sorted(fields),
+                         outcome=RemoteAccess.GRANTED, reason='')
+            for object_id in object_ids]
+    try:
+        with transaction.atomic(durable=True):
+            return RemoteAccess.objects.bulk_create(rows)
+    except Exception as error:  # noqa: BLE001 - any failure means no data
+        logger.error('access log write failed: %s list of %d (%s)', resource, len(rows),
                      type(error).__name__)
         raise AccessLogUnavailable('the access could not be logged') from None
 

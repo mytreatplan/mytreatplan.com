@@ -445,7 +445,9 @@ def test_a_save_emits_client_updated_only_and_logs_no_value(doctor, caplog):
 def test_the_model_never_shows_a_value_as_text(doctor):
     address = _make(doctor)
     assert str(address) == f'Shipping address {address.pk}'
-    assert 'Rosa' not in str(address) and '612' not in str(address)
+    # Whole values only: a short fragment such as '612' can turn up in the random UUID.
+    assert address.contact_phone == '+34612345678'
+    assert 'Rosa Vidal' not in str(address) and '+34612345678' not in str(address)
 
 
 # --- 15. Staff and anonymous visitors ------------------------------------------------------

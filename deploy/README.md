@@ -3885,6 +3885,35 @@ tab read before the change) shows "changed meanwhile, reload" (409); each write 
 `access_reason` `write:note`, or `replay:note` for the resent request); admindev's database holds no
 note text (its audit rows name the resource, region, record and outcome only).
 
+### Pending bank transfers
+
+Staff record a bank transfer's arrival, or cancel the order, from the admin site's
+"Pending bank transfers" page (epic-ordering 9.18; mytp-core 0.34.0, resource
+`pending_transfer`, admin area `sales_orders`), not from a Django shell. The admin site
+signs `GET /api/v1/remote/pending-transfers`; this region answers a list
+(`RemoteList`) of every order that is `pending_payment` with an open `bank_transfer`
+attempt, oldest first (reference, the doctor's account `uid`, billing company code,
+total, pending since, last reminder, state; never patient data), after one granted
+`read` row per listed order in `integration_remoteaccess` (`access_reason` `list`; an
+empty list writes one row without an object id). The Sysadmin, the Financial Manager and
+the two Commercial Managers (their regions only for the regional one) may list; clinical
+roles are refused (403).
+
+"Confirm payment received" and "Cancel order" POST to the same route a remote write
+(as above) with the order's `object_id`, the listed `expected_version` and
+`{"state": "paid"}` or `{"state": "cancelled"}`, for the Sysadmin and the Financial
+Manager only (a commercial role: 403, reason `field`).
+`integration.transfers.update` locks the order, refuses a changed one (409, also when it
+was paid or cancelled meanwhile) and calls `payments.service.mark_transfer_paid` with the
+order's own total, or `payments.service.cancel`, as `admin_actor(<staff UUID>)` (the
+order's change rows name it).
+
+```sh
+sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from integration.transfers import pending; print([(o.reference, o.version) for o in pending()])"
+sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from integration.models import RemoteAccess; print(list(RemoteAccess.objects.filter(resource='pending_transfer').values_list('at', 'operation', 'role', 'access_reason', 'outcome', 'reason')[:10]))"
+sudo -u mytp-dev ./venv/bin/python manage.py shell -c "from payments.models import Order; o = Order.objects.get(reference='<reference>'); print(o.state, o.version, o.actor_type, o.actor_uuid, hasattr(o, 'invoice'))"
+```
+
 ### Hub lookups
 
 This region reads admin-owned live data from the admin site (epic-admin-interface entry
