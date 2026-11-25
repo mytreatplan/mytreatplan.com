@@ -2,7 +2,7 @@
 {% load i18n static %}
 {% comment %}
 The case wizard's step 1 (cart.views.start_a_case, epic-ordering 9.3): the doctor's active
-patients (the 9.15 chooser: search and paging in the browser), each leading to step 2, the add-patient dialog (the 9.2 one, posting to
+patients (the 9.15 chooser: search and paging in the browser), each leading to the wizard's next steps (cart.wizard), the add-patient dialog (the 9.2 one, posting to
 start_a_case_patient) and, without a usable fiscal entity, the block that links to add one.
 {% endcomment %}
 
@@ -15,7 +15,7 @@ start_a_case_patient) and, without a usable fiscal entity, the block that links 
 <h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Request New Planning" %}</h1>
 <a href="{% url 'start_a_case_patient' %}" class="inline-flex min-h-[52px] cursor-pointer items-center rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-opens-dialog="add-patient" data-add-patient>{% translate "Add a patient" %}</a>
 </div>
-<p class="mt-3 text-copy text-ink-muted">{% translate "Step 1 of 2: choose the patient." %}</p>
+<p class="mt-3 text-copy text-ink-muted">{% translate "Choose the patient, then the service." %}</p>
 {% include "cart/_fiscal_block.html" %}
 
 {% url 'start_a_case_patient' as post_url %}{% include "patients/_patient_dialog.html" with action=post_url %}

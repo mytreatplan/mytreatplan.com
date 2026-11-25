@@ -1,0 +1,13 @@
+{% load i18n %}{% comment %}A choice of two as cards: radio `name` over `cards` ({value, title, text, checked, available}); a card with available False is greyed out and not submittable.{% endcomment %}
+<div class="grid gap-4 tablet:grid-cols-2" role="radiogroup">
+  {% for card in cards %}
+  <label class="block {% if card.available == False %}cursor-not-allowed{% else %}cursor-pointer{% endif %}" data-card="{{ card.value }}">
+    <input type="radio" name="{{ name }}" value="{{ card.value }}" class="peer sr-only"{% if card.checked %} checked{% endif %}{% if card.available == False %} disabled{% endif %}>
+    <span class="flex h-full flex-col gap-2 rounded-12 border border-ink/30 bg-white px-5 py-4 transition peer-checked:border-ink peer-checked:bg-card-grey peer-focus-visible:shadow-focus-pill peer-disabled:border-ink/10 peer-disabled:bg-card-grey peer-disabled:text-ink-muted">
+      <span class="text-[20px] font-black leading-[1.2]">{{ card.title }}</span>
+      <span class="text-copy text-ink-muted">{{ card.text }}</span>
+      {% if card.available == False %}<span class="text-[14px] font-semibold text-notice-text" data-not-included>{% translate "Not included in your plan" %}</span>{% endif %}
+    </span>
+  </label>
+  {% endfor %}
+</div>

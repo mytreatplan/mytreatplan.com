@@ -49,7 +49,7 @@ and the search box, size select and pagination stay hidden.
     <td class="py-3 pr-3 font-black">{{ patient.code }}</td>
     <td class="py-3 pr-3">{{ patient.display_name }}</td>
     <td class="py-3 text-right">{% if row.in_cart %}<span class="font-semibold text-ink-muted" data-in-cart>{% translate "Already in your cart" %}</span>
-      {% else %}<a href="{% url 'start_a_case_tps' patient.code %}" class="font-semibold text-green-deep underline underline-offset-4 hover:text-ink" data-choose>{% translate "Choose" %}</a>{% endif %}</td>
+      {% else %}<a href="{% url 'start_a_case_step' patient.code 'product' %}" class="font-semibold text-green-deep underline underline-offset-4 hover:text-ink" data-choose>{% translate "Choose" %}</a>{% endif %}</td>
     {% endif %}
   </tr>
   {% endwith %}{% endfor %}

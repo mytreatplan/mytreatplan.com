@@ -3,14 +3,14 @@ title: 'Case wizard redesign with django-formtools'
 type: 'feature'
 ticket: '16'
 created: '2026-11-24'
-status: 'in-progress'
+status: 'built'
 baseline_revision: '98bbfb5b489d73d439c8166fcb8432478a22419d'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: [quick]
 review_loop_iteration: 0
 context: []
 ---
@@ -96,3 +96,13 @@ context: []
 
 **Manual checks (if no CLI):**
 - On dev, EN/ES, desktop and phone: both branches end to end; Back on each step; maker-login link returns to the maker step.
+
+## Review Triage Log
+
+| # | Finding | Verdict | Route | Evidence |
+|---|---------|---------|-------|----------|
+| 1 | `cart/wizard.py` post: a stale or forged management-form `current_step` overrides the routed step, then `get_form_list()[step]` raises KeyError (500) | medium | patch | formtools `WizardView.post` overwrites `storage.current_step` from the posted field unchecked (views.py:302-306) and `get_form` indexes `get_form_list()[step]` (:433); a stale TPS options tab after switching to VirtuaOrtho reaches it. |
+| 2 | Unmemoised conditions rebuild the offers dozens of times per request | false | reject | formtools caches `get_form_list()` by a signature (views.py:221-242) and each step's cleaned data per request (`_cleaned_data_cache_<step>`, :517-529); the product offers are built once per request, again only after a valid POST clears the caches. |
+| 3 | `test_retainers_are_not_listed_until_finished` removed from the protected first block of `test_virtuaortho.py` | false | reject | It was an HTTP test of the old `start-a-case/<code>/` page markup, which this story replaces by intent; its check moved to `test_wizard.py::test_retainers_are_listed_only_after_a_finished_treatment`; every service test in the file is unchanged. |
+| 4 | Step-1 fiscal-entity block lost its only test | low | patch | `test_without_a_fiscal_entity_a_block_links_to_add_one` was deleted; no test greps `start-a-case%2F` with `data-fiscal-link`; restoring the assertion is a direct correction. |
+| 5 | `cart/tests/test_views.py` ends without a newline | low | patch | `\ No newline at end of file` in the diff. |

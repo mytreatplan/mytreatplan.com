@@ -127,5 +127,5 @@ def test_the_wizards_patient_step_searches_and_chooses(live_server, page, signed
     expect(_visible(page)).to_have_count(1)
     assert page.url == url
     _visible(page).locator('[data-choose]').click()
-    expect(page).to_have_url(re.compile(rf'/en/start-a-case/{ana.code}/$'))
+    expect(page).to_have_url(re.compile(rf'/en/start-a-case/{ana.code}/product/$'))
     assert Patient.objects.count() == len(patients) + 1

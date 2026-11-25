@@ -1,0 +1,54 @@
+{% extends "cart/wizard/_step.html" %}
+{% load i18n money %}
+{% comment %}
+VirtuaOrtho, step 3 of 3: the lengths with their price, the two ODBs, retainers (only after a
+finished treatment) and Spark on Demand (One only, with its aligners), the add-ons and the
+shipping address (a select, the default one chosen), then "Add to cart". ODB under DigitalTwin
+carries ODB DigitalTwin by itself. A refusal of the service shows here with the choices kept.
+{% endcomment %}
+
+{% block submit_attrs %}data-add-to-cart-virtuaortho{% if shipping_link %} disabled{% endif %}{% endblock %}
+{% block submit_label %}{% translate "Add to cart" %}{% endblock %}
+
+{% block fields %}
+{% with form=wizard.form %}
+<p class="text-copy font-semibold" data-variant>{{ variant_label }}</p>
+{% regroup form.rows by group_label as groups %}
+{% for group in groups %}
+<fieldset class="flex flex-col gap-3" data-vo-group>
+  <legend class="mb-1 text-[22px] font-black leading-[1.2]">{{ group.grouper }}</legend>
+  {% for row in group.list %}
+  <div data-vo-row="{{ row.value }}">
+    <label class="flex flex-wrap items-center gap-x-3 text-copy"><input type="radio" name="item" value="{{ row.value }}" data-vo-product{% if row.checked %} checked{% endif %}> <span class="font-semibold">{{ row.label }}</span>
+      {% if row.price %}<span class="text-ink-muted" data-vo-price>{{ row.price|money }}{% if row.per_unit %} {% translate "per aligner" %}{% endif %}</span>{% endif %}
+      {% if row.auto_odb_dt %}<span class="text-[14px] text-ink-muted">{% translate "includes ODB DigitalTwin" %}</span>{% endif %}</label>
+    {% if row.per_unit %}
+    <div class="ml-8 mt-2 flex flex-col gap-1" data-vo-quantity="{{ row.value }}">
+      <label for="aligners-{{ row.pk }}" class="text-[12px] font-extrabold uppercase tracking-[0.06em] text-ink-muted">{% blocktranslate with min=row.min max=row.max %}Aligners ({{ min }} to {{ max }}){% endblocktranslate %}</label>
+      <input id="aligners-{{ row.pk }}" type="number" name="quantity_{{ row.pk }}" min="{{ row.min }}" max="{{ row.max }}" value="{{ row.quantity|default:row.min }}" class="min-h-[44px] w-32 rounded-12 border border-ink/30 bg-white px-3">
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</fieldset>
+{% empty %}
+<p class="text-copy text-ink-muted" data-no-services>{% translate "No planning service is available for you right now." %}</p>
+{% endfor %}
+
+{% include "cart/wizard/_add_ons.html" with add_ons=form.add_ons %}
+
+<fieldset class="flex flex-col gap-3">
+  <legend class="mb-1 text-[22px] font-black leading-[1.2]">{% translate "Shipping address" %}</legend>
+  {% if shipping_link %}
+  <div class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert" data-shipping-block>
+    {% translate "You need a shipping address before you can order this." %}
+    <a href="{{ shipping_link }}" class="underline underline-offset-4" data-shipping-link>{% translate "Add a shipping address" %}</a>
+  </div>
+  {% else %}
+  <select name="address_id" class="min-h-[44px] rounded-12 border border-ink/30 bg-white px-3 text-copy" data-address-select>
+    {% for address in form.addresses %}<option value="{{ address.id }}"{% if address.checked %} selected{% endif %}>{{ address.label }}</option>{% endfor %}
+  </select>
+  {% endif %}
+</fieldset>
+{% endwith %}
+{% endblock %}

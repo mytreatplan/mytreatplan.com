@@ -3362,10 +3362,6 @@ msgid "You need a fiscal entity before you can order."
 msgstr "Necesita una entidad fiscal para poder hacer un pedido."
 
 #: cart
-msgid "Step 1 of 2: choose the patient."
-msgstr "Paso 1 de 2: elija al paciente."
-
-#: cart
 msgid "Already in your cart"
 msgstr "Ya está en su carrito"
 
@@ -3378,24 +3374,12 @@ msgid "Back to the patients"
 msgstr "Volver a los pacientes"
 
 #: cart
-msgid "Step 2 of 2: choose the service."
-msgstr "Paso 2 de 2: elija el servicio."
-
-#: cart
 msgid "No planning service is available for you right now."
 msgstr "Ahora mismo no hay ningún servicio de planificación disponible para usted."
 
 #: cart
 msgid "Who makes the aligners?"
 msgstr "¿Quién fabrica los alineadores?"
-
-#: cart
-msgid "A maker"
-msgstr "Un fabricante"
-
-#: cart
-msgid "You have not saved your login for this maker."
-msgstr "No ha guardado sus datos de acceso para este fabricante."
 
 #: cart
 msgid "Save it"
@@ -3620,3 +3604,69 @@ msgid ""
 msgstr ""
 "Este pedido ya no tiene coste, así que el cupón no hace falta y queda sin "
 "usar."
+
+#: cart
+msgid "Treatment Planning"
+msgstr "Planificación de tratamiento"
+
+#: cart
+msgid "A treatment plan for one patient: choose who makes the aligners and the length of the plan."
+msgstr "Un plan de tratamiento para un paciente: elija quién fabrica los alineadores y la duración del plan."
+
+#: cart
+msgid "MyTreatPlan makes and ships the aligners, with or without patient monitoring."
+msgstr "MyTreatPlan fabrica y envía los alineadores, con o sin monitorización del paciente."
+
+#: cart
+msgid "Without patient monitoring"
+msgstr "Sin monitorización del paciente"
+
+#: cart
+msgid "With patient monitoring"
+msgstr "Con monitorización del paciente"
+
+#: cart
+msgid "Length"
+msgstr "Duración"
+
+#: cart
+msgid "What do you want to order?"
+msgstr "¿Qué desea pedir?"
+
+#: cart
+msgid "See the subscription levels"
+msgstr "Ver los niveles de suscripción"
+
+#: cart
+msgid "Not included in your plan"
+msgstr "No incluido en su plan"
+
+#: cart
+#, python-format
+msgid "Step %(n)s of 3"
+msgstr "Paso %(n)s de 3"
+
+#: cart
+msgid "Choose the patient, then the service."
+msgstr "Elija el paciente y después el servicio."
+
+#: cart
+msgid "Brand-made aligners"
+msgstr "Alineadores de una marca"
+
+#: cart
+msgid "You print the aligners yourself."
+msgstr "Usted imprime los alineadores."
+
+#: cart
+msgid "A brand makes the aligners; choose which one next."
+msgstr "Una marca fabrica los alineadores; elija cuál a continuación."
+
+#: cart
+msgid "Which brand?"
+msgstr "¿Qué marca?"
+
+#: cart
+#, python-format
+msgid "You have not saved your login for %(name)s."
+msgstr "No ha guardado sus datos de acceso para %(name)s."

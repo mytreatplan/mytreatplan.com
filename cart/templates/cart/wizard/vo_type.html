@@ -1,0 +1,10 @@
+{% extends "cart/wizard/_step.html" %}
+{% load i18n %}
+{% comment %}VirtuaOrtho, step 2 of 3: One (without patient monitoring) or DigitalTwin (with it), as cards.{% endcomment %}
+
+{% block fields %}
+<fieldset class="flex flex-col gap-3">
+  <legend class="mb-3 text-[22px] font-black leading-[1.2]">{% translate "Which VirtuaOrtho?" %}</legend>
+  {% include "cart/wizard/_cards.html" with name="variant" cards=wizard.form.cards %}
+</fieldset>
+{% endblock %}

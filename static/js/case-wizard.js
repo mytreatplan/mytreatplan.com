@@ -1,41 +1,39 @@
-// The case wizard's step 2 (epic-ordering 9.3, 9.4): hides the add-ons not offered for the chosen
-// service (maker or in-house) and size. The server decides what is accepted; without this
-// script every offered add-on is listed and a tampered choice is refused.
+// The case wizard's steps (epic-ordering 9.16). Each step is a plain POST without this script;
+// it only reveals and hides: on the maker step the brand select (for brand-made aligners) with
+// the warning of the chosen maker and the name of an "other" maker; on the options steps the
+// add-ons not offered for the chosen length (TPS) or row (VirtuaOrtho), and the aligner count
+// of the chosen Spark on Demand row only. The server re-validates everything.
 (function () {
   'use strict';
 
-  // The VirtuaOrtho branch (9.4): shows the rows and options of the chosen variant only; a
-  // hidden group is disabled so its radios and aligner counts are not posted; each row's value carries its variant. The server decides.
-  function startVirtuaortho() {
-    var form = document.querySelector('[data-virtuaortho-form]');
-    if (!form) return;
-    var groups = form.querySelectorAll('[data-vo-group]');
-    var addOns = form.querySelectorAll('[data-add-on]');
-    var filter = form.querySelector('[data-vo-filter]');
-    if (filter) filter.hidden = false;
+  function chosen(form, name) {
+    var input = form.querySelector('input[name="' + name + '"]:checked');
+    return input ? input.value : '';
+  }
 
-    function variant() {
-      var input = form.querySelector('input[name="variant_filter"]:checked');
-      return input ? input.value : '';
-    }
+  function hideAddOns(form, key) {
+    Array.prototype.forEach.call(form.querySelectorAll('[data-add-on]'), function (row) {
+      var offered = (row.getAttribute('data-offered') || '').split(' ');
+      var show = !key || offered.indexOf(key) !== -1;
+      row.hidden = !show;
+      var box = row.querySelector('input');
+      if (!show && box) box.checked = false;
+    });
+  }
+
+  function startMaker(form) {
+    var choices = form.querySelector('[data-maker-choices]');
+    var select = form.querySelector('[data-maker-select]');
+    var other = form.querySelector('[data-other-name]');
+    var warnings = form.querySelectorAll('[data-missing-login]');
 
     function update() {
-      var chosenVariant = variant();
-      Array.prototype.forEach.call(groups, function (group) {
-        var show = !filter || group.getAttribute('data-variant') === chosenVariant;
-        group.hidden = !show;
-        Array.prototype.forEach.call(group.querySelectorAll('input'), function (input) {
-          input.disabled = !show;
-        });
-      });
-      var product = form.querySelector('input[name="product"]:checked');
-      var key = product && !product.disabled ? product.value : '';
-      Array.prototype.forEach.call(addOns, function (row) {
-        var offered = (row.getAttribute('data-offered') || '').split(' ');
-        var show = !key || offered.indexOf(key) !== -1;
-        row.hidden = !show;
-        var box = row.querySelector('input');
-        if (!show && box) box.checked = false;
+      var brand = chosen(form, 'kind') === 'brand';
+      if (choices) choices.hidden = !brand;
+      var maker = select ? select.value : '';
+      if (other) other.hidden = maker !== 'other';
+      Array.prototype.forEach.call(warnings, function (warning) {
+        warning.hidden = warning.getAttribute('data-missing-login') !== maker;
       });
     }
 
@@ -43,32 +41,31 @@
     update();
   }
 
-  function start() {
-    startVirtuaortho();
-    var form = document.querySelector('[data-case-form]');
-    if (!form) return;
-    var rows = form.querySelectorAll('[data-add-on]');
-
-    function chosen(name) {
-      var input = form.querySelector('input[name="' + name + '"]:checked');
-      return input ? input.value : '';
-    }
-
-    function update() {
-      var key = (chosen('kind') === 'in_house' ? 'in_house' : 'branded') + ':' + chosen('size');
-      Array.prototype.forEach.call(rows, function (row) {
-        var offered = (row.getAttribute('data-offered') || '').split(' ');
-        var show = !chosen('size') || offered.indexOf(key) !== -1;
-        row.hidden = !show;
-        var box = row.querySelector('input');
-        if (!show && box) box.checked = false;
-      });
-      var makers = form.querySelector('[data-maker-choices]');
-      if (makers) makers.hidden = chosen('kind') === 'in_house';
-    }
-
+  function startTps(form) {
+    function update() { hideAddOns(form, chosen(form, 'size')); }
     form.addEventListener('change', update);
     update();
+  }
+
+  function startVirtuaortho(form) {
+    function update() {
+      var key = chosen(form, 'item');
+      hideAddOns(form, key);
+      Array.prototype.forEach.call(form.querySelectorAll('[data-vo-quantity]'), function (box) {
+        box.hidden = box.getAttribute('data-vo-quantity') !== key;
+      });
+    }
+    form.addEventListener('change', update);
+    update();
+  }
+
+  function start() {
+    var form = document.querySelector('[data-wizard-form]');
+    if (!form) return;
+    var step = form.getAttribute('data-step');
+    if (step === 'maker') startMaker(form);
+    else if (step === 'options_tps') startTps(form);
+    else if (step === 'options_vo') startVirtuaortho(form);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
