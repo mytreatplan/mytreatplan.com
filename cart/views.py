@@ -57,6 +57,7 @@ def _refusal_texts():
         service.ICE_TAKEN: _('The ICE credit of a patient in your cart is held by another '
                              'of your orders. If you finish again, this order is priced '
                              'without it.'),
+        service.WORK_ORDER: _('This service can no longer be added to your cart.'),
     }
 
 

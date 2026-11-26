@@ -200,6 +200,7 @@ def _line_rows(order, priced, asked):
             row.patient_code = wanted.patient_code
             row.maker, row.other_name = wanted.maker, wanted.other_name
             row.shipping = wanted.shipping
+            row.work_order_id = wanted.work_order_id
             cost = resolver.cost(product)
             row.provider_cost = (cost.total * line.quantity).amount
             row.cost_complete = bool(cost.complete)
@@ -239,7 +240,7 @@ def _inputs(order):
         ice = None if row.ice_asked is None else Money(row.ice_asked, order.currency)
         asked.append(pricing.OrderLine(product, row.quantity, add_ons, ice,
                                        row.patient_code, row.maker, row.other_name,
-                                       row.shipping))
+                                       row.shipping, row.work_order_id))
     return asked
 
 

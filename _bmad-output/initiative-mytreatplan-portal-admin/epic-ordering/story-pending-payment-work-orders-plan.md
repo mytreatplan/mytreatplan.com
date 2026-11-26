@@ -3,14 +3,14 @@ title: 'Pending-payment work orders'
 type: 'feature'
 ticket: '9'
 created: '2026-11-25'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: 'ff1c43f13d4a68184f5d759ee41f50f8d6587457'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/initiative-mytreatplan-portal-admin/architecture-portal-admin/architecture-portal-admin.md'
@@ -78,12 +78,12 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `patients/models.py`, `cart/models.py`, `payments/models.py` + migrations -- nullable `order_line_id`; `work_order_id` on cart item and order line
-- [ ] `patients/service.py` -- manual create, adoption on paid, transfer hold and revert on cancel
-- [ ] `cart/service.py`, `catalogue/resolver.py` -- add a manual work order to the cart, carry its id to the order line
-- [ ] `accounts/views.py`, `home.html`, the wizard views -- the home block, and "Add to cart" opening the wizard with patient and product fixed
-- [ ] the seam's docstring and a fixture helper for tests (`patients/tests/conftest.py`)
-- [ ] tests -- every row of the matrix, plus the tier price at add time (change the tier, then add)
+- [x] `patients/models.py`, `cart/models.py`, `payments/models.py` + migrations -- nullable `order_line_id`; `work_order_id` on cart item and order line
+- [x] `patients/service.py` -- manual create, adoption on paid, transfer hold and revert on cancel
+- [x] `cart/service.py`, `catalogue/resolver.py` -- add a manual work order to the cart, carry its id to the order line
+- [x] `accounts/views.py`, `home.html`, the wizard views -- the home block, and "Add to cart" opening the wizard with patient and product fixed
+- [x] the seam's docstring and a fixture helper for tests (`patients/tests/conftest.py`)
+- [x] tests -- every row of the matrix, plus the tier price at add time (change the tier, then add)
 
 **Acceptance Criteria:**
 - Given a manual work order, when the doctor's tier changes before they add it to the cart, then the cart shows the new tier's price.
@@ -91,9 +91,28 @@ context:
 
 ## Implementation Notes
 
+- Migrations: `patients/0005_manual_work_order` (`order_line_id` nullable), `cart/0003_work_order_id`, `payments/0009_orderline_work_order_id` (all nullable, no data change).
+- `pricing.OrderLine` (re-exported as `resolver.OrderLine`) gained `work_order_id` (last field, default None); `payments.service._line_rows`/`_inputs` carry it, so re-pricing an order (another fiscal entity) keeps it.
+- Seam: `patients.service.create_manual_work_order(doctor, patient_code, product_id, *, actor)`; refuses (`WorkOrderRefused`) an unknown/inactive/other doctor's patient and a product that is unknown or not a cart service category (`MANUAL_CATEGORIES`). Test stand-in for clinical ops: `patients/tests/conftest.py` `manual_work_order` (+ `CLINICAL_OPS` admin actor).
+- Transfer hold: the manual row gets the order's `order_id` (version +1, no event: the stage is unchanged). Cancel/expiry: a row without `order_line_id` gets `order_id` cleared (version +1, no event); a 9.8 row is cancelled as before. Paid: `_line_work_order` first (finds a transfer-held manual row by order + patient), then the line's `work_order_id`; a manual row is adopted (`order_line_id`, `order_id` set) and moved, the live-ICE closing still runs. If the named manual row is gone (cancelled by ops), the 9.8 fallback creates a row.
+- Cart: `cart.service.check_work_order` / `add_work_order` (new refusal code `work_order`); `add_tps`/`add_virtuaortho` untouched. A branded TPS is always brand-made, an in-house TPS always in-house, an ICE either; an ODB needs the variant (DigitalTwin adds ODB-DT); the product must be offered under the doctor's current subscription.
+- Wizard: `cart.wizard.WorkOrderWizard` at `start-a-case/work-order/<work order id>/<step>/` (URL name `work_order_case_step`), steps maker (branded TPS, ICE) / vo_type (ODB only) / options (the one product's row, preselected). `CaseWizard` got small hooks (`options_step`, `step_number`, `first_back_url`, `here` from `get_step_url`); `MakerForm` accepts `options['kinds']`; `_step.html` shows "Step n of total" and the fixed product for this wizard only.
+- Home: "Pending payment" block for doctors only; each row shows "Add to cart", "In your cart" (item linked) or "Waiting for your bank transfer" (`order_id` set). Spanish strings added by hand to `locale/es/LC_MESSAGES/django.po` (a full makemessages run reorders the whole catalogue).
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Pass 1 (quick, 2026-11-26): high 0, medium 2, low 4, false 0, maybe-false 0.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | An in-house TPS work order shows the branded "included cases" notice | low | patch | No maker step, so `_answer('maker','kind')` is None. Now `included` is 0 unless the product is a branded TPS |
+| 2 | "Add to cart" is offered for work orders the wizard cannot complete (retainers without a finished treatment; VirtuaOrtho products not offered), so the doctor is stuck on an empty options step | medium | patch | `check_work_order` now refuses them with `NOT_FINISHED` / `NOT_OFFERED` |
+| 3 | A row whose product left the catalogue links to a wizard that 404s | low | patch | The home row now follows `check_work_order` |
+| 4 | The paid hook takes over a manual row held by another order's transfer, while the transfer hook refuses that case | medium | patch | No UI path found (the start_payment blocking check stops it first). Refused the same way for consistency |
+| 5 | No test for an expired card order (matrix row "Order cancelled") | low | patch | Test added |
+| 6 | `test_another_doctor_cannot_add_it` accepts two codes | low | patch | Asserts the ownership code only |
 
 ## Verification
 

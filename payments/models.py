@@ -170,6 +170,10 @@ class OrderLine(models.Model):
     # `address_line2`, `city`, `postal_code`, `province`, `country`), encrypted; None for any
     # other line. Never copied to an invoice.
     shipping = EncryptedJSONField(null=True, blank=True)
+    # The manual work order the line pays for (epic-ordering 9.9: carried from the cart item;
+    # `patients.service` adopts that row when the order is approved by transfer or paid),
+    # None for any other line. A plain UUID, no database link.
+    work_order_id = models.UUIDField(null=True, blank=True)
     # The provider cost of the line (the product's `resolver.cost` total times the
     # quantity) in the order's currency, and whether every cost link had a price.
     provider_cost = models.DecimalField(max_digits=17, decimal_places=2, default=0)

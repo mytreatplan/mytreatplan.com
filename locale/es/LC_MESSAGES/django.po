@@ -3682,3 +3682,32 @@ msgid ""
 msgstr ""
 "El crédito ICE de un paciente de su carrito está reservado por otro de sus "
 "pedidos. Si finaliza de nuevo, este pedido se calcula sin él."
+
+#: accounts/templates/accounts/home.html
+msgid "Pending payment"
+msgstr "Pendiente de pago"
+
+#: accounts/templates/accounts/home.html
+msgid ""
+"Our team has opened these cases for your patients. Add one to your cart to "
+"choose its options and pay for it."
+msgstr ""
+"Nuestro equipo ha abierto estos casos para sus pacientes. Añada uno a su "
+"carrito para elegir sus opciones y pagarlo."
+
+#: accounts/templates/accounts/home.html
+msgid "Waiting for your bank transfer"
+msgstr "Pendiente de su transferencia bancaria"
+
+#: accounts/templates/accounts/home.html
+msgid "In your cart"
+msgstr "En su carrito"
+
+#: cart/templates/cart/wizard/_step.html
+#, python-format
+msgid "Step %(n)s of %(total)s"
+msgstr "Paso %(n)s de %(total)s"
+
+#: cart/views.py
+msgid "This service can no longer be added to your cart."
+msgstr "Este servicio ya no se puede añadir a su carrito."

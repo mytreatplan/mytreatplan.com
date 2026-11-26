@@ -10,10 +10,19 @@ helpers and the catalogue resolver) and calls `service.add_tps` / `service.add_v
 once, from the last step. The session holds the patient's code (in its key) and the choices
 (each step's own fields, never the CSRF token, a name or a maker credential). A refusal of the
 service shows the options step again with its message and keeps the choices. Without
-JavaScript every step is a plain POST."""
+JavaScript every step is a plain POST.
+
+`WorkOrderWizard` (epic-ordering 9.9): the same steps for a manual work order clinical ops
+opened, under `start-a-case/work-order/<work order id>/<step>/` (the home page's "Add to
+cart"), with the patient and the product fixed: the maker for a branded TPS or an ICE, the
+VirtuaOrtho variant for an ODB, then the options of that one product (its add-ons, a Spark
+product's aligners, the shipping address). It ends in `service.add_work_order`; anything
+`service.check_work_order` refuses (another doctor's, held by a transfer, already in the
+cart...) sends the doctor home with the reason."""
 from urllib.parse import quote
 
 from django.contrib import messages
+from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import translation
@@ -28,9 +37,10 @@ from patients import service as patients_service
 from subscriptions import service as subscriptions
 
 from . import service
-from .forms import (TPS, VIRTUAORTHO, IN_HOUSE, MakerForm, ProductForm, TpsOptionsForm,
+from .forms import (BRAND, TPS, VIRTUAORTHO, IN_HOUSE, MakerForm, ProductForm, TpsOptionsForm,
                     VoOptionsForm, VoTypeForm)
-from .views import (_fiscal_block, _own_patient, _refusal_texts, address_label, size_label)
+from .views import (_doctor_only, _fiscal_block, _own_patient, _refusal_texts, address_label,
+                    size_label)
 
 URL_NAME = 'start_a_case_step'
 # The two options forms share the URL step "options"; the product decides which one it is.
@@ -194,12 +204,16 @@ class CaseWizard(NamedUrlSessionWizardView):
 
     # --- Routing ----------------------------------------------------------------------
 
+    def options_step(self):
+        """The wizard's step behind the URL step "options"."""
+        return {TPS: 'options_tps', VIRTUAORTHO: 'options_vo'}.get(
+            self._answer('product', 'product'))
+
     def _route(self, step):
         """(the wizard's step for the URL's step, None), or (None, a redirect) when the URL
         is not a step of this doctor's path or an earlier step is missing."""
         if step == OPTIONS:
-            step = {TPS: 'options_tps', VIRTUAORTHO: 'options_vo'}.get(
-                self._answer('product', 'product'))
+            step = self.options_step()
         steps = list(self.get_form_list())
         if step not in steps:
             return None, redirect(self.get_step_url(steps[0]))
@@ -235,17 +249,23 @@ class CaseWizard(NamedUrlSessionWizardView):
 
     # --- Rendering --------------------------------------------------------------------
 
+    def step_number(self, step):
+        return STEP_NUMBER[step]
+
+    def first_back_url(self):
+        return reverse('start_a_case')
+
     def get_template_names(self):
         return [f'cart/wizard/{self.steps.current}.html']
 
     def get_context_data(self, form, **kwargs):
         context = super().get_context_data(form=form, **kwargs)
         step = self.steps.current
-        here = reverse(URL_NAME, args=[self.patient.code, URL_STEP.get(step, step)])
+        here = self.get_step_url(step)
         previous = self.get_prev_step(step)
         context.update({
-            'patient': self.patient, 'step': step, 'step_number': STEP_NUMBER[step],
-            'back_url': self.get_step_url(previous) if previous else reverse('start_a_case'),
+            'patient': self.patient, 'step': step, 'step_number': self.step_number(step),
+            'back_url': self.get_step_url(previous) if previous else self.first_back_url(),
             'error': kwargs.get('error', ''), 'last': step == self.steps.last})
         if step == 'product':
             context['upgrade_url'] = reverse('upgrade')
@@ -303,3 +323,173 @@ class CaseWizard(NamedUrlSessionWizardView):
             add_on_codes=options['add_on'],
             quantity=options.get(f'quantity_{size}', '') if choice == service.SPARK else 1,
             address_id=options['address_id'])
+
+
+# --- A manual work order (9.9) ----------------------------------------------------------------
+
+WORK_ORDER_URL_NAME = 'work_order_case_step'
+_TPS_CATEGORIES = (Product.TPS_BRANDED, Product.TPS_IN_HOUSE, Product.ICE)
+
+
+def _wo_is_tps(wizard):
+    return wizard.product.category in _TPS_CATEGORIES
+
+
+def _wo_is_vo(wizard):
+    return wizard.product.category in service.VIRTUAORTHO_CATEGORIES
+
+
+def _wo_needs_maker(wizard):
+    """A branded TPS (a brand only) or an ICE (either branch) asks who makes the aligners."""
+    return wizard.product.category in (Product.TPS_BRANDED, Product.ICE)
+
+
+def _wo_needs_variant(wizard):
+    """Only an ODB is bought under either variant (DigitalTwin adds ODB DigitalTwin)."""
+    return wizard.product.category == Product.ODB
+
+
+def work_order_tps_options(doctor, product):
+    """The TPS options step of a manual work order: its one length (ICE for an ICE) with the
+    doctor's price now, and the add-ons offered on its product."""
+    money = next((money for offered, money in subscriptions.offers_for(doctor)
+                  if offered.pk == product.pk), None)
+    value = service.ICE_SIZE if product.category == Product.ICE else product.size
+    add_ons = {}
+    for add_on in resolver.add_ons(product):
+        add_ons.setdefault(add_on.code, _add_on_entry(add_on))['offered'].add(value)
+    return {'sizes': [{'value': value, 'label': size_label(value), 'price': money}],
+            'add_ons': _finish_add_ons(add_ons)}
+
+
+def work_order_vo_options(doctor, patient, product, variant):
+    """The VirtuaOrtho options step of a manual work order: `vo_options` for the variant,
+    kept to the row of its product and the add-ons that go with it."""
+    options = vo_options(doctor, patient, variant)
+    rows = [row for row in options['rows'] if str(row['pk']) == str(product.pk)]
+    values = {row['value'] for row in rows}
+    options['rows'] = rows
+    options['add_ons'] = [entry for entry in options['add_ons']
+                          if values & set(entry['offered'].split())]
+    return options
+
+
+class WorkOrderWizard(CaseWizard):
+    form_list = [('maker', MakerForm), ('vo_type', VoTypeForm),
+                 ('options_tps', TpsOptionsForm), ('options_vo', VoOptionsForm)]
+    condition_dict = {'maker': _wo_needs_maker, 'options_tps': _wo_is_tps,
+                      'vo_type': _wo_needs_variant, 'options_vo': _wo_is_vo}
+
+    def dispatch(self, request, *args, **kwargs):
+        # A staff account, another doctor's work order, one already paid or gone: a 404.
+        _doctor_only(request)
+        self.work_order = patients_service.manual_work_order_of(
+            request.user, kwargs['work_order_id'])
+        if self.work_order is None:
+            raise Http404
+        self.patient = self.work_order.patient
+        self.product = resolver.product(self.work_order.product_id)
+        if self.product is None:
+            raise Http404
+        return NamedUrlSessionWizardView.dispatch(self, request, *args, **kwargs)
+
+    def get_prefix(self, request, *args, **kwargs):
+        return f'case_wo_{self.work_order.pk.hex}'
+
+    def get_step_url(self, step):
+        return reverse(WORK_ORDER_URL_NAME,
+                       args=[self.work_order.pk, URL_STEP.get(step, step)])
+
+    def options_step(self):
+        return 'options_tps' if _wo_is_tps(self) else 'options_vo'
+
+    def _answer(self, step, name):
+        # A step this product skips (the maker of an in-house TPS...) has no answer.
+        return super()._answer(step, name) if step in self.get_form_list() else None
+
+    def _variant(self):
+        try:
+            return service.work_order_variant(self.request.user, self.product,
+                                              self._answer('vo_type', 'variant') or '')
+        except service.CartRefused:
+            return ''
+
+    def get_form_kwargs(self, step=None):
+        doctor = self.request.user
+        kwargs = {'doctor': doctor, 'patient': self.patient}
+        if step == 'maker' and self.product.category == Product.TPS_BRANDED:
+            kwargs['options'] = {'kinds': [BRAND]}
+        elif step == 'vo_type':
+            kwargs['options'] = {'cards': variant_cards(doctor)}
+        elif step == 'options_tps':
+            kwargs['options'] = work_order_tps_options(doctor, self.product)
+        elif step == 'options_vo':
+            kwargs['options'] = work_order_vo_options(doctor, self.patient, self.product,
+                                                      self._variant())
+        return kwargs
+
+    def get_form_initial(self, step):
+        """The one length or product of the work order is chosen already (and a branded
+        TPS's one kind, brand-made)."""
+        if step == 'maker' and self.product.category == Product.TPS_BRANDED:
+            return {'kind': BRAND}
+        if step == 'options_tps':
+            return {'size': service.ICE_SIZE if self.product.category == Product.ICE
+                    else self.product.size}
+        if step == 'options_vo':
+            rows = self.get_form_kwargs(step)['options']['rows']
+            return {'item': rows[0]['value']} if len(rows) == 1 else {}
+        return {}
+
+    def _refused(self):
+        """None when the work order may go into the cart (a missing fiscal entity is the
+        steps' own block), else a redirect home with the reason."""
+        try:
+            service.check_work_order(self.request.user, self.work_order)
+        except service.CartRefused as refused:
+            if refused.code == service.NO_ENTITY:
+                return None
+            messages.error(self.request, _refusal_texts()[refused.code])
+            return redirect('home')
+        return None
+
+    def get(self, *args, **kwargs):
+        return self._refused() or super().get(*args, **kwargs)
+
+    def post(self, *args, **kwargs):
+        return self._refused() or super().post(*args, **kwargs)
+
+    def step_number(self, step):
+        return list(self.get_form_list()).index(step) + 1
+
+    def first_back_url(self):
+        return reverse('home')
+
+    def get_context_data(self, form, **kwargs):
+        context = super().get_context_data(form=form, **kwargs)
+        context.update({'step_total': len(self.get_form_list()),
+                        'fixed_product': self.product.public_name})
+        if self.steps.current == 'options_tps' \
+                and self.product.category != Product.TPS_BRANDED:
+            context['included'] = 0  # the notice counts branded TPS cases only
+        if self.steps.current == 'options_vo':
+            context['variant_label'] = VARIANT_LABELS.get(self._variant(), '')
+        return context
+
+    def add_to_cart(self, forms):
+        options = {}
+        if 'maker' in forms:
+            maker = forms['maker'].cleaned_data
+            options.update(maker=maker['maker'], other_name=maker['other_name'],
+                           in_house=maker['kind'] == IN_HOUSE)
+        if 'vo_type' in forms:
+            options['variant'] = forms['vo_type'].cleaned_data['variant']
+        if 'options_tps' in forms:
+            options['add_on_codes'] = forms['options_tps'].cleaned_data['add_on']
+        if 'options_vo' in forms:
+            chosen = forms['options_vo'].cleaned_data
+            choice, _sep, size = chosen['item'].partition(':')
+            options.update(add_on_codes=chosen['add_on'], address_id=chosen['address_id'],
+                           quantity=chosen.get(f'quantity_{size}', '')
+                           if choice == service.SPARK else 1)
+        return service.add_work_order(self.request.user, self.work_order, **options)
