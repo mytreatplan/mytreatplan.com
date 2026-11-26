@@ -8,9 +8,10 @@ constraint on (gateway, event id), not the cache), a `WebhookLog` row is written
 (`payments.tasks.confirm_webhook`) is queued; the answer is 200 at once. The task re-reads
 the payment from the gateway and confirms it (`payments.service.confirm_payment`: the one
 way an order is paid), with its attempts and next try on the log row. A verified paid event
-that carries a saved card (entry 11, `WebhookEvent.card`) has it stored first
-(`payments.repeat.store_card`, its own transaction); a paid event of an order that asked to
-save the card and carries none is a Sentry warning.
+that carries a saved card (entry 11, `WebhookEvent.card`) has it stored with its accepted
+log row, before the task is queued (`payments.repeat.store_card`, its own savepoint); a
+duplicate stores nothing. A paid event of an order that asked to save the card and carries
+none is a Sentry warning.
 
 Every webhook writes one log row, accepted or refused: the result, the IP, the gateway's
 ids, the amount it claimed, the SHA-256 and size of the body, never the body. A refusal is
@@ -119,11 +120,13 @@ def handle(adapter, request):
         if event.payment_id else None
     if payment is None or not event.event_id:
         return _refuse(gateway, WebhookLog.UNKNOWN, ip, body, event=event)
-    if event.status == gateways.PAID:
-        _store_card(payment, event.card)
     try:
         with transaction.atomic():
             row = _log(gateway, WebhookLog.ACCEPTED, ip, body, event=event, payment=payment)
+            if event.status == gateways.PAID:
+                # Only an event taken in for the first time: a re-delivery never stores the
+                # card again nor warns again.
+                _store_card(payment, event.card)
             enqueue_on_commit(_task(), row.pk)
     except IntegrityError:
         _log(gateway, WebhookLog.DUPLICATE, ip, body, event=event, payment=payment)
@@ -134,7 +137,7 @@ def handle(adapter, request):
 
 def _store_card(payment, card):
     """Keep the card a verified paid event carries (entry 11; `payments.repeat.store_card`,
-    its own transaction). A failure is logged by order UUID and never refuses the webhook."""
+    its own savepoint). A failure is logged by order UUID and never refuses the webhook."""
     from . import repeat
     try:
         repeat.store_card(payment, card)

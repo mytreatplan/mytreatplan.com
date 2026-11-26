@@ -54,6 +54,12 @@ class NoSavedCard(service.OrderError):
     """The order's doctor has no saved card at a gateway the order can be charged on."""
 
 
+class InsideTransaction(service.OrderError):
+    """`charge_saved_card` was called inside a `transaction.atomic()`: the open charge could
+    not be committed before the gateway call, and a later rollback would lose the record of
+    a charge the gateway may have made (a rerun would charge again)."""
+
+
 @dataclass(frozen=True)
 class RepeatResult:
     """What a repeat charge came to: `outcome` PAID, DECLINED, UNKNOWN or NOT_PAYABLE;
@@ -226,9 +232,14 @@ def _declined(payment, code):
 def charge_saved_card(order, period, *, actor=service.SYSTEM_ACTOR):
     """Charge the doctor's saved card for `order` (an `Order` or its id) as the payment of
     `period` (a non-empty key of at most 20 characters); see the module docstring. Returns
-    a `RepeatResult`. Raises `NoSavedCard` or `gateways.UnsupportedOperation` (nothing
-    created), and the refusals of `payments.service` (`AttemptOpen`, `NoEntity`,
-    `EntityChanged`, `GatewayRefused`, `PatientBusy`) before any charge."""
+    a `RepeatResult`. Raises `InsideTransaction` (called inside an atomic block: it must run
+    outside one, so the open charge is committed before the gateway is called; nothing is
+    created), `NoSavedCard` or `gateways.UnsupportedOperation` (nothing created), and the
+    refusals of `payments.service` (`AttemptOpen`, `NoEntity`, `EntityChanged`,
+    `GatewayRefused`, `PatientBusy`) before any charge."""
+    if transaction.get_connection().in_atomic_block:
+        raise InsideTransaction('charge_saved_card must run outside transaction.atomic(): '
+                                'the open charge is committed before the gateway is called')
     service._check_actor(actor)
     period = str(period or '').strip()
     if not period or len(period) > 20:

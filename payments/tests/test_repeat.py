@@ -21,7 +21,9 @@ from payments.tests.test_redsys import (KEY, FakeRedsys, body_of, form_of, notif
 from payments.tests.test_service import ADVANCED, actor
 from payments.tests.test_webhooks import attempt, last_log, paid_hooks
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures('clear_cache', 'portal_urls')]
+# A repeat charge runs outside any transaction (`repeat.InsideTransaction`): real commits.
+pytestmark = [pytest.mark.django_db(transaction=True),
+              pytest.mark.usefixtures('clear_cache', 'portal_urls')]
 
 CARD = {'Ds_Merchant_Identifier': 'b3f2c1a0d9e8f7a6b5c4d3e2f1a0b9c8d7e6f5a4',
         'Ds_Merchant_Cof_Txnid': '2311221234567890', 'Ds_ExpiryDate': '4912',
@@ -314,6 +316,36 @@ def test_the_database_refuses_a_second_live_charge_of_a_period(doctor, entity, f
                                currency='EUR', state='needs_attention', period='P1')
     Payment.objects.create(order=renewal, gateway='fake', amount=first.amount,
                            currency='EUR', state='failed', period='P1')
+
+
+def test_a_charge_inside_a_transaction_is_refused_before_anything_is_created(
+        doctor, entity, fake_on):
+    saved_on_fake(doctor)
+    renewal = subscription_order(doctor, save_card=False)
+    with transaction.atomic():
+        with pytest.raises(repeat.InsideTransaction):
+            repeat.charge_saved_card(renewal, 'P1')
+    renewal.refresh_from_db()
+    assert renewal.state == 'checkout' and not renewal.payments.exists()
+
+
+def test_a_duplicate_paid_notification_neither_stores_the_card_again_nor_warns_again(
+        doctor, entity, redsys_on, sentry):
+    _order, bare = attempt(doctor, 'redsys', order=subscription_order(doctor))
+    bare_body = body_of(notification(bare))
+    assert post(bare_body).status_code == 200
+    assert sentry == [f'saved card not returned by the gateway: order {bare.order_id}']
+    assert post(bare_body).status_code == 200 and last_log().result == 'duplicate'
+    assert len(sentry) == 1
+    _first, older = attempt(doctor, 'redsys', order=subscription_order(doctor))
+    older_body = body_of({**notification(older), **CARD,
+                          'Ds_Merchant_Identifier': 'older'})
+    assert post(older_body).status_code == 200
+    _second, newer = attempt(doctor, 'redsys', order=subscription_order(doctor))
+    assert post(body_of({**notification(newer), **CARD,
+                         'Ds_Merchant_Identifier': 'newer'})).status_code == 200
+    assert post(older_body).status_code == 200 and last_log().result == 'duplicate'
+    assert SavedCard.objects.get().token == 'newer' and len(sentry) == 1
 
 
 def test_a_period_is_required(doctor, entity, fake_on):

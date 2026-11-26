@@ -3,7 +3,7 @@ title: 'Saved cards and repeat charges on Redsys'
 type: 'feature'
 ticket: '11'
 created: '2026-11-26'
-status: 'in-review'
+status: 'built'
 baseline_revision: '9ecbe907440506005bb9781f767d8f030bcbafb4'
 route: 'full'
 route_source: 'auto'
@@ -105,7 +105,7 @@ context: []
 
 ## Review Triage Log
 
-Quick lens, iteration 0, 4 findings: 2 medium (patch), 1 intent question (answered by the user), 1 rejected.
+Quick lens, iteration 0, 4 findings: 2 medium (patched by the same implementer; then my full suite: 4566 passed, 17 skipped, 0 failed), 1 intent question (answered by the user), 1 rejected.
 
 | # | Finding | Verdict | Route | Evidence / action |
 |---|---------|---------|-------|-------------------|
@@ -122,3 +122,9 @@ Quick lens, iteration 0, 4 findings: 2 medium (patch), 1 intent question (answer
 
 **Manual checks (staging, dev, public test terminal):**
 - Whether the test terminal returns `Ds_Merchant_Identifier`/`Ds_Merchant_Cof_Txnid`; whether a REST charge also sends a notification; the decline code for a refused MIT. Record in Implementation Notes.
+
+## Staging
+
+Owed (the plan stays `built` until both pass):
+1. Dev, Redsys's public test terminal, after the PR merges: the README "Payments: saved cards" check (a `save_card` order paid with the test card stores one card; `charge_saved_card` twice for a second order and the same period charges once). Record whether the notification carries `Ds_Merchant_Identifier`/`Ds_Merchant_Cof_Txnid`, whether a REST charge also notifies, and a refused MIT's decline code.
+2. Our own Redsys terminal: the same check, once Santander's Venta + contract is signed and its test credentials arrive (not to be asked for before the product owner says it is signed).
