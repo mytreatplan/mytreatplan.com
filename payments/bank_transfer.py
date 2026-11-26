@@ -25,8 +25,10 @@ REMIND_AFTER = timedelta(days=7)
 
 
 def company_of(order):
-    """The billing company of the order (looked up by its code), or None."""
-    return BillingCompany.objects.filter(code=order.company_code).first()
+    """The billing company of the order (looked up by its code, an active one first: a
+    deactivated company keeps its code), or None."""
+    return (BillingCompany.objects.filter(code=order.company_code or '')
+            .order_by('-active', 'id').first())
 
 
 def accepts(order):

@@ -2,7 +2,9 @@
 {% load i18n %}
 {% comment %}
 The doctor's invoices and credit notes (invoices.views.invoice_list, epic-payments entry
-10), newest first, each with its PDF. No patient names here: the PDF carries them.
+10), newest first, each with its PDF. No patient names here: the PDF carries them. Among them,
+by date, each order waiting for a bank transfer (epic-ordering 9.19): a "Pending payment"
+badge instead of a number, its order reference, never called an invoice.
 {% endcomment %}
 
 {% block title %}{% translate "Invoices" %} &mdash; MyTreatPlan{% endblock %}
@@ -10,7 +12,7 @@ The doctor's invoices and credit notes (invoices.views.invoice_list, epic-paymen
 {% block portal_content %}
 <h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Invoices" %}</h1>
 
-{% if invoices %}
+{% if rows %}
 <div class="mt-6 overflow-x-auto">
 <table class="w-full text-left text-copy" data-invoices>
   <thead><tr class="border-b border-ink/20 text-ink-muted">
@@ -21,7 +23,16 @@ The doctor's invoices and credit notes (invoices.views.invoice_list, epic-paymen
     <th class="py-2"><span class="sr-only">{% translate "PDF" %}</span></th>
   </tr></thead>
   <tbody>
-  {% for invoice in invoices %}
+  {% for row in rows %}
+  {% if row.pending %}{% with order=row.pending %}
+  <tr class="border-b border-ink/10" data-pending-document="{{ order.reference }}">
+    <td class="py-3 pr-3"><span class="inline-block rounded-full border border-ink/30 px-2 py-0.5 text-[0.85em] font-semibold" data-pending-badge>{% translate "Pending payment" context "invoice list" %}</span><div class="mt-1 text-ink-muted">{{ order.reference }}</div></td>
+    <td class="py-3 pr-3">{% translate "Pending payment document" context "invoice list" %}<div class="text-ink-muted" data-not-invoice>{% translate "This is not an invoice" context "invoice list" %}</div></td>
+    <td class="py-3 pr-3">{{ row.date|date:"DATE_FORMAT" }}</td>
+    <td class="py-3 pr-3 text-right">{{ order.total }} {{ order.currency }}</td>
+    <td class="py-3 text-right"><a href="{% url 'invoice_pending_pdf' order.pk %}" class="font-semibold text-green-deep underline underline-offset-4 hover:text-ink" data-download>{% translate "Download PDF" %}</a></td>
+  </tr>
+  {% endwith %}{% else %}{% with invoice=row.invoice %}
   <tr class="border-b border-ink/10" data-invoice="{{ invoice.number }}">
     <td class="py-3 pr-3 font-semibold">{{ invoice.number }}</td>
     <td class="py-3 pr-3">{% if invoice.kind == "credit_note" %}{% translate "Credit note" context "invoice list" %}{% else %}{% translate "Invoice" context "invoice list" %}{% endif %}</td>
@@ -29,6 +40,7 @@ The doctor's invoices and credit notes (invoices.views.invoice_list, epic-paymen
     <td class="py-3 pr-3 text-right">{{ invoice.total }} {{ invoice.currency }}</td>
     <td class="py-3 text-right"><a href="{% url 'invoice_pdf' invoice.pk %}" class="font-semibold text-green-deep underline underline-offset-4 hover:text-ink" data-download>{% translate "Download PDF" %}</a></td>
   </tr>
+  {% endwith %}{% endif %}
   {% endfor %}
   </tbody>
 </table>

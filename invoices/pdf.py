@@ -7,14 +7,20 @@ billing company or fiscal entity, in the doctor's profile language (the fallback
 other than English on the ae portal, gives the default one). Each patient's current name
 comes from `invoices.patients.names_for` and goes next to the code for this render only: it
 is not stored, logged or cached. Rendering is synchronous; WeasyPrint needs Pango.
+
+`render_pending(order, user)` (epic-ordering 9.19) renders an order waiting for its bank
+transfer in the same layout as a "Pending payment document" that says it is not an
+invoice: no number, the order's reference, the bank details, and the seller from the live
+billing company (user decision 2026-11-26; nothing is snapshotted or stored).
 """
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.contrib.staticfiles import finders
 from django.template.loader import render_to_string
-from django.utils import formats, translation
+from django.utils import formats, timezone, translation
 from django.utils.translation import pgettext
 
 from accounts.profile import profile_of
@@ -79,13 +85,10 @@ def _reason(code):
             'error': pgettext('invoice PDF', 'Error')}.get(code, '')
 
 
-def context(invoice, user):
-    """What the template shows, formatted in the active language."""
-    rows = list(invoice.lines.order_by('position'))
+def _lines(rows, user, currency):
+    """The lines as the template shows them: each patient's current name next to the
+    code (invoices.patients), for this render only."""
     names = patients.names_for(user, [row.patient_code for row in rows])
-    currency = invoice.currency
-    credit = invoice.kind == invoice.CREDIT_NOTE
-    original = invoice.original if credit else None
     lines = []
     for row in rows:
         name = names.get(row.patient_code)
@@ -95,36 +98,123 @@ def context(invoice, user):
             'net': money(row.net, currency), 'vat_percent': _percent(row.vat_percent),
             'vat_text': row.vat_text,
             'discount': money(row.discount_amount, currency) if row.discount_amount else ''})
-    totals = [(pgettext('invoice PDF', 'Net total'), money(invoice.net_total, currency))]
-    for label, value in ((pgettext('invoice PDF', 'Discount'), invoice.discount_total),
-                         (pgettext('invoice PDF', 'Special consumption tax'), invoice.ice_total),
-                         (pgettext('invoice PDF', 'Voucher'), invoice.voucher_taken)):
+    return lines
+
+
+def _amounts(document):
+    """The totals, VAT groups, VAT total and total of an invoice or an order (the same
+    field names on both)."""
+    currency = document.currency
+    totals = [(pgettext('invoice PDF', 'Net total'), money(document.net_total, currency))]
+    for label, value in ((pgettext('invoice PDF', 'Discount'), document.discount_total),
+                         (pgettext('invoice PDF', 'Special consumption tax'), document.ice_total),
+                         (pgettext('invoice PDF', 'Voucher'), document.voucher_taken)):
         if value:
             totals.append((label, money(value, currency)))
     return {
-        'invoice': invoice, 'credit': credit, 'original': original,
-        'reason': _reason(invoice.reason) if credit else '',
-        'title': pgettext('invoice PDF', 'Credit note') if credit else pgettext('invoice PDF', 'Invoice'),
-        'seller': _seller(invoice), 'buyer': _buyer(invoice), 'lines': lines,
-        'issue_date': formats.date_format(invoice.issue_date, 'DATE_FORMAT'),
-        'original_date': (formats.date_format(original.issue_date, 'DATE_FORMAT')
-                          if original else ''),
         'totals': totals,
         'groups': [{'percent': _percent(group.get('percent')), 'text': group.get('text', ''),
                     'base': money(group.get('base'), currency),
                     'vat': money(group.get('vat'), currency)}
-                   for group in invoice.vat_groups],
-        'total': money(invoice.total, currency), 'vat_total': money(invoice.vat_total, currency),
-        'fonts': {name: Path(finders.find(path)).as_uri() for name, path in FONTS.items()
-                  if finders.find(path)},
+                   for group in document.vat_groups],
+        'total': money(document.total, currency),
+        'vat_total': money(document.vat_total, currency),
     }
 
 
-def render_html(invoice, user):
-    """The document's HTML, in the doctor's language."""
+def _fonts():
+    return {name: Path(finders.find(path)).as_uri() for name, path in FONTS.items()
+            if finders.find(path)}
+
+
+def context(invoice, user):
+    """What the template shows, formatted in the active language."""
+    credit = invoice.kind == invoice.CREDIT_NOTE
+    original = invoice.original if credit else None
+    return {
+        'invoice': invoice, 'pending': False, 'credit': credit, 'original': original,
+        'reason': _reason(invoice.reason) if credit else '',
+        'title': pgettext('invoice PDF', 'Credit note') if credit else pgettext('invoice PDF', 'Invoice'),
+        'seller': _seller(invoice), 'buyer': _buyer(invoice),
+        'lines': _lines(list(invoice.lines.order_by('position')), user, invoice.currency),
+        'issue_date': formats.date_format(invoice.issue_date, 'DATE_FORMAT'),
+        'original_date': (formats.date_format(original.issue_date, 'DATE_FORMAT')
+                          if original else ''),
+        **_amounts(invoice),
+        'fonts': _fonts(),
+    }
+
+
+# --- A pending-payment document (epic-ordering 9.19) ----------------------------------------
+# An order waiting for a bank transfer, shown in the invoice's layout but never as an
+# invoice: no number (its reference is the order's), the "not an invoice" notice, and the
+# bank details to pay. Built from the order and the live billing company: nothing is stored.
+
+def company_of(order):
+    """The order's billing company (an active one first), or None: the same row as its
+    bank details (`payments.bank_transfer.company_of`)."""
+    from payments import bank_transfer
+    return bank_transfer.company_of(order)
+
+
+def pending_date(order, company=None):
+    """The document's date: the day the order was frozen (`pending_at`), in the billing
+    company's time zone (as an invoice's issue date), else the site's."""
+    when = order.pending_at or order.created_at
+    company = company if company is not None else company_of(order)
+    try:
+        zone = ZoneInfo(company.time_zone) if company is not None else None
+    except (ZoneInfoNotFoundError, ValueError, KeyError):
+        zone = None
+    return timezone.localtime(when, zone).date()
+
+
+def _live_seller(order, company):
+    """The seller from the live billing company (user decision 2026-11-26), named as the
+    order names it (as `invoices.service.issue_for_order`)."""
+    if company is None:
+        return {'name': order.company_legal_name, 'lines': [], 'ids': []}
+    ids = [(label, value) for label, value in (
+        (pgettext('invoice PDF', 'Company number'), company.company_number),
+        (pgettext('invoice PDF', 'VAT ID'), company.vat_number),
+        (pgettext('invoice PDF', 'Tax ID'), company.tax_number)) if value]
+    return {'name': order.company_legal_name or company.legal_name,
+            'lines': [line for line in company.address.splitlines() if line.strip()],
+            'ids': ids}
+
+
+def pending_context(order, user):
+    """What the template shows for a pending-payment document, in the active language."""
+    from payments import bank_transfer
+    from payments.models import Payment
+    company = company_of(order)
+    payment = order.payments.filter(gateway=bank_transfer.NAME, state=Payment.OPEN).first()
+    details = bank_transfer.details(order, payment)
+    if details is not None:
+        details = {**details, 'amount': money(details['amount'], details['currency'])}
+    return {
+        'invoice': None, 'pending': True, 'credit': False, 'original': None, 'reason': '',
+        'title': pgettext('invoice PDF', 'Pending payment document'),
+        'reference': order.reference, 'bank': details,
+        'seller': _live_seller(order, company), 'buyer': _buyer(order),
+        'lines': _lines(list(order.lines.order_by('position')), user, order.currency),
+        'issue_date': formats.date_format(pending_date(order, company), 'DATE_FORMAT'),
+        'original_date': '',
+        **_amounts(order),
+        'fonts': _fonts(),
+    }
+
+
+def render_html(invoice, user, build=context):
+    """The document's HTML, in the doctor's language (`build`: `context`, or
+    `pending_context` for an order waiting for its transfer)."""
     language = language_of(user)
     with translation.override(language):
-        return render_to_string(TEMPLATE, {**context(invoice, user), 'language': language})
+        return render_to_string(TEMPLATE, {**build(invoice, user), 'language': language})
+
+
+def render_pending_html(order, user):
+    return render_html(order, user, build=pending_context)
 
 
 def font_urls():
@@ -143,9 +233,14 @@ def _fonts_only():
     return FontsOnly()
 
 
-def render(invoice, user):
+def render(invoice, user, build=context):
     """The PDF's bytes. Only the fonts (`font_urls`) can be loaded by the renderer."""
     # Imported here: WeasyPrint loads Pango at import, and only a download needs it.
     from weasyprint import HTML
-    html = render_html(invoice, user)
+    html = render_html(invoice, user, build)
     return HTML(string=html, url_fetcher=_fonts_only()).write_pdf()
+
+
+def render_pending(order, user):
+    """The pending-payment document of `order` as a PDF."""
+    return render(order, user, build=pending_context)

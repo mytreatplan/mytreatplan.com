@@ -3121,6 +3121,46 @@ msgctxt "invoice list"
 msgid "Invoice"
 msgstr "Factura"
 
+#: invoices/templates
+msgctxt "invoice list"
+msgid "Pending payment"
+msgstr "Pendiente de pago"
+
+#: invoices/templates
+msgctxt "invoice list"
+msgid "Pending payment document"
+msgstr "Documento pendiente de pago"
+
+#: invoices/templates
+msgctxt "invoice list"
+msgid "This is not an invoice"
+msgstr "Esto no es una factura"
+
+#: invoices/pdf.py
+msgctxt "invoice PDF"
+msgid "Pending payment document"
+msgstr "Documento pendiente de pago"
+
+#: invoices/templates
+msgctxt "invoice PDF"
+msgid "This is not an invoice"
+msgstr "Esto no es una factura"
+
+#: invoices/templates
+msgctxt "invoice PDF"
+msgid "Order reference"
+msgstr "Referencia del pedido"
+
+#: invoices/templates
+msgctxt "invoice PDF"
+msgid ""
+"Pay by bank transfer with these details, quoting the order reference as the "
+"transfer concept. The invoice is issued when we receive the payment."
+msgstr ""
+"Pague por transferencia bancaria con estos datos, indicando la referencia del "
+"pedido como concepto de la transferencia. La factura se emite cuando "
+"recibamos el pago."
+
 #: regions/profiles.py
 msgid ""
 "Madrid Commercial Register, sheet M-894040, entry 1, electronic folio; IRUS "
