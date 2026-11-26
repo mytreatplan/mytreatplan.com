@@ -191,10 +191,12 @@ def add_tps(doctor, patient, *, maker, other_name='', in_house=False, size, add_
     if not fiscal.has_usable_entity(doctor):
         raise CartRefused(NO_ENTITY)
     maker, other_name = _maker(doctor, maker, other_name, in_house)
-    # A live work order refuses, unless it is an ICE (a TPS is the planning after it).
-    # An ICE is refused with any live work order.
-    if patients_service.live_work_order(patient) is not None \
-            and (size == ICE_SIZE or not patients_service.live_is_ice(patient)):
+    # A blocking work order refuses (a live one, or one waiting for a bank transfer,
+    # epic-ordering 9.8), unless it is a live ICE (a TPS is the planning after it). An ICE
+    # is refused with any blocking work order.
+    blocking = patients_service.blocking_work_order(patient)
+    if blocking is not None \
+            and (size == ICE_SIZE or not patients_service.is_live_ice(blocking)):
         raise CartRefused(LIVE_WORK_ORDER)
     if CartItem.objects.filter(doctor_id=doctor.pk, patient_id=patient.pk).exists():
         raise CartRefused(IN_CART)
@@ -255,8 +257,9 @@ def add_virtuaortho(doctor, patient, *, variant, choice, size='', add_on_codes=(
     """Put a VirtuaOrtho item for `patient` in `doctor`'s cart and return the `CartItem`.
     `variant` is ONE or DIGITALTWIN; `choice` is CASE (with `size`), ODB or SPARK (with
     `size` the product's id), or RETAINERS (needs a finished treatment). `quantity`: the
-    aligners of a Spark product (within its range), else 1. A live work order refuses unless
-    it is an ICE. `CartRefused` for anything not allowed; nothing is changed then."""
+    aligners of a Spark product (within its range), else 1. A blocking work order (a live one,
+    or one waiting for a bank transfer) refuses unless it is a live ICE. `CartRefused` for
+    anything not allowed; nothing is changed then."""
     if not is_client(doctor) or doctor.is_erased:
         raise CartRefused(NOT_A_DOCTOR)
     patient = patients_service.patient_of(doctor, getattr(patient, 'code', None))
@@ -264,8 +267,8 @@ def add_virtuaortho(doctor, patient, *, variant, choice, size='', add_on_codes=(
         raise CartRefused(NO_PATIENT)
     if not fiscal.has_usable_entity(doctor):
         raise CartRefused(NO_ENTITY)
-    if patients_service.live_work_order(patient) is not None \
-            and not patients_service.live_is_ice(patient):
+    blocking = patients_service.blocking_work_order(patient)
+    if blocking is not None and not patients_service.is_live_ice(blocking):
         raise CartRefused(LIVE_WORK_ORDER)
     if CartItem.objects.filter(doctor_id=doctor.pk, patient_id=patient.pk).exists():
         raise CartRefused(IN_CART)

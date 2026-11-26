@@ -6,10 +6,13 @@ are field-encrypted and stay on this site; only the code travels centrally). The
 drawn again after its patient is deleted, which is negligible (and invoices keep only the
 code). A patient is never deleted on its own here: erasing the doctor hides the patients
 (`erased`), and the purge archives them (the archive app) and then deletes them with the
-account. `WorkOrder`: one case of a patient; `order_line_id` is the
-paid order line that started it (unique: the paid hook is idempotent). A patient has at most
-one work order in a live stage (`mytp_core.stages.LIVE_STAGES`), also a partial unique
-constraint. `IceDeduction` (epic-ordering 9.7): one ICE credit taken by a planning line,
+account. `WorkOrder`: one case of a patient, one per patient-service order line
+(epic-ordering 9.8); `order_line_id` is the order line that started it (unique: the hooks
+are idempotent) and `order_id` its order. A patient has at most one work order in a live
+stage (`mytp_core.stages.LIVE_STAGES`), also a partial unique constraint. A
+`pending_payment` work order with an `order_id` waits for its bank transfer and blocks the
+patient (an application check, `patients.service.blocking_work_order`); one without (a
+manual one of epic-clinical-ops 9.9) never blocks. `IceDeduction` (epic-ordering 9.7): one ICE credit taken by a planning line,
 following the planning order through its hooks.
 
 `Patient` and `WorkOrder` are written only by `patients.service`: a change locks the row,
@@ -84,8 +87,13 @@ class WorkOrder(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(Patient, on_delete=models.PROTECT, related_name='work_orders')
-    # The paid order line that started the case; unique, so a replayed hook adds nothing.
+    # The order line that started the case; unique, so a replayed hook adds nothing.
     order_line_id = models.UUIDField(unique=True)
+    # The order of that line (epic-ordering 9.8), set on every row an order creates. A
+    # `pending_payment` row with it is a bank-transfer work order (it blocks the patient);
+    # without it, a manual one (9.9, never blocking). It also finds an order's rows when
+    # the order's line ids changed. A plain UUID, no database link.
+    order_id = models.UUIDField(null=True, blank=True, db_index=True)
     product_id = models.UUIDField(null=True, blank=True)
     code = models.CharField(max_length=64, blank=True, default='')
     stage = models.CharField(max_length=32, choices=STAGE_CHOICES)
