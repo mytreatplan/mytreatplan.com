@@ -426,7 +426,7 @@ def _pending_work_orders(user):
     no longer offered), or ready to add (its wizard's URL; a missing fiscal entity is the
     wizard's own block)."""
     from cart import service as cart
-    from cart.views import _refusal_texts
+    from cart.common import refusal_texts
     from cart.wizard import WORK_ORDER_URL_NAME
     from catalogue import resolver
     from patients import service as patients
@@ -441,7 +441,7 @@ def _pending_work_orders(user):
             cart.check_work_order(user, work_order)
             reason = ''
         except cart.CartRefused as refused:
-            reason = '' if refused.code == cart.NO_ENTITY else _refusal_texts()[refused.code]
+            reason = '' if refused.code == cart.NO_ENTITY else refusal_texts()[refused.code]
         rows.append({
             'reason': reason,
             'id': work_order.pk, 'code': work_order.patient.code,

@@ -291,7 +291,7 @@ def _fire(event, order):
         raise HookFailed(event) from failure
 
 
-def _lock(order_id):
+def lock_order(order_id):
     pk = order_id.pk if isinstance(order_id, Order) else order_id
     order = Order.objects.select_for_update().filter(pk=pk).first()
     if order is None:
@@ -350,7 +350,7 @@ def _patient_free(patients, patient, is_ice, exclude_order=None):
     pending bank-transfer work order of another order always blocks; `exclude_order`'s
     own never do (9.8)."""
     blocking = patients.blocking_work_order(patient, exclude_order=exclude_order)
-    return blocking is None or (not is_ice and patients.is_live_ice(blocking))
+    return patients.may_take_line(blocking, is_ice)
 
 
 class PatientBusy(OrderError):
@@ -469,7 +469,7 @@ def choose_entity(order, entity, *, expected_version, actor):
     order."""
     _check_actor(actor)
     with transaction.atomic():
-        locked = _lock(order)
+        locked = lock_order(order)
         _check_version(locked, expected_version)
         if locked.state != Order.CHECKOUT:
             raise InvalidTransition('the fiscal entity changes only in checkout')
@@ -517,7 +517,7 @@ def _start_payment(order, gateway, *, expected_version, actor):
     # lock, once every check has passed (a refused request must not lose it).
     _cancel_live_attempts(getattr(order, 'pk', order), exclude=BANK_TRANSFER)
     with transaction.atomic():
-        locked = _lock(order)
+        locked = lock_order(order)
         _check_version(locked, expected_version)
         if locked.state not in Order.OPEN_STATES:
             raise InvalidTransition(f'an order that is {locked.state} cannot be paid')
@@ -572,7 +572,7 @@ def _move(order, to, event, allowed, stamp_field, *, expected_version, actor, no
     returns it untouched."""
     _check_actor(actor)
     with transaction.atomic():
-        locked = _lock(order)
+        locked = lock_order(order)
         if locked.state == to:
             return locked
         _check_version(locked, expected_version)
@@ -604,7 +604,7 @@ def cancel(order, *, expected_version, actor):
     cancel at a bank), in the same transaction; an open attempt of another gateway still
     refuses (`AttemptOpen`)."""
     with transaction.atomic():
-        locked = _lock(order)  # the order first, then its attempts (as `mark_transfer_paid`)
+        locked = lock_order(order)  # the order first, then its attempts (as `mark_transfer_paid`)
         if locked.state in Order.OPEN_STATES and locked.version == expected_version:
             _cancel_live_attempts(locked.pk, only=BANK_TRANSFER)
         return _move(locked, Order.CANCELLED, CANCELLED, Order.OPEN_STATES, 'cancelled_at',
@@ -774,7 +774,7 @@ def confirm_payment(payment, gateway_payment):
     it is and marks the payment `needs_attention`, with an error to Sentry by order UUID.
     A hook that raises (`HookFailed`) rolls everything back."""
     with transaction.atomic():
-        order = _lock(payment.order_id)
+        order = lock_order(payment.order_id)
         locked = Payment.objects.select_for_update().get(pk=payment.pk)
         now = timezone.now()
         if locked.state == Payment.CONFIRMED:
@@ -823,7 +823,7 @@ def mark_transfer_paid(order, amount, *, expected_version, actor):
     except ArithmeticError:
         raise AmountMismatch('not an amount') from None
     with transaction.atomic():
-        locked = _lock(order)
+        locked = lock_order(order)
         if locked.state == Order.PAID and locked.payments.filter(
                 gateway=BANK_TRANSFER, state=Payment.CONFIRMED).exists():
             return locked

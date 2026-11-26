@@ -12,7 +12,7 @@ from django.utils import translation
 from invoices import pdf
 from mytp_core.tasks import enqueue_on_commit
 from payments import bank_transfer
-from payments.models import Order, Payment
+from payments.models import Order
 
 CONFIRMATION, RECEIPT = 'order_confirmation', 'payment_receipt'
 TEMPLATES = {CONFIRMATION: 'cart/email/order_confirmation', RECEIPT: 'cart/email/payment_receipt'}

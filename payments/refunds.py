@@ -73,7 +73,7 @@ def _confirmed_payment(order):
 def _start(order, expected_version, actor, reason, manual, note):
     """Phase 1: the `pending` row, committed before the gateway is called."""
     with transaction.atomic():
-        locked = service._lock(order)
+        locked = service.lock_order(order)
         if locked.state != Order.PAID:
             raise service.InvalidTransition(f'an order that is {locked.state} cannot be refunded')
         if locked.refunds.filter(state__in=(Refund.PENDING, Refund.NEEDS_ATTENTION)).exists():
@@ -120,7 +120,7 @@ def _settle(refund_id, actor, gateway_refund_id):
     """Phase 3: one transaction under the order's lock."""
     with transaction.atomic():
         order_id = Refund.objects.values_list('order_id', flat=True).get(pk=refund_id)
-        locked = service._lock(order_id)  # the order first, then the refund (as `cancel`)
+        locked = service.lock_order(order_id)  # the order first, then the refund (as `cancel`)
         row = Refund.objects.select_for_update().get(pk=refund_id)
         if row.state != Refund.PENDING:
             return row, locked

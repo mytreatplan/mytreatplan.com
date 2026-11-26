@@ -15,7 +15,8 @@ from catalogue import resolver
 from catalogue.models import Product
 
 from . import service
-from .views import _doctor_only, size_label
+from .common import doctor_only
+from .views import size_label
 
 
 def _row(product, price, label=None, *, per_unit=False, note='', includes_odb_dt=False):
@@ -82,7 +83,7 @@ def planning_sections(doctor):
 @never_cache
 @require_http_methods(['GET', 'HEAD'])
 def virtuaortho_page(request):
-    _doctor_only(request)
+    doctor_only(request)
     return render(request, 'cart/virtuaortho.html', {'groups': virtuaortho_groups(request.user)})
 
 
@@ -90,6 +91,6 @@ def virtuaortho_page(request):
 @never_cache
 @require_http_methods(['GET', 'HEAD'])
 def planning_services_page(request):
-    _doctor_only(request)
+    doctor_only(request)
     return render(request, 'cart/planning_services.html',
                   {'sections': planning_sections(request.user)})

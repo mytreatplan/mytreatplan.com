@@ -10,6 +10,7 @@ from django.utils.translation import gettext_lazy as _
 from accounts import makers
 
 from . import service
+from .common import refusal_texts
 from .models import MAKER_CHOICES, OTHER, OTHER_NAME_MAX_LENGTH, UNDECIDED
 
 TPS, VIRTUAORTHO = 'tps', 'vo'
@@ -89,14 +90,13 @@ class MakerForm(StepForm):
              'text': _('A brand makes the aligners; choose which one next.')}])
 
     def clean(self):
-        from .views import _refusal_texts
         cleaned = super().clean()
         if cleaned.get('kind') != BRAND:
             # In-house: no maker is kept.
             cleaned['maker'] = cleaned['other_name'] = ''
             return cleaned
         maker = cleaned.get('maker')
-        texts = _refusal_texts()
+        texts = refusal_texts()
         if 'maker' in self.errors:
             return cleaned
         if not maker:

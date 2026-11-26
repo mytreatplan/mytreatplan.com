@@ -52,7 +52,7 @@ from storage import s3 as storage_s3
 from storage import service as storage_service
 from storage.models import StoredObject
 
-from . import client_sync, fiscal, makers, photo, profile, shipping
+from . import client_sync, makers, photo, profile
 from .models import FiscalEntity, ShippingAddress
 
 logger = logging.getLogger(__name__)

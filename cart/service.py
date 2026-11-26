@@ -73,7 +73,7 @@ CODES = (NOT_A_DOCTOR, NO_PATIENT, NO_ENTITY, MAKER_UNKNOWN, MAKER_LOGIN, OTHER_
          NOT_FINISHED, EMPTY, ADDRESS_GONE, PAYMENT_OPEN, ICE_TAKEN, WORK_ORDER)
 SOURCE = 'cart'
 
-# VirtuaOrtho (9.4). The variants of step 2 and the category each one is sold in.
+# VirtuaOrtho (9.4). The variants of the VirtuaOrtho type step and the category each one is sold in.
 ONE, DIGITALTWIN = 'one', 'digitaltwin'
 VARIANTS = {ONE: Product.VIRTUAORTHO_ONE, DIGITALTWIN: Product.VIRTUAORTHO_DIGITALTWIN}
 # What a choice picks: 'case' by the variant's size; 'odb' and 'spark' by the product's id
@@ -85,7 +85,7 @@ VIRTUAORTHO_CATEGORIES = (Product.VIRTUAORTHO_ONE, Product.VIRTUAORTHO_DIGITALTW
 ODB_DT = 'ODB-DT'
 
 # The sizes in the order the wizard lists them; any other size follows, by name.
-ICE_SIZE = 'ice'  # step 2's size choice for the ICE (its own category, no size)
+ICE_SIZE = 'ice'  # the options step's size choice for the ICE (its own category, no size)
 SIZE_ORDER = (ICE_SIZE, 'short', 'medium', 'long')
 
 
@@ -187,26 +187,40 @@ def _maker(doctor, maker, other_name, in_house):
     return UNDECIDED, ''
 
 
-def add_tps(doctor, patient, *, maker, other_name='', in_house=False, size, add_on_codes=()):
-    """Put a TPS or an ICE for `patient` in `doctor`'s cart and return the `CartItem`; `CartRefused`
-    (see the module docstring and `CODES`) for anything not allowed."""
+def _require_doctor(doctor):
     if not is_client(doctor) or doctor.is_erased:
         raise CartRefused(NOT_A_DOCTOR)
-    patient = patients_service.patient_of(doctor, getattr(patient, 'code', None))
+
+
+def _entity_patient(doctor, code):
+    """The doctor's own patient with this code, when the doctor has a usable fiscal entity;
+    else `CartRefused` (`NO_PATIENT`, then `NO_ENTITY`)."""
+    patient = patients_service.patient_of(doctor, code)
     if patient is None:
         raise CartRefused(NO_PATIENT)
     if not fiscal.has_usable_entity(doctor):
         raise CartRefused(NO_ENTITY)
-    maker, other_name = _maker(doctor, maker, other_name, in_house)
-    # A blocking work order refuses (a live one, or one waiting for a bank transfer,
-    # epic-ordering 9.8), unless it is a live ICE (a TPS is the planning after it). An ICE
-    # is refused with any blocking work order.
-    blocking = patients_service.blocking_work_order(patient)
-    if blocking is not None \
-            and (size == ICE_SIZE or not patients_service.is_live_ice(blocking)):
+    return patient
+
+
+def _require_free(doctor, patient, is_ice):
+    """`LIVE_WORK_ORDER` for a patient with a blocking work order (a live one, or one waiting
+    for a bank transfer, epic-ordering 9.8) unless it is a live ICE and the line is not an
+    ICE (a TPS is the planning after it); `IN_CART` for a patient already in the cart."""
+    if not patients_service.may_take_line(patients_service.blocking_work_order(patient), is_ice):
         raise CartRefused(LIVE_WORK_ORDER)
     if CartItem.objects.filter(doctor_id=doctor.pk, patient_id=patient.pk).exists():
         raise CartRefused(IN_CART)
+
+
+def add_tps(doctor, patient, *, maker, other_name='', in_house=False, size, add_on_codes=()):
+    """Put a TPS or an ICE for `patient` in `doctor`'s cart and return the `CartItem`; `CartRefused`
+    (see the module docstring and `CODES`) for anything not allowed."""
+    _require_doctor(doctor)
+    patient = _entity_patient(doctor, getattr(patient, 'code', None))
+    maker, other_name = _maker(doctor, maker, other_name, in_house)
+    # An ICE is refused with any blocking work order, a TPS unless it is a live ICE.
+    _require_free(doctor, patient, size == ICE_SIZE)
     if size == ICE_SIZE:
         ice = offered_ice(doctor)
         product = ice[0] if ice else None
@@ -267,18 +281,9 @@ def add_virtuaortho(doctor, patient, *, variant, choice, size='', add_on_codes=(
     aligners of a Spark product (within its range), else 1. A blocking work order (a live one,
     or one waiting for a bank transfer) refuses unless it is a live ICE. `CartRefused` for
     anything not allowed; nothing is changed then."""
-    if not is_client(doctor) or doctor.is_erased:
-        raise CartRefused(NOT_A_DOCTOR)
-    patient = patients_service.patient_of(doctor, getattr(patient, 'code', None))
-    if patient is None:
-        raise CartRefused(NO_PATIENT)
-    if not fiscal.has_usable_entity(doctor):
-        raise CartRefused(NO_ENTITY)
-    blocking = patients_service.blocking_work_order(patient)
-    if blocking is not None and not patients_service.is_live_ice(blocking):
-        raise CartRefused(LIVE_WORK_ORDER)
-    if CartItem.objects.filter(doctor_id=doctor.pk, patient_id=patient.pk).exists():
-        raise CartRefused(IN_CART)
+    _require_doctor(doctor)
+    patient = _entity_patient(doctor, getattr(patient, 'code', None))
+    _require_free(doctor, patient, False)
     product = _virtuaortho_product(offered_virtuaortho(doctor), variant, choice, size, patient)
     if not shipping.has_usable_address(doctor):
         raise CartRefused(NO_ADDRESS)
@@ -353,23 +358,13 @@ def check_work_order(doctor, work_order):
     rows `virtuaortho_lines` gives the doctor, under its variant when the product fixes
     one); `NOT_FINISHED` for retainers without a finished treatment. Nothing is
     changed."""
-    if not is_client(doctor) or doctor.is_erased:
-        raise CartRefused(NOT_A_DOCTOR)
+    _require_doctor(doctor)
     row = patients_service.manual_work_order_of(doctor, getattr(work_order, 'pk', work_order))
     if row is None or row.order_id is not None:
         raise CartRefused(WORK_ORDER)
-    patient = patients_service.patient_of(doctor, row.patient.code)
-    if patient is None:
-        raise CartRefused(NO_PATIENT)
-    if not fiscal.has_usable_entity(doctor):
-        raise CartRefused(NO_ENTITY)
+    patient = _entity_patient(doctor, row.patient.code)
     product = resolver.product(row.product_id) if row.product_id else None
-    blocking = patients_service.blocking_work_order(patient)
-    is_ice = product is not None and product.category == Product.ICE
-    if blocking is not None and (is_ice or not patients_service.is_live_ice(blocking)):
-        raise CartRefused(LIVE_WORK_ORDER)
-    if CartItem.objects.filter(doctor_id=doctor.pk, patient_id=patient.pk).exists():
-        raise CartRefused(IN_CART)
+    _require_free(doctor, patient, product is not None and product.category == Product.ICE)
     if product is None or product.pk not in {offered.pk for offered, _money
                                              in subscriptions.offers_for(doctor)}:
         raise CartRefused(NOT_OFFERED)

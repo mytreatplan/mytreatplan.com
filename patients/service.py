@@ -192,6 +192,13 @@ def is_live_ice(work_order):
             and is_ice_work_order(work_order))
 
 
+def may_take_line(blocking, is_ice):
+    """Whether a patient whose `blocking_work_order` is `blocking` may take a new service
+    line: nothing blocks, or a live ICE blocks and the line is not an ICE (the one ICE rule,
+    for the cart and for the order)."""
+    return blocking is None or (not is_ice and is_live_ice(blocking))
+
+
 # The categories whose approved work order is a "finished treatment" (epic-ordering 9.4):
 # retainers follow one of them.
 FINISHED_CATEGORIES = (Product.VIRTUAORTHO_ONE, Product.VIRTUAORTHO_DIGITALTWIN,

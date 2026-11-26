@@ -1,64 +1,34 @@
 """The case wizard and the cart page (epic-ordering 9.3). Doctor-only (a staff account is a
 404); a patient is chosen by code, and no patient name or maker credential is put in a URL,
 a log line or a message. Step 1 picks an active patient or creates one (the 9.2 dialog,
-`patients.views._create`); the steps after it (product, maker or VirtuaOrtho type, options)
-are the formtools wizard in `cart.wizard` (9.16); the result is a `CartItem`
-(`cart.service`). Plain POSTs work without JavaScript."""
+`patients.views.create_patient_from_form`); the steps after it (product, maker or
+VirtuaOrtho type, options) are the formtools wizard in `cart.wizard` (9.16); the result is a
+`CartItem` (`cart.service`). Plain POSTs work without JavaScript."""
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
-from urllib.parse import quote
 from django.utils.translation import gettext as _
 from django.utils.translation import pgettext_lazy
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_http_methods, require_POST
 
-from accounts import fiscal, makers
-from accounts.client_sync import is_client
+from accounts import makers
 from catalogue import pricing, resolver
 from catalogue.models import Product
 from patients import service as patients_service
 from patients.forms import PatientForm
 from patients.models import Patient
-from patients.views import _create
+from patients.views import create_patient_from_form
 from payments import service as payments
-from payments.views import _refusal_message
+from payments.views import refusal_message
 from subscriptions import service as subscriptions
 
 from . import service
+from .common import doctor_only, fiscal_block, own_patient, refusal_texts
 from .models import OTHER, UNDECIDED, CartItem
-
-
-def _refusal_texts():
-    return {
-        service.NOT_A_DOCTOR: _('Only doctors can order.'),
-        service.NO_PATIENT: _('This patient cannot be chosen.'),
-        service.NO_ENTITY: _('Add a fiscal entity before you order.'),
-        service.MAKER_UNKNOWN: _('Choose a maker, "Not decided yet" or "Other".'),
-        service.MAKER_LOGIN: _('Save your login for this maker first.'),
-        service.OTHER_NAME: _('Enter the name of the maker (at most 60 characters).'),
-        service.LIVE_WORK_ORDER: _('This patient already has a case in progress.'),
-        service.IN_CART: _('This patient already has a service in your cart.'),
-        service.NOT_OFFERED: _('This service is not available in that size.'),
-        service.ADD_ON: _('One of the options chosen is not available for this service.'),
-        service.NO_ADDRESS: _('Add a shipping address before you order.'),
-        service.ADDRESS: _('Choose one of your shipping addresses.'),
-        service.QUANTITY: _('Choose a number of aligners within the range offered.'),
-        service.NOT_FINISHED: _('Retainers are for a patient whose treatment is finished.'),
-        service.EMPTY: _('Your cart is empty.'),
-        service.ADDRESS_GONE: _('The shipping address of one item is no longer available. '
-                                'Remove that item and add it again.'),
-        service.PAYMENT_OPEN: _('A payment for your earlier order is in progress. Please wait '
-                                'a few minutes, or check that payment before you finish '
-                                'again.'),
-        service.ICE_TAKEN: _('The ICE credit of a patient in your cart is held by another '
-                             'of your orders. If you finish again, this order is priced '
-                             'without it.'),
-        service.WORK_ORDER: _('This service can no longer be added to your cart.'),
-    }
 
 
 SIZE_LABELS = {
@@ -72,27 +42,6 @@ SIZE_LABELS = {
 def size_label(size):
     """The size's name in the current language; an unknown size shows as its code."""
     return str(SIZE_LABELS.get(size, size))
-
-
-def _doctor_only(request):
-    if not is_client(request.user) or request.user.is_erased:
-        raise Http404('not a doctor')
-
-
-def _own_patient(request, code):
-    _doctor_only(request)
-    patient = patients_service.patient_of(request.user, code)
-    if patient is None:
-        raise Http404
-    return patient
-
-
-def _fiscal_block(request, here):
-    """The link of the fiscal-entity block (the wizard page to come back to), or None when
-    the doctor has a usable entity."""
-    if fiscal.has_usable_entity(request.user):
-        return None
-    return reverse('settings_fiscal_add') + '?next=' + quote(here, safe='')
 
 
 def address_label(address):
@@ -110,7 +59,7 @@ def _step_one(request, form, open_dialog):
         'rows': [{'patient': patient, 'search': patients_service.search_text(patient),
                   'in_cart': patient.code in in_cart} for patient in patients],
         'form': form, 'open_dialog': open_dialog,
-        'fiscal_link': _fiscal_block(request, reverse('start_a_case'))})
+        'fiscal_link': fiscal_block(request, reverse('start_a_case'))})
 
 
 @login_required
@@ -118,9 +67,9 @@ def _step_one(request, form, open_dialog):
 @never_cache
 @require_http_methods(['GET', 'HEAD'])
 def start_a_case(request):
-    """Step 1: the doctor's active patients (each leads to step 2) and the add-patient
+    """Step 1: the doctor's active patients (each leads to the wizard) and the add-patient
     dialog."""
-    _doctor_only(request)
+    doctor_only(request)
     return _step_one(request, PatientForm(), False)
 
 
@@ -130,13 +79,15 @@ def start_a_case(request):
 @require_http_methods(['GET', 'HEAD', 'POST'])
 def start_a_case_patient(request):
     """The wizard's add-patient form: its dialog posts here. A saved patient goes straight to
-    step 2; an invalid post shows step 1 again with the dialog open. GET is the page without
+    the wizard; an invalid post shows step 1 again with the dialog open. GET is the page without
     JavaScript."""
-    _doctor_only(request)
+    doctor_only(request)
     if request.method != 'POST':
-        return render(request, 'cart/new_patient.html', {'form': PatientForm()})
+        return render(request, 'patients/new.html', {
+            'form': PatientForm(), 'action': reverse('start_a_case_patient'),
+            'back_url': reverse('start_a_case'), 'back_text': _('Back to the patients')})
     form = PatientForm(request.POST)
-    patient = _create(request, form)
+    patient = create_patient_from_form(request, form)
     if patient is not None:
         return redirect(reverse('start_a_case_step', args=[patient.code, 'product']))
     return _step_one(request, form, True)
@@ -149,7 +100,7 @@ def start_a_case_patient(request):
 def start_a_case_tps(request, code):
     """The old step-2 address (`start-a-case/<code>/`, 9.3): the wizard's first step now
     (cart.wizard, 9.16)."""
-    patient = _own_patient(request, code)
+    patient = own_patient(request, code)
     return redirect(reverse('start_a_case_step', args=[patient.code, 'product']))
 
 
@@ -192,7 +143,7 @@ def _cart_page(request, error='', voucher_code=''):
     return render(request, 'cart/cart.html', {
         'lines': [_line(item, held) for item in service.items_of(request.user)],
         'error': error, 'voucher_code': voucher_code,
-        'fiscal_link': _fiscal_block(request, reverse('cart'))})
+        'fiscal_link': fiscal_block(request, reverse('cart'))})
 
 
 @login_required
@@ -202,14 +153,14 @@ def _cart_page(request, error='', voucher_code=''):
 def cart(request):
     """The cart: the items by patient, each with Remove, a try-me voucher field and
     "Finish order" (9.6)."""
-    _doctor_only(request)
+    doctor_only(request)
     return _cart_page(request)
 
 
 def _finish_error(refused):
     """The text of a refused "Finish order" (never a patient's name or code)."""
     if isinstance(refused, service.CartRefused):
-        return _refusal_texts()[refused.code]
+        return refusal_texts()[refused.code]
     if isinstance(refused, payments.NoPaymentMethod):
         return _('There is no payment method for this order yet.')
     if isinstance(refused, payments.OrderError):
@@ -217,7 +168,7 @@ def _finish_error(refused):
     if refused.reason == pricing.PATIENT_REFUSED:
         return _('A patient in your cart now has a case in progress. Remove that item and '
                  'try again.')
-    return _refusal_message(refused)
+    return refusal_message(refused)
 
 
 @login_required
@@ -228,7 +179,7 @@ def cart_finish(request):
     """Finish the order: the cart becomes one service order (with the optional voucher
     code) and the doctor goes to its checkout; a refusal shows the cart again with the
     reason."""
-    _doctor_only(request)
+    doctor_only(request)
     voucher_code = (request.POST.get('voucher') or '').strip()[:40]
     try:
         order = service.finish(request.user, voucher_code)
@@ -242,7 +193,7 @@ def cart_finish(request):
 @never_cache
 @require_POST
 def cart_remove(request, item_id):
-    _doctor_only(request)
+    doctor_only(request)
     if not service.remove(request.user, item_id):
         raise Http404
     messages.success(request, _('The service has been removed from your cart.'))

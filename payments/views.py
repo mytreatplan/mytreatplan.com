@@ -87,7 +87,7 @@ REFUSALS = {
 }
 
 
-def _refusal_message(refused):
+def refusal_message(refused):
     return str(REFUSALS.get(refused.reason, _('This order cannot be started.')))
 
 
@@ -177,7 +177,7 @@ def _failed(request, error):
     elif isinstance(error, service.HookFailed):
         text = _('Something went wrong. Please try again in a moment.')
     elif isinstance(error, pricing.OrderRefused):
-        text = _refusal_message(error)
+        text = refusal_message(error)
     else:
         text = _('Something went wrong. Please try again in a moment.')
     messages.error(request, text)
