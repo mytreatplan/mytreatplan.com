@@ -3,7 +3,8 @@
 {% comment %}
 The checkout (payments.views.checkout, epic-payments entry 1): the order's reference,
 lines and totals, the fiscal entity to bill (a select among the usable ones; none: a link
-to add one that comes back here), the payment method, Pay and Cancel. An order that is no
+to add one that comes back here), the payment method (with the saved-card consent line for an
+order that saves the card, epic-payments entry 11), Pay and Cancel. An order that is no
 longer open shows what became of it.
 {% endcomment %}
 
@@ -72,6 +73,7 @@ longer open shows what became of it.
       <li><label class="flex items-center gap-3 text-copy"><input type="radio" name="gateway" value="{{ gateway.name }}" {% if forloop.first %}checked{% endif %} required> {{ gateway.label }}</label></li>
       {% endfor %}
     </ul>
+    {% if saves_card %}<p class="mt-3 text-[15px] text-ink-muted" data-save-card-consent>{% translate "By paying, you agree that the payment provider saves your card securely so that the renewals of this subscription can be charged to it without you having to pay again. You can ask us to remove it at any time." %}</p>{% endif %}
     {% else %}
     <p class="mt-2 text-copy text-ink-muted" data-no-gateway>{% translate "There is no payment method for this order yet." %}</p>
     {% endif %}

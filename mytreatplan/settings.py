@@ -283,7 +283,9 @@ SENTRY_RELEASE = config(
     default=_revision_file.read_text().strip() if _revision_file.is_file() else '')
 MYTP_SENTRY_IGNORED_LOGGERS = ('signup.verification',)
 MYTP_SENTRY_SENSITIVE_FIELDS = ('signature', 'webhook_secret', 'redsys',
-                                'merchantparameters', 'revolut')
+                                'merchantparameters', 'revolut',
+                                # Saved cards (epic-payments entry 11; `token` is built in).
+                                'cof_txnid', 'masked_number', 'merchant_identifier')
 # Keys that keep their value although they contain a field name (the reset step's tag).
 MYTP_SENTRY_SAFE_KEYS = ('password_reset.action',)
 if SENTRY_DSN:

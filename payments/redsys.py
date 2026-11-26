@@ -21,7 +21,21 @@ page (redirection, HMAC_SHA256_V1).
 
 There is no `cancel_attempt` (Redsys cannot close a session): a retry is refused while the
 attempt may still be paid (`session_lifetime`), or until a refusal notification failed it.
-No saved cards or repeat charges (entry 11).
+
+Saved cards and repeat charges (entry 11; Santander's "Servicios Venta +", COF/MIT):
+- `form` of an order that asks to save the card (`Order.save_card`) adds the COF "initial"
+  fields: `DS_MERCHANT_IDENTIFIER=REQUIRED`, `DS_MERCHANT_COF_INI=S`, `DS_MERCHANT_COF_TYPE=R`.
+- `verify_webhook` reads the card Redsys saved (`Ds_Merchant_Identifier`, the token;
+  `Ds_Merchant_Cof_Txnid`; `Ds_ExpiryDate` YYMM; `Ds_Card_Number` masked; `Ds_Card_Brand`)
+  into `WebhookEvent.card`; `payments.webhooks` stores it (`payments.repeat.store_card`).
+- `charge_saved_card`: a merchant-initiated charge (REST, transaction type 0) of the token
+  with a new `Ds_Order` (stored on the attempt before the call): `DS_MERCHANT_IDENTIFIER`,
+  `COF_INI=N`, `COF_TYPE=R`, `COF_TXNID`, `DIRECTPAYMENT=true`, `EXCEP_SCA=MIT`. The signed
+  answer must match the request (order, amount, currency, type): `Ds_Response` 0000-0099 is
+  paid, any other a decline with that code; no answer, an unsigned or mismatched one or an
+  `errorCode` is `GatewayUnknown`.
+The COF field names come from ActiveMerchant's `redsys_rest.rb` and creagia/redsys-php (Redsys's
+own documentation was not reachable when this was built): confirm them on the test terminal.
 
 Settings (settings.env): REDSYS_MERCHANT_CODE (the FUC), REDSYS_TERMINAL, REDSYS_SECRET_KEY
 (the SHA-256 key, base64) and REDSYS_ENVIRONMENT (`test` or `production`, default `test`).
@@ -71,6 +85,10 @@ MADRID = ZoneInfo('Europe/Madrid')
 SESSION_LIFETIME = timedelta(minutes=30)
 TIMESTAMP_TOLERANCE = timedelta(minutes=30)
 REFUND_TIMEOUT = 30
+CHARGE_TIMEOUT = 30
+# Ds_Card_Brand codes (Redsys): the names shown with a saved card's last 4 digits.
+CARD_BRANDS = {'1': 'VISA', '2': 'MASTERCARD', '6': 'DINERS', '7': 'PRIVATE', '8': 'AMEX',
+               '9': 'JCB', '22': 'UPI'}
 ORDER_ALPHABET = string.digits + string.ascii_uppercase
 _ORDER_TRIES = 5
 
@@ -258,6 +276,10 @@ def form(payment):
         'DS_MERCHANT_URLKO': _site_url(reverse('checkout_redsys_back',
                                                args=[payment.order_id, 'ko'])),
     }
+    if payment.order.save_card:
+        # COF initial (entry 11): Redsys saves the card and returns its token.
+        parameters.update({'DS_MERCHANT_IDENTIFIER': 'REQUIRED', 'DS_MERCHANT_COF_INI': 'S',
+                           'DS_MERCHANT_COF_TYPE': 'R'})
     merchant_parameters = encode_parameters(parameters)
     return {
         'action': payment_url(),
@@ -299,6 +321,19 @@ def _status(response_code):
     return gateways.PAID if 0 <= code <= 99 else gateways.FAILED
 
 
+def _card(data):
+    """The card Redsys saved with a payment (COF initial), as `payments.repeat.store_card`
+    takes it, or None when the notification carries no token."""
+    token = str(data.get('ds_merchant_identifier') or '').strip()
+    if not token:
+        return None
+    brand = str(data.get('ds_card_brand') or '').strip()
+    return {'token': token, 'cof_txnid': str(data.get('ds_merchant_cof_txnid') or '').strip(),
+            'number': str(data.get('ds_card_number') or '').strip(),
+            'brand': CARD_BRANDS.get(brand.lstrip('0'), brand[:20]),
+            'expiry': str(data.get('ds_expirydate') or '').strip()}
+
+
 def verify_webhook(request):
     try:
         fields = parse_qs(request.body.decode('ascii'), keep_blank_values=True,
@@ -322,7 +357,8 @@ def verify_webhook(request):
         event = gateways.WebhookEvent(
             event_id=f'{ds_order}:{response_code}', payment_id=ds_order,
             amount=from_cents(data['ds_amount']),
-            currency=CURRENCIES.get(currency, currency[:3]), status=status)
+            currency=CURRENCIES.get(currency, currency[:3]), status=status,
+            card=_card(data) if status == gateways.PAID else None)
         now = timezone.now()
         sent_at = _sent_at(data, now)
     except (KeyError, ValueError, TypeError, InvalidOperation) as error:
@@ -398,9 +434,86 @@ def refund(payment, amount):
     return f'{payment.gateway_payment_id}:{str(data.get("ds_authorisationcode", "")).strip()}'
 
 
+def _new_charge_order(payment):
+    """Give the repeat charge `payment` a fresh `Ds_Order` before Redsys is called (redrawn
+    on a collision), in its own short transaction."""
+    from . import service
+    for _ in range(_ORDER_TRIES):
+        try:
+            with transaction.atomic():
+                service.set_gateway_payment_id(payment, new_order_id())
+            return payment.gateway_payment_id
+        except IntegrityError:
+            payment.gateway_payment_id = ''
+    raise gateways.GatewayError('no free Redsys order number')
+
+
+def charge_saved_card(card, payment):
+    """Charge the saved `card` (a `SavedCard` of this gateway) for the open repeat charge
+    `payment` without the doctor (REST, type 0, COF/MIT). Returns the `GatewayPayment`
+    (PAID, or FAILED with the `Ds_Response` code); raises `GatewayUnknown` on an HTTP fault,
+    an `errorCode`, or an unsigned or mismatched answer (the card may have been charged).
+    Nothing of the card or the response is logged."""
+    from accounts import http
+    if card.gateway != NAME or not card.token:
+        raise gateways.GatewayError('not a Redsys card')
+    ds_order = _new_charge_order(payment)
+    parameters = {
+        'DS_MERCHANT_AMOUNT': str(to_cents(payment.amount)),
+        'DS_MERCHANT_ORDER': ds_order,
+        'DS_MERCHANT_MERCHANTCODE': merchant_code(),
+        'DS_MERCHANT_CURRENCY': _currency_code(payment.currency),
+        'DS_MERCHANT_TRANSACTIONTYPE': AUTHORISATION,
+        'DS_MERCHANT_TERMINAL': terminal(),
+        'DS_MERCHANT_IDENTIFIER': card.token,
+        'DS_MERCHANT_COF_INI': 'N',
+        'DS_MERCHANT_COF_TYPE': 'R',
+        'DS_MERCHANT_DIRECTPAYMENT': 'true',
+        'DS_MERCHANT_EXCEP_SCA': 'MIT',
+        'DS_MERCHANT_MERCHANTURL': _site_url(reverse('payments_webhook', args=[NAME])),
+    }
+    if card.cof_txnid:
+        parameters['DS_MERCHANT_COF_TXNID'] = card.cof_txnid
+    merchant_parameters = encode_parameters(parameters)
+    signature = _our_signature(ds_order, merchant_parameters)
+    try:
+        answer = json.loads(http.post_json(rest_url(), {
+            'Ds_SignatureVersion': SIGNATURE_VERSION,
+            'Ds_MerchantParameters': merchant_parameters,
+            'Ds_Signature': signature,
+        }, timeout=CHARGE_TIMEOUT))
+    except http.FETCH_ERRORS as failure:  # a body that is not JSON too (ValueError)
+        raise gateways.GatewayUnknown(
+            f'Redsys could not be reached ({type(failure).__name__})') from None
+    if not isinstance(answer, dict):
+        raise gateways.GatewayUnknown('Redsys answered something unexpected')
+    if 'errorCode' in answer:
+        code = str(answer['errorCode'])[:10]
+        raise gateways.GatewayUnknown(f'Redsys answered an error ({code})')
+    try:
+        data = _verify(answer.get('Ds_MerchantParameters'), answer.get('Ds_Signature'))
+    except gateways.BadSignature:
+        raise gateways.GatewayUnknown('the Redsys answer is not signed with our key') from None
+    if str(data.get('ds_order', '')) != ds_order:
+        raise gateways.GatewayUnknown('the Redsys answer is for another order')
+    if (str(data.get('ds_amount', '')).strip() != parameters['DS_MERCHANT_AMOUNT']
+            or str(data.get('ds_currency', '')).strip() != parameters['DS_MERCHANT_CURRENCY']
+            or str(data.get('ds_transactiontype', AUTHORISATION)).strip() != AUTHORISATION):
+        raise gateways.GatewayUnknown(
+            'the Redsys answer is for another amount or operation')
+    response_code = str(data.get('ds_response', '')).strip()
+    try:
+        status = _status(response_code)
+    except ValueError:
+        raise gateways.GatewayUnknown('the Redsys answer has no response code') from None
+    code = '' if status == gateways.PAID else response_code[:20]
+    return gateways.GatewayPayment(ds_order, status, payment.amount, payment.currency, code)
+
+
 def register():
     gateways.register(
         NAME, start, enabled=enabled, verify_webhook=verify_webhook,
-        fetch_payment=fetch_payment, refund=refund, session_lifetime=SESSION_LIFETIME,
+        fetch_payment=fetch_payment, refund=refund, charge_saved_card=charge_saved_card,
+        saves_cards=True, session_lifetime=SESSION_LIFETIME,
         timestamp_tolerance=TIMESTAMP_TOLERANCE,
         required_settings=('REDSYS_MERCHANT_CODE', 'REDSYS_TERMINAL', 'REDSYS_SECRET_KEY'))

@@ -68,9 +68,7 @@ def test_the_fake_adapter_implements_refunds_and_saved_cards(doctor, entity, fak
     order, payment = attempt(doctor)
     found = gateways.adapter('fake')
     assert found.call('refund', payment, Decimal('10.00')).startswith('fake_refund_')
-    token = found.call('save_card', doctor)
-    charged = found.call('charge_saved_card', doctor, token, Decimal('5.00'), 'EUR')
-    assert charged.status == gateways.PAID and charged.amount == Decimal('5.00')
+    assert found.saves_cards and gateways.can_save_cards('fake')
 
 
 # --- Webhook handling ---------------------------------------------------------------------------

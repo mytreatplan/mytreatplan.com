@@ -12,6 +12,11 @@ through (`payments.webhooks.handle`), signed as `t=<unix seconds>,v1=<HMAC-SHA25
 "<t>.<body>">` in the `X-Fake-Signature` header with `PAYMENTS_FAKE_WEBHOOK_SECRET` (when
 unset, a key derived from SECRET_KEY). The body is JSON: event_id, payment_id, amount,
 currency (what the event claims; the amount that pays is the one re-read from the store).
+
+Saved cards (entry 11): its Pay stores a fake card for an order that asks to save one
+(`Order.save_card`, through `payments.repeat.store_card`, as a real gateway's notification
+does); `charge_saved_card` charges it at once (paid), or declines it with the code given to
+`decline_next_charge` (a test switch, for the next charge only).
 """
 import hashlib
 import hmac
@@ -31,6 +36,8 @@ from .checks import public_site
 SIGNATURE_HEADER = 'X-Fake-Signature'
 META_HEADER = 'HTTP_X_FAKE_SIGNATURE'
 STORE_SECONDS = 24 * 3600
+DECLINE_KEY = 'payments:fake:decline_next'
+CARD_PREFIX = 'fake_card_'
 
 
 def enabled():
@@ -137,20 +144,34 @@ def refund(payment, amount):
     return refund_id
 
 
-def save_card(user):
-    token = f'fake_card_{uuid.uuid4().hex}'
-    _put(token, user=str(user.pk))
-    return token
+def decline_next_charge(code='0190'):
+    """Test switch: the next `charge_saved_card` is declined with `code` (for a day)."""
+    cache.set(DECLINE_KEY, str(code), timeout=STORE_SECONDS)
 
 
-def charge_saved_card(user, token, amount, currency):
-    record = _get(token)
-    if record.get('user') != str(user.pk):
-        raise gateways.GatewayError('the card is not this user\'s')
-    gateway_payment_id = f'fake_{uuid.uuid4().hex}'
-    _put(gateway_payment_id, status='paid', amount=str(amount), currency=currency)
-    return gateways.GatewayPayment(gateway_payment_id, gateways.PAID, Decimal(amount),
-                                   currency)
+def fake_card():
+    """A card as a gateway's notification carries it (`payments.repeat.store_card`)."""
+    return {'token': f'{CARD_PREFIX}{uuid.uuid4().hex}', 'cof_txnid': uuid.uuid4().hex[:15],
+            'number': '454881******0004', 'brand': 'VISA',
+            'expiry': f'{(datetime.now(dt_timezone.utc).year + 3) % 100:02d}12'}
+
+
+def charge_saved_card(card, payment):
+    """Charge the saved `card` for the open attempt `payment`: paid at once, or declined
+    with the code of `decline_next_charge`."""
+    from . import service
+    if card.gateway != gateways.FAKE or not card.token.startswith(CARD_PREFIX):
+        raise gateways.GatewayError('not a fake card')
+    gateway_payment_id = f'fake_{payment.pk.hex}'
+    service.set_gateway_payment_id(payment, gateway_payment_id)
+    code = cache.get(DECLINE_KEY)
+    if code is not None:
+        cache.delete(DECLINE_KEY)
+    status = gateways.FAILED if code is not None else gateways.PAID
+    _put(gateway_payment_id, status=status, amount=str(payment.amount),
+         currency=payment.currency)
+    return gateways.GatewayPayment(gateway_payment_id, status, payment.amount,
+                                   payment.currency, code or '')
 
 
 # --- Sending webhooks ---------------------------------------------------------------------------
@@ -179,9 +200,11 @@ def send_webhook(body, *, timestamp=None, key=None, ip='127.0.0.1'):
 
 
 def pay(payment):
-    """The doctor pressed Pay: the fake gateway marks the payment paid and sends its signed
-    webhook."""
+    """The doctor pressed Pay: the fake gateway marks the payment paid, saves the card when
+    the order asks for it (entry 11) and sends its signed webhook."""
+    from . import repeat
     set_state(payment.gateway_payment_id, 'paid')
+    repeat.store_card(payment, fake_card())
     return send_webhook(webhook_body(payment))
 
 
@@ -194,4 +217,4 @@ def register():
     gateways.register(
         gateways.FAKE, start, enabled=enabled, verify_webhook=verify_webhook,
         fetch_payment=fetch_payment, cancel_attempt=cancel_attempt, refund=refund,
-        save_card=save_card, charge_saved_card=charge_saved_card)
+        charge_saved_card=charge_saved_card, saves_cards=True)

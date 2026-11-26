@@ -3795,3 +3795,13 @@ msgstr "Paso %(n)s de %(total)s"
 #: cart/views.py
 msgid "This service can no longer be added to your cart."
 msgstr "Este servicio ya no se puede añadir a su carrito."
+
+#: payments/templates/payments/checkout.html
+msgid ""
+"By paying, you agree that the payment provider saves your card securely so "
+"that the renewals of this subscription can be charged to it without you "
+"having to pay again. You can ask us to remove it at any time."
+msgstr ""
+"Al pagar, acepta que el proveedor de pagos guarde su tarjeta de forma segura "
+"para cobrar en ella las renovaciones de esta suscripción sin que tenga que "
+"volver a pagar. Puede pedirnos que la eliminemos en cualquier momento."

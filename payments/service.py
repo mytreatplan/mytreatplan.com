@@ -381,7 +381,7 @@ def _patients_still_free(order):
     return True
 
 
-def _create(user, kind, asked, *, actor, voucher, entity, source=''):
+def _create(user, kind, asked, *, actor, voucher, entity, source='', save_card=False):
     _check_actor(actor)
     if kind == Order.SERVICE:
         _check_patients(user, asked)  # OrderRefused: no order
@@ -407,7 +407,7 @@ def _create(user, kind, asked, *, actor, voucher, entity, source=''):
                     reference=reference.unused(
                         lambda ref: Order.objects.filter(reference=ref).exists()),
                     actor_type=actor.type, actor_uuid=actor.uuid, created_at=now,
-                    updated_at=now)
+                    updated_at=now, save_card=bool(save_card))
                 _copy_totals(order, priced)
                 if priced.needs_payment and not gateways.offered(order):
                     raise NoPaymentMethod('no payment method is available for this order')
@@ -439,12 +439,15 @@ def create_order(user, lines, *, actor, voucher=None, entity=None, source=''):
 
 
 def create_subscription_order(user, subscription, period, *, actor, voucher=None,
-                              entity=None):
+                              entity=None, save_card=False):
     """Create the order of buying `subscription` (a `catalogue.models.Subscription`) for a
     `period` (`monthly` or `upfront`): one line with its period, billed by the
-    `subscription` rule's company and VAT (for epic-subscriptions entry 5)."""
+    `subscription` rule's company and VAT (for epic-subscriptions entry 5). `save_card`
+    (entry 11): its card payment saves the doctor's card for repeat charges
+    (`payments.repeat`), and only gateways that save cards are offered (`NoPaymentMethod`
+    when none is)."""
     return _create(user, Order.SUBSCRIPTION, [(subscription, period)], actor=actor,
-                   voucher=voucher, entity=entity)
+                   voucher=voucher, entity=entity, save_card=save_card)
 
 
 def _pay_free(order, actor, now):

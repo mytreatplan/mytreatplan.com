@@ -563,7 +563,8 @@ def test_a_refund_needs_a_confirmed_redsys_payment(doctor, entity, redsys_on):
 def test_the_adapter_is_available_only_with_a_code_and_a_key(redsys_on):
     found = gateways.adapter('redsys')
     assert found is not None and not found.supports('cancel_attempt')
-    assert not found.supports('save_card') and not found.supports('charge_saved_card')
+    assert found.supports('charge_saved_card') and found.saves_cards
+    assert gateways.can_save_cards('redsys')
     assert found.required_settings == ('REDSYS_MERCHANT_CODE', 'REDSYS_TERMINAL',
                                        'REDSYS_SECRET_KEY')
     assert found.timestamp_tolerance == timedelta(minutes=30)
@@ -612,6 +613,25 @@ def test_the_redsys_settings_are_sensitive_for_sentry(settings):
     for name in ('REDSYS_SECRET_KEY', 'REDSYS_MERCHANT_CODE', 'Ds_MerchantParameters',
                  'Ds_Signature'):
         assert any(field in _squash(name) for field in fields)
+
+
+def test_a_paid_notification_carries_the_saved_card_and_a_refusal_none(
+        doctor, entity, redsys_on):
+    _order, payment = attempt(doctor, 'redsys')
+    card = {'Ds_Merchant_Identifier': 'tok123', 'Ds_Merchant_Cof_Txnid': 'cof456',
+            'Ds_ExpiryDate': '3012', 'Ds_Card_Number': '454881******0004',
+            'Ds_Card_Brand': '1'}
+
+    def event(response):
+        data = notification(payment, response=response)
+        data.update(card)
+        request = RequestFactory().post('/payments/webhook/redsys/', data=body_of(data),
+                                        content_type='application/x-www-form-urlencoded')
+        return redsys.verify_webhook(request)
+    paid = event('0000')
+    assert paid.card == {'token': 'tok123', 'cof_txnid': 'cof456',
+                         'number': '454881******0004', 'brand': 'VISA', 'expiry': '3012'}
+    assert 'tok123' not in repr(paid) and event('0190').card is None
 
 
 # --- Review fixes -------------------------------------------------------------------------------
