@@ -52,8 +52,9 @@ Create the environment once:
      The first three are Playwright's Chromium download. The last two serve the Python 3.13 build, because the cloud image (Ubuntu 24.04) ships Python 3.12. If an install still fails with a blocked domain, add the domain the error names, or switch to **Full**.
    - **Setup script:**
      ```bash
-     bash scripts/web-setup.sh
+     cd /home/user/mytreatplan.com && bash scripts/web-setup.sh
      ```
+     The setup script does not start inside the checkout, so it must change into the repo first (`/home/user/mytreatplan.com` is where cloud sessions clone it). A plain `bash scripts/web-setup.sh` fails and leaves no `.venv`.
    - **Environment variables:** none. The script writes the test settings itself. Never put a real key here: anyone who uses the environment can read these values.
 5. Save. To edit the environment later, use the gear icon next to it in the selector.
 
@@ -79,7 +80,7 @@ It also writes two git-ignored files:
 
 It ends with `manage.py check`.
 
-The environment caches the setup only when the script finishes within about 5 minutes. Until then, each new session runs it again, which takes a few minutes. If a session starts before the setup ran (for example, the setup reports it is not inside the repository), ask Claude to run `bash scripts/web-setup.sh` once the repo is open.
+The environment caches the setup only when the script finishes within about 5 minutes. Until then, each new session runs it again, which takes a few minutes. If a session starts without a working setup (for example, `.venv` is missing or the setup reports it is not inside the repository), ask Claude to run `bash scripts/web-setup.sh` from the repo root, and check that the environment's setup script starts with the `cd` above.
 
 **Running the tests.** Full suite: `. .venv/bin/activate && python -m pytest -q -p no:cacheprovider --tb=line`.
 - Expected result: **0 failures**, roughly 4,350 tests in about 6 minutes.
@@ -110,7 +111,7 @@ The project uses the BMad skills, committed in the repo. The owner makes skill u
 
 1. **Pick a story with the owner.** The owner keeps the build order. Agree who takes which story, so two people never work on the same files. One person, one story, one branch.
 2. **`/bmad-build <ref>`** (e.g. `/bmad-build 9.17`). Claude investigates and writes the plan, then asks **numbered questions with options**. Answer like `1. a; 2. b`. Answers go into the plan's frozen block as dated decisions. Then a checkpoint: *Approve and continue*, *Approve and stop*, or *Review plan*.
-3. **Build.** The work happens on a branch named `story/<ref>-<slug>` (e.g. `story/9-17-cart-on-transfer-approval`).
+3. **Build.** The work happens on a branch named `feat/<ref>-<slug>` (e.g. `feat/9-17-transfer-approval`), one branch and one PR per repo. A story that spans repos merges mytp-core first, then mytp-admin, then the portal.
    - An implementer subagent writes the code from the plan, and a review subagent checks it.
    - The review findings are triaged in the plan's Review Triage Log and fixed.
    - The full suite must pass.
@@ -118,7 +119,9 @@ The project uses the BMad skills, committed in the repo. The owner makes skill u
    - Open the PR with the **Create PR** button on the session's **Changes** card. `gh pr` commands are blocked in cloud sessions; `gh api` REST calls work.
    - Paste the PR description Claude wrote: what changed, review result, test count, and **numbered staging checks**, ending with the Claude Code attribution line.
    - Watch CI until every check is green. A piped watch can exit 0 on failure, so read each check's state.
-   - Tag pushes and branch deletion are blocked in cloud sessions. mytp-core releases (tags) stay with the owner.
+   - Tag pushes and branch deletion are blocked in cloud sessions. mytp-core releases need no tag push: bump `version` in mytp-core's `pyproject.toml` (and `mytp_core/__init__.py`) in the story's core PR, and after the merge the `Tag release` workflow creates `v<version>` once CI is green on master. Then vendor the wheel into both sites with `scripts/vendor-mytp-core.sh vX.Y.Z`. To vendor before the merge, tag in your local clone only and never push that tag.
+   - Do not push to master while a staging deploy is running.
+   - Before starting, read the newest `context-update-*.md` files in `_bmad-output/initiative-mytreatplan-portal-admin/`; leave one there after a day of work that others build on.
 5. **Merge and staging belong to the owner** unless the owner says otherwise for that story. The owner (or the owner's session) runs the staging checks on dev.
 6. **Completion commit** on master: plan status `done` plus a `## Staging` section (merge hash, CI run, checks passed or owed).
 
