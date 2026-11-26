@@ -3,14 +3,14 @@ title: 'Pending-payment documents in the doctor''s invoices list'
 type: 'feature'
 ticket: '19'
 created: '2026-11-25'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: '32a69cfb2f76caf2626b13082c315dea55f0e4c4'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -68,11 +68,11 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `invoices/views.py`, `invoices/urls.py` -- pending documents query, list context, PDF view with owner and state check
-- [ ] `invoices/pdf.py`, `invoices/templates/invoices/pdf.html` -- pending context and template branch
-- [ ] `invoices/templates/invoices/list.html` -- pending rows by date, with a "Pending payment" badge instead of the number
-- [ ] `locale/es/LC_MESSAGES/django.po` -- new strings, then `compilemessages`
-- [ ] `invoices/tests/test_pending_documents.py` -- every row of the matrix, the language, the patient-name rule on the list
+- [x] `invoices/views.py`, `invoices/urls.py` -- pending documents query, list context, PDF view with owner and state check
+- [x] `invoices/pdf.py`, `invoices/templates/invoices/pdf.html` -- pending context and template branch
+- [x] `invoices/templates/invoices/list.html` -- pending rows by date, with a "Pending payment" badge instead of the number
+- [x] `locale/es/LC_MESSAGES/django.po` -- new strings, then `compilemessages`
+- [x] `invoices/tests/test_pending_documents.py` -- every row of the matrix, the language, the patient-name rule on the list
 
 **Acceptance Criteria:**
 - Given an approved transfer order, when the doctor downloads its document, then the PDF text contains the pending title, the "not an invoice" notice, the order reference and the IBAN, and contains no invoice number.
@@ -80,9 +80,23 @@ context: []
 
 ## Implementation Notes
 
+- `invoices/pdf.py`: the invoice context is split into shared helpers (`_lines`, `_amounts`, `_fonts`); `pending_context(order, user)` reuses them with `_buyer(order)` and a seller from the live `BillingCompany` (active first, as `invoices.service._company`; named by `order.company_legal_name`, as `issue_for_order`). `render_html`/`render` take the context builder; `render_pending_html`/`render_pending` wrap them. The date is `pending_at` in the company's time zone (`pending_date`), as an invoice's issue date.
+- The bank details are `payments.bank_transfer.details` with the amount formatted as the PDF's money; the labels reuse the transfer page's msgids, so the wording and translation match.
+- The list's context is now `rows` (invoice or pending, with a date), sorted newest first by `issued_at` / `pending_at` (stable, so invoices keep their number order).
+- Route: `invoices/pending/<order_pk>/pdf/`, name `invoice_pending_pdf`.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Pass 1 (quick, 2026-11-26): high 0, medium 1, low 1, false 2, maybe-false 0.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | The seller (active row first) and the bank details (lowest id) can come from different billing companies | medium | patch | `BillingCompany.code` is not unique (`catalogue/models.py`); `bank_transfer.company_of` now takes the active row first, and the PDF reuses it |
+| 2 | The first AC is asserted on the HTML, not on the PDF's extracted text | low | reject | Same practice as `invoices/tests/test_pdf.py`; the PDF is rendered from that HTML, and the response is checked as a PDF. The rendered PDF was also checked by eye |
+| 3 | "Not an invoice" appears only at the top of page 1 | false | reject | The Always rule means every web page and every PDF document. The title and notice are in the document head |
+| 4 | Stray `invoices/tests/test_zz_render919.py` | false | reject | A temporary helper the orchestrating session used to render the PDF for a visual check, deleted after use; not in `git status` |
 
 ## Design Notes
 

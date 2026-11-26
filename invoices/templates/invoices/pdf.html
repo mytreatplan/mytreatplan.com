@@ -1,12 +1,14 @@
 {% load i18n %}{% comment %}
 The invoice or credit note PDF (invoices.pdf, epic-payments entry 10): a standalone document,
 rendered by WeasyPrint from the invoice's snapshot only. `lines[].patient` is "name (code)" or
-the code alone. Nothing here loads anything but the fonts.
+the code alone. Nothing here loads anything but the fonts. With `pending` (epic-ordering 9.19)
+it is an order's pending-payment document instead: never an invoice, no number, the order's
+`reference` and the `bank` details (None: the transfer page's "not available" text).
 {% endcomment %}<!doctype html>
 <html lang="{{ language }}">
 <head>
 <meta charset="utf-8">
-<title>{{ invoice.number }}</title>
+<title>{% if pending %}{{ reference }}{% else %}{{ invoice.number }}{% endif %}</title>
 <style>
 {% for name, url in fonts.items %}@font-face { font-family: "Inter"; src: url("{{ url }}") format("woff2"); font-weight: 100 900; }
 {% endfor %}
@@ -28,13 +30,21 @@ td { padding: 2mm 1mm; border-bottom: 1px solid #dadce0; vertical-align: top; }
 .totals .grand { font-weight: 800; font-size: 11.5pt; border-top: 1px solid #1b1b1f; margin-top: 1.5mm; padding-top: 2mm; }
 .groups { margin-top: 6mm; }
 .groups table { margin-top: 2mm; width: auto; min-width: 110mm; }
+.notice { font-weight: 700; font-size: 11pt; margin: 0 0 2mm; }
+.bank { margin-top: 8mm; border: 1px solid #1b1b1f; padding: 3mm 4mm; }
+.bank div.row { display: flex; justify-content: space-between; gap: 6mm; padding: 0.6mm 0; }
 </style>
 </head>
 <body>
 <div class="head">
   <div>
     <h1 data-title>{{ title }}</h1>
+    {% if pending %}
+    <div class="notice" data-not-invoice>{% translate "This is not an invoice" context "invoice PDF" %}</div>
+    <div data-reference>{% translate "Order reference" context "invoice PDF" %}: <strong>{{ reference }}</strong></div>
+    {% else %}
     <div data-number>{% translate "Number" context "invoice PDF" %}: <strong>{{ invoice.number }}</strong></div>
+    {% endif %}
     <div data-date>{% translate "Date" context "invoice PDF" %}: {{ issue_date }}</div>
     {% if credit %}
     <div data-original>{% blocktranslate with number=original.number date=original_date context "invoice PDF" %}Corrects invoice {{ number }} of {{ date }}{% endblocktranslate %}</div>
@@ -95,5 +105,21 @@ td { padding: 2mm 1mm; border-bottom: 1px solid #dadce0; vertical-align: top; }
   <div><span>{% translate "VAT" context "invoice PDF" %}</span><span>{{ vat_total }}</span></div>
   <div class="grand"><span>{% translate "Total" context "invoice PDF" %}</span><span data-total>{{ total }}</span></div>
 </div>
+{% if pending %}
+<div class="bank" data-bank-details>
+  <h2>{% translate "Bank transfer" %}</h2>
+  {% if bank %}
+  <p>{% translate "Pay by bank transfer with these details, quoting the order reference as the transfer concept. The invoice is issued when we receive the payment." context "invoice PDF" %}</p>
+  <div class="row"><span>{% translate "Account holder" %}</span><strong data-transfer-holder>{{ bank.holder }}</strong></div>
+  <div class="row"><span>IBAN</span><strong data-transfer-iban>{{ bank.iban }}</strong></div>
+  <div class="row"><span>BIC</span><strong data-transfer-bic>{{ bank.bic }}</strong></div>
+  <div class="row"><span>{% translate "Bank" %}</span><strong data-transfer-bank>{{ bank.bank_name }}</strong></div>
+  <div class="row"><span>{% translate "Amount" %}</span><strong data-transfer-amount>{{ bank.amount }}</strong></div>
+  <div class="row"><span>{% translate "Transfer concept" %}</span><strong data-transfer-concept>{{ bank.concept }}</strong></div>
+  {% else %}
+  <p data-transfer-unavailable>{% translate "The bank details are not available right now. Please contact us." %}</p>
+  {% endif %}
+</div>
+{% endif %}
 </body>
 </html>
