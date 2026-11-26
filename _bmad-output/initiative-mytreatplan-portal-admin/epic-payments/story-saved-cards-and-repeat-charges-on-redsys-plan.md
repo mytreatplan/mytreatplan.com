@@ -3,14 +3,14 @@ title: 'Saved cards and repeat charges on Redsys'
 type: 'feature'
 ticket: '11'
 created: '2026-11-26'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: '9ecbe907440506005bb9781f767d8f030bcbafb4'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
