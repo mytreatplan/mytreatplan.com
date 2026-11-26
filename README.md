@@ -331,6 +331,15 @@ follows the order (reserved, consumed, released) and records `voucher.redeemed` 
 voucher with `subscriptions.vouchers.voucher_for_code(code)`, which raises `voucher_unknown`
 when the code is absent.
 
+Work orders (epic-ordering 9.8, `patients.service`, registered in `PatientsConfig.ready`): one
+per order line that names a patient. `work_orders_hold` (`transfer_approved`) creates them in
+`pending_payment`, where they block the patient (`blocking_work_order`; a manual pending-payment
+work order without an order never blocks, and an order's own never block it);
+`work_orders` (`paid`) moves them to `pending_assignment` (or creates them there), closing the
+patient's live ICE first for a planning (`closed`, mytp-core 0.35.0); `work_orders_cancel`
+(`cancelled`, `expired`) cancels them. Every create and stage change records
+`work_order.created` or `work_order.stage_changed` in the outbox (no patient name or code).
+
 Pages (portal prefix `checkout/`): the checkout, the return and failure pages, the fake gateway's
 page and the test-order page. A doctor sees only their own orders (404 otherwise). Two flags,
 both off by default and refused by `manage.py check` on a public site (DEBUG and ROBOTS_NOINDEX

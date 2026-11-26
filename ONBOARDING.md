@@ -8,7 +8,7 @@ This guide is for a developer joining with their own Claude Team seat. You work 
   - Stack: Django 6.1, Python 3.13, Tailwind CSS 4 (built with npm), htmx, Playwright browser tests.
   - One codebase runs as separate regional instances: EU `dev` and UAE `dev-ae` on staging. `REGION` selects the instance.
 - **`mytreatplan/mytp-admin`**: the separate staff admin site (AdminLTE). It talks to the regions only through versioned remote reads and writes.
-- **`mytreatplan/mytp-core`**: the shared library (crypto, codes, stage machine, pricing). Each site uses it as a wheel committed under `vendor/` (currently `mytp_core-0.34.0`), so a portal session never needs the mytp-core repo itself.
+- **`mytreatplan/mytp-core`**: the shared library (crypto, codes, stage machine, pricing). Each site uses it as a wheel committed under `vendor/` (currently `mytp_core-0.35.0`), so a portal session never needs the mytp-core repo itself.
 
 Every merge to `master` deploys to staging through GitHub Actions: the portal to dev and dev-ae, mytp-admin to admindev.
 

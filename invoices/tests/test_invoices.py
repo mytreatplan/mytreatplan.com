@@ -111,10 +111,14 @@ def test_reverse_charge_is_copied_with_its_text(catalogue_loaded):
 
 
 def test_a_free_order_and_an_included_case_still_get_their_invoice(doctor, entity):
+    from patients import service as patients
+    # Since 9.8 a paid line that names a patient gets a work order: a real patient.
+    code = patients.create_patient(doctor, reference='P-1', actor=patients.Actor(
+        'doctor', doctor.uid)).code
     order = new(doctor)
     OrderLine.objects.filter(order=order).update(
         included_case=True, voucher_share=Decimal('100.00'), net=Decimal('0.00'),
-        patient_code='EU-7K3QX9MD')
+        patient_code=code)
     Order.objects.filter(pk=order.pk).update(
         net_total=0, voucher_taken=Decimal('100.00'), total=0, vat_total=0,
         vat_groups=[{'percent': '0.00', 'text': EXEMPT, 'base': '0.00', 'vat': '0.00'}])
@@ -125,7 +129,7 @@ def test_a_free_order_and_an_included_case_still_get_their_invoice(doctor, entit
     row = invoice.lines.get()
     assert invoice.total == Decimal('0.00') and invoice.voucher_taken == Decimal('100.00')
     assert (row.list_amount, row.net, row.included_case, row.patient_code) == (
-        Decimal('100.00'), Decimal('0.00'), True, 'EU-7K3QX9MD')
+        Decimal('100.00'), Decimal('0.00'), True, code)
 
 
 def test_a_repeated_hook_returns_the_same_invoice(doctor, entity):

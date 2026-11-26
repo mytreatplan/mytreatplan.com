@@ -98,20 +98,21 @@ def test_a_live_non_ice_work_order_refuses(doctor, ready):
 
 
 def test_a_live_ice_work_order_allows_a_tps(doctor, ready):
-    live_order(ready, ICE)
-    assert patients_service.live_is_ice(ready)
+    live = live_order(ready, ICE)
+    assert patients_service.blocking_work_order(ready) == live
+    assert patients_service.is_live_ice(live)
     assert add(doctor, ready).patient_id == ready.pk
 
 
 def test_a_live_work_order_whose_product_left_the_catalogue_refuses(doctor, ready):
-    live_order(ready, uuid.uuid4())
-    assert not patients_service.live_is_ice(ready)
+    live = live_order(ready, uuid.uuid4())
+    assert not patients_service.is_live_ice(live)
     assert refused(doctor, ready) == service.LIVE_WORK_ORDER
 
 
 def test_a_closed_work_order_does_not_block(doctor, ready):
     live_order(ready, BRANDED['medium'], stage='approved')
-    assert not patients_service.live_is_ice(ready)
+    assert patients_service.blocking_work_order(ready) is None
     assert add(doctor, ready)
 
 
