@@ -346,3 +346,19 @@ def test_a_work_order_without_a_catalogue_product_sends_an_empty_category(patien
                                    stage='pending_assignment', actor_type='system')
     service.move_work_order(row, 'assigned', 1, SYSTEM)
     assert events()[-1].payload['product_category'] == ''
+
+
+def test_every_stage_change_writes_exactly_one_history_row(ready, patient):
+    """Payment creation, the ICE close by a paid planning and the cancel path: one history
+    row per `work_order.created` or `work_order.stage_changed` event, no move named."""
+    from patients.models import StageChange
+    ice = paid_ice(ready, patient)
+    tps(ready, patient)
+    pay(finish(ready), ready)
+    planning = service.live_work_order(patient)
+    service.move_work_order(planning, 'cancelled', planning.version, SYSTEM)
+    assert StageChange.objects.count() == len(events()) == 4
+    assert list(StageChange.objects.filter(work_order=ice).values_list(
+        'move', 'from_stage', 'to_stage')) == [
+        ('', '', 'pending_assignment'), ('', 'pending_assignment', 'closed')]
+    assert not StageChange.objects.exclude(move='').exists()

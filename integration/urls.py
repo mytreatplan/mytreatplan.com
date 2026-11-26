@@ -13,4 +13,6 @@ urlpatterns = [
          name='interface_remote_sample_record'),
     path('remote/pending-transfers', views.remote_pending_transfers,
          name='interface_remote_pending_transfers'),
+    path('remote/work-orders', views.remote_work_orders,
+         name='interface_remote_work_orders'),
 ]

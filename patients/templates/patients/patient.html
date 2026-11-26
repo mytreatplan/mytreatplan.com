@@ -17,6 +17,13 @@ bucket (storage_available false) the portrait block is not offered.
 {% if patient.display_name %}<p class="mt-2 text-[20px] font-semibold" data-patient-name>{{ patient.display_name }}</p>{% endif %}
 <p class="mt-2 text-copy text-ink-muted"><span data-status="{{ patient.status }}">{% if patient.status == "inactive" %}{% translate "Inactive" context "patient status" %}{% else %}{% translate "Active" context "patient status" %}{% endif %}</span> &middot; {% translate "Created" context "patient list" %} {{ patient.created_at|date:"DATE_FORMAT" }}</p>
 
+<h2 class="mt-10 text-[22px] font-black leading-[1.2]">{% translate "Case" context "patient file" %}</h2>
+{% if case %}
+<p class="mt-3 text-copy" data-case><span class="font-semibold" data-case-service>{{ case.service }}</span> &middot; <span data-case-stage="{{ case.stage }}">{{ case.stage_label }}</span></p>
+{% else %}
+<p class="mt-3 text-copy text-ink-muted" data-case-none>{% translate "No case yet" %}</p>
+{% endif %}
+
 {% if storage_available %}
 <h2 class="mt-10 text-[22px] font-black leading-[1.2]">{% translate "Portrait" %}</h2>
 {% if rejected %}<p class="mt-3 rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert" data-portrait-rejected>{% translate "The portrait could not be accepted; try another file." %}</p>{% endif %}

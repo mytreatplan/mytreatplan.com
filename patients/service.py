@@ -49,12 +49,14 @@ from django.utils import timezone
 from catalogue import resolver
 from catalogue.models import Product
 from integration import outbox
+from mytp_core import moves as core_moves
 from mytp_core import stages
 from mytp_core.contracts import WORK_ORDER_CREATED, WORK_ORDER_STAGE_CHANGED
 from mytp_core.stages import InvalidStageTransition  # noqa: F401  (re-exported)
 from subscriptions.service import SYSTEM_ACTOR, Actor
 
-from .models import Patient, WorkOrder
+from . import moves as move_receivers
+from .models import Patient, StageChange, WorkOrder
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +85,12 @@ class StaleVersion(PatientError):
     def __init__(self, current):
         super().__init__(f'the row is at version {current}')
         self.current = current
+
+
+class MoveRefused(PatientError):
+    """A named move the stage, the actor or the arguments do not allow (a doctor move by
+    an admin, a staff move by a doctor, another doctor's patient, a missing or
+    unneeded assignee): nothing was changed."""
 
 
 class LiveWorkOrderExists(PatientError):
@@ -165,6 +173,13 @@ def live_work_order(patient):
         patient_id=patient.pk, stage__in=sorted(stages.LIVE_STAGES)).first()
 
 
+def current_work_order(patient):
+    """The case the patient's file shows: the live work order, else the latest one (by
+    creation), or None when there is none."""
+    return live_work_order(patient) or WorkOrder.objects.filter(
+        patient_id=patient.pk).order_by('-created_at', '-id').first()
+
+
 def blocking_work_order(patient, exclude_order=None):
     """The work order that keeps `patient` from a new service, or None (epic-ordering 9.8):
     a bank-transfer work order (`pending_payment` with an `order_id`) of an order other than
@@ -229,10 +244,19 @@ def _record_event(event_type, work_order):
         'product_category': _product_category(work_order), 'at': work_order.updated_at})
 
 
-def _move_locked(locked, to_stage, actor):
+def _record_stage_change(work_order, from_stage, move, actor, at):
+    """The history row of a stage change (creation: `from_stage` empty)."""
+    StageChange.objects.create(
+        work_order=work_order, move=move, from_stage=from_stage, to_stage=work_order.stage,
+        version=work_order.version, actor_type=actor.type, actor_uuid=actor.uuid, at=at)
+
+
+def _move_locked(locked, to_stage, actor, move=''):
     """Move the locked row to `to_stage` (checked by the core's table), raise its version,
-    and record `work_order.stage_changed`."""
+    write the history row (`move`: the named move, else empty) and record
+    `work_order.stage_changed`."""
     stages.check_transition(locked.stage, to_stage)
+    from_stage = locked.stage
     locked.stage = to_stage
     locked.version += 1
     locked.actor_type, locked.actor_uuid = actor.type, actor.uuid
@@ -242,6 +266,7 @@ def _move_locked(locked, to_stage, actor):
             locked.save()
     except IntegrityError:
         raise LiveWorkOrderExists('the patient already has a live work order') from None
+    _record_stage_change(locked, from_stage, move, actor, locked.updated_at)
     _record_event(WORK_ORDER_STAGE_CHANGED, locked)
     return locked
 
@@ -256,6 +281,43 @@ def move_work_order(work_order, to_stage, expected_version, actor):
         if locked.version != expected_version:
             raise StaleVersion(locked.version)
         return _move_locked(locked, to_stage, actor)
+
+
+def _owns_patient(actor, work_order):
+    return Patient.objects.filter(pk=work_order.patient_id, doctor__uid=actor.uuid).exists()
+
+
+def apply_move(work_order, move, expected_version, actor, assignee=None):
+    """Apply the named `move` (`mytp_core.moves`) to `work_order` as `actor`
+    (epic-case-lifecycle 10.1, AD-15): under the row lock, `StaleVersion` unless
+    `expected_version` is current; `MoveRefused` (nothing changed) when the move is
+    unknown, not allowed from the stage, or not for this kind of actor (a staff move needs
+    an admin actor, a doctor move a doctor actor who owns the patient), or when `assign`
+    has no `assignee` (an admin UUID) or another move has one. Then the stage change with
+    its history row and `work_order.stage_changed` event, and the receivers registered for
+    the move (`patients.moves`), inside the transaction. Returns the locked, updated row."""
+    _check_actor(actor)
+    with transaction.atomic():
+        locked = WorkOrder.objects.select_for_update().get(pk=work_order.pk)
+        if locked.version != expected_version:
+            raise StaleVersion(locked.version)
+        actor_kind = {'admin': core_moves.STAFF, 'doctor': core_moves.DOCTOR}.get(actor.type)
+        try:
+            to_stage = core_moves.check_move(move, locked.stage, actor_kind)
+        except core_moves.MoveNotAllowed as refused:
+            raise MoveRefused(str(refused)) from None
+        if actor_kind == core_moves.DOCTOR and not _owns_patient(actor, locked):
+            raise MoveRefused('the doctor does not own the patient')
+        if (move == 'assign') != (assignee is not None):
+            raise MoveRefused('assign needs an assignee, and only assign takes one')
+        if assignee is not None:
+            try:
+                locked.assignee_uuid = uuid.UUID(str(assignee))
+            except ValueError:
+                raise MoveRefused('the assignee is not a UUID') from None
+        _move_locked(locked, to_stage, actor, move=move)
+        move_receivers.fire(move, locked)
+        return locked
 
 
 # The categories a manual work order may carry (epic-ordering 9.9): the services a cart
@@ -290,6 +352,7 @@ def create_manual_work_order(doctor, patient_code, product_id, *, actor):
             patient=patient, order_line_id=None, order_id=None, product_id=product.pk,
             code=product.code or '', stage=stages.PENDING_PAYMENT, actor_type=actor.type,
             actor_uuid=actor.uuid, created_at=now, updated_at=now)
+        _record_stage_change(work_order, '', '', actor, now)
         _record_event(WORK_ORDER_CREATED, work_order)
     return work_order
 
@@ -352,6 +415,7 @@ def _create_work_order(order, line, patient, stage):
     except IntegrityError:
         raise LiveWorkOrderExists(
             f'order {order.pk}: the patient already has a live work order') from None
+    _record_stage_change(work_order, '', '', SYSTEM_ACTOR, now)
     _record_event(WORK_ORDER_CREATED, work_order)
     return work_order
 

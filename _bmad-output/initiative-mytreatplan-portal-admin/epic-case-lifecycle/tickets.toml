@@ -1,0 +1,138 @@
+# epic-case-lifecycle (epic 10): agreed breakdown, approved by the user 2026-11-26. Table order is the build order.
+
+[[entry]]
+id = 1
+type = "story"
+title = "Named stage moves from the admin site"
+description = "Adds named case moves with the actor allowed for each to mytp-core (a release): the staff moves, including a direct Assign, and the doctor's Records complete and Approve; one portal service that applies them, records each move in a stage history table and runs the receivers registered for a move (the hook 2 and 10 use); a remote write route the admin site calls with version and idempotency key; and the current service with its stage on the patient file."
+verify = "A remote call signed as the admin site assigns a dev work order and moves it on one named step; a stale version gets 409, a move the actor may not make is refused, a history row is written per move, and the doctor's patient file shows the new stage."
+covers = ["L3"]
+after = ["9.1", "9.8", "4.6"]
+hitl = true
+risk = "high"
+unknown = "none beyond the mytp-core release the user tags and vendors."
+
+[[entry]]
+id = 2
+type = "story"
+title = "Case messages by email"
+description = "Builds the instance's notification service on 9.20's pattern (one template per message and language, patients by code only, the login email, sent once per stage change, its result kept on a message row) as a receiver of 1's stage hook, and sends the doctor's email on Pending appointment, Pending review and Pending approval; moving the order emails onto it is left to the sweep."
+verify = "Moving a dev case into each of the three stages sends one email in the doctor's language to the login email, with the patient code and no name; a repeated move sends nothing twice."
+covers = ["L9"]
+after = [1, "9.20"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 3
+type = "story"
+title = "SMS fallback for case messages"
+description = "Sends the case message by SMS through Twilio Messaging to the doctor's verified mobile when the email cannot be sent (address refused or send failed), tracked on the same message row."
+verify = "With the email send made to fail on dev, a stage change sends one SMS to the test mobile with the code only; with email working no SMS is sent."
+covers = ["L9"]
+after = [2]
+hitl = true
+risk = "medium"
+unknown = "the Twilio sender: an alphanumeric sender id or a number, and its registration in each EU country the user launches in."
+
+[[entry]]
+id = 4
+type = "story"
+title = "Patient list and file with stages, history and comments"
+description = "Adds the stage column and the inactive highlight to the patient list, and to the patient file the doctor's comments, the history of services and of stage changes (from 1's table), the active or inactive control, the case-actions section 5, 8 and 9 fill, and the appointments block (a named template slot) epic-appointments fills."
+verify = "On dev a patient with two work orders shows the current stage in the list and both services with dated stage changes in the file; the doctor edits the comments and sets the patient inactive, and the list highlights it."
+covers = ["L1", "L2", "L11"]
+after = [1]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 5
+type = "story"
+title = "Records upload with status"
+description = "Adds a records storage purpose linked to the work order (one compressed file up to 1 GiB, any type, a single file recommended), the upload section on the file of a VirtuaOrtho or in-house case in Pending registers upload, its status (uploaded and waiting, processed once the case reaches Prescription done, then 6's deletion states), and the doctor's Records complete move (from 1) to Processing prescription."
+verify = "On staging a 1 GB archive uploads, survives a dropped network connection mid-upload, is scanned and shows its status; Records complete moves the case on; a password-protected archive is refused with the page's explanation."
+covers = ["L4", "L3"]
+after = [1, 4, "1.11", "1.12"]
+hitl = true
+risk = "high"
+unknown = "whether a page reload resumes an interrupted upload (today resume works within the page session)."
+
+[[entry]]
+id = 6
+type = "story"
+title = "Staff access to records and their deletion 7 days later"
+description = "Adds the remote routes staff use to download a work order's records (logged, presigned) and to mark them uploaded to the maker (who and when; epic-clinical-ops builds the screens), shows the deletion date on the file, and a daily job that deletes the records 7 days after the mark leaving only the trace."
+verify = "On dev staff download a record over the remote route (logged), mark it uploaded to the maker, and with the date moved back the job deletes it; the file shows it deleted with the date and the trace has the object id, patient code, who and when but no file name."
+covers = ["L5", "L4"]
+after = [5]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 8
+type = "story"
+title = "Case approval by the doctor"
+description = "Adds the Approve the case button with a confirmation on the file of a VirtuaOrtho or in-house case in Pending approval, applying 1's doctor Approve move; Approved ends the live work order, so the wizard's retainer rule now reads real approved cases and the 9.4/9.16 fixture assumption is retired."
+verify = "On dev a doctor approves a case in Pending approval after confirming and it shows Approved; a TPS by a third-party maker shows no button; the wizard then offers retainers for that patient."
+covers = ["L7", "L3"]
+after = [1, 4, 5]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 9
+type = "story"
+title = "STL files for approved in-house cases"
+description = "Adds an STL storage purpose linked to the work order, the remote route staff use to attach STL files (epic-clinical-ops builds the screen), and the doctor's logged download section on an approved in-house case."
+verify = "On dev an STL attached to an in-house case over the remote route is scanned, appears for download once the case is approved, and each download is logged; another doctor cannot download it."
+covers = ["L8"]
+after = [8, "1.11", "1.12"]
+hitl = false
+risk = "medium"
+
+[[entry]]
+id = 7
+type = "story"
+title = "Patient deletion after 48 hours"
+description = "Lets the doctor (after a confirmation) or staff over a remote route mark a patient for deletion when it has no live or pending-payment work order (its cart items are removed), and a job that 48 h later archives the patient and its work orders to the regional write-once archive (adding AD-2's row for a per-patient archive object), deletes the portrait, records and STL files, removes the live rows, keeps the patient code on orders and invoices, leaves the trace, and sends a new work-order deletion event that mytp-admin applies to its workload entries."
+verify = "On dev a patient marked for deletion (with the mark moved back 48 h) is archived and removed by the job, its orders and invoices still show its code, the trace holds the internal id, who and when, and admindev's workload entry is gone from the live figures; a patient with a live or pending-payment work order cannot be marked."
+covers = ["L6"]
+after = [4, 6, 9, "9.12"]
+hitl = false
+risk = "high"
+unknown = "none: covers mytp-core (event), the portal and mytp-admin; merge order core, admin, portal."
+
+[[entry]]
+id = 10
+type = "story"
+title = "Case assignment proposal and its 24 h confirmation"
+description = "Adds the assignee and a pre-assigned state on the work order, the remote routes the admin site uses to propose and confirm an assignee, a job that firms a pre-assignment after 24 h through 1's Assign move, and the assignment email through 2's notification service (and 3's fallback) once it is firm."
+verify = "On dev a pre-assigned case becomes Assigned 24 h later (the time moved back) or at once when confirmed, the doctor gets one assignment email, and the doctor sees Pending assignment until then."
+covers = ["L10", "L9", "L3"]
+after = [1, 2, 3]
+hitl = false
+risk = "high"
+unknown = "whether pre-assigned is a field on the work order (recommended) or a stage in mytp-core's machine."
+
+[[entry]]
+id = 11
+type = "story"
+title = "Production checks for the EU go-live"
+description = "Writes this epic's production checks (stages and messages, records upload and deletion, patient deletion, approval and STL, assignment) into epic-eu-golive's Done when."
+verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+hitl = false
+risk = "low"
+
+[[entry]]
+id = 12
+type = "story"
+title = "Refactor sweep"
+description = "Cleanup only, scoped when it starts from the entries' plans, the review findings deferred during the epic, and the findings epic-ordering's unfinished entries (9.10, 9.13) deferred to it; includes moving the order emails onto 2's notification service."
+verify = "The full suite passes unchanged and the swept items are listed in the plan."
+covers = []
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+hitl = false
+risk = "low"

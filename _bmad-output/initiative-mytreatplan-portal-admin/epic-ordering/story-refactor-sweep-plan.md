@@ -3,7 +3,7 @@ title: 'Refactor sweep'
 type: 'refactor'
 ticket: '11'
 created: '2026-11-26'
-status: 'built'
+status: 'done'
 baseline_revision: 'b4306b3528133f14b45dd9d980061019494924f2'
 route: 'full'
 route_source: 'auto'
@@ -93,3 +93,9 @@ context: []
 - `../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` (env as in the suite command) -- expected: 0 failures besides the 11 known local WeasyPrint ones in `invoices/tests/test_pdf.py` and `test_pending_documents.py`.
 - Staging data (after merge, over SSH): count on dev and dev-ae the work orders created before 9.8 and the `pending_payment` bank-transfer orders with no `pending_payment` work order; show the counts and remove those rows only after the user confirms.
 - `../.venv/bin/python -m pyflakes cart patients payments invoices accounts/erasure.py` (if installed) -- expected: no unused-import warnings in the touched files.
+
+## Staging
+
+- Merged as PR #150 (1cf9065, 2026-11-26); CI 4536+ tests green on the PR. Deployed with add87c6 (the 1cf9065 and 7179d57 runs skipped their release because master had moved on; add87c6's test job was re-run once after a flaky `accounts/tests/test_makers.py:218`, where the 2-character secret "p2" occurred by chance in the page).
+- Dev checks (rolled back, no names printed): the patients page's add-patient page shows "Back to patients" and the wizard's shows "Back to the patients", each form posting to its own page; a TPS added to the cart, a second TPS and a VirtuaOrtho for the same patient refused with `in_cart`.
+- Pre-9.8 data: dev-ae none; dev one work order (the `SEED-ICE-EUR` seed fixture, a live ICE kept for the ICE tests) and no pending transfer order without its hold. Nothing deleted.

@@ -20,7 +20,10 @@ from accounts.client_sync import is_client
 from payments import service as payments_service
 from storage import service as storage_service
 
+from catalogue import resolver
+
 from . import portrait, service
+from .stages import stage_label
 from .forms import PatientForm
 from .models import Patient
 
@@ -93,6 +96,16 @@ def _own_patient(request, code):
     return patient
 
 
+def _case_of(patient):
+    """The service and translated stage of the patient's current case, or None."""
+    work_order = service.current_work_order(patient)
+    if work_order is None:
+        return None
+    product = resolver.product(work_order.product_id) if work_order.product_id else None
+    return {'service': product.public_name if product is not None else work_order.code,
+            'stage': work_order.stage, 'stage_label': stage_label(work_order.stage)}
+
+
 @login_required
 @csrf_protect
 @never_cache
@@ -128,7 +141,7 @@ def patient_page(request, code):
         'patient': patient, 'portrait': shown, 'rejected': rejected,
         'storage_available': available, 'purpose': portrait.PURPOSE,
         'max_size': portrait.MAX_SIZE, 'allowed_types': ' '.join(portrait.CONTENT_TYPES),
-        'has_portrait': portrait.has_portrait(patient)})
+        'has_portrait': portrait.has_portrait(patient), 'case': _case_of(patient)})
 
 
 @login_required
