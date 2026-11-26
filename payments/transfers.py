@@ -28,7 +28,7 @@ from accounts.profile import profile_of
 
 from . import bank_transfer
 from .models import Order, Payment
-from .service import _lock
+from .service import lock_order
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ def remind_due(now=None):
     for pk in list(_due(now).values_list('pk', flat=True)):
         try:
             with transaction.atomic():
-                order = _lock(Payment.objects.values_list('order_id', flat=True).get(pk=pk))
+                order = lock_order(Payment.objects.values_list('order_id', flat=True).get(pk=pk))
                 payment = Payment.objects.select_for_update().get(pk=pk)
                 since = now - bank_transfer.REMIND_AFTER
                 last = _last_reminded(order.pk)

@@ -38,7 +38,7 @@ import logging
 import urllib.error
 import uuid
 from datetime import datetime, timedelta, timezone as dt_timezone
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from urllib.parse import urlsplit
 
 from django.conf import settings

@@ -35,7 +35,6 @@ from django.db import transaction
 from django.db.models import Q
 from django.urls import reverse
 
-from accounts import client_sync
 from accounts import photo as profile_photo
 from storage import purposes, service
 from storage.models import DeletionTrace, StoredObject

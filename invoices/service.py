@@ -21,7 +21,6 @@ from accounts import fiscal
 from catalogue.models import BillingCompany, BillingRule
 from mytp_core.contracts.checks import PATIENT_CODE_RE
 from mytp_core.money import Money
-from payments.models import Order
 
 from . import feed
 from .models import EINVOICE_FIELDS, Invoice, InvoiceLine, InvoiceSeries, NumberingHold
@@ -31,7 +30,6 @@ logger = logging.getLogger(__name__)
 # The buyer fields on an invoice, by the fiscal field they copy.
 _BILL = {name: ('bill_billing_email' if name == 'billing_email' else f'bill_{name}')
          for name in fiscal.FIELDS}
-_ACTOR_TYPES = ('doctor', 'admin', 'system')
 
 
 class InvoiceError(Exception):

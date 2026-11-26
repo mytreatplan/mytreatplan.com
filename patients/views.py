@@ -30,7 +30,7 @@ def _doctor_only(request):
         raise Http404('not a doctor')
 
 
-def _create(request, form):
+def create_patient_from_form(request, form):
     """Save the patient when the form is valid (with the success message); the new `Patient`,
     or None when the form is not valid. The case wizard (cart.views) reuses it."""
     if not form.is_valid():
@@ -53,7 +53,7 @@ def patient_list(request):
     open_dialog = False
     if request.method == 'POST':
         form = PatientForm(request.POST)
-        if _create(request, form):
+        if create_patient_from_form(request, form):
             return redirect('patients')
         open_dialog = True
     else:
@@ -76,9 +76,11 @@ def new_patient(request):
     """The add-patient form on its own page: the no-JS fallback of the list's dialog."""
     _doctor_only(request)
     form = PatientForm(request.POST) if request.method == 'POST' else PatientForm()
-    if request.method == 'POST' and _create(request, form):
+    if request.method == 'POST' and create_patient_from_form(request, form):
         return redirect('patients')
-    return render(request, 'patients/new.html', {'form': form})
+    return render(request, 'patients/new.html', {
+        'form': form, 'action': reverse('patient_new'), 'back_url': reverse('patients'),
+        'back_text': _('Back to patients')})
 
 
 def _own_patient(request, code):

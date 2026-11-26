@@ -39,8 +39,8 @@ from subscriptions import service as subscriptions
 from . import service
 from .forms import (BRAND, TPS, VIRTUAORTHO, IN_HOUSE, MakerForm, ProductForm, TpsOptionsForm,
                     VoOptionsForm, VoTypeForm)
-from .views import (_doctor_only, _fiscal_block, _own_patient, _refusal_texts, address_label,
-                    size_label)
+from .common import doctor_only, fiscal_block, own_patient, refusal_texts
+from .views import address_label, size_label
 
 URL_NAME = 'start_a_case_step'
 # The two options forms share the URL step "options"; the product decides which one it is.
@@ -168,7 +168,7 @@ class CaseWizard(NamedUrlSessionWizardView):
 
     def dispatch(self, request, *args, **kwargs):
         # A staff account, another doctor's patient or an inactive one: a 404.
-        self.patient = _own_patient(request, kwargs['code'])
+        self.patient = own_patient(request, kwargs['code'])
         return super().dispatch(request, *args, **kwargs)
 
     def get_prefix(self, request, *args, **kwargs):
@@ -224,10 +224,10 @@ class CaseWizard(NamedUrlSessionWizardView):
 
     def _blocked(self):
         return render(self.request, 'cart/wizard/blocked.html', {
-            'patient': self.patient, 'fiscal_link': _fiscal_block(self.request, self.request.path)})
+            'patient': self.patient, 'fiscal_link': fiscal_block(self.request, self.request.path)})
 
     def get(self, *args, **kwargs):
-        if _fiscal_block(self.request, self.request.path):
+        if fiscal_block(self.request, self.request.path):
             return self._blocked()
         step, response = self._route(kwargs['step'])
         if response is not None:
@@ -236,7 +236,7 @@ class CaseWizard(NamedUrlSessionWizardView):
         return self.render(self.get_form(data=self.storage.current_step_data), **kwargs)
 
     def post(self, *args, **kwargs):
-        if _fiscal_block(self.request, self.request.path):
+        if fiscal_block(self.request, self.request.path):
             return self._blocked()
         step, response = self._route(kwargs['step'])
         if response is not None:
@@ -302,7 +302,7 @@ class CaseWizard(NamedUrlSessionWizardView):
             self.add_to_cart(forms)
         except service.CartRefused as refused:
             self.storage.current_step = last
-            return self.render(forms[last], error=_refusal_texts()[refused.code], **kwargs)
+            return self.render(forms[last], error=refusal_texts()[refused.code], **kwargs)
         self.storage.reset()
         messages.success(self.request, _('The service has been added to your cart.'))
         return redirect('cart')
@@ -382,7 +382,7 @@ class WorkOrderWizard(CaseWizard):
 
     def dispatch(self, request, *args, **kwargs):
         # A staff account, another doctor's work order, one already paid or gone: a 404.
-        _doctor_only(request)
+        doctor_only(request)
         self.work_order = patients_service.manual_work_order_of(
             request.user, kwargs['work_order_id'])
         if self.work_order is None:
@@ -449,7 +449,7 @@ class WorkOrderWizard(CaseWizard):
         except service.CartRefused as refused:
             if refused.code == service.NO_ENTITY:
                 return None
-            messages.error(self.request, _refusal_texts()[refused.code])
+            messages.error(self.request, refusal_texts()[refused.code])
             return redirect('home')
         return None
 
