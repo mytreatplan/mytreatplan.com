@@ -102,6 +102,7 @@ covers = ["P9"]
 after = [
   { epic = 1, needs = "object storage and job runner" },
   { epic = 9, needs = "work orders and patients" },
+  { epic = 4, needs = "versioned remote writes (4.6)" },
 ]
 
 [[epic]]

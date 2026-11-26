@@ -51,3 +51,4 @@ Staff-side case work. Not appointments (epic-appointments), not sales data (epic
 - Waits on epic 6 because: it needs maker logins.
 - Waits on epic 9 because: it needs work orders and pending-payment list.
 - Waits on epic 10 because: it needs case stages and records.
+- Handoff (2026-11-26, from epic-case-lifecycle inception): the portal adds the remote routes this epic's screens call: named stage moves (10.1), records download and "uploaded to the maker" mark (10.6), attach STL files to an in-house case (10.9; this epic builds the staff upload screen), patient deletion mark (10.7), and assignee proposal and confirmation, with the 24 h firming job in the region (10.10). The portal's notification service sends the doctor's messages.

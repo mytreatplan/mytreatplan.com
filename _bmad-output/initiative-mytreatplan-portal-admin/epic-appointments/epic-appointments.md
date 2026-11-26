@@ -44,3 +44,4 @@ Appointments only. Not the Zoom API or the account pool (Parked).
 - Handoff (2026-10-30, epic-subscriptions inception): Premium call extras are counted from the order line's snapshot at purchase, not the doctor's current tier.
 - Waits on epic 10 because: it needs case page appointments block.
 - Waits on epic 11 because: it needs specialist calendars, availability and assignment.
+- Handoff (2026-11-26, from epic-case-lifecycle inception): the patient file's appointments block is a named template slot added by 10.4; this epic fills it and gates it by stage.
