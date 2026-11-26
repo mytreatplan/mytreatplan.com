@@ -267,3 +267,9 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-saved-cards-and-repeat-charges-on-redsys-plan.md`
   summary: Doctors cannot see or remove the card saved for renewals (7.11 stores it, one per doctor and gateway); a settings line "Saved card: brand ••••last4, expires MM/YY, Remove" (deleting our token, renewals then need a new card) belongs to epic-subscriptions 8.10 (cancellation and expiry).
   evidence: User decision 2026-11-26 while planning 7.11: keep 7.11 to the backend and the checkout consent line.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-case-lifecycle/story-named-stage-moves-from-the-admin-site-plan.md`
+  summary: Work orders created before 10.1's deploy have no `StageChange` rows (no creation row, no earlier changes); 10.4's stage-history list must show them as starting at their first change after the deploy (or write one "history starts here" row at deploy).
+  evidence: 10.1 review finding 7: migration 0006 only creates the table; earlier changes cannot be rebuilt from the work order row.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-case-lifecycle/story-named-stage-moves-from-the-admin-site-plan.md`
+  summary: No move reassigns a case: `assign` only starts from pending_assignment, so a wrong or departed assignee leaves the case with nobody able to act as Clinical User; 10.10 (assignment proposal and confirmation) should add a reassign path and may check the assignee against the admin directory.
+  evidence: 10.1 review finding 2.

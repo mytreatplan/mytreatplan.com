@@ -154,3 +154,33 @@ def test_the_new_page_keeps_the_patients_nav_item_current(doctor):
 def test_the_new_page_is_in_spanish_too(doctor):
     page = browser(doctor).get('/es/patients/new/').content.decode()
     assert 'Añadir un paciente' in page and 'Volver a los pacientes' in page
+
+
+# --- The case on the patient file (epic-case-lifecycle 10.1) -----------------------------
+
+def case_for(doctor, patient, stage='pending_assignment'):
+    from patients.models import WorkOrder
+    import uuid
+    return WorkOrder.objects.create(patient=patient, order_line_id=uuid.uuid4(), stage=stage,
+                                    actor_type='system', code='TPS-1')
+
+
+def test_the_file_says_no_case_yet(doctor, patient):
+    page = browser(doctor).get(f'/en/patients/{patient.code}/').content.decode()
+    assert 'data-case-none' in page and 'No case yet' in page
+
+
+def test_the_file_shows_the_stage_in_english_and_spanish(doctor, patient):
+    case_for(doctor, patient, 'pending_approval')
+    page = browser(doctor).get(f'/en/patients/{patient.code}/').content.decode()
+    assert 'data-case-stage="pending_approval"' in page and 'Awaiting your approval' in page
+    page = browser(doctor).get(f'/es/patients/{patient.code}/').content.decode()
+    assert 'Pendiente de su aprobación' in page
+
+
+def test_the_file_shows_the_live_case_before_a_finished_one(doctor, patient):
+    old = case_for(doctor, patient, 'cancelled')
+    case_for(doctor, patient, 'in_development')
+    page = browser(doctor).get(f'/en/patients/{patient.code}/').content.decode()
+    assert 'In development' in page and 'Cancelled' not in page
+    assert old.pk

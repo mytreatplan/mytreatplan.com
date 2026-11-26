@@ -20,7 +20,7 @@ from mytp_core.snapshots import sign_snapshot, verify_snapshot
 
 
 def test_vendored_mytp_core_has_money():
-    assert mytp_core.__version__ == '0.35.0'
+    assert mytp_core.__version__ == '0.36.0'
     assert Money('10.005', 'EUR') == Money(Decimal('10.01'), 'EUR')
     assert Money('10', 'EUR') != Money('10', 'AED')
 
@@ -80,7 +80,7 @@ def test_vendored_mytp_core_has_remote_writes():
     from mytp_core import access
     from mytp_core.contracts import RESOURCE_WRITERS, errors, stale_version_body
     assert access.writable('sample_record', 'clinical_manager') == {'note'}
-    assert set(RESOURCE_WRITERS) == {'sample_record', 'pending_transfer'}
+    assert set(RESOURCE_WRITERS) == {'sample_record', 'pending_transfer', 'work_order'}
     assert errors.REMOTE_WRITE_STATUS['stale_version'] == 409
     assert errors.REMOTE_WRITE_STATUS['idempotency_key_reused'] == 422
     assert stale_version_body(2)['current_version'] == 2
@@ -215,3 +215,12 @@ def test_vendored_mytp_core_has_the_work_order_events():
     assert stages.CLOSED in stages.FINAL_STAGES and stages.CLOSED not in stages.LIVE_STAGES
     assert WORK_ORDER_READERS == {'work_order.created': WorkOrderCreatedReader,
                                   'work_order.stage_changed': WorkOrderStageChangedReader}
+
+
+def test_vendored_mytp_core_has_the_named_moves():
+    """Epic-case-lifecycle 10.1 (0.36.0): the moves and the `work_order` resource."""
+    from mytp_core import access, moves
+    from mytp_core.contracts import RESOURCE_WRITERS
+    assert moves.check_move('assign', 'pending_assignment', moves.STAFF) == 'assigned'
+    assert access.rule_for('work_order', 'clinical_user').writable == {'move'}
+    assert 'work_order' in RESOURCE_WRITERS
