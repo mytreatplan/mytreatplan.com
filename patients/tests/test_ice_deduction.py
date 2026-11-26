@@ -54,6 +54,15 @@ def planning(order):
     return order.lines.get()
 
 
+def free(patient):
+    """Cancel the patient's live work order (since 9.8 a paid planning has one, and the
+    ICE's is closed), so another planning may be ordered."""
+    from patients import service as patients_service
+    live = patients_service.live_work_order(patient)
+    patients_service.move_work_order(live, 'cancelled', live.version,
+                                     patients_service.SYSTEM_ACTOR)
+
+
 def deduction(order):
     return IceDeduction.objects.get(order_id=order.pk)
 
@@ -83,7 +92,11 @@ def test_acceptance_paid_with_the_fake_gateway_and_no_second_credit(doc, patient
     assert order.state == 'paid' and order.total == Decimal('14.00')
     assert deduction(order).state == 'consumed'
     assert not CartItem.objects.exists()
-    tps(doc, patient)  # a later TPS for the patient (the ICE is still live)
+    # 9.8: the ICE's work order is closed and the planning's is live.
+    assert sorted(WorkOrder.objects.values_list('stage', flat=True)) == [
+        'closed', 'pending_assignment']
+    free(patient)
+    tps(doc, patient)  # a later TPS for the patient
     later = finish(doc)
     assert (planning(later).ice, planning(later).ice_asked) == (Decimal('0.00'), None)
     assert later.total == Decimal('94.00')
@@ -232,6 +245,7 @@ def test_an_ice_already_followed_by_a_paid_planning_gives_no_credit(doc, patient
         tps(doc, patient)
         earlier = pay(finish(doc), doc)
     assert planning(earlier).ice == Decimal('0.00') and not IceDeduction.objects.exists()
+    free(patient)
     tps(doc, patient)
     order = finish(doc)
     assert planning(order).ice == Decimal('0.00') and order.total == Decimal('94.00')
@@ -341,8 +355,13 @@ def test_a_transfer_approval_keeps_the_deduction_reserved(doc, patient):
     order = by_transfer(finish(doc), doc)
     assert order.state == 'pending_payment'
     assert deduction(order).state == 'reserved'
-    tps(doc, patient)  # the item left the cart; the held ICE is not offered again
-    assert planning(finish(doc)).ice == Decimal('0.00')
+    # 9.8: the item left the cart, and the patient's pending-payment work order keeps them
+    # out of a new one while the ICE stays live.
+    with pytest.raises(cart.CartRefused) as caught:
+        tps(doc, patient)
+    assert caught.value.code == cart.LIVE_WORK_ORDER
+    assert sorted(WorkOrder.objects.values_list('stage', flat=True)) == [
+        'pending_assignment', 'pending_payment']
 
 
 def test_a_refunded_planning_order_keeps_its_deduction_consumed(doc, patient):
@@ -351,6 +370,7 @@ def test_a_refunded_planning_order_keeps_its_deduction_consumed(doc, patient):
     order = pay(finish(doc), doc)
     Order.objects.filter(pk=order.pk).update(state=Order.REFUNDED)
     assert deduction(order).state == 'consumed'
+    free(patient)
     tps(doc, patient)
     assert planning(finish(doc)).ice == Decimal('0.00')
 

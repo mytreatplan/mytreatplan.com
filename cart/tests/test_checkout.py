@@ -208,7 +208,7 @@ def test_a_voucher_on_an_order_already_at_zero_is_refused_and_unused(ready, pati
 def test_a_try_me_voucher_is_used_once_per_doctor(ready, patient):
     tps(ready, patient)
     assert pay(finish(ready, CODE), ready).state == 'paid'
-    tps(ready, patient)
+    tps(ready, ready.second)  # 9.8: the first patient now has a live work order
     with pytest.raises(pricing.OrderRefused) as caught:
         finish(ready, CODE)
     assert caught.value.reason == pricing.VOUCHER_USED
@@ -258,7 +258,13 @@ def test_paying_a_transfer_order_keeps_an_item_added_since_for_its_patient(bank,
     tps(bank, patient)
     order = by_transfer(finish(bank), bank)
     assert not CartItem.objects.exists()
-    tps(bank, patient)  # the same patient and product again (not blocked in 9.17)
+    # 9.8: the order's pending-payment work order keeps the patient out of the cart.
+    with pytest.raises(service.CartRefused) as caught:
+        tps(bank, patient)
+    assert caught.value.code == service.LIVE_WORK_ORDER
+    # An item that got in all the same (added before 9.8) stays when the order is paid.
+    CartItem.objects.create(doctor=bank, patient=patient, product_id=BRANDED['medium'],
+                            add_on_codes=[], maker='undecided')
     payments.mark_transfer_paid(order, order.total, expected_version=order.version,
                                 actor=payments.SYSTEM_ACTOR)
     assert Order.objects.get(pk=order.pk).state == 'paid'

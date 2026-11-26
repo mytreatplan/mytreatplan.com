@@ -100,7 +100,7 @@ def test_page_shows_the_form_the_read_only_data_and_the_tiles(doctor, fake_bucke
     assert re.search(r'aria-label="My details" aria-current="page" '
                      r'data-settings-tile="settings"', html)
     assert html.count('aria-current="page" data-settings-tile') == 1
-    assert doctor.date_joined.strftime('%Y·%m·%d') in html
+    assert timezone.localtime(doctor.date_joined).strftime('%Y·%m·%d') in html
     assert re.search(r'href="/en/home/"[^>]*data-back-home', html)
     assert 'data-cancel' in html and re.search(r'href="/en/home/"[^>]*data-cancel', html)
     # The gear is current. The photo block (entry 4) shows the initials and links to the

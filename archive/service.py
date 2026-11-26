@@ -110,8 +110,8 @@ def build(user):
         row = _row(p, ('id', 'code', 'first_name', 'surname', 'reference', 'comments',
                        'status', 'created_at', 'updated_at'))
         row['work_orders'] = [
-            _row(w, ('id', 'code', 'stage', 'order_line_id', 'product_id', 'created_at',
-                     'updated_at'))
+            _row(w, ('id', 'code', 'stage', 'order_line_id', 'order_id', 'product_id',
+                     'created_at', 'updated_at'))
             for w in WorkOrder.objects.filter(patient_id=p.pk).order_by('created_at', 'id')]
         patients.append(row)
     orders = []

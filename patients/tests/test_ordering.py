@@ -198,15 +198,23 @@ def test_the_patients_app_registers_the_lookup_and_the_hook_at_start_up():
     aside here and `ready()` is run again on clean registries."""
     from django.apps import apps
     invoice_patients.unregister()
-    hooks.unregister('paid', 'work_orders')
     for event, name in (('created', 'ice_reserve'), ('paid', 'ice_consume'),
-                        ('cancelled', 'ice_release'), ('expired', 'ice_release')):
+                        ('cancelled', 'ice_release'), ('expired', 'ice_release'),
+                        ('transfer_approved', 'work_orders_hold'), ('paid', 'work_orders'),
+                        ('cancelled', 'work_orders_cancel'),
+                        ('expired', 'work_orders_cancel')):
         hooks.unregister(event, name)
     from storage import purposes
     purposes.unregister('patient_portrait')
     apps.get_app_config('patients').ready()
     assert invoice_patients._lookup is service.names_for_invoice
     assert ('work_orders', service.create_work_orders_for_order) in hooks.receivers('paid')
+    # 9.8: the transfer's pending-payment work orders, held and cancelled with the order.
+    assert ('work_orders_hold', service.hold_work_orders_for_transfer) in hooks.receivers(
+        'transfer_approved')
+    for event in ('cancelled', 'expired'):
+        assert ('work_orders_cancel', service.cancel_work_orders_for_order) in \
+            hooks.receivers(event)
     from patients import ice
     assert ('ice_reserve', ice.reserve) in hooks.receivers('created')
     assert ('ice_consume', ice.consume) in hooks.receivers('paid')
