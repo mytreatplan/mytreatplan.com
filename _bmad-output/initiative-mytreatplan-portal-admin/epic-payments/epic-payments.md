@@ -57,7 +57,8 @@ Paying and invoicing. Not what is bought (epic-subscriptions, epic-ordering). Th
   - It includes subscriptions with recurring payments, a risk-management tool, and "TPV Get Link & Pay" (payment links by email, SMS, WhatsApp or QR).
   - Priced per month by the number of stored cards: 0–300 cards €8; 301–600 €11; 601–1000 €15.
   - The account holder is MyTPDSO Spain S.L.
-  - Still to ask Santander: whether it covers merchant-initiated charges without the doctor present (Redsys COF/MIT, the SCA exemption); and to switch it on for the sandbox terminal first.
+  - Santander's answers (user, 2026-11-24): Venta + covers merchant-initiated charges without the doctor present (COF/MIT), in the test environment too; pre-authorisation (authorise, then capture or cancel) is possible; test credentials come only after the contract is signed.
+  - Contract status (user, 2026-11-26): NOT signed yet. Santander first needs screenshots showing a product with a price, the legal notice with the company name and CIF, and the contracting conditions; the team is not ready to take them in the form Santander needs and will come back to this soon. Until then entry 11 can be planned and built against Redsys's public test terminal, but its saved-card and repeat-charge checks on our own terminal cannot run.
   - The Revolut half of the unknown is still open.
 
 - Handoff (2026-10-30, epic-subscriptions inception): the order-creation service accepts a €0 order (a voucher covering the whole price), which skips the gateway, is marked paid and still gets a €0 invoice.
