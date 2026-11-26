@@ -1,0 +1,23 @@
+{% load i18n %}{% autoescape off %}{% translate "Hello," %}
+
+{% blocktranslate with reference=order.reference %}Thank you for your MyTreatPlan order {{ reference }}. You chose to pay by bank transfer.{% endblocktranslate %}
+
+{% translate "Order" %}: {{ order.reference }}
+{% translate "Total" %}: {{ order.total }} {{ order.currency }}
+{% translate "Patients" %}:
+{% for line in lines %}- {{ line.name }} ({{ line.patient_code }})
+{% endfor %}{% if details %}
+{% translate "Account holder" %}: {{ details.holder }}
+IBAN: {{ details.iban }}
+BIC: {{ details.bic }}
+{% translate "Bank" %}: {{ details.bank_name }}
+{% translate "Amount" %}: {{ details.amount }} {{ details.currency }}
+{% translate "Transfer concept" %}: {{ details.concept }}
+{% translate "Your order stays pending until we receive the transfer." %}
+{% endif %}
+{% translate "You can see the transfer details again here:" %}
+
+{{ url }}
+
+MyTreatPlan
+{% endautoescape %}
