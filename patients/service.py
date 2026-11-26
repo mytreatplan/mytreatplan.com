@@ -9,14 +9,26 @@
 - `blocking_work_order`: what keeps a patient from a new service (epic-ordering 9.8): a
   live work order, or a bank-transfer work order (`pending_payment` with an `order_id`) of
   another order. A manual pending-payment work order (no order, 9.9) never blocks.
+- `create_manual_work_order` (epic-ordering 9.9): the seam clinical ops call (later, over
+  their remote write; today only tests and the fixture `patients.tests.conftest.
+  manual_work_order`) to open a case for one of a doctor's patients before it is paid: a
+  `pending_payment` row with the product and no order or line. It never blocks the patient;
+  the doctor sees it on the home page and adds it to the cart (`cart.service.
+  add_work_order`, priced at their tier then), and the order line carries its id.
+  `manual_work_orders` lists a doctor's.
 - The order hooks (epic-ordering 9.8), one work order per order line that carries a
   patient code, each idempotent per line:
-  `hold_work_orders_for_transfer` (`transfer_approved`: created in `pending_payment`),
+  `hold_work_orders_for_transfer` (`transfer_approved`: created in `pending_payment`; a
+  line paying for a manual work order gives that row the order's `order_id` instead, so
+  it blocks the patient like a hold),
   `create_work_orders_for_order` (`paid`: the line's `pending_payment` row moves to
-  `pending_assignment`, else one is created there; a live ICE of the patient of a line
-  that is not an ICE is `closed` first) and `cancel_work_orders_for_order` (`cancelled`,
-  `expired`: the order's `pending_payment` rows are `cancelled`). A failure rolls the
-  order's transition back (`payments.service.HookFailed`).
+  `pending_assignment`, the line's manual row being adopted (its `order_line_id` and
+  `order_id` set, never a second row), else one is created there; a live ICE of the
+  patient of a line that is not an ICE is `closed` first) and
+  `cancel_work_orders_for_order` (`cancelled`, `expired`: the order's `pending_payment`
+  rows are `cancelled`, except a manual one, which only loses the order's `order_id` and
+  waits again). A failure rolls the order's transition back
+  (`payments.service.HookFailed`).
 - `names_for_invoice`: the invoice PDF's name lookup (invoices.patients).
 
 Every create and stage change records a `work_order.created` or `work_order.stage_changed`
@@ -28,6 +40,7 @@ No patient name or comment is logged here.
 import logging
 import secrets
 import unicodedata
+import uuid
 
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -77,7 +90,9 @@ class LiveWorkOrderExists(PatientError):
 
 
 class WorkOrderRefused(PatientError):
-    """A paid order line could not become a work order (no such patient of the doctor)."""
+    """A paid order line could not become a work order (no such patient of the doctor), or
+    a manual work order was refused (not an active patient of the doctor, or not a product
+    a case is made of): nothing was created."""
 
 
 def _check_actor(actor):
@@ -236,6 +251,87 @@ def move_work_order(work_order, to_stage, expected_version, actor):
         return _move_locked(locked, to_stage, actor)
 
 
+# The categories a manual work order may carry (epic-ordering 9.9): the services a cart
+# item is made of (a planning, an ICE, a VirtuaOrtho service).
+MANUAL_CATEGORIES = (Product.TPS_BRANDED, Product.TPS_IN_HOUSE, Product.ICE,
+                     Product.VIRTUAORTHO_ONE, Product.VIRTUAORTHO_DIGITALTWIN, Product.ODB,
+                     Product.RETAINERS, Product.SPARK_ON_DEMAND)
+
+
+def create_manual_work_order(doctor, patient_code, product_id, *, actor):
+    """Open a manual work order for `doctor`'s active patient `patient_code` (patients are
+    named by code across sites, AD-23) and the catalogue product `product_id`, before it
+    is paid (epic-ordering 9.9). The seam clinical ops will call (epic-clinical-ops adds
+    the remote resource, write and screen; `actor` is then their admin user).
+
+    The row is in `pending_payment` with the product and no order or order line, and its
+    `work_order.created` event is recorded. It never blocks the patient's other services;
+    no price is stored (the doctor's tier prices it when they add it to the cart). The
+    doctor cannot decline it. Returns the `WorkOrder`; `WorkOrderRefused` (nothing
+    created) when the code is not one of the doctor's active patients or the product is
+    unknown or not a case service; `InvalidActor` for a bad actor."""
+    _check_actor(actor)
+    patient = patient_of(doctor, patient_code) if doctor is not None else None
+    if patient is None:
+        raise WorkOrderRefused('not an active patient of the doctor')
+    product = resolver.product(product_id) if product_id else None
+    if product is None or product.category not in MANUAL_CATEGORIES:
+        raise WorkOrderRefused('not a product a case is made of')
+    now = timezone.now()
+    with transaction.atomic():
+        work_order = WorkOrder.objects.create(
+            patient=patient, order_line_id=None, order_id=None, product_id=product.pk,
+            code=product.code or '', stage=stages.PENDING_PAYMENT, actor_type=actor.type,
+            actor_uuid=actor.uuid, created_at=now, updated_at=now)
+        _record_event(WORK_ORDER_CREATED, work_order)
+    return work_order
+
+
+def _manual_rows():
+    """Manual work orders: `pending_payment` with no order line (9.9)."""
+    return WorkOrder.objects.filter(stage=stages.PENDING_PAYMENT, order_line_id__isnull=True)
+
+
+def manual_work_orders(doctor):
+    """The doctor's manual work orders waiting to be paid (of their active patients),
+    oldest first, with their patients: free ones and those whose order waits for a bank
+    transfer (`order_id` set)."""
+    return list(_manual_rows().filter(
+        patient__doctor_id=doctor.pk, patient__status=Patient.ACTIVE)
+        .select_related('patient').order_by('created_at', 'id'))
+
+
+def manual_work_order_of(doctor, work_order_id):
+    """The doctor's manual work order `work_order_id` (a UUID or its string), or None."""
+    try:
+        work_order_id = uuid.UUID(str(work_order_id))
+    except ValueError:
+        return None
+    return next((row for row in manual_work_orders(doctor) if row.pk == work_order_id), None)
+
+
+def _manual_work_order(line, patient):
+    """The locked manual row `line` pays for (its `work_order_id`): the patient's
+    `pending_payment` row with no order line, or None (none named, or it is gone, cancelled
+    or already adopted)."""
+    work_order_id = getattr(line, 'work_order_id', None)
+    if not work_order_id:
+        return None
+    return _manual_rows().select_for_update().filter(
+        pk=work_order_id, patient_id=patient.pk).first()
+
+
+def _save_locked(locked):
+    """Save a change of the locked row that is not a stage change (its `order_id`): its
+    version is raised, no event is recorded (the stage is the same)."""
+    locked.version += 1
+    locked.actor_type, locked.actor_uuid = SYSTEM_ACTOR.type, SYSTEM_ACTOR.uuid
+    locked.updated_at = timezone.now()
+    locked.save(update_fields=['order_id', 'version', 'actor_type', 'actor_uuid',
+                               'updated_at'])
+    return locked
+
+
 def _create_work_order(order, line, patient, stage):
     """A work order of `line` in `stage`, with its `work_order.created` event."""
     now = timezone.now()
@@ -293,10 +389,22 @@ def hold_work_orders_for_transfer(order):
     """The `transfer_approved` receiver: a work order in `pending_payment` for each case
     line of `order` (it blocks the patient until the order is paid or cancelled). Fired
     each time the transfer is chosen: a line that has one already gets nothing more. A
-    patient's live ICE stays live until the planning is paid."""
+    patient's live ICE stays live until the planning is paid.
+    A line that pays for a manual work order (9.9) gives that row the order's `order_id`
+    (no new row), so it blocks the patient until the order is paid, cancelled or expires;
+    `WorkOrderRefused` when that row is held by another order's transfer."""
     for line, patient in _case_lines(order):
-        if _line_work_order(order, line, patient) is None:
+        if _line_work_order(order, line, patient) is not None:
+            continue
+        manual = _manual_work_order(line, patient)
+        if manual is None:
             _create_work_order(order, line, patient, stages.PENDING_PAYMENT)
+        elif manual.order_id is None:
+            manual.order_id = order.pk
+            _save_locked(manual)
+        elif manual.order_id != order.pk:
+            raise WorkOrderRefused(f'order {order.pk}: line {line.position} pays for a work '
+                                   f'order held by another order')
 
 
 def _close_live_ice(patient):
@@ -311,16 +419,28 @@ def _close_live_ice(patient):
 def create_work_orders_for_order(order):
     """The `paid` receiver: a work order in `pending_assignment` for each case line of the
     paid `order` (a line that names a patient): the line's `pending_payment` row (a bank
-    transfer) moves there, else one is created. For a line that is not an ICE, the
-    patient's live ICE work order is `closed` first. Idempotent per order line. Raises
-    `WorkOrderRefused` or `LiveWorkOrderExists`, which roll the payment back."""
+    transfer) moves there; else the manual work order the line pays for (9.9) is adopted
+    (its `order_line_id` and `order_id` set) and moves there; else one is created. For a
+    line that is not an ICE, the patient's live ICE work order is `closed` first.
+    Idempotent per order line. Raises `WorkOrderRefused` (also when the line's manual work
+    order is held by another order's bank transfer, as at transfer approval) or
+    `LiveWorkOrderExists` (the one-live rule, checked again here), which roll the payment
+    back."""
     for line, patient in _case_lines(order):
-        existing = _line_work_order(order, line, patient)
+        existing = (_line_work_order(order, line, patient)
+                    or _manual_work_order(line, patient))
         if existing is not None and existing.stage != stages.PENDING_PAYMENT:
             continue
+        if existing is not None and existing.order_line_id is None \
+                and existing.order_id not in (None, order.pk):
+            raise WorkOrderRefused(f'order {order.pk}: line {line.position} pays for a work '
+                                   f'order held by another order')
         if not _is_ice_line(line):
             _close_live_ice(patient)
         if existing is not None:
+            if existing.order_line_id is None:
+                # A manual work order: this line adopts it (never a second row).
+                existing.order_line_id, existing.order_id = line.pk, order.pk
             _move_locked(existing, stages.PENDING_ASSIGNMENT, SYSTEM_ACTOR)
         else:
             _create_work_order(order, line, patient, stages.PENDING_ASSIGNMENT)
@@ -328,10 +448,16 @@ def create_work_orders_for_order(order):
 
 def cancel_work_orders_for_order(order):
     """The `cancelled` and `expired` receiver: the order's `pending_payment` work orders
-    (a bank transfer that never came) are `cancelled`. Idempotent."""
+    (a bank transfer that never came) are `cancelled`, except a manual one (9.9, no order
+    line): it loses the order's `order_id` and is a plain manual work order again (still
+    `pending_payment`, no longer blocking, on the doctor's home page). Idempotent."""
     for work_order in WorkOrder.objects.select_for_update().filter(
             order_id=order.pk, stage=stages.PENDING_PAYMENT).order_by('created_at', 'id'):
-        _move_locked(work_order, stages.CANCELLED, SYSTEM_ACTOR)
+        if work_order.order_line_id is None:
+            work_order.order_id = None
+            _save_locked(work_order)
+        else:
+            _move_locked(work_order, stages.CANCELLED, SYSTEM_ACTOR)
 
 
 def names_for_invoice(user, codes):

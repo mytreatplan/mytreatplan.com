@@ -4,7 +4,9 @@
 The doctor area's home (accounts.views.home, Annex I mockup): the greeting, the two large
 tiles (VirtuaORTHO, planning services), the green bar to start a case, the profile card
 (with the upgrade reminder's line for a doctor who can upgrade: epic-subscriptions entry
-3) and the four small tiles (invoices: epic-payments entry 10). Every link leads to an area's address ("coming soon" until its
+3) and the four small tiles (invoices: epic-payments entry 10). A doctor with manual work
+orders waiting to be paid (epic-ordering 9.9) sees a "Pending payment" block under the bar,
+one row per work order (patient code, product, "Add to cart" into its wizard). Every link leads to an area's address ("coming soon" until its
 epic builds it). Below the tablet breakpoint everything stacks in one column.
 {% endcomment %}
 
@@ -35,6 +37,24 @@ epic builds it). Below the tablet breakpoint everything stacks in one column.
   {% include "includes/_icon.html" with name="info" class="size-[clamp(30px,3.2vw,46px)]" %}
   <span class="font-black">{% translate "Request New Planning" %}</span>
 </a>
+
+{% if pending_work_orders %}
+<section class="mt-[clamp(14px,1.8vw,24px)] rounded-[clamp(20px,2.4vw,32px)] bg-card-grey p-[clamp(14px,1.6vw,20px)]" aria-labelledby="pending-payment-heading" data-pending-payment>
+  <h2 id="pending-payment-heading" class="text-[clamp(19px,2vw,24px)] font-black tracking-[-0.02em]">{% translate "Pending payment" %}</h2>
+  <p class="mt-1 text-copy">{% translate "Our team has opened these cases for your patients. Add one to your cart to choose its options and pay for it." %}</p>
+  <ul class="mt-3 flex flex-col divide-y divide-ink/10">
+    {% for row in pending_work_orders %}
+    <li class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-3" data-pending-work-order="{{ row.id }}">
+      <span class="min-w-0"><span class="font-bold" data-patient-code>{{ row.code }}</span> &middot; <span data-product>{{ row.product }}</span></span>
+      {% if row.waiting %}<span class="text-copy text-ink-muted" data-waiting>{% translate "Waiting for your bank transfer" %}</span>
+      {% elif row.in_cart %}<a href="{% url 'cart' %}" class="text-copy font-semibold underline underline-offset-4 hover:text-violet" data-in-cart>{% translate "In your cart" %}</a>
+      {% elif row.reason %}<span class="text-copy text-ink-muted" data-refused>{{ row.reason }}</span>
+      {% else %}<a href="{{ row.url }}" class="inline-flex min-h-[44px] items-center rounded-pill bg-green-ui px-6 text-copy font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none" data-add-to-cart>{% translate "Add to cart" %}</a>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
 
 <div class="mt-[clamp(14px,1.8vw,24px)] grid grid-cols-1 gap-[clamp(12px,1.4vw,16px)] tablet:grid-cols-2">
   <section class="flex items-center gap-[clamp(14px,1.8vw,22px)] rounded-[clamp(20px,2.4vw,32px)] bg-card-grey p-[clamp(14px,1.6vw,20px)]" aria-label="{% translate 'Your profile' %}" data-profile-card>

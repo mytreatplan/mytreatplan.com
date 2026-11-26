@@ -7,6 +7,12 @@
   add_on_codes, quantity, address_id)` (9.4): a VirtuaOrtho One or DigitalTwin service, ODB,
   retainers or Spark on Demand, shipped to one of the doctor's usable addresses (stored on the
   item; 9.6 snapshots it and calls `mark_used`). No maker: MyTreatPlan makes it.
+- `check_work_order(doctor, work_order)`, `add_work_order(doctor, work_order, *, maker,
+  other_name, in_house, add_on_codes, variant, quantity, address_id)` (9.9): a manual work
+  order clinical ops opened (`patients.service.create_manual_work_order`) goes into the
+  cart with its product fixed and the options the doctor chooses, priced at the doctor's
+  effective tier at that moment (no price is stored on the work order); the item keeps the
+  work order's id, which the order line carries.
 - `items_of(doctor)`, `remove(doctor, item_id)`.
 - `finish(doctor, voucher_code='')` (9.6): turn the cart into one service order through
   `payments.service.create_order` (patient code, maker and shipping address copied per line;
@@ -61,9 +67,10 @@ EMPTY = 'empty'
 ADDRESS_GONE = 'address_gone'
 PAYMENT_OPEN = 'payment_open'
 ICE_TAKEN = 'ice_taken'
+WORK_ORDER = 'work_order'
 CODES = (NOT_A_DOCTOR, NO_PATIENT, NO_ENTITY, MAKER_UNKNOWN, MAKER_LOGIN, OTHER_NAME,
          LIVE_WORK_ORDER, IN_CART, NOT_OFFERED, ADD_ON, NO_ADDRESS, ADDRESS, QUANTITY,
-         NOT_FINISHED, EMPTY, ADDRESS_GONE, PAYMENT_OPEN, ICE_TAKEN)
+         NOT_FINISHED, EMPTY, ADDRESS_GONE, PAYMENT_OPEN, ICE_TAKEN, WORK_ORDER)
 SOURCE = 'cart'
 
 # VirtuaOrtho (9.4). The variants of step 2 and the category each one is sold in.
@@ -312,6 +319,140 @@ def add_virtuaortho(doctor, patient, *, variant, choice, size='', add_on_codes=(
         raise CartRefused(IN_CART) from None
 
 
+# --- A manual work order (9.9) ---------------------------------------------------------------
+
+# The VirtuaOrtho categories whose variant is fixed by the product.
+_FIXED_VARIANT = {Product.VIRTUAORTHO_ONE: ONE, Product.VIRTUAORTHO_DIGITALTWIN: DIGITALTWIN,
+                  Product.SPARK_ON_DEMAND: ONE}
+
+
+def work_order_variant(doctor, product, variant=''):
+    """The VirtuaOrtho variant a manual work order's product is bought under: fixed by a
+    One, DigitalTwin or Spark product; `variant` (one the doctor is offered) for an ODB,
+    whose DigitalTwin form carries ODB DigitalTwin; for retainers the first variant offered
+    (it changes nothing). '' when there is none (`CartRefused` `NOT_OFFERED` for an ODB)."""
+    if product.category in _FIXED_VARIANT:
+        return _FIXED_VARIANT[product.category]
+    offered = variants_offered(offered_virtuaortho(doctor))
+    if product.category == Product.ODB:
+        if variant not in offered:
+            raise CartRefused(NOT_OFFERED)
+        return variant
+    return offered[0] if offered else ''
+
+
+def check_work_order(doctor, work_order):
+    """(work order, patient, product) when the doctor may add the manual work order
+    `work_order` (a `WorkOrder` or its id) to the cart now, else `CartRefused`:
+    `NOT_A_DOCTOR`; `WORK_ORDER` when it is not one of the doctor's manual work orders
+    waiting to be added (another doctor's, already paid, gone, or held by an order waiting
+    for a bank transfer); `NO_PATIENT`, `NO_ENTITY`; `LIVE_WORK_ORDER` when the patient has a
+    blocking work order (a live ICE lets anything but an ICE through, as for `add_tps`);
+    `IN_CART` when the patient already has an item; `NOT_OFFERED` when the doctor's
+    subscription does not offer its product today (a VirtuaOrtho product: not among the
+    rows `virtuaortho_lines` gives the doctor, under its variant when the product fixes
+    one); `NOT_FINISHED` for retainers without a finished treatment. Nothing is
+    changed."""
+    if not is_client(doctor) or doctor.is_erased:
+        raise CartRefused(NOT_A_DOCTOR)
+    row = patients_service.manual_work_order_of(doctor, getattr(work_order, 'pk', work_order))
+    if row is None or row.order_id is not None:
+        raise CartRefused(WORK_ORDER)
+    patient = patients_service.patient_of(doctor, row.patient.code)
+    if patient is None:
+        raise CartRefused(NO_PATIENT)
+    if not fiscal.has_usable_entity(doctor):
+        raise CartRefused(NO_ENTITY)
+    product = resolver.product(row.product_id) if row.product_id else None
+    blocking = patients_service.blocking_work_order(patient)
+    is_ice = product is not None and product.category == Product.ICE
+    if blocking is not None and (is_ice or not patients_service.is_live_ice(blocking)):
+        raise CartRefused(LIVE_WORK_ORDER)
+    if CartItem.objects.filter(doctor_id=doctor.pk, patient_id=patient.pk).exists():
+        raise CartRefused(IN_CART)
+    if product is None or product.pk not in {offered.pk for offered, _money
+                                             in subscriptions.offers_for(doctor)}:
+        raise CartRefused(NOT_OFFERED)
+    if product.category in VIRTUAORTHO_CATEGORIES:
+        fixed = _FIXED_VARIANT.get(product.category)
+        if not any(offered.pk == product.pk and (fixed is None or line_variant == fixed)
+                   for line_variant, _choice, offered, _price in virtuaortho_lines(doctor)):
+            raise CartRefused(NOT_OFFERED)
+        if product.category == Product.RETAINERS \
+                and not patients_service.has_finished_treatment(patient):
+            raise CartRefused(NOT_FINISHED)
+    return row, patient, product
+
+
+def add_work_order(doctor, work_order, *, maker='', other_name='', in_house=False,
+                   add_on_codes=(), variant='', quantity=1, address_id=''):
+    """Put the manual work order `work_order` in `doctor`'s cart with its product (fixed)
+    and the options chosen, and return the `CartItem` (it keeps the work order's id). Checked
+    as `check_work_order`, then as `add_tps` (a TPS: the maker, `in_house` only for an ICE,
+    a branded TPS never and an in-house one always) or `add_virtuaortho` (`variant` for an
+    ODB, the shipping address, the aligners of a Spark product, retainers only after a
+    finished treatment), with the add-ons the product offers. Priced, like the other items,
+    with the doctor's effective subscription at this moment. `CartRefused` for anything not
+    allowed; nothing is changed then."""
+    row, patient, product = check_work_order(doctor, work_order)
+    codes = [(code or '').strip().upper() for code in add_on_codes]
+    address = None
+    if product.category in VIRTUAORTHO_CATEGORIES:
+        maker, other_name = '', ''
+        variant = work_order_variant(doctor, product, variant)
+        if product.category == Product.RETAINERS \
+                and not patients_service.has_finished_treatment(patient):
+            raise CartRefused(NOT_FINISHED)
+        if not shipping.has_usable_address(doctor):
+            raise CartRefused(NO_ADDRESS)
+        try:
+            address = shipping.usable_addresses(doctor).filter(pk=address_id).first()
+        except (ValueError, ValidationError):
+            address = None
+        if address is None:
+            raise CartRefused(ADDRESS)
+        try:
+            quantity = int(quantity) if product.per_unit else 1
+        except (TypeError, ValueError):
+            raise CartRefused(QUANTITY) from None
+        is_odb_twin = product.category == Product.ODB and variant == DIGITALTWIN
+        if is_odb_twin and ODB_DT not in codes:
+            codes.append(ODB_DT)
+        if ODB_DT in codes and not is_odb_twin:
+            raise CartRefused(ADD_ON)
+    else:
+        in_house = {Product.TPS_IN_HOUSE: True, Product.TPS_BRANDED: False}.get(
+            product.category, bool(in_house))
+        maker, other_name = _maker(doctor, maker, other_name, in_house)
+        quantity = 1
+    chosen = [resolver.add_on(code) for code in codes]
+    if None in chosen or len(set(codes)) != len(codes):
+        raise CartRefused(ADD_ON)
+    offered_codes = {add_on.code for add_on in resolver.add_ons(product)}
+    if any(add_on.code not in offered_codes for add_on in chosen):
+        raise CartRefused(ADD_ON)
+    try:
+        resolver.price(product, subscriptions.effective(doctor).subscription, chosen, quantity)
+    except resolver.QuantityRefused:
+        raise CartRefused(QUANTITY) from None
+    except ValueError:
+        raise CartRefused(ADD_ON) from None
+    try:
+        with transaction.atomic():
+            return CartItem.objects.create(
+                doctor=doctor, patient=patient, product_id=product.pk, add_on_codes=codes,
+                maker=maker, other_name=other_name, quantity=quantity,
+                shipping_address=address, work_order_id=row.pk)
+    except IntegrityError:
+        raise CartRefused(IN_CART) from None
+
+
+def work_order_in_cart(doctor):
+    """The ids of the manual work orders in the doctor's cart."""
+    return set(CartItem.objects.filter(doctor_id=doctor.pk, work_order_id__isnull=False)
+               .values_list('work_order_id', flat=True))
+
+
 def items_of(doctor):
     """The doctor's cart items, oldest first, with their patients."""
     return list(CartItem.objects.filter(doctor_id=doctor.pk).select_related('patient', 'shipping_address'))
@@ -357,7 +498,7 @@ def _order_lines(items, doctor=None):
             snapshot = _shipping_snapshot(address)
         lines.append(resolver.OrderLine(
             product, item.quantity, tuple(add_ons), None, item.patient.code, item.maker,
-            item.other_name, snapshot))
+            item.other_name, snapshot, item.work_order_id))
     if doctor is not None:
         country = doctor.country.code if doctor.country else ''
         lines = ice_credits.credited_lines(doctor, lines, country)

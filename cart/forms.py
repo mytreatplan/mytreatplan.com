@@ -54,7 +54,8 @@ class ProductForm(StepForm):
 
 class MakerForm(StepForm):
     """TPS: in-house printing or a brand's aligners (a named maker, "not decided yet" or
-    "other" with a name). A named maker needs a saved login."""
+    "other" with a name). A named maker needs a saved login. `options['kinds']`, when given,
+    limits the kinds offered (a manual work order's branded TPS: a brand only, 9.9)."""
     kind = forms.ChoiceField(widget=forms.RadioSelect,
                              choices=[(IN_HOUSE, _('In-house printing')),
                                       (BRAND, _('Brand-made aligners'))])
@@ -64,12 +65,23 @@ class MakerForm(StepForm):
         (UNDECIDED, _('Not decided yet')), (OTHER, _('Other'))])
     other_name = forms.CharField(required=False, max_length=OTHER_NAME_MAX_LENGTH, strip=True)
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        kinds = self.options.get('kinds')
+        if kinds:
+            self.fields['kind'].choices = [(value, label) for value, label
+                                           in self.fields['kind'].choices if value in kinds]
+
     @property
     def selected_maker(self):
         return self.selected('maker')
 
     @property
     def kinds(self):
+        allowed = {value for value, _label in self.fields['kind'].choices}
+        return [card for card in self._kind_cards() if card['value'] in allowed]
+
+    def _kind_cards(self):
         return self.checked('kind', [
             {'value': IN_HOUSE, 'title': _('In-house printing'),
              'text': _('You print the aligners yourself.')},

@@ -150,6 +150,9 @@ class OrderLine:
     maker: str = ''
     other_name: str = ''
     shipping: dict | None = None
+    # Epic-ordering 9.9: the manual work order the line pays for (its UUID), None for any
+    # other line; the pricing ignores it, the order line keeps it.
+    work_order_id: object = None
 
 
 @dataclass(frozen=True)

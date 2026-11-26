@@ -12,7 +12,10 @@ are idempotent) and `order_id` its order. A patient has at most one work order i
 stage (`mytp_core.stages.LIVE_STAGES`), also a partial unique constraint. A
 `pending_payment` work order with an `order_id` waits for its bank transfer and blocks the
 patient (an application check, `patients.service.blocking_work_order`); one without (a
-manual one of epic-clinical-ops 9.9) never blocks. `IceDeduction` (epic-ordering 9.7): one ICE credit taken by a planning line,
+manual one, opened by clinical ops before it is paid: 9.9, `patients.service.
+create_manual_work_order`) never blocks. A manual work order has no `order_line_id` until
+its order is paid; while that order waits for a bank transfer it carries the order's
+`order_id` (and so blocks, like a 9.8 hold). `IceDeduction` (epic-ordering 9.7): one ICE credit taken by a planning line,
 following the planning order through its hooks.
 
 `Patient` and `WorkOrder` are written only by `patients.service`: a change locks the row,
@@ -87,8 +90,10 @@ class WorkOrder(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     patient = models.ForeignKey(Patient, on_delete=models.PROTECT, related_name='work_orders')
-    # The order line that started the case; unique, so a replayed hook adds nothing.
-    order_line_id = models.UUIDField(unique=True)
+    # The order line that started the case; unique, so a replayed hook adds nothing. None
+    # for a manual work order until its order is paid (epic-ordering 9.9: the paid line then
+    # adopts it); PostgreSQL allows any number of NULLs under `unique`.
+    order_line_id = models.UUIDField(unique=True, null=True, blank=True)
     # The order of that line (epic-ordering 9.8), set on every row an order creates. A
     # `pending_payment` row with it is a bank-transfer work order (it blocks the patient);
     # without it, a manual one (9.9, never blocking). It also finds an order's rows when
