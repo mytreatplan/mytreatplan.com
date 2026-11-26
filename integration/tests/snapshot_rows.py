@@ -248,6 +248,14 @@ def rules():
     ]
 
 
+def eu_subscription_rule():
+    """Rest of EU's `subscription` rule (epic-subscriptions entry 5): the Irish company,
+    23 % with the reverse-charge text, Revolut only (which cannot save cards yet). Not in
+    `rules()`: a test that needs it adds it to the section."""
+    return rule(33, EU, 'subscription', IRELAND, '23.00', ['revolut'],
+                reverse_charge_text=REVERSE)
+
+
 def billed(rules_=None, companies=COMPANIES, products=PRODUCTS, manual=True):
     """A catalogue with a basic subscription per country group, each linked to every
     product, the companies and the rules (`rules_` None: the plan's; `companies` None and

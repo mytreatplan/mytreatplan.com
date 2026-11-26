@@ -4,7 +4,8 @@
   entity to bill (a choice among the usable ones; none: a link to add one that comes back
   here), the payment method, Pay and Cancel. Changing the entity re-prices the order; Pay
   with an entity that changed the total stops to show the new total first.
-- `checkout_return`: where a gateway sends the doctor back: paid, waiting, or closed.
+- `checkout_return`: where a gateway sends the doctor back: paid, waiting, or closed. A
+  paid subscription purchase leads on to the welcome page (epic-subscriptions entry 5).
 - `transfer_page`: the bank transfer's details while its attempt is open (epic-payments
   entry 5); the checkout and the return page lead there meanwhile.
 - `checkout_failure`: a payment that did not go through: retry (the order is still
@@ -84,6 +85,8 @@ REFUSALS = {
         'Choose one of your patients that has no case in progress.'),
     pricing.VOUCHER_NOTHING_TO_COVER: gettext_lazy(
         'This order costs nothing already, so the voucher is not needed and stays unused.'),
+    pricing.VOUCHER_PERIOD: gettext_lazy(
+        'A voucher applies to the year paid upfront only. Remove the code or choose the year.'),
 }
 
 
@@ -272,7 +275,9 @@ def checkout_return(request, pk):
             order = service.order_of(request.user, pk)
         waiting = order.state == Order.PENDING_PAYMENT and payment is not None
     return render(request, 'payments/return.html', {
-        'order': order, 'waiting': waiting, 'needs_attention': service.needs_attention(order)})
+        'order': order, 'waiting': waiting, 'needs_attention': service.needs_attention(order),
+        # A paid subscription purchase (epic-subscriptions entry 5) continues to welcome.
+        'to_welcome': order.kind == Order.SUBSCRIPTION and order.state == Order.PAID})
 
 
 @login_required

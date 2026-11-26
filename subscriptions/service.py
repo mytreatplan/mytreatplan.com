@@ -61,14 +61,31 @@ it is the only writer of `subscriptions.models` (with the backfill migration 000
   group with nothing higher to sell, gets None. It does not log a drifted held row
   (`log_drift=False` down to `effective`): the other callers do.
 
+- `monthly_possible(user)` and `activate(order)` (epic-subscriptions entry 5, user
+  decisions 2026-11-26): buying Advanced or Premium. Monthly billing (a 12-month
+  commitment) is possible only when the doctor's `subscription` billing rule (their
+  country's group, the gateways it allows for their country) lists a gateway of the
+  region that can save cards (`payments.gateways.can_save_cards`); the fake gateway never
+  counts. `activate` is the `paid` receiver (`subscriptions_activate`): a paid
+  SUBSCRIPTION order moves the doctor's record to the bought tier (the line's catalogue
+  row and period, started the payment day in Madrid time, ending 12 months later minus
+  one day, auto-renew on, active), through `change` with the doctor as the actor and the
+  reason `purchase`, the change row naming the order (one per order: a repeated `paid`
+  changes nothing). A record that cannot take it (a manual one that counts, a paid tier
+  that counts, gone, refused) is left as it is, with a Sentry error by order UUID; the
+  payment is kept (staff decide). After commit it queues the confirmation email
+  (`subscriptions.tasks.send_purchase_email`).
+
 Actors (AD-22): `doctor_actor(user)` (the user's uid), `admin_actor(uuid)` (an admin
 user of the admin site), `SYSTEM_ACTOR` (no UUID).
 """
 import logging
 from uuid import UUID
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
+from dateutil.relativedelta import relativedelta
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -76,6 +93,7 @@ from django.utils import timezone
 from accounts.client_sync import is_client
 from catalogue import resolver
 from integration.remote import RecordGone, StaleVersion
+from payments import gateways
 
 from .models import (ADMIN, DOCTOR, SYSTEM, DoctorSubscription, SubscriptionChange)
 
@@ -83,9 +101,11 @@ logger = logging.getLogger(__name__)
 
 __all__ = ['Actor', 'ChangeRefused', 'Effective', 'Level', 'ManualLocked', 'RecordGone',
            'Reminder', 'StaleVersion', 'SYSTEM_ACTOR', 'TIERS', 'UpgradeOptions',
-           'admin_actor', 'assign_manual', 'change', 'doctor_actor',
-           'doctors_without_a_record', 'effective', 'ensure_basic', 'offers_for',
-           'price_order_for', 'record_of', 'reminder', 'upgrade_options']
+           'activate', 'admin_actor', 'assign_manual', 'change', 'doctor_actor',
+           'doctors_without_a_record', 'effective', 'ensure_basic', 'monthly_possible',
+           'offers_for', 'price_order_for', 'purchase_values', 'record_of', 'reminder',
+           'term_of',
+           'upgrade_options']
 
 BASIC = DoctorSubscription.BASIC
 # The levels in order, lowest first (the catalogue's tiers).
@@ -97,6 +117,12 @@ PAID_TIERS = TIERS[1:]
 SIGNUP = 'signup'
 BACKFILL = 'backfill'
 MANUAL_ASSIGNED = 'manual_assigned'
+# Epic-subscriptions entry 5: a paid subscription order (the change row names the order).
+PURCHASE = 'purchase'
+# The billing periods of a bought subscription.
+MONTHLY, UPFRONT = DoctorSubscription.MONTHLY, DoctorSubscription.UPFRONT
+# How long a bought subscription runs (a monthly one is a 12-month commitment).
+TERM = relativedelta(months=12)
 
 
 class ManualLocked(Exception):
@@ -472,9 +498,10 @@ def _check(record, fields, actor):
     return values
 
 
-def _write(user, expected_version, actor, reason, fields):
+def _write(user, expected_version, actor, reason, fields, order_id=None):
     """Lock, check the version and the manual lock, check the values, apply, version + 1,
-    change row; in a transaction (the caller's, when there is one)."""
+    change row (naming `order_id`, a purchase's order, when given); in a transaction (the
+    caller's, when there is one)."""
     _check_actor(actor)
     if not reason or len(reason) > SubscriptionChange._meta.get_field('reason').max_length:
         raise ChangeRefused('reason is a short code')
@@ -500,7 +527,7 @@ def _write(user, expected_version, actor, reason, fields):
         SubscriptionChange.objects.create(
             record=record, at=record.updated_at, actor_type=actor.type,
             actor_uuid=actor.uuid, reason=reason, before=before,
-            after=record.business_values(), version=record.version)
+            after=record.business_values(), version=record.version, order_id=order_id)
         return record
 
 
@@ -530,3 +557,142 @@ def assign_manual(user, subscription, *, expected_version, actor, ends_on=None):
         'tier': subscription.tier, 'subscription_id': subscription.pk, 'manual': True,
         'auto_renew': False, 'status': DoctorSubscription.ACTIVE, 'billing_period': '',
         'started_on': resolver.today(), 'ends_on': ends_on})
+
+
+# --- Buying Advanced or Premium (epic-subscriptions entry 5) ----------------------------------
+
+def monthly_possible(user):
+    """Whether the doctor may be billed monthly (a 12-month commitment, renewed by charging
+    a saved card): their `subscription` billing rule (the profile country's group) lists,
+    for their country, a gateway of this region that can save cards now
+    (`payments.gateways.can_save_cards`). The fake gateway never counts. Reads only."""
+    if not is_client(user):
+        return False
+    country = _country(user)
+    rule = resolver.billing_rule(country, resolver.SUBSCRIPTION_CATEGORY)
+    if rule is None:
+        return False
+    region = set(settings.REGION_PROFILE.gateways)
+    return any(name != gateways.FAKE and name in region and gateways.can_save_cards(name)
+               for name in rule.gateways_for(country))
+
+
+def term_of(day):
+    """(started_on, ends_on) of a subscription bought on `day` (a Madrid date): 12 months,
+    the last day included."""
+    return day, day + TERM - timedelta(days=1)
+
+
+def purchase_values(order):
+    """The record's business values (`business_values`: JSON-ready) right after the
+    purchase `order` activated it, or None when it changed no record. Reads only."""
+    change = SubscriptionChange.objects.filter(order_id=order.pk).first()
+    return None if change is None else dict(change.after)
+
+
+def _report(order_id, what):
+    """An error to Sentry (and the log) naming the order by its UUID only (AD-23)."""
+    import sentry_sdk
+    message = f'subscription purchase {what}: order {order_id}'
+    logger.warning(message)  # not error: the one explicit capture below reaches Sentry
+    with sentry_sdk.new_scope() as scope:
+        scope.set_tag('subscriptions.purchase', what)
+        sentry_sdk.capture_message(message, level='error')
+
+
+def activate(order):
+    """The `paid` receiver of a SUBSCRIPTION order (`subscriptions_activate`): move the
+    buyer's record to the bought tier (see the module docstring), inside the transition's
+    transaction. Idempotent per order (the change row names it). Never raises for a
+    record that cannot take it: the payment is kept and Sentry hears of it. Returns the
+    record when it changed it now, else None."""
+    from payments.models import Order
+
+    if order.kind != Order.SUBSCRIPTION or order.user_id is None:
+        return None
+    if SubscriptionChange.objects.filter(order_id=order.pk).exists():
+        return None  # activated by an earlier `paid`
+    line = order.lines.order_by('position').first()
+    row = resolver.subscription_by_id(line.subscription_id) if line is not None else None
+    if row is None or row.tier == BASIC or row.manual:
+        _report(order.pk, 'not a paid standard subscription')
+        return None
+    user = get_user_model().objects.filter(pk=order.user_id).first()
+    if user is None or not is_client(user):
+        _report(order.pk, 'not a doctor')
+        return None
+    ensure_basic(user, SYSTEM_ACTOR, reason=BACKFILL)  # a doctor the previous release left without one
+    record = (DoctorSubscription.objects.select_for_update()
+              .filter(doctor_id=user.pk).first())
+    day = resolver.today(order.paid_at)
+    if record is None or (_counts(record, day) and (record.manual or record.tier != BASIC)):
+        # Moved since the order was made (a manual subscription, another purchase).
+        _report(order.pk, 'record cannot take it')
+        return None
+    started_on, ends_on = term_of(day)
+    try:
+        record = _write(user, record.version, doctor_actor(user), PURCHASE, {
+            'tier': row.tier, 'subscription_id': row.pk, 'billing_period': line.period,
+            'started_on': started_on, 'ends_on': ends_on, 'auto_renew': True,
+            'status': DoctorSubscription.ACTIVE}, order_id=order.pk)
+    except (ChangeRefused, ManualLocked, RecordGone, StaleVersion) as refused:
+        _report(order.pk, f'refused ({type(refused).__name__})')
+        return None
+    from mytp_core.tasks import enqueue_on_commit
+
+    from .tasks import send_purchase_email
+    enqueue_on_commit(send_purchase_email, str(order.pk))
+    return record
+
+
+def open_purchase(user):
+    """The doctor's open subscription order (in checkout or waiting for its payment), or
+    None. Reads only."""
+    from payments import service as payments
+    return payments.open_subscription_order(user)
+
+
+def purchase(user, subscription, period, voucher_code=''):
+    """Buy `subscription` (a catalogue row) for `period` (`MONTHLY` or `UPFRONT`): the
+    doctor's open subscription order when there is one (no second order), else a new one,
+    made under a lock on the doctor's row. The card is saved whenever `monthly_possible`.
+    Raises `pricing.OrderRefused` for a period not offered (monthly where it is not
+    possible, or without a price) and for a voucher code with monthly (`voucher_period`), for a level the doctor cannot buy now (a paid tier, a
+    manual record that counts: `subscription_not_offered`),
+    or whatever the voucher or the pricing refuses; `payments.service.NoPaymentMethod`
+    and `OrderError` pass through. A voucher covering the whole price gives an order
+    already paid."""
+    from catalogue import pricing
+    from payments import service as payments
+
+    possible = monthly_possible(user)
+    if period == MONTHLY and (not possible or subscription.monthly_price is None):
+        raise pricing.OrderRefused(pricing.PERIOD_NOT_OFFERED,
+                                   'monthly is not offered to this doctor')
+    if period == UPFRONT and subscription.upfront_price is None:
+        raise pricing.OrderRefused(pricing.PERIOD_NOT_OFFERED, 'no upfront price')
+    if period not in (MONTHLY, UPFRONT):
+        raise pricing.OrderRefused(pricing.PERIOD_NOT_OFFERED, 'unknown period')
+    if voucher_code and period == MONTHLY:
+        raise pricing.OrderRefused(pricing.VOUCHER_PERIOD,
+                                   'a voucher applies to the year upfront only')
+    from . import vouchers
+    voucher = vouchers.voucher_for_code(voucher_code) if voucher_code else None
+    with transaction.atomic():
+        # One purchase at a time per doctor: a second request waits, then finds the
+        # first one's order.
+        get_user_model().objects.select_for_update().get(pk=user.pk)
+        pending = open_purchase(user)
+        if pending is not None:
+            return pending
+        # Checked under the lock (a request racing a `paid`, another caller): only a doctor
+        # who can switch, on Basic, may buy a level they can upgrade to.
+        options = upgrade_options(user)
+        found = options.level(subscription.tier) if options.on_offer else None
+        if (found is None or not found.can_upgrade or not options.can_switch
+                or options.tier in PAID_TIERS):
+            raise pricing.OrderRefused(pricing.SUBSCRIPTION_NOT_OFFERED,
+                                       'this doctor cannot buy this level now')
+        return payments.create_subscription_order(
+            user, subscription, period, actor=payments.doctor_actor(user),
+            voucher=voucher, save_card=possible)

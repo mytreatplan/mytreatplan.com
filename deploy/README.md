@@ -3683,10 +3683,10 @@ page. Signup sends a new doctor there once, when the group sells Advanced or Pre
 Nothing to offer (no country group, a group selling neither paid level, or a staff
 account): `/upgrade/` redirects to the welcome page. A doctor on a manual subscription
 sees its name as the current level, the standard levels for information, no buttons and
-"Continue". Each button leads to `/<lang>/upgrade/<level>/`, a placeholder ("Online
-purchase ... is coming soon") until entry 5's purchase page replaces it: 404 for the
-current level, a lower one or an unknown one; a manual doctor is sent back to
-`/upgrade/`. Both pages are signed-in only and recorded as portal pages.
+"Continue". Each button leads to `/<lang>/upgrade/<level>/`, the purchase page since
+entry 5 (README.md, "Buying a subscription"): 404 for a lower or unknown level; a manual
+doctor, or one on a paid level, is sent back to `/upgrade/`. Both pages are signed-in
+only and recorded as portal pages.
 
 **Assign a manual subscription from the shell** (until the admin site's assignment
 exists; the subscription is created on admindev first, as a manual row of the group, and
@@ -3713,7 +3713,7 @@ Staging checks (entry 2): build the CSS (`npm run build:css`, part of the deploy
 wider column and the side-by-side levels show. Sign up one new doctor on dev with country
 ES: signup ends on `/en/upgrade/` with Iberia's levels and their prices from the
 catalogue, Basic marked current and buttons on the paid levels; a button opens the
-placeholder; "Not now" opens the welcome page; logging in again lands on the welcome page
+purchase page; "Not now" opens the welcome page; logging in again lands on the welcome page
 and `/en/upgrade/` still opens; `/es/upgrade/` shows the Spanish texts and "60,00 EUR"
 style prices. On admindev create a manual "Ormco Premium" for Iberia and, after the pull,
 assign it to that doctor (above): the screen shows "Ormco Premium" as the current level,

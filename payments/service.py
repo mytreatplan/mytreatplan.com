@@ -658,6 +658,14 @@ def order_of(user, order_id):
     return Order.objects.filter(pk=order_id, user_id=user.pk).first()
 
 
+def open_subscription_order(user):
+    """`user`'s open subscription order (in checkout or waiting for its payment), newest
+    first, or None."""
+    return (Order.objects.filter(user_id=user.pk, kind=Order.SUBSCRIPTION,
+                                 state__in=Order.OPEN_STATES)
+            .order_by('-created_at').first())
+
+
 # --- Payment attempts and confirmation (entry 2) ---------------------------------------------
 
 CONFIRMED, STILL_PENDING, FAILED_AT_GATEWAY = 'confirmed', 'pending', 'failed'

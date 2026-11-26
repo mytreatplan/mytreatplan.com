@@ -6,9 +6,11 @@ class SubscriptionsConfig(AppConfig):
     its change rows (subscriptions.models), the one service every caller uses
     (subscriptions.service: Basic at signup, the effective tier, a doctor's offers and
     order prices, the versioned change, the upgrade screen's options), the commands
-    `assign_basic` and `doctor_subscription`, and the upgrade screen (entry 2:
-    subscriptions.views), and the voucher redemptions (entry 4: subscriptions.vouchers, whose
-    receivers of the order hooks are registered in `ready`)."""
+    `assign_basic` and `doctor_subscription`, the upgrade screen (entry 2:
+    subscriptions.views), the voucher redemptions (entry 4: subscriptions.vouchers, whose
+    receivers of the order hooks are registered in `ready`) and buying Advanced or Premium
+    (entry 5: the purchase page, `service.activate` on `paid`, the confirmation email of
+    subscriptions.emails and subscriptions.tasks)."""
 
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'subscriptions'
@@ -17,7 +19,7 @@ class SubscriptionsConfig(AppConfig):
     def ready(self):
         from payments import hooks
 
-        from . import vouchers
+        from . import service, vouchers
         # The lifecycle of a voucher redemption follows its order (epic-subscriptions
         # entry 4): reserved when created, consumed when paid, released when cancelled or
         # expired. A free order fires `created` then `paid` in one transaction.
@@ -25,3 +27,7 @@ class SubscriptionsConfig(AppConfig):
         hooks.register('paid', 'voucher_consume', vouchers.consume)
         hooks.register('cancelled', 'voucher_release', vouchers.release)
         hooks.register('expired', 'voucher_release', vouchers.release)
+        # Buying Advanced or Premium (epic-subscriptions entry 5): a paid subscription
+        # order moves the doctor's record to the bought tier and queues its confirmation
+        # email after commit.
+        hooks.register('paid', 'subscriptions_activate', service.activate)

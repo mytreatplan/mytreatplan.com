@@ -149,7 +149,7 @@ def test_signup_in_a_group_that_sells_lands_on_the_upgrade_screen(live_server, p
 
     page.get_by_role('link', name='Upgrade to Advanced').click()
     expect(page).to_have_url(re.compile(r'/en/upgrade/advanced/$'))
-    expect(page.locator('body')).to_contain_text('Online purchase of Advanced is coming soon.')
+    expect(page.locator('[data-purchase-form]')).to_contain_text('Continue to payment')
     page.get_by_role('link', name='Back to the subscription levels').click()
     expect(page).to_have_url(re.compile(r'/en/upgrade/$'))
     page.get_by_role('link', name='Not now').click()

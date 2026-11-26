@@ -1539,11 +1539,6 @@ msgid "Not now"
 msgstr "Ahora no"
 
 #: subscriptions/templates/subscriptions/upgrade_purchase.html
-#, python-format
-msgid "Online purchase of %(name)s is coming soon."
-msgstr "La compra en línea de %(name)s estará disponible próximamente."
-
-#: subscriptions/templates/subscriptions/upgrade_purchase.html
 msgid "Back to the subscription levels"
 msgstr "Volver a los niveles de suscripción"
 
@@ -3644,6 +3639,14 @@ msgstr ""
 "Este pedido ya no tiene coste, así que el cupón no hace falta y queda sin "
 "usar."
 
+#: payments/views.py
+msgid ""
+"A voucher applies to the year paid upfront only. Remove the code or choose "
+"the year."
+msgstr ""
+"Un cupón solo se aplica al año pagado por adelantado. Quita el código o "
+"elige el año."
+
 #: cart
 msgid "Treatment Planning"
 msgstr "Planificación de tratamiento"
@@ -3805,6 +3808,95 @@ msgstr ""
 "Al pagar, acepta que el proveedor de pagos guarde su tarjeta de forma segura "
 "para cobrar en ella las renovaciones de esta suscripción sin que tenga que "
 "volver a pagar. Puede pedirnos que la eliminemos en cualquier momento."
+
+#: subscriptions/templates/subscriptions/upgrade_purchase.html
+msgid "How would you like to pay?"
+msgstr "¿Cómo desea pagar?"
+
+#: subscriptions/templates/subscriptions/upgrade_purchase.html
+msgid "12-month commitment, charged monthly to your saved card"
+msgstr "Permanencia de 12 meses, con cargo mensual en su tarjeta guardada"
+
+#: subscriptions/templates/subscriptions/upgrade_purchase.html
+msgid "One payment for the whole year"
+msgstr "Un único pago por todo el año"
+
+#: subscriptions/templates/subscriptions/upgrade_purchase.html
+msgid ""
+"This level cannot be bought online for your country yet. Please contact us."
+msgstr ""
+"Este nivel aún no se puede comprar en línea para su país. Póngase en "
+"contacto con nosotros."
+
+#: subscriptions/views.py
+msgid "To change between paid levels, please contact us."
+msgstr "Para cambiar entre niveles de pago, póngase en contacto con nosotros."
+
+#: subscriptions/templates/subscriptions/email/purchase_confirmation_subject.txt
+#, python-format
+msgid "Your MyTreatPlan %(name)s subscription is active"
+msgstr "Su suscripción MyTreatPlan %(name)s está activa"
+
+#: subscriptions/templates/subscriptions/email/purchase_confirmation.txt
+#, python-format
+msgid ""
+"Thank you for subscribing to MyTreatPlan %(name)s. Your subscription is "
+"active from today."
+msgstr ""
+"Gracias por suscribirse a MyTreatPlan %(name)s. Su suscripción está activa "
+"desde hoy."
+
+#: subscriptions/templates/subscriptions/email/purchase_confirmation.txt
+msgid "Level"
+msgstr "Nivel"
+
+#: subscriptions/templates/subscriptions/email/purchase_confirmation.txt
+msgid "monthly, with a 12-month commitment"
+msgstr "mensual, con una permanencia de 12 meses"
+
+#: subscriptions/templates/subscriptions/email/purchase_confirmation.txt
+msgid "Paid for the first month"
+msgstr "Pagado por el primer mes"
+
+#: subscriptions/templates/subscriptions/email/purchase_confirmation.txt
+msgid "Next charge"
+msgstr "Próximo cargo"
+
+#: subscriptions/templates/subscriptions/email/purchase_confirmation.txt
+msgid "End of the commitment"
+msgstr "Fin de la permanencia"
+
+#: subscriptions/templates/subscriptions/email/purchase_confirmation.txt
+msgid "a year, paid upfront"
+msgstr "un año, pagado por adelantado"
+
+#: subscriptions/templates/subscriptions/email/purchase_confirmation.txt
+msgid "Paid"
+msgstr "Pagado"
+
+#: subscriptions/templates/subscriptions/email/purchase_confirmation.txt
+msgid "Valid until"
+msgstr "Válida hasta"
+
+#: subscriptions/templates/subscriptions/email/purchase_confirmation.txt
+msgid ""
+"Your card is saved securely with the payment provider, and the renewals of "
+"this subscription will be charged to it."
+msgstr ""
+"Su tarjeta queda guardada de forma segura en el proveedor de pagos, y las "
+"renovaciones de esta suscripción se cobrarán en ella."
+
+#: subscriptions/templates/subscriptions/email/purchase_confirmation.txt
+msgid ""
+"Your card is not saved: before each renewal we will send you a link to pay "
+"it."
+msgstr ""
+"Su tarjeta no está guardada: antes de cada renovación le enviaremos un "
+"enlace para pagarla."
+
+#: subscriptions/templates/subscriptions/email/purchase_confirmation.txt
+msgid "To cancel your subscription, please contact us:"
+msgstr "Para cancelar su suscripción, póngase en contacto con nosotros:"
 
 #: patients/stages.py
 msgid "Pending assignment"
