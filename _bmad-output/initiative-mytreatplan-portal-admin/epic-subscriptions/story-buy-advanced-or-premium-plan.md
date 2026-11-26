@@ -77,13 +77,13 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `subscriptions/service.py` -- `monthly_possible(user)`; `open_purchase(user)`; `purchase(...)` (above; voucher only with upfront); `activate(order)` (SUBSCRIPTION orders only; idempotent; error to Sentry when the record cannot take it; backfill reason `BACKFILL`); reason `purchase`.
-- [ ] `subscriptions/apps.py` -- register the receiver.
-- [ ] `subscriptions/views.py`, `subscriptions/urls.py`, `upgrade_purchase.html` -- the form (voucher field shown with the year upfront only), guards, POST → `service.purchase` → `checkout` (or the return page for a €0 order); refusals re-render with the message and the typed code.
-- [ ] `payments/views.py`, `return.html` -- the welcome link after a paid subscription order.
-- [ ] `subscriptions/emails.py`, `subscriptions/tasks.py`, `subscriptions/templates/subscriptions/email/purchase_confirmation{,_subject}.txt` -- the confirmation email, queued by the `paid` receiver after commit (model: `cart/emails.py`, `cart/tasks.py` `send_order_email` with `mytp_core.tasks.run_once`, `invoices.pdf.render_codes_only`, `pdf.language_of`).
-- [ ] `locale/es/LC_MESSAGES/django.po`, `README.md` -- ES strings; a "Buying a subscription" section.
-- [ ] `subscriptions/tests/test_purchase.py` -- every matrix row (fake and Redsys adapters; IE with a Revolut rule), plus: a voucher code posted with monthly is refused, no order; `service.purchase` tested directly (open order returned, forged period refused); the backfill row's reason is `backfill`.
+- [x] `subscriptions/service.py` -- `monthly_possible(user)`; `open_purchase(user)`; `purchase(...)` (above; voucher only with upfront); `activate(order)` (SUBSCRIPTION orders only; idempotent; error to Sentry when the record cannot take it; backfill reason `BACKFILL`); reason `purchase`.
+- [x] `subscriptions/apps.py` -- register the receiver.
+- [x] `subscriptions/views.py`, `subscriptions/urls.py`, `upgrade_purchase.html` -- the form (voucher field shown with the year upfront only), guards, POST → `service.purchase` → `checkout` (or the return page for a €0 order); refusals re-render with the message and the typed code.
+- [x] `payments/views.py`, `return.html` -- the welcome link after a paid subscription order.
+- [x] `subscriptions/emails.py`, `subscriptions/tasks.py`, `subscriptions/templates/subscriptions/email/purchase_confirmation{,_subject}.txt` -- the confirmation email, queued by the `paid` receiver after commit (model: `cart/emails.py`, `cart/tasks.py` `send_order_email` with `mytp_core.tasks.run_once`, `invoices.pdf.render_codes_only`, `pdf.language_of`).
+- [x] `locale/es/LC_MESSAGES/django.po`, `README.md` -- ES strings; a "Buying a subscription" section.
+- [x] `subscriptions/tests/test_purchase.py` -- every matrix row (fake and Redsys adapters; IE with a Revolut rule), plus: a voucher code posted with monthly is refused, no order; `service.purchase` tested directly (open order returned, forged period refused); the backfill row's reason is `backfill`.
 
 **Acceptance Criteria:**
 - Given dev, when a Basic doctor buys Advanced upfront with a partial subscription voucher, then the record shows Advanced and the doctor sees Advanced prices.
