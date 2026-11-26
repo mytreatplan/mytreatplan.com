@@ -23,6 +23,11 @@ context: []
 
 **Approach:** List each of the doctor's orders waiting for a bank transfer in the invoices list as a pending-payment document, marked unpaid and stated not to be an invoice. It downloads as a PDF in the invoice's layout, with the order reference to quote and the bank details. When the order is paid, the real invoice takes its place. A cancelled order's document leaves the list.
 
+**Decisions (user, 2026-11-26):**
+- Seller details (address, tax ids) come from the live billing company when the PDF is made. No snapshot on the order and no migration.
+- Title: "Pending payment document", with "This is not an invoice" under it.
+- Placement: in the same invoices list, by date, with a "Pending payment" badge in place of the invoice number.
+
 ## Boundaries & Constraints
 
 **Always:**
@@ -54,7 +59,7 @@ context: []
 - `invoices/views.py:24` `invoices_of`, `:46` `invoice_list`, `:54` `invoice_pdf` -- the list and the access pattern. Add `pending_documents_of(user)` (orders from `integration/transfers.py:47` `pending()` filtered by `user_id`), pass them to the list, and add the view `invoice_pending_pdf(request, order_pk)` with a `never_cache` attachment named `<reference>-pending.pdf`.
 - `invoices/urls.py` -- new route, name `invoice_pending_pdf`.
 - `invoices/templates/invoices/list.html` -- the rows (`data-invoice`, kind label :27, download :30). Add pending rows (`data-pending-document`) marked unpaid, with the reference instead of a number.
-- `invoices/pdf.py` -- `context(invoice, user)` :82 reads the instance's attributes directly (bill_*, lines, totals, vat_groups, issue_date, kind, number). Add `pending_context(order, user)`, which reuses the line, total and buyer formatting. Seller per Open Question 1. `issue_date` comes from `order.pending_at`. Add `bank_transfer.details(order, payment)` (`payments/bank_transfer.py:52`) and render it with the same template plus a `pending` branch (title, "not an invoice" notice, reference and bank details block). `pdf.html` reads `invoice.number` at :9 and :37: give the pending branch the reference instead.
+- `invoices/pdf.py` -- `context(invoice, user)` :82 reads the instance's attributes directly (bill_*, lines, totals, vat_groups, issue_date, kind, number). Add `pending_context(order, user)`, which reuses the line, total and buyer formatting. Seller from the live `BillingCompany` (as `invoices/service.py:164` `_seller` reads it). `issue_date` comes from `order.pending_at`. Add `bank_transfer.details(order, payment)` (`payments/bank_transfer.py:52`) and render it with the same template plus a `pending` branch (title, "not an invoice" notice, reference and bank details block). `pdf.html` reads `invoice.number` at :9 and :37: give the pending branch the reference instead.
 - `payments/models.py:38` `Order` (reference :58, totals :69-74, vat_groups :76, bill_* :83-98, pending_at :105) and `:129` `OrderLine` -- same field names as the invoice for buyer, lines and totals.
 - `invoices/service.py:164` `_seller` / `:197` `issue_for_order` -- how the seller is filled from the live `BillingCompany` at payment.
 - `payments/templates/payments/transfer.html:14-28` -- the reference, bank details and fallback wording to match.
@@ -65,7 +70,7 @@ context: []
 **Execution:**
 - [ ] `invoices/views.py`, `invoices/urls.py` -- pending documents query, list context, PDF view with owner and state check
 - [ ] `invoices/pdf.py`, `invoices/templates/invoices/pdf.html` -- pending context and template branch
-- [ ] `invoices/templates/invoices/list.html` -- pending rows per Open Question 3
+- [ ] `invoices/templates/invoices/list.html` -- pending rows by date, with a "Pending payment" badge instead of the number
 - [ ] `locale/es/LC_MESSAGES/django.po` -- new strings, then `compilemessages`
 - [ ] `invoices/tests/test_pending_documents.py` -- every row of the matrix, the language, the patient-name rule on the list
 
@@ -87,16 +92,3 @@ The PDF uses the invoice template with a branch rather than a copy, so the two l
 
 **Commands:**
 - portal full suite (HANDOFF command) -- expected: passes, ~17 local skips
-
-## Open Questions
-
-1. **Seller details on the document.** An order stores only the company's code and legal name. The invoice copies the address and tax ids at payment.
-   - A: read them from the live billing company when the PDF is made. No migration; the document always shows the current details, which is what the money must reach.
-   - B: copy them onto the order at transfer approval. This needs a migration on `payments.Order`; the document is then frozen like an invoice.
-2. **Document title.**
-   - A: "Pending payment document", with "This is not an invoice" under it.
-   - B: "Proforma invoice".
-   - C: "Order", with "awaiting payment".
-3. **Where it sits in the list.**
-   - A: in the same list, by date, with a "Pending payment" badge instead of a number.
-   - B: a separate "Waiting for payment" section above the invoices.
