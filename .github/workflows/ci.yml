@@ -187,12 +187,25 @@ jobs:
 
       - name: Check this is still the tip of master
         # Deploys queue, but not in push order: an older push whose tests finish later
-        # must not replace a newer release. A newer push will deploy itself.
+        # must not replace a newer release. A newer push will deploy itself, unless every
+        # commit after this one changes only docs (the paths `on.push.paths-ignore` skips):
+        # those start no run, so this commit is still the code to release.
         id: tip
         run: |
           tip=$(git ls-remote origin refs/heads/master | cut -f1)
           if [ "$tip" = "$SHA" ]; then
             echo "latest=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch --quiet --no-tags --deepen=200 origin master
+          if git merge-base --is-ancestor "$SHA" "$tip"; then
+            code=$(git diff --name-only "$SHA" "$tip" | grep -v -E '^_bmad-output/|\.md$' || true)
+          else
+            code='(not an ancestor)'
+          fi
+          if [ -z "$code" ]; then
+            echo "latest=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Deploying $SHA: master is at $tip, but the commits after it change only docs."
           else
             echo "latest=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping deploy of $SHA: master is now at $tip, a newer push supersedes it."
