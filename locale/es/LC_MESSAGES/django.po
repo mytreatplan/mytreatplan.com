@@ -3805,3 +3805,60 @@ msgstr ""
 "Al pagar, acepta que el proveedor de pagos guarde su tarjeta de forma segura "
 "para cobrar en ella las renovaciones de esta suscripción sin que tenga que "
 "volver a pagar. Puede pedirnos que la eliminemos en cualquier momento."
+
+#: patients/stages.py
+msgid "Pending assignment"
+msgstr "Pendiente de asignación"
+
+#: patients/stages.py
+msgid "Assigned"
+msgstr "Asignado"
+
+#: patients/stages.py
+msgid "Records requested"
+msgstr "Registros solicitados"
+
+#: patients/stages.py
+msgid "Processing prescription"
+msgstr "Procesando la prescripción"
+
+#: patients/stages.py
+msgid "Prescription done"
+msgstr "Prescripción lista"
+
+#: patients/stages.py
+msgid "Appointment requested"
+msgstr "Cita solicitada"
+
+#: patients/stages.py
+msgid "In development"
+msgstr "En desarrollo"
+
+#: patients/stages.py
+msgid "Under review"
+msgstr "En revisión"
+
+#: patients/stages.py
+msgid "Awaiting your approval"
+msgstr "Pendiente de su aprobación"
+
+#: patients/stages.py
+msgid "Approved"
+msgstr "Aprobado"
+
+#: patients/stages.py
+msgid "Cancelled"
+msgstr "Cancelado"
+
+#: patients/stages.py
+msgid "Closed"
+msgstr "Cerrado"
+
+#: patients/templates/patients/patient.html
+msgctxt "patient file"
+msgid "Case"
+msgstr "Caso"
+
+#: patients/templates/patients/patient.html
+msgid "No case yet"
+msgstr "Aún no hay ningún caso"

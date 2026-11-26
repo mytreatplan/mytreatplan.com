@@ -31,7 +31,7 @@ from django.utils import timezone
 
 from accounts.crypto import EncryptedCharField
 from mytp_core import stages
-from payments.models import ACTOR_TYPES
+from payments.models import ACTOR_TYPES, AppendOnly
 
 
 class Patient(models.Model):
@@ -102,6 +102,9 @@ class WorkOrder(models.Model):
     product_id = models.UUIDField(null=True, blank=True)
     code = models.CharField(max_length=64, blank=True, default='')
     stage = models.CharField(max_length=32, choices=STAGE_CHOICES)
+    # The admin user the case was assigned to (the `assign` move, epic-case-lifecycle 10.1);
+    # a plain UUID, no database link. None until assigned.
+    assignee_uuid = models.UUIDField(null=True, blank=True)
     version = models.PositiveIntegerField(default=1)
     actor_type = models.CharField(max_length=10, choices=ACTOR_TYPES)
     actor_uuid = models.UUIDField(null=True, blank=True)
@@ -113,6 +116,51 @@ class WorkOrder(models.Model):
         constraints = [models.UniqueConstraint(
             fields=('patient',), condition=Q(stage__in=sorted(stages.LIVE_STAGES)),
             name='patients_one_live_work_order')]
+
+
+class StageChangeQuerySet(models.QuerySet):
+    def update(self, **kwargs):
+        raise AppendOnly('the stage changes are append-only')
+
+    def delete(self):
+        raise AppendOnly('the stage changes are append-only')
+
+
+class StageChange(models.Model):
+    """One stage change of a work order (epic-case-lifecycle 10.1), append-only: written
+    with the change, by `patients.service` (creation included: `from_stage` is empty).
+    `move` names the move (`mytp_core.moves`) and stays empty for a change that is not a
+    named move (payment, cancel, ICE close, creation). `version` is the work order's
+    version after the change. No patient data."""
+
+    id = models.BigAutoField(primary_key=True)
+    # CASCADE: the history goes with its work order (the erasure purge deletes the work
+    # orders; nothing else ever deletes one).
+    work_order = models.ForeignKey(WorkOrder, on_delete=models.CASCADE,
+                                   related_name='stage_changes')
+    move = models.CharField(max_length=40, blank=True, default='')
+    from_stage = models.CharField(max_length=32, blank=True, default='')
+    to_stage = models.CharField(max_length=32)
+    version = models.PositiveIntegerField()
+    actor_type = models.CharField(max_length=10, choices=ACTOR_TYPES)
+    actor_uuid = models.UUIDField(null=True, blank=True)
+    at = models.DateTimeField(default=timezone.now)
+
+    objects = StageChangeQuerySet.as_manager()
+
+    class Meta:
+        ordering = ['at', 'id']
+
+    def __str__(self):
+        return f'{self.from_stage or "-"} -> {self.to_stage}'
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise AppendOnly('the stage changes are append-only')
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise AppendOnly('the stage changes are append-only')
 
 
 class IceDeduction(models.Model):

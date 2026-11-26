@@ -60,4 +60,4 @@ webencodings==0.6.1
 weasyprint==70.0
 zopfli==0.4.3
 # Shared code (mytp-core, AD-10): the wheel of a tag, rebuilt by scripts/vendor-mytp-core.sh.
-./vendor/mytp_core-0.35.0-py3-none-any.whl
+./vendor/mytp_core-0.36.0-py3-none-any.whl

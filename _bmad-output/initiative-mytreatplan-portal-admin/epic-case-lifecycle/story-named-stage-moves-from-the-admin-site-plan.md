@@ -3,14 +3,14 @@ title: 'Named stage moves from the admin site'
 type: 'feature'
 ticket: '1'
 created: '2026-11-26'
-status: 'in-progress'
+status: 'built'
 baseline_revision: '5a89ea7a77d849baac8a6caa01293c927350cb0c'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/initiative-mytreatplan-portal-admin/architecture-portal-admin/architecture-portal-admin.md'
@@ -132,3 +132,30 @@ The user pushes the core branch and the tag.
 **Manual checks (if no CLI):**
 - Staging (dev): a signed admin-site call assigns a dev work order and makes one move. Check the history rows and the 409 on a stale version, then the patient file by eye. Roll back the data.
 
+
+## Implementation Notes
+
+- mytp-core branch feat/10-1-named-stage-moves (baseline 76a577b), version 0.36.0, local tag v0.36.0 vendored into the portal; the real tag comes from `tag-release.yml` after the core merge (re-vendor and check the wheel is identical).
+- Deviations kept: `move` is also a read field of `work_order` (core `access.validate` requires writable ⊆ visible); `StageChange.work_order` is CASCADE, not PROTECT (the erasure purge deletes work orders); a reused idempotency key with another body is 422, as every remote write.
+- Existing work orders get no history rows (no backfill): their history starts at their first change after the deploy.
+- Review patches applied by the implementer: core commit 9f584a4 (code max 64, README notes; tag v0.36.0 moved to it), portal wheel re-vendored, AppendOnly guard on `StageChange` (queryset update/delete refused too), MoveRefused for a non-UUID assignee, `move` = last non-empty move, tighter remote tests.
+- Verification after the patches: portal suite 4631 passed, 17 skipped, 11 failed (the known WeasyPrint OSError in invoices/tests/test_pdf.py and test_pending_documents.py); `makemigrations --check` clean; core suite 1858 passed, 4 skipped (PostgreSQL only). Every matrix row has a passing test.
+
+## Plan Change Log
+
+## Review Triage Log
+
+Pass 1 (quick lens, Opus): 10 findings — high 0, medium 2, low 6, false 0, maybe-false 0, plus 2 test-coverage rows; patch 8, defer 1, reject 1.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | `WorkOrderData.code` max 40 vs portal code max 64 | medium | patch | `patients/models.py:103` and `catalogue/models.py` `Product.code` are 64; the admin validates `data` with the core model. Set to 64, new core commit, tag moved, re-vendored. |
+| 2 | `assign` accepts any UUID; a wrong one leaves the case assigned to nobody with no reassign move | low | reject (+ defer the reassign gap) | The admin site sends its own user's UUID from its UI; a check against `AdminDirectoryEntry` adds a guard for a state not shown reachable. Reassigning a case is a real gap: deferred to 10.10 (assignment). |
+| 3 | Non-UUID assignee raises ValueError, not MoveRefused | low | patch | `apply_move` calls `uuid.UUID(...)` without a guard; only the remote path is contract-checked. Wrapped in MoveRefused. |
+| 4 | `StageChange` append-only not enforced | medium | patch | Precedent `payments.models.OrderChange` guards save/delete; copied. |
+| 5 | Stage code in `data-case-stage` contradicts the stages.py docstring | low | patch | Docstring corrected (code only in a data attribute). |
+| 6 | `move` read field null after a later non-move change | low | patch | `build` took the latest row; now the latest non-empty move, with a test. |
+| 7 | No backfill of history for existing work orders | medium | defer | Real for 10.4's history list; earlier changes cannot be rebuilt from data. Deferred to 10.4. |
+| 8 | Core README 0.36.0 note under "Releasing" step 3 | low | patch | Moved to the version notes. |
+| 9 | `test_bad_changes_are_an_invalid_body` accepts 400 or 403 | low | patch | Parametrized per case with the refused access-log row. |
+| 10 | Wrong-stage test lacks outbox/access-log asserts; replay after role change untested | low | patch (first part); reject (second) | Asserts added. The replay-after-role-change claim: `remote.py` already filters a stored answer by the fields the actor reads now (pre-existing, covered by its own tests). |

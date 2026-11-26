@@ -19,7 +19,7 @@ from mytp_core.interface import remote_actor
 from mytp_publicsite.models import ContactMessage
 from payments.service import admin_actor
 
-from . import config, remote, sample, transfers
+from . import config, remote, sample, transfers, work_orders
 from .calls import not_the_admin_site, signed_endpoint
 
 logger = logging.getLogger('integration.config')
@@ -178,3 +178,28 @@ def remote_pending_transfers(request):
                                    transfers.build, version=transfers.version)
     return remote.remote_list(request, transfers.RESOURCE, transfers.load_all,
                               transfers.build, version=transfers.version)
+
+
+@require_http_methods(['GET', 'POST'])
+@signed_endpoint
+def remote_work_orders(request):
+    """/api/v1/remote/work-orders, signed by the admin site with the admin user's access
+    (epic-case-lifecycle 10.1, resource `work_order`, area `work_orders`). GET `?id=`: one
+    work order with the fields the role sees and its version
+    (integration.remote.remote_read). POST: a remote write of one staff move
+    (`RemoteWriteRequest` with the work order's `object_id` and `expected_version`;
+    idempotent, versioned: integration.remote.remote_write), through
+    `integration.work_orders.update`, which calls `patients.service.apply_move` as
+    `admin_actor(<staff uuid>)`."""
+    if request.method == 'POST':
+        def update(object_id, expected_version, changes):
+            # remote_write calls this only once the token's actor was granted the write.
+            actor = remote_actor(request.interface_claims)
+            return work_orders.update(object_id, expected_version, changes,
+                                      actor=admin_actor(actor.sub))
+        return remote.remote_write(request, work_orders.RESOURCE, work_orders.load, update,
+                                   work_orders.build, assignee=work_orders.assignee,
+                                   version=work_orders.version)
+    return remote.remote_read(request, work_orders.RESOURCE, request.GET.get('id'),
+                              work_orders.load, work_orders.build,
+                              assignee=work_orders.assignee, version=work_orders.version)
