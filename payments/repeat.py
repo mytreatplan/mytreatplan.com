@@ -167,7 +167,7 @@ def _open_charge(order_id, gateway, period, actor):
     when a charge of the period exists or the order is not payable now."""
     now = timezone.now()
     with transaction.atomic():
-        locked = service._lock(order_id)
+        locked = service.lock_order(order_id)
         existing = _existing(locked.pk, period)
         if existing is not None:
             return None, _outcome_of(existing)
