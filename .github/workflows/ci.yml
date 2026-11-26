@@ -1,7 +1,14 @@
 name: CI
 
+# Pull requests run the tests once (no second run for the branch push). Master runs them
+# and deploys, except for a push that changes only docs (the BMad notes and Markdown);
+# paths-ignore is left off pull_request so a required `test` check always reports.
 on:
   push:
+    branches: [master]
+    paths-ignore:
+      - '_bmad-output/**'
+      - '**/*.md'
   pull_request:
 
 permissions:
