@@ -3,7 +3,7 @@ title: 'Work orders per service and order emails'
 type: 'feature'
 ticket: '8'
 created: '2026-11-25'
-status: 'built'
+status: 'done'
 baseline_revision: '880340869a1ee974c14f87664675384436ad084c'
 route: 'full'
 route_source: 'auto'
@@ -145,4 +145,5 @@ Blocking stays in application checks, not in the database constraint. A transfer
   3. ICE paid, then a planning paid: ICE `closed` (version 3), planning in `pending_assignment`: passed.
   4. A transfer order cancelled: its work order is `cancelled`: passed.
 - Check on admindev (`check_98_admin.py`): the workload row's fields hold no patient data, and 0 work-order events were refused. 0 rows, because no real work order had changed on dev yet (the dev check rolls back).
-- STILL OWED before `done`: one real work-order change on dev, then `check_98_outbox.py` on dev (event delivered) and `check_98_admin.py` on admindev (a workload row).
+- End-to-end events (2026-11-26): a real TPS order approved by bank transfer on dev created one work order; `check_98_outbox.py` on dev: `work_order.created` delivered on the first attempt (11:23:57 UTC). `check_98_admin.py` on admindev: one WorkloadEntry row (region eu, stage pending_payment, category tps_branded, version 1), no patient fields, 0 refused work-order events: passed.
+- Left on dev: that real transfer order and its pending_payment work order (test doctor pk 18).

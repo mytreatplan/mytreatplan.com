@@ -19,7 +19,7 @@ read it too. The plans are the source of truth: decisions, code maps, review log
 | Ref | Status | Plan (in `_bmad-output/initiative-mytreatplan-portal-admin/epic-ordering/`) | Where |
 | --- | --- | --- | --- |
 | 9.17, 9.7, 9.18 | done | see the 2026-11-25 file | master |
-| 9.8 | built, merged, deployed; dev checks passed; one admindev check still owed (a real event delivered) | `story-work-orders-per-service-and-order-emails-plan.md` | mytp-core deae060 (PR 2, tag v0.35.0), mytp-admin 34e5ebc (PR 51), portal 6d86bcc (PR 146) |
+| 9.8 | done (dev and admindev checked 2026-11-26, events delivered end to end) | `story-work-orders-per-service-and-order-emails-plan.md` | mytp-core deae060 (PR 2, tag v0.35.0), mytp-admin 34e5ebc (PR 51), portal 6d86bcc (PR 146) |
 | 9.19 | done (dev checked 2026-11-26) | `story-pending-payment-documents-in-the-doctor-s-invoices-list-plan.md` | portal 5bc41d9 (PR 147) |
 | 9.9 | done (dev checked 2026-11-26) | `story-pending-payment-work-orders-plan.md` | portal aac63a9 (PR 148) |
 | 9.20 order emails | ticket and draft plan by another session (see `context-update-2026-11-26-redsys-chain.md`); the user's answers 2A/3A/4A are in `deferred-work.md` | `story-order-emails-plan.md` | - |
