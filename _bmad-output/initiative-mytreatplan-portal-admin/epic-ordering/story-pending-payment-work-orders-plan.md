@@ -3,7 +3,7 @@ title: 'Pending-payment work orders'
 type: 'feature'
 ticket: '9'
 created: '2026-11-25'
-status: 'built'
+status: 'done'
 baseline_revision: 'ff1c43f13d4a68184f5d759ee41f50f8d6587457'
 route: 'full'
 route_source: 'auto'
@@ -118,3 +118,15 @@ Pass 1 (quick, 2026-11-26): high 0, medium 2, low 4, false 0, maybe-false 0.
 
 **Commands:**
 - portal full suite (HANDOFF command) -- expected: passes, ~17 local skips
+
+## Staging
+
+- Merge: PR #148 → aac63a9 (2026-11-26 10:55 UTC), after master (with 9.19) was merged into the branch: no conflict, django.po valid, affected suites 502 passed. PR CI green on 6a4a313. Deploy run 45805777279 green, dev and dev-ae released (Upload release + Release, 11:11 UTC).
+- Checks on dev (2026-11-26), read-only script `check_919_99.py` over SSH, doctor pk 18 (ES Premium), everything rolled back:
+  - B1. `create_manual_work_order` as clinical ops: `pending_payment`, no order line, no order, listed for the home page, not blocking the patient: passed.
+  - B2. `add_work_order`: the cart item is linked to the work order: passed.
+  - B3. Approved by bank transfer: the manual row is held by the order (`order_id`) and blocks the patient: passed.
+  - B4. That order cancelled: the row is back to `pending_payment` with no order, on the home page again: passed.
+  - B5. Added again, approved by transfer, paid by staff: the patient has exactly one work order, the same row, in `pending_assignment`: passed.
+- Not checked on dev: the home-page block's layout in a browser.
+- Left on dev: nothing (rolled back).
