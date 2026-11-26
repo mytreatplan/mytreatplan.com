@@ -2,6 +2,7 @@
 hook recorder) over a catalogue that also sells an ICE (category `initial_case_evaluation`,
 50.00 EUR) to Iberia, billed by the Spanish company, exempt."""
 import copy
+import uuid
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -50,6 +51,18 @@ def ice_catalogue():
              exemption_text=EXEMPT))
     section['add_ons'] = copy.deepcopy(ADD_ONS)
     return copy.deepcopy(section)
+
+
+# Clinical ops (epic-ordering 9.9): until epic-clinical-ops adds the remote write and the admin
+# screen, tests open a manual work order through the seam as an admin user would.
+CLINICAL_OPS = service.Actor('admin', uuid.UUID('c1c1c1c1-0000-4000-8000-0000000000c1'))
+
+
+def manual_work_order(doctor, patient, product_id=None, actor=CLINICAL_OPS):
+    """A manual pending-payment work order for `patient` (a medium branded TPS by default),
+    opened as clinical ops would (`patients.service.create_manual_work_order`)."""
+    return service.create_manual_work_order(
+        doctor, patient.code, product_id or BRANDED['medium'], actor=actor)
 
 
 @pytest.fixture

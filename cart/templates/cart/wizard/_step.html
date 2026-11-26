@@ -4,6 +4,7 @@
 The case wizard's step layout (cart.wizard, epic-ordering 9.16): the patient's code, "Step n of
 3", the service's refusal, then the step's own fields in one plain POST form (a block each step
 fills), Back (a link: the earlier step shows what was chosen) and Continue or "Add to cart".
+A manual work order's wizard (9.9) also shows its fixed product and its own number of steps.
 static/js/case-wizard.js only reveals and hides parts; the server decides what is accepted.
 {% endcomment %}
 
@@ -13,7 +14,8 @@ static/js/case-wizard.js only reveals and hides parts; the server decides what i
 
 {% block portal_content %}
 <h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Request New Planning" %}</h1>
-<p class="mt-3 text-copy text-ink-muted" data-step-header><span data-step-number>{% blocktranslate with n=step_number %}Step {{ n }} of 3{% endblocktranslate %}</span> &middot; <span data-patient-code>{{ patient.code }}</span>{% if patient.display_name %} &middot; {{ patient.display_name }}{% endif %}</p>
+<p class="mt-3 text-copy text-ink-muted" data-step-header><span data-step-number>{% if step_total %}{% blocktranslate with n=step_number total=step_total %}Step {{ n }} of {{ total }}{% endblocktranslate %}{% else %}{% blocktranslate with n=step_number %}Step {{ n }} of 3{% endblocktranslate %}{% endif %}</span> &middot; <span data-patient-code>{{ patient.code }}</span>{% if patient.display_name %} &middot; {{ patient.display_name }}{% endif %}</p>
+{% if fixed_product %}<p class="mt-2 text-copy font-semibold" data-fixed-product>{{ fixed_product }}</p>{% endif %}
 {% if error %}<p class="mt-6 max-w-[640px] rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert" data-error>{{ error }}</p>{% endif %}
 {% if wizard.form.errors %}
 <div class="mt-6 max-w-[640px] rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert" data-error>

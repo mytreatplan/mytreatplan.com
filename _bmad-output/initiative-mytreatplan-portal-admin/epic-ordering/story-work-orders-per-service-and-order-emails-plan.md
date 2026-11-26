@@ -3,7 +3,7 @@ title: 'Work orders per service and order emails'
 type: 'feature'
 ticket: '8'
 created: '2026-11-25'
-status: 'built'
+status: 'done'
 baseline_revision: '880340869a1ee974c14f87664675384436ad084c'
 route: 'full'
 route_source: 'auto'
@@ -134,3 +134,16 @@ Blocking stays in application checks, not in the database constraint. A transfer
 - `cd /home/user/mytp-core && python -m pytest -q` -- expected: passes
 - portal full suite (HANDOFF command) -- expected: passes, ~17 local skips
 - admin suite with env from `.github/workflows/ci.yml` -- expected: passes
+
+## Staging
+
+- Merge: mytp-core PR #2 → deae060 (tag v0.35.0 created on it by a colleague), mytp-admin PR #51 → 34e5ebc, portal PR #146 → 6d86bcc (2026-11-26 08:54 UTC). Deploys green: admindev 09:00, dev and dev-ae 09:09 UTC (Upload release + Release ran).
+- Checks on dev (2026-11-26), read-only script `check_98.py` over SSH, doctor pk 18 (ES Premium), everything rolled back:
+  0. Stage `closed` known, `order_id` column present; receivers `work_orders_hold` (transfer_approved), `work_orders` (paid), `work_orders_cancel` (cancelled, expired): passed.
+  1. A transfer order holds a `pending_payment` work order (version 1, `order_id` set) and the patient is refused in the cart (`live_work_order`): passed.
+  2. Staff record the money: the same row moves to `pending_assignment` (version 2). Events `work_order.created` (pending_payment) and `work_order.stage_changed` (pending_assignment), with the payload keys `at`, `product_category`, `stage`, `work_order_id` only: passed.
+  3. ICE paid, then a planning paid: ICE `closed` (version 3), planning in `pending_assignment`: passed.
+  4. A transfer order cancelled: its work order is `cancelled`: passed.
+- Check on admindev (`check_98_admin.py`): the workload row's fields hold no patient data, and 0 work-order events were refused. 0 rows, because no real work order had changed on dev yet (the dev check rolls back).
+- End-to-end events (2026-11-26): a real TPS order approved by bank transfer on dev created one work order; `check_98_outbox.py` on dev: `work_order.created` delivered on the first attempt (11:23:57 UTC). `check_98_admin.py` on admindev: one WorkloadEntry row (region eu, stage pending_payment, category tps_branded, version 1), no patient fields, 0 refused work-order events: passed.
+- Left on dev: that real transfer order and its pending_payment work order (test doctor pk 18).

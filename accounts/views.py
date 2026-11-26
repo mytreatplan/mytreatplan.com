@@ -405,14 +405,51 @@ def welcome(request):
 @login_required
 def home(request):
     """The doctor area's home (Annex I mockup): the greeting, the quick links and the
-    profile card. Staff accounts see the same page."""
+    profile card, and a doctor's "Pending payment" block (epic-ordering 9.9: the manual work
+    orders clinical ops opened for their patients, each with "Add to cart"; nothing when
+    there are none). Staff accounts see the same page, without the block."""
     user = request.user
+    is_client = client_sync.is_client(user)
     return render(request, 'accounts/home.html', {
         'greeting_name': doctor_area.first_name(user),
         'profile_name': doctor_area.display_name(user),
         'profile_line': doctor_area.profile_line(user),
-        'show_invoices': client_sync.is_client(user),  # the invoices page is a doctor's
+        'show_invoices': is_client,  # the invoices page is a doctor's
+        'pending_work_orders': _pending_work_orders(user) if is_client else [],
     })
+
+
+def _pending_work_orders(user):
+    """The rows of the home's "Pending payment" block: each manual work order's patient
+    code, product name and state: waiting for the bank transfer of its order, in the cart
+    already, refused for now (`cart.service.check_work_order`'s reason, e.g. its product is
+    no longer offered), or ready to add (its wizard's URL; a missing fiscal entity is the
+    wizard's own block)."""
+    from cart import service as cart
+    from cart.views import _refusal_texts
+    from cart.wizard import WORK_ORDER_URL_NAME
+    from catalogue import resolver
+    from patients import service as patients
+
+    if user.is_erased:
+        return []
+    in_cart = cart.work_order_in_cart(user)
+    rows = []
+    for work_order in patients.manual_work_orders(user):
+        product = resolver.product(work_order.product_id) if work_order.product_id else None
+        try:
+            cart.check_work_order(user, work_order)
+            reason = ''
+        except cart.CartRefused as refused:
+            reason = '' if refused.code == cart.NO_ENTITY else _refusal_texts()[refused.code]
+        rows.append({
+            'reason': reason,
+            'id': work_order.pk, 'code': work_order.patient.code,
+            'product': product.public_name if product else work_order.code,
+            'in_cart': work_order.pk in in_cart,
+            'waiting': work_order.order_id is not None,
+            'url': reverse(WORK_ORDER_URL_NAME, args=[work_order.pk, 'options'])})
+    return rows
 
 
 # The settings area's sections (epic-doctor-profile entry 2, Annex I), in the mockup's

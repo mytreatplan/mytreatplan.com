@@ -3,7 +3,7 @@ title: 'Pending-payment documents in the doctor''s invoices list'
 type: 'feature'
 ticket: '19'
 created: '2026-11-25'
-status: 'built'
+status: 'done'
 baseline_revision: '32a69cfb2f76caf2626b13082c315dea55f0e4c4'
 route: 'full'
 route_source: 'auto'
@@ -106,3 +106,12 @@ The PDF uses the invoice template with a branch rather than a copy, so the two l
 
 **Commands:**
 - portal full suite (HANDOFF command) -- expected: passes, ~17 local skips
+
+## Staging
+
+- Merge: PR #147 → 5bc41d9 (2026-11-26 10:35 UTC). PR CI green on 27ab91c. Deployed with the 9.9 merge: run 45805777279 green, dev and dev-ae released (Upload release + Release, 11:11 UTC).
+- Checks on dev (2026-11-26), read-only script `check_919_99.py` over SSH, doctor pk 18 (ES Premium), everything rolled back:
+  - A1. A TPS order approved by bank transfer is among the pending documents. The PDF has the "Pending payment document" title, the "This is not an invoice" notice, the order reference and the IBAN, the seller company is the active one, and the PDF renders: passed.
+  - A2. Staff confirm the payment (`integration.transfers.update`): the document leaves the list and the invoice is issued: passed.
+  - A3. Staff cancel another transfer order: its document leaves the list: passed.
+- Left on dev: nothing (rolled back).

@@ -37,6 +37,10 @@ class CartItem(models.Model):
     # Where a VirtuaOrtho item is shipped (9.4); None for a TPS or an ICE. 9.6 snapshots it.
     shipping_address = models.ForeignKey('accounts.ShippingAddress', null=True, blank=True,
                                          on_delete=models.SET_NULL, related_name='+')
+    # The manual work order this item pays for (epic-ordering 9.9; `patients.WorkOrder`'s
+    # id, no database link), None for an item the doctor started. 9.6 copies it to the order
+    # line, and the paid line adopts that work order.
+    work_order_id = models.UUIDField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

@@ -5,11 +5,14 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 
 from . import pages, views
-from .wizard import URL_NAME, CaseWizard
+from .wizard import URL_NAME, WORK_ORDER_URL_NAME, CaseWizard, WorkOrderWizard
 
 # The case wizard's steps (9.16): `start-a-case/<patient code>/<step>/`.
 case_wizard = login_required(csrf_protect(never_cache(
     CaseWizard.as_view(url_name=URL_NAME, done_step_name='done'))))
+# The same steps for a manual work order (9.9), from the home page's "Add to cart".
+work_order_wizard = login_required(csrf_protect(never_cache(
+    WorkOrderWizard.as_view(url_name=WORK_ORDER_URL_NAME, done_step_name='done'))))
 
 # The product pages (9.5) keep the paths the home tiles always had.
 # Not namespaced (the home and the doctor nav link the plain names `start_a_case` and
@@ -20,6 +23,8 @@ urlpatterns = [
     path('start-a-case/patient/', views.start_a_case_patient, name='start_a_case_patient'),
     path('start-a-case/<str:code>/', views.start_a_case_tps, name='start_a_case_tps'),
     path('start-a-case/<str:code>/<str:step>/', case_wizard, name=URL_NAME),
+    path('start-a-case/work-order/<uuid:work_order_id>/<str:step>/', work_order_wizard,
+         name=WORK_ORDER_URL_NAME),
     path('virtuaortho/', pages.virtuaortho_page, name='virtuaortho'),
     path('planning-services/', pages.planning_services_page, name='planning_services'),
     path('cart/', views.cart, name='cart'),
