@@ -42,6 +42,7 @@ context: []
 - Decision (user, 2026-11-26): showing and removing the saved card is not in 7.11; it goes to 8.10 (deferred-work entry).
 - Decision (user, 2026-11-26): an uncertain repeat charge becomes `needs_attention` with a Sentry error by order UUID; a rerun never charges; staff check the Redsys module. No status query.
 - Decision (user, 2026-11-26): one plan, not split (about 2,300 tokens).
+- Decision (user, 2026-11-26, review): "order unchanged" on a decline means not paid and not cancelled. A charge first freezes a `checkout` order as `pending_payment` (as the doctor's Pay does), and after a decline it stays `pending_payment`: payable, on the normal expiry path; 8.7 decides what follows.
 
 ## I/O & Edge-Case Matrix
 
@@ -103,6 +104,15 @@ context: []
 ## Plan Change Log
 
 ## Review Triage Log
+
+Quick lens, iteration 0, 4 findings: 2 medium (patch), 1 intent question (answered by the user), 1 rejected.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | AC 1 not met: the test-terminal check on dev was not run; token/COF fields unconfirmed | false (as a code defect) | reject | It is a manual staging check that needs the branch deployed to dev; it runs after merge and goes in `## Staging`. The field-name risk is already recorded in Code Map and README. |
+| 2 | `charge_saved_card` inside a caller's transaction: the open charge is a savepoint, an outer rollback after Redsys charged loses it and a rerun charges again | medium | patch | Confirmed: no `in_atomic_block` guard, while `payments/refunds.py:150` refuses the same case. Fix: refuse inside a transaction. |
+| 3 | `_store_card` runs before the webhook dedupe: a re-delivered paid notification re-stores the card (an older token can replace a newer one) and repeats the Sentry warning | medium | patch | Confirmed at `payments/webhooks.py:122`; the duplicate path is the `IntegrityError` after it. Fix: store only after the `ACCEPTED` row. |
+| 4 | A declined charge leaves a `checkout` order `pending_payment`, against the matrix's "order unchanged" | intent question | resolved | Asked the user: keep `pending_payment` (Decision added to the frozen block); no code change. |
 
 ## Verification
 
