@@ -20,9 +20,19 @@ Every operation is an optional callable; an adapter declares what it supports by
 - `cancel_attempt(payment)`: closes the open session at the gateway, so it can no longer be
   paid. A gateway without it waits for the session to time out (`session_lifetime`).
 - `refund(payment, amount) -> str` (the gateway's refund id; a refusal raises `GatewayError`,
-  no answer or an untrustworthy one `GatewayUnknown`: `payments.refunds` tells them apart), `save_card(user) -> str` (a
-  card token), `charge_saved_card(user, token, amount, currency) -> GatewayPayment`: used by
-  entries 7 and later.
+  no answer or an untrustworthy one `GatewayUnknown`: `payments.refunds` tells them apart).
+- `charge_saved_card(card, payment) -> GatewayPayment` (entry 11): charges `card` (a
+  `payments.models.SavedCard` of the order's doctor) without the doctor present for the
+  open attempt `payment` (amount and currency are the attempt's). It records the gateway's
+  id of the charge on `payment` (`payments.service.set_gateway_payment_id`) before the
+  gateway is called. PAID, or FAILED with the gateway's decline code
+  (`GatewayPayment.code`); `GatewayUnknown` when there is no trustworthy answer. Only
+  `payments.repeat.charge_saved_card` calls it. A card is saved in the payment flow, not by
+  an operation: the gateway's verified webhook of an order that asks for it carries the card
+  (`WebhookEvent.card`), stored by `payments.repeat.store_card`.
+- `saves_cards` (entry 11, default False): whether the adapter can save a card at
+  checkout and charge it again (`can_save_cards`); an order that asks to save the card
+  (`Order.save_card`) is offered only such gateways.
 - `session_lifetime`: how long an open attempt can still be paid (default 30 minutes);
   `timestamp_tolerance`: default 5 minutes.
 - `required_settings`: the settings (secrets, from settings.env) that must be set while the
@@ -43,7 +53,7 @@ NAME_RE = re.compile(r'^[a-z][a-z0-9_]{0,19}$')
 FAKE = 'fake'
 
 OPERATIONS = ('start', 'verify_webhook', 'fetch_payment', 'cancel_attempt', 'refund',
-              'save_card', 'charge_saved_card')
+              'charge_saved_card')
 DEFAULT_SESSION_LIFETIME = timedelta(minutes=30)
 DEFAULT_TIMESTAMP_TOLERANCE = timedelta(minutes=5)
 
@@ -93,22 +103,27 @@ class WebhookEvent:
     `event_id` is the gateway's event id, else its payment id (the dedupe key). `status`
     (PAID or FAILED, optional) is what the event says of the payment; it is stored on the
     log row, where a gateway whose signed notification is the record of the payment
-    (Redsys, entry 3) reads it back in `fetch_payment`."""
+    (Redsys, entry 3) reads it back in `fetch_payment`. `card` (entry 11, optional): the
+    card the gateway saved with this payment, as `payments.repeat.store_card` takes it
+    (`token`, `cof_txnid`, `number` masked, `brand`, `expiry` YYMM); never in a repr."""
     event_id: str
     payment_id: str
     amount: Optional[Decimal] = None
     currency: str = ''
     status: Optional[str] = None
+    card: Optional[dict] = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
 class GatewayPayment:
     """A payment as the gateway reports it when re-read: `status` is PAID, PENDING or
-    FAILED."""
+    FAILED; `code` is the gateway's decline code of a FAILED charge of a saved card (entry
+    11), else ''."""
     gateway_payment_id: str
     status: str
     amount: Decimal
     currency: str
+    code: str = ''
 
 
 @dataclass(frozen=True)
@@ -120,8 +135,8 @@ class Adapter:
     fetch_payment: Optional[Callable] = None
     cancel_attempt: Optional[Callable] = None
     refund: Optional[Callable] = None
-    save_card: Optional[Callable] = None
     charge_saved_card: Optional[Callable] = None
+    saves_cards: bool = False
     session_lifetime: timedelta = DEFAULT_SESSION_LIFETIME
     timestamp_tolerance: timedelta = DEFAULT_TIMESTAMP_TOLERANCE
     required_settings: tuple = field(default_factory=tuple)
@@ -159,6 +174,13 @@ def unregister(name):
     _registry.pop(name, None)
 
 
+def can_save_cards(name):
+    """Whether the gateway `name` is available now and can save a card at checkout and
+    charge it again (`saves_cards` with `charge_saved_card`)."""
+    found = adapter(name)
+    return found is not None and found.saves_cards and found.supports('charge_saved_card')
+
+
 def adapter(name):
     """The adapter `name` when it is registered and available now, else None."""
     found = _registry.get(name)
@@ -180,7 +202,8 @@ def check_timestamp(adapter_, sent_at, now, event=None):
 def offered(order):
     """The gateway names the doctor may choose for `order`, in order: the order's priced
     gateways that have an available adapter that accepts the order, then the fake one when
-    it is available and the order has something to pay."""
+    it is available and the order has something to pay. An order that asks to save the card
+    (`Order.save_card`, entry 11) is offered only gateways that can save one."""
     if order.total <= 0:
         return []
     names = []
@@ -190,4 +213,6 @@ def offered(order):
             names.append(name)
     if adapter(FAKE) is not None:
         names.append(FAKE)
+    if getattr(order, 'save_card', False):
+        names = [name for name in names if can_save_cards(name)]
     return names

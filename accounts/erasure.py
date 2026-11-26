@@ -4,8 +4,8 @@
 and hides it and its patients until `purge_after`, ACCOUNT_ERASURE_RETENTION_DAYS later.
 The account's data (including the profile, the fiscal entities and the shipping addresses)
 stays for the archive (below); at once it deletes the maker logins, any pending contact
-change and the profile photo with its pending upload (through storage.service.delete,
-by the staff member erasing it, accounts.photo), and it records the commercial
+change, the saved cards (epic-payments entry 11) and the profile photo with its pending
+upload (through storage.service.delete, by the staff member erasing it, accounts.photo), and it records the commercial
 and WhatsApp contact consents as withdrawn. Its `email_index` becomes a tombstone (accounts.models.User), so the same
 email can register again. `purge_erased` (the daily `purgeerased` job, `manage.py
 purge_erased_accounts`) then deletes each erased account with its legal choices once
@@ -126,6 +126,9 @@ def erase_user(user, *, by, now=None):
             status=Patient.ERASED, version=F('version') + 1, updated_at=now)
         # The maker logins (entry 8) go too.
         makers.erase(user)
+        # So do the saved cards (epic-payments entry 11): never archived, never charged again.
+        from payments.repeat import delete_cards
+        delete_cards(user)
         # The admin site deletes its copy (client.erased, epic-admin-interface entry 8).
         client_sync.emit(user)
         LogEntry.objects.log_actions(user_id=by.pk, queryset=[_LoggedUser(user)],

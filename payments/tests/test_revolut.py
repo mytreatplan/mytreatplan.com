@@ -592,7 +592,8 @@ def test_the_command_needs_the_key_and_reports_a_revolut_fault(fake, settings):
 def test_the_adapter_is_available_only_with_a_key(revolut_on):
     found = gateways.adapter('revolut')
     assert found is not None and found.supports('cancel_attempt') and found.supports('refund')
-    assert not found.supports('save_card') and not found.supports('charge_saved_card')
+    assert not found.supports('charge_saved_card') and not found.saves_cards
+    assert not gateways.can_save_cards('revolut')
     assert found.required_settings == ('REVOLUT_SECRET_KEY', 'REVOLUT_WEBHOOK_SECRET')
     assert found.session_lifetime.total_seconds() == 2100
     revolut_on.REVOLUT_SECRET_KEY = ''

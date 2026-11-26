@@ -7,7 +7,10 @@ is looked up by the gateway's own id, the event is taken in once (a database uni
 constraint on (gateway, event id), not the cache), a `WebhookLog` row is written and a task
 (`payments.tasks.confirm_webhook`) is queued; the answer is 200 at once. The task re-reads
 the payment from the gateway and confirms it (`payments.service.confirm_payment`: the one
-way an order is paid), with its attempts and next try on the log row.
+way an order is paid), with its attempts and next try on the log row. A verified paid event
+that carries a saved card (entry 11, `WebhookEvent.card`) has it stored first
+(`payments.repeat.store_card`, its own transaction); a paid event of an order that asked to
+save the card and carries none is a Sentry warning.
 
 Every webhook writes one log row, accepted or refused: the result, the IP, the gateway's
 ids, the amount it claimed, the SHA-256 and size of the body, never the body. A refusal is
@@ -116,6 +119,8 @@ def handle(adapter, request):
         if event.payment_id else None
     if payment is None or not event.event_id:
         return _refuse(gateway, WebhookLog.UNKNOWN, ip, body, event=event)
+    if event.status == gateways.PAID:
+        _store_card(payment, event.card)
     try:
         with transaction.atomic():
             row = _log(gateway, WebhookLog.ACCEPTED, ip, body, event=event, payment=payment)
@@ -125,6 +130,17 @@ def handle(adapter, request):
         logger.info('payment webhook duplicate: gateway %s, order %s', gateway,
                     payment.order_id)
     return HttpResponse(status=200, content_type='text/plain')
+
+
+def _store_card(payment, card):
+    """Keep the card a verified paid event carries (entry 11; `payments.repeat.store_card`,
+    its own transaction). A failure is logged by order UUID and never refuses the webhook."""
+    from . import repeat
+    try:
+        repeat.store_card(payment, card)
+    except Exception as failure:  # noqa: BLE001 - the payment is handled all the same
+        logger.error('payment webhook: the saved card was not stored (%s): order %s',
+                     type(failure).__name__, payment.order_id)
 
 
 def _task():

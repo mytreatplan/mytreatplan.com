@@ -77,18 +77,28 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `payments/models.py`, migration -- `Order.save_card`, `Payment.period`/`decline_code` + constraint, `SavedCard`.
-- [ ] `payments/gateways.py`, `payments/fake.py` -- flag, new op signature, `WebhookEvent.card`, fake decline switch.
-- [ ] `payments/repeat.py`, `payments/service.py`, `payments/webhooks.py` -- the service, `save_card` on order creation, storing the card.
-- [ ] `payments/redsys.py` -- COF-initial form fields, card fields from the notification, MIT REST charge.
-- [ ] `payments/views.py`, `checkout.html`, `locale/es/LC_MESSAGES/django.po`, `README.md` -- consent line; README "Payments: saved cards" (Venta +, test-terminal check, owed staging check).
-- [ ] `payments/tests/test_repeat.py`, `test_redsys.py` -- every matrix row; signed REST responses built with the public test key.
+- [x] `payments/models.py`, migration -- `Order.save_card`, `Payment.period`/`decline_code` + constraint, `SavedCard`.
+- [x] `payments/gateways.py`, `payments/fake.py` -- flag, new op signature, `WebhookEvent.card`, fake decline switch.
+- [x] `payments/repeat.py`, `payments/service.py`, `payments/webhooks.py` -- the service, `save_card` on order creation, storing the card.
+- [x] `payments/redsys.py` -- COF-initial form fields, card fields from the notification, MIT REST charge.
+- [x] `payments/views.py`, `checkout.html`, `locale/es/LC_MESSAGES/django.po`, `README.md` -- consent line; README "Payments: saved cards" (Venta +, test-terminal check, owed staging check).
+- [x] `payments/tests/test_repeat.py`, `test_redsys.py` -- every matrix row; signed REST responses built with the public test key.
 
 **Acceptance Criteria:**
 - Given a `save_card` order paid on Redsys's public test terminal on dev, when `charge_saved_card` runs for a second order of the same doctor and period P twice, then Redsys charges once and the second call returns the first outcome.
 - Given our own Redsys terminal (after Santander's contract), the same check passes: owed in `## Staging`; the plan stays `built` until then.
 
 ## Implementation Notes
+
+- Freezing for a repeat charge: `confirm_payment` pays only the open attempt of a `pending_payment` order, so `repeat._open_charge` freezes a `checkout` order as `pending_payment` itself (same checks as `_start_payment`: entity usable and unchanged, gateway offered, patients free, no live attempt; `payment_started` change with `repeat: true`), reusing `service._lock`/`_stamp`/`_change`/`_live_attempts`; `_start_payment` and `_move` are untouched. A declined charge therefore leaves the order `pending_payment` (still payable; "order unchanged" read as not paid, not cancelled).
+- A repeat `Payment` has no session end (`session_expires_at` NULL): one left open by a crash blocks the order and the period until staff look.
+- Gateway choice: the order's offered gateways that `can_save_cards`, the order's own gateway first, the first with a saved card wins.
+- `GatewayPayment` gained `code` (the decline code). Any exception from the gateway call (including a plain `GatewayError` raised before Redsys is reached) is treated as `unknown`, never `declined`: conservative, money may have moved.
+- `gateways.offered` filters to `can_save_cards` for a `save_card` order, so `_create` (`NoPaymentMethod`), `start_payment` (`GatewayRefused`) and the checkout list all agree; bank transfer is not offered for such an order.
+- `WebhookEvent.card` is `repr=False, compare=False`. Redsys reads the card only from a paid authorisation notification. `store_card` skips repeat-charge payments (non-empty `period`), so a notification of a MIT charge never replaces the card.
+- The MIT REST request also sends `DS_MERCHANT_MERCHANTURL`, so if Redsys notifies REST charges the shared handler confirms idempotently (tested); an `unknown` that a notification already settled keeps the notification's outcome.
+- Sentry: `cof_txnid`, `masked_number`, `merchant_identifier` added to `MYTP_SENTRY_SENSITIVE_FIELDS` (`token` is built in).
+- Manual checks on dev with the public test terminal (whether the notification carries `Ds_Merchant_Identifier`/`Ds_Merchant_Cof_Txnid`, whether a REST charge also notifies, the decline code of a refused MIT): NOT run in this session (no network to Redsys); README "Payments: saved cards" has the steps. Record the results here.
 
 ## Plan Change Log
 

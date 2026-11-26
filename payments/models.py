@@ -76,6 +76,11 @@ class Order(models.Model):
     vat_groups = models.JSONField(default=list)
     # The catalogue voucher's id (redeeming it is epic-subscriptions'), or None.
     voucher_id = models.UUIDField(null=True, blank=True)
+    # Whether the doctor's card is saved by this order's payment, to be charged again
+    # without the doctor (epic-payments entry 11; set by whoever creates the order: 8.5 for
+    # a monthly or auto-renewing subscription). Only gateways that save cards are offered.
+    # A database default too, so the release before this one can still insert rows.
+    save_card = models.BooleanField(default=False, db_default=False)
 
     # The buyer's fiscal entity: a link that goes with the entity, and the copy.
     fiscal_entity = models.ForeignKey('accounts.FiscalEntity', null=True, blank=True,
@@ -259,6 +264,13 @@ class Payment(models.Model):
     # Bank transfer (entry 5, 9.17): when this attempt's latest 7-day reminder was sent (null:
     # none yet).
     reminded_at = models.DateTimeField(null=True, blank=True)
+    # A repeat charge of a saved card (entry 11, `payments.repeat`): the period it pays (the
+    # caller's key, e.g. `2027-01`), '' for any other attempt; and the gateway's decline code
+    # of a declined one (`0190`, or `card_expired`). At most one charge per (order, period)
+    # that is open, confirmed or needs attention (a database constraint): only a failed
+    # (declined) one lets a new one be made. Database defaults, as `OrderLine.patient_code`.
+    period = models.CharField(max_length=20, blank=True, default='', db_default='')
+    decline_code = models.CharField(max_length=20, blank=True, default='', db_default='')
 
     class Meta:
         ordering = ['created_at', 'id']
@@ -269,6 +281,10 @@ class Payment(models.Model):
             models.UniqueConstraint(
                 fields=('order',), name='payments_payment_one_open',
                 condition=models.Q(state='open')),
+            models.UniqueConstraint(
+                fields=('order', 'period'), name='payments_payment_one_charge_per_period',
+                condition=~models.Q(period='') & models.Q(
+                    state__in=['open', 'confirmed', 'needs_attention'])),
         ]
 
     def __str__(self):
@@ -380,3 +396,42 @@ class Refund(models.Model):
 
     def __str__(self):
         return f'Refund {self.pk} ({self.state})'
+
+
+class SavedCard(models.Model):
+    """The card a doctor saved at a gateway to be charged again without them (epic-payments
+    entry 11, AD-23), written only by `payments.repeat`. One per doctor and gateway: a newer
+    save replaces the older (its token is deleted with the row). The gateway's token, the
+    COF transaction id and the masked card number are encrypted and never logged, sent to
+    Sentry, put in a URL or listed in the admin; only the brand, the last 4 digits and the
+    expiry (`YYMM`) are ever shown. Deleted with the account (and at its erasure)."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE,
+                             related_name='saved_cards')
+    gateway = models.CharField(max_length=20)
+    token = EncryptedCharField(max_length=200)
+    cof_txnid = EncryptedCharField(max_length=200, blank=True)
+    masked_number = EncryptedCharField(max_length=40, blank=True)
+    brand = models.CharField(max_length=20, blank=True, default='')
+    last4 = models.CharField(max_length=4, blank=True, default='')
+    expiry = models.CharField(max_length=4, blank=True, default='')
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+        constraints = [models.UniqueConstraint(fields=('user', 'gateway'),
+                                               name='payments_savedcard_one_per_gateway')]
+
+    def __str__(self):
+        return f'Saved card {self.brand} {self.last4} ({self.gateway})'
+
+    def __repr__(self):
+        return f'<SavedCard {self.pk} {self.gateway}>'
+
+    def expired(self, today):
+        """Whether the card's expiry month (`YYMM`) is before `today`'s month; a card with no
+        readable expiry is not taken as expired."""
+        if len(self.expiry) != 4 or not self.expiry.isdigit():
+            return False
+        return (int(self.expiry[:2]), int(self.expiry[2:])) < (today.year % 100, today.month)

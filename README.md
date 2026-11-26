@@ -545,6 +545,58 @@ and note when Redsys refuses to go on (and whether a refusal notification arrive
 an accepted row with status `failed`). Set `SESSION_LIFETIME` in `payments/redsys.py` to that
 time plus a margin; until then a retry during the session is refused for 30 minutes.
 
+## Payments: saved cards (epic-payments entry 11)
+
+Renewals (epic-subscriptions 8.5 on) charge a doctor's card without the doctor present.
+`payments.repeat` is the gateway-neutral part; a gateway takes part when it registers
+`saves_cards=True` with a `charge_saved_card(card, payment)` operation (`gateways.can_save_cards`:
+Redsys and the fake gateway; not Revolut until entry 16).
+
+- **Saving.** An order saves the card only when it asks (`Order.save_card`, set by whoever
+  creates it: `service.create_subscription_order(..., save_card=True)`; 8.5 sets it for monthly
+  or auto-renewing subscriptions). Such an order is offered only gateways that save cards, and
+  its checkout shows a consent line (no checkbox: Venta + is priced per stored card). On Redsys
+  the payment form adds the COF "initial" fields (`DS_MERCHANT_IDENTIFIER=REQUIRED`,
+  `DS_MERCHANT_COF_INI=S`, `DS_MERCHANT_COF_TYPE=R`); the signed paid notification's
+  `Ds_Merchant_Identifier` (the token), `Ds_Merchant_Cof_Txnid`, `Ds_ExpiryDate`, `Ds_Card_Number`
+  (masked) and `Ds_Card_Brand` become the doctor's one `SavedCard` of that gateway (a newer save
+  replaces the older). Token, COF transaction id and masked number are field-encrypted and never
+  logged, sent to Sentry or put in a URL; only brand, last 4 digits and expiry are ever shown.
+  A paid save-card order without a token is a Sentry warning by order UUID. Account erasure deletes
+  the cards. Showing and removing the card is 8.10's.
+- **Charging.** `repeat.charge_saved_card(order, period, actor=...)` freezes the order as
+  `pending_payment` with the card's gateway, opens a `Payment` of that `period` (the caller's key),
+  calls the gateway outside any transaction and pays the order only through
+  `service.confirm_payment`. It returns `RepeatResult(outcome, payment, code)`: `paid`; `declined`
+  (the attempt `failed` with the gateway's code, e.g. `0190`, or `card_expired` without a call;
+  the order stays payable and the caller decides what follows); `unknown` (no answer, an
+  untrustworthy one or an `errorCode`: the attempt `needs_attention`, a Sentry error by order
+  UUID; staff check Redsys's admin module, there is no status query); `not_payable`. Idempotent
+  per order and period: a confirmed, open or needs-attention charge of the period is returned as
+  it is, never repeated (a database constraint too); only a declined one lets a new charge, with a
+  new `Ds_Order`, be made. `NoSavedCard` / `UnsupportedOperation` create nothing.
+- **Redsys.** A merchant-initiated REST charge (`trataPeticionREST`, type 0) with
+  `DS_MERCHANT_IDENTIFIER`, `COF_INI=N`, `COF_TYPE=R`, `COF_TXNID`, `DIRECTPAYMENT=true`,
+  `EXCEP_SCA=MIT`; the answer is trusted only when its signature verifies and its order, amount,
+  currency and type match the request. `Ds_Response` 0000-0099 is paid. The COF field names come
+  from ActiveMerchant's `redsys_rest.rb` and creagia/redsys-php (Redsys's documentation was not
+  reachable): confirm them on the test terminal.
+- **Fake gateway.** Its Pay saves a fake card for a save-card order; `fake.decline_next_charge(code)`
+  makes the next charge decline with that code.
+
+Recurring charges on our own terminal need Santander's paid add-on "Servicios Venta +" (per month,
+by stored cards: 0-300 cost 8 EUR, 301-600 11 EUR, 601-1000 15 EUR); the contract is not signed
+yet (2026-11-26).
+
+Test-terminal check (dev, Redsys's public test terminal, `REDSYS_*` as in "Payments: Redsys"):
+create a subscription order with `save_card=True` in `manage.py shell`, pay it with the test card,
+check the doctor has one `SavedCard` (brand, last 4, expiry); then for a second order of the same
+doctor run `repeat.charge_saved_card(order, '2027-01')` twice: Redsys's admin module shows one
+charge, and the second call returns the first outcome. Note whether the notification carried
+`Ds_Merchant_Identifier`/`Ds_Merchant_Cof_Txnid`, whether the REST charge also sent a notification,
+and the decline code of a refused MIT. The same check on our own terminal is owed until Santander
+signs and sends its test credentials.
+
 ## Payments: Revolut (epic-payments entry 4)
 
 `payments.revolut` is the card gateway of the Irish company (the EU region's `revolut`, shown as
