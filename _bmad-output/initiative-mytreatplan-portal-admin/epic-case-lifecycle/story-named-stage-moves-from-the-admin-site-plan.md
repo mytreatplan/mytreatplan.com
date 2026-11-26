@@ -3,7 +3,7 @@ title: 'Named stage moves from the admin site'
 type: 'feature'
 ticket: '1'
 created: '2026-11-26'
-status: 'built'
+status: 'done'
 baseline_revision: '5a89ea7a77d849baac8a6caa01293c927350cb0c'
 route: 'full'
 route_source: 'auto'
@@ -159,3 +159,13 @@ Pass 1 (quick lens, Opus): 10 findings — high 0, medium 2, low 6, false 0, may
 | 8 | Core README 0.36.0 note under "Releasing" step 3 | low | patch | Moved to the version notes. |
 | 9 | `test_bad_changes_are_an_invalid_body` accepts 400 or 403 | low | patch | Parametrized per case with the refused access-log row. |
 | 10 | Wrong-stage test lacks outbox/access-log asserts; replay after role change untested | low | patch (first part); reject (second) | Asserts added. The replay-after-role-change claim: `remote.py` already filters a stored answer by the fields the actor reads now (pre-existing, covered by its own tests). |
+
+## Staging
+
+- **Merge:** mytp-core PR #4 → 039d0a7. Core CI passed on the master run (45895162016), and `tag-release.yml` tagged `v0.36.0` on the merge commit. Re-vendored from that tag, the wheel's zip timestamps differ, but its unpacked contents are identical to the PR's wheel, so the PR's wheel was kept. Portal PR #153 → 9cad6a4. The PR's CI test job passed (run 45883030732). The master run 45895405483 passed: tests passed, and dev and dev-ae were deployed. The local suite had 4631 passed, 17 skipped and 11 local-only WeasyPrint failures.
+- **Checks on dev (2026-11-26)** were run over SSH with shell scripts. The signed calls came from admindev with admindev's own key (`mytp_core.interface.signed_post`), because admindev still runs core 0.35. The work order was the seed work order 4591957d (`pending_assignment`, version 1, no history).
+  1. Migration 0006 is applied on dev and dev-ae. Passed.
+  2. As a Clinical Manager, the read showed `assignee, code, move, product_category, stage`. `assign` (to a test Clinical User UUID) returned 200 with version 2 and stage `assigned`. `request_appointment` returned 200 with version 3 and stage `pending_appointment`. Dev has 2 `StageChange` rows (`assign`, `request_appointment`, actor `admin`) and 2 `work_order.stage_changed` outbox events, both delivered. Passed.
+  3. A stale version (1) returned 409 `stale_version` with current version 3. A Clinical User sending `assign` returned 403 `forbidden`. Both are in the access log: `refused stale_version` and `refused field`. Every call is in `InterfaceCall`. Passed.
+  4. The patient page (`/en/` and `/es/`, as the patient's doctor) returned 200 with the Case section showing "Appointment requested" / "Cita solicitada". Passed.
+- **Left on dev:** seed work order 4591957d, now at `pending_appointment`, version 3, assigned to test UUID c1a10000-…-0102, with its 2 history rows and access-log rows. It was not rolled back. Its 2 events were already delivered to admindev, and lowering the version again by SQL would leave admindev's copy ahead of dev.
