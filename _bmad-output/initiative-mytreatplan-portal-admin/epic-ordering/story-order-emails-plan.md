@@ -3,7 +3,7 @@ title: 'Order emails'
 type: 'feature'
 ticket: '20'
 created: '2026-11-26'
-status: 'draft'
+status: 'ready-for-dev'
 baseline_revision: ''
 route: 'full'
 route_source: 'auto'
@@ -22,6 +22,11 @@ context: []
 **Problem:** A doctor who approves a bank-transfer order or pays a service order gets no email. They have no written confirmation, no bank details in their inbox and no receipt.
 
 **Approach:** Two receivers on the payments hooks queue a task after commit. The task sends an order confirmation (on `transfer_approved`) or a payment receipt with the invoice PDF (on `paid`), each at most once per order. Decisions (user, 2026-11-25, answers 2A/3A/4A): bank-transfer orders get the confirmation at approval, with the bank details as the 7-day reminder shows them; every service order gets one receipt when paid, with the invoice PDF attached; card and free orders get the receipt only.
+
+Decisions (user, 2026-11-26):
+- The receipt attaches a codes-only render of the invoice PDF (no patient names); the PDF downloaded in the portal keeps the names.
+- A failed send is tried once and logged by order UUID; nothing is marked sent, so staff can re-run it by hand. No automatic retry.
+- The plan is kept whole (~2100 tokens).
 
 ## Boundaries & Constraints
 
@@ -74,7 +79,7 @@ context: []
 - [ ] `cart/tasks.py` -- new `@task send_order_email(kind, order_id)`: inside `run_once('order_confirmation' | 'payment_receipt', order_id, send)` re-read the order, build and send; catch every exception outside `run_once`, log `order email not sent: <kind> order <uuid> (<Type>)` -- once per order, failure leaves no mark.
 - [ ] `cart/apps.py` -- register `transfer_approved` → `order_confirmation_email` and `paid` → `payment_receipt_email` after the existing cart receivers.
 - [ ] `cart/templates/cart/email/order_confirmation{,_subject}.txt`, `payment_receipt{,_subject}.txt` -- reference, total, one row per patient line (product name + patient code), bank details block on the confirmation only when present, link to the transfer page or the invoices list.
-- [ ] `invoices/pdf.py` -- the attachment build per the decision below, without changing what the download shows.
+- [ ] `invoices/pdf.py` -- a codes-only build (a `build` like `context` whose lines skip `names_for` and show the code alone) and a `render_codes_only(invoice, user)` helper; `render` and the portal download unchanged.
 - [ ] `locale/es/LC_MESSAGES/django.po` -- Spanish strings for the four templates; `compilemessages`.
 - [ ] `cart/tests/test_order_emails.py` -- one test per I/O matrix row, plus: receipt attachment name and content type; no patient name anywhere in the message or attachment; Spanish doctor gets Spanish text.
 
@@ -94,13 +99,3 @@ context: []
 **Commands:**
 - `../.venv/bin/python -m pytest -q -p no:cacheprovider cart payments invoices patients` (env as in the suite command) -- expected: all pass except the known local WeasyPrint failures.
 - `../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: full suite passes.
-
-## Open Questions
-
-1. **The invoice PDF prints each patient's current name next to the code.** The ticket says patients by code only. Options:
-   - (a) attach a codes-only render of the same invoice (a `build` that skips `names_for`); the download in the portal keeps names. Recommended: the email leaves the region through the mail provider, and the architecture review says messages identify a case by code only.
-   - (b) attach the normal PDF with names (it is the doctor's own document).
-   - (c) no attachment; the receipt links to the invoices list.
-2. **A failed send is not retried.** Options:
-   - (a) one try, logged by order UUID; nothing marked, so staff can re-run it by hand. Recommended: simplest; failures show in Sentry.
-   - (b) retry a few times with a delay (`send_order_email.using(run_after=...)`), then log.
