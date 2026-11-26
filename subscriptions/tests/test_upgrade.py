@@ -349,29 +349,35 @@ def test_the_screen_is_a_recorded_portal_page(admin):
         == [('upgrade', '200', user.pk), ('upgrade_purchase', '200', user.pk)]
 
 
-# --- The placeholder ------------------------------------------------------------------------
+# --- The purchase page (its own tests: test_purchase.py) ---------------------------------
 
-def test_the_placeholder_of_a_higher_level(admin):
+def test_the_purchase_page_of_a_higher_level(admin):
     load(admin)
     page = html(browser(doctor()).get('/en/upgrade/advanced/'))
     assert '<h1' in page and 'Upgrade to Advanced' in page
-    assert 'Online purchase of Advanced is coming soon.' in page
+    assert 'data-purchase-form' in page
     assert 'href="/en/upgrade/"' in page
 
 
+@pytest.mark.parametrize('level', ['basic', 'gold'])
+def test_the_purchase_page_refuses_any_other_level(admin, level):
+    load(admin)
+    assert browser(doctor()).get(f'/en/upgrade/{level}/').status_code == 404
+
+
 @pytest.mark.parametrize('tier, level', [
-    (None, 'basic'), (None, 'gold'), ('advanced', 'advanced'), ('advanced', 'basic'),
+    ('advanced', 'advanced'), ('advanced', 'basic'), ('advanced', 'premium'),
     ('premium', 'premium'), ('premium', 'advanced'),
 ])
-def test_the_placeholder_refuses_any_other_level(admin, tier, level):
+def test_a_doctor_on_a_paid_level_goes_back_to_the_levels(admin, tier, level):
     load(admin)
     user = doctor()
-    if tier:
-        on(user, tier, {'advanced': ADVANCED, 'premium': PREMIUM}[tier])
-    assert browser(user).get(f'/en/upgrade/{level}/').status_code == 404
+    on(user, tier, {'advanced': ADVANCED, 'premium': PREMIUM}[tier])
+    response = browser(user).get(f'/en/upgrade/{level}/')
+    assert response.status_code == 302 and response.url == UPGRADE
 
 
-def test_the_placeholder_refuses_a_level_not_listed(admin):
+def test_the_purchase_page_refuses_a_level_not_listed(admin):
     load(admin, premium=False)
     assert browser(doctor()).get('/en/upgrade/premium/').status_code == 404
 
@@ -416,12 +422,12 @@ def test_the_screen_has_the_doctor_layout_and_its_content(admin):
     assert PANEL in page
 
 
-def test_the_placeholder_has_the_doctor_layout_and_its_content(admin):
+def test_the_purchase_page_has_the_doctor_layout_and_its_content(admin):
     load(admin)
     page = html(browser(doctor()).get('/en/upgrade/advanced/'))
     doctor_layout(page)
     assert '>Upgrade to Advanced</h1>' in page
-    assert 'Online purchase of Advanced is coming soon.' in page
+    assert 'Continue to payment' in page
     assert 'href="/en/upgrade/"' in page and 'Back to the subscription levels' in page
 
 

@@ -1,0 +1,26 @@
+{% load i18n %}{% autoescape off %}{% translate "Hello," %}
+
+{% blocktranslate with name=level %}Thank you for subscribing to MyTreatPlan {{ name }}. Your subscription is active from today.{% endblocktranslate %}
+
+{% translate "Level" %}: {{ level }}
+{% if monthly %}{% translate "Billing" %}: {% translate "monthly, with a 12-month commitment" %}
+{% translate "Paid for the first month" %}: {{ order.total }} {{ order.currency }}
+{% translate "Next charge" %}: {{ next_charge|date:"DATE_FORMAT" }}
+{% translate "End of the commitment" %}: {{ ends_on|date:"DATE_FORMAT" }}
+{% else %}{% translate "Billing" %}: {% translate "a year, paid upfront" %}
+{% translate "Paid" %}: {{ order.total }} {{ order.currency }}
+{% translate "Valid until" %}: {{ ends_on|date:"DATE_FORMAT" }}
+{% endif %}{% translate "Order" %}: {{ order.reference }}
+
+{% if card_saved %}{% translate "Your card is saved securely with the payment provider, and the renewals of this subscription will be charged to it." %}{% else %}{% translate "Your card is not saved: before each renewal we will send you a link to pay it." %}{% endif %}
+
+{% blocktranslate %}To cancel your subscription, please contact us:{% endblocktranslate %}
+
+{{ support_url }}
+
+{% blocktranslate with number=invoice.number %}Your invoice {{ number }} is attached. You can also download it from your invoices:{% endblocktranslate %}
+
+{{ invoices_url }}
+
+MyTreatPlan
+{% endautoescape %}

@@ -119,9 +119,10 @@ class SubscriptionChangeQuerySet(models.QuerySet):
 
 class SubscriptionChange(models.Model):
     """One change of a doctor's record (user decision 2026-11-14): when, who (actor type
-    and UUID), why (`reason`, a short code: `signup`, `backfill`, `manual_assigned`, ...),
-    the business fields before (`{}` on creation) and after, and the record's version
-    after it. Append-only, as far as the ORM guards it: an instance `save()` of an
+    and UUID), why (`reason`, a short code: `signup`, `backfill`, `manual_assigned`,
+    `purchase`, ...), the order that made it (`order_id`: a purchase's, else None), the
+    business fields before (`{}` on creation) and after, and the record's version after
+    it. Append-only, as far as the ORM guards it: an instance `save()` of an
     existing row, an instance `delete()` and the default manager's queryset `update()`
     raise. Not guarded: the deletion collector's cascade (the rows go with their record,
     and so with the user, by CASCADE), `_base_manager`, a queryset `delete()`, raw SQL
@@ -139,11 +140,18 @@ class SubscriptionChange(models.Model):
     before = models.JSONField(default=dict, blank=True)
     after = models.JSONField(default=dict)
     version = models.PositiveIntegerField()
+    # The order that made the change (epic-subscriptions entry 5: a `purchase`), else
+    # None. A plain UUID, no database link (orders are another app's); at most one change
+    # per order, so a repeated `paid` hook changes nothing.
+    order_id = models.UUIDField(null=True, blank=True)
 
     objects = SubscriptionChangeQuerySet.as_manager()
 
     class Meta:
         ordering = ['at', 'version', 'id']
+        constraints = [models.UniqueConstraint(
+            fields=['order_id'], condition=models.Q(order_id__isnull=False),
+            name='subscription_change_one_per_order')]
 
     def __str__(self):
         return f'{self.reason} (version {self.version})'

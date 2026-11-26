@@ -3,7 +3,7 @@ title: 'Buy Advanced or Premium'
 type: 'feature'
 ticket: '5'
 created: '2026-11-26'
-status: 'in-progress'
+status: 'built'
 baseline_revision: '7179d5772bad376461f54c1fa6d73a8e8bec16ea'
 route: 'full'
 route_source: 'auto'
@@ -110,6 +110,11 @@ context: []
 | 1 | quick | Monthly + subscription voucher >= one month's price: 0.00 order paid by `_pay_free`, no gateway, no saved card; `activate` writes monthly, auto-renew, 12-month commitment that cannot be charged in month 2; email says "Next charge" and "card not saved" | high | intent_gap | `price_subscription` prices monthly as one month (pricing.py:288-317); `_create` pays 0.00 via `_pay_free` (service.py:421) without a gateway; `_periods` offers monthly whatever the voucher. The frozen intent says monthly needs a card-saving gateway and a full voucher pays at once; it does not say which wins. |
 | 2 | quick | Purchase business rules (open-order lookup, per-doctor lock, forged-period refusal, `save_card` choice, order creation) live in `subscriptions/views.py`, against ONBOARDING.md section 6 | medium | bad_plan | ONBOARDING.md:144 "Business rules live in services"; the cited pattern `cart/views.py` only calls `cart.service.finish`. The plan's task put "POST -> order -> checkout" in views.py. 8.8 (paid-tier change) would duplicate it. |
 | 3 | quick | `activate` calls `ensure_basic(user, SYSTEM_ACTOR)` with the default reason `signup` for a backfilled doctor | low | patch | `ensure_basic` defaults `reason=SIGNUP` (service.py:410); `assign_basic` passes `reason=service.BACKFILL` (assign_basic.py:41). Fix: pass `reason=BACKFILL`. |
+| 4 | quick (loop 1) | Without JavaScript, a monthly refusal for a voucher re-renders with the voucher field `hidden` but still holding the code, so the doctor cannot clear it and every monthly submit is refused again | low | patch | `_page` passes `chosen='monthly'`; the template adds `hidden` server-side when `chosen == "monthly"`; only `purchase-period.js` empties the input. ONBOARDING.md section 6: pages work without JavaScript. Fix: no server-side `hidden` (the script hides it), plus a test. |
+| 5 | quick (loop 1) | `subscriptions/views.py` imports `payments.models.Order` to test `order.state == Order.PAID`, against the Code Map ("not `payments.models` from a view") | low | patch | The import and the comparison are in the view. Fix: decide "paid at once" without the model (e.g. `order.paid_at is not None`) and drop the import. |
+| 6 | quick (loop 1) | `service.purchase` does not check that the doctor may buy the level (Basic or expired, not a manual record that counts, `can_upgrade`); only the view does, outside the doctor lock, so another caller (8.8) or a request racing a `paid` creates an order that `activate` must then refuse with the payment kept | medium | patch | `purchase` checks period, voucher and open order only; the view's guard reads `upgrade_options` before `purchase` takes the lock. Fix: re-check `upgrade_options(user)` under the lock in `purchase` and refuse with an existing exception; the view keeps its redirects. |
+| 7 | quick (loop 1) | Two concurrent `paid` runs of one order make `activate` raise `IntegrityError` on the unique constraint | false | - | `paid` fires inside the transition, which locks the order row (`payments.service.lock_order`) and moves it to PAID once (`_pay_free` service.py:453-462, likewise the gateway path), so a second `paid` for the same order never runs concurrently; a later one is the idempotent repeat already tested. |
+| 8 | quick (loop 1) | `subscriptions/views.py` module docstring still says the view creates the order with `create_subscription_order` and chooses `save_card` | low | patch | Docstring lines 10-21 describe the first implementation; the view now calls `service.purchase`. Fix: reword. |
 
 ## Verification
 

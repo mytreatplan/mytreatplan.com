@@ -135,6 +135,46 @@ deploy/README.md, "Doctor subscriptions"):
     python manage.py doctor_subscription <uid or email> --order --product <UUID or code> \
         [--quantity N] [--vies valid|invalid|pending|not_applicable]
 
+## Buying a subscription (epic-subscriptions entry 5)
+
+A Basic doctor buys Advanced or Premium from the upgrade screen's button, on the purchase page
+`/<lang>/upgrade/<level>/` (`subscriptions.views.upgrade_purchase`):
+
+- **Periods.** A year upfront, and monthly (a 12-month commitment) only where
+  `subscriptions.service.monthly_possible(user)`: the doctor's `subscription` billing rule (their
+  country's group, the gateways it allows for their country) lists a gateway of the region that
+  saves cards (`payments.gateways.can_save_cards`: Redsys today). The fake gateway never counts,
+  so a Revolut country (IE) sees the year upfront only, and a forged monthly POST is refused. Prices
+  are the catalogue's net ones with "+ VAT where applicable"; the order carries the VAT.
+- **The order.** `payments.service.create_subscription_order`, with `save_card` whenever
+  `monthly_possible` (the annual renewal is charged to the card too, 8.6; the payment link is for
+  when that fails) and the optional subscription voucher code (`vouchers.voucher_for_code`), which applies to the
+  year upfront only (the page hides the field with monthly; a code posted with monthly is refused,
+  `voucher_period`). The rules live in `service.purchase` / `service.open_purchase`, not the view. A
+  refusal shows the page again with its message (`payments.views.REFUSALS`) and the typed code; no
+  order. Then the existing checkout; an order the voucher covers in full is paid at once (no
+  gateway, a 0.00 invoice) and goes to its return page. A doctor with an open subscription order
+  is sent to its checkout (no second order); a manual record, or a paid tier that counts, goes back
+  to `upgrade` (changing between paid tiers is 8.8).
+- **Activation.** The `paid` receiver `subscriptions_activate` (`service.activate`, in the
+  transition's transaction) moves the record through `change` (the doctor as the actor, reason
+  `purchase`, the change row's `order_id` naming the order: one per order, so a repeated `paid`
+  changes nothing): the line's tier and catalogue row and period, started the payment day (Madrid),
+  ending 12 months later minus one day, auto-renew on, active. A record that moved meanwhile (made
+  manual, or already on a paid tier) is left as it is with a Sentry error by order UUID; the
+  payment is kept and staff decide (refund). The return page of a paid subscription order says
+  "Continue" to the welcome page.
+- **Email.** After commit, `subscriptions.tasks.send_purchase_email` sends one confirmation per
+  order (`run_once`, one try, a failure logged by order UUID): level, billing, amount, the end of
+  the term (monthly: the next charge date), whether the card is saved for renewals, how to cancel
+  (contact us, until 8.10), the invoice's codes-only PDF attached. Renewals, charges, their emails
+  and cancellation are 8.6, 8.7 and 8.10.
+
+Dev check: as a Basic ES doctor with a fiscal entity, buy Advanced upfront with a subscription
+voucher of the snapshot (the record shows Advanced, the upgrade screen marks it); with Redsys's
+public test terminal, buy Advanced monthly (one month invoiced, a `SavedCard`); with a voucher
+covering the price, the order is paid at once with a 0.00 invoice and no gateway.
+
 ## Legal texts and the region's company (epic-regions 2.6)
 
 The footer, the home page's JSON-LD and the public Privacy and Terms pages name the
@@ -160,7 +200,7 @@ below the `tablet` breakpoint; then the white rounded panel holding the page
 names shown come from `accounts.doctor_area` (decrypted in Python; the `doctor_area`
 template filters `initials` and `display_name`). Login lands on the home (`/<lang>/home/`,
 `accounts.views.home`); signup still ends on the upgrade screen or the welcome page, which
-links to the home. The welcome page, the upgrade screen and the purchase placeholder use
+links to the home. The welcome page, the upgrade screen and the purchase page use
 the doctor layout; login and signup keep the light one.
 
 Every area not built yet has its own address, served by `accounts.views.coming_soon`

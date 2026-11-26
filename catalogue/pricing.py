@@ -79,7 +79,7 @@ __all__ = ['OrderLine', 'OrderRefused', 'PLANNING_CATEGORIES', 'PricedLine', 'Pr
            'ICE_TWICE', 'ICE_NOT_PLANNING', 'ICE_CURRENCY', 'VOUCHER_NOT_USABLE',
            'VOUCHER_TYPE', 'VOUCHER_CURRENCY', 'VOUCHER_DOCTOR', 'VOUCHER_USED',
            'VOUCHER_UNKNOWN', 'SUBSCRIPTION_NOT_OFFERED', 'PERIOD_NOT_OFFERED',
-           'PATIENT_REFUSED', 'VOUCHER_NOTHING_TO_COVER']
+           'PATIENT_REFUSED', 'VOUCHER_NOTHING_TO_COVER', 'VOUCHER_PERIOD']
 
 VIES_VALID, VIES_INVALID = 'valid', 'invalid'
 VIES_PENDING, VIES_NOT_APPLICABLE = 'pending', 'not_applicable'
@@ -116,12 +116,15 @@ PERIOD_NOT_OFFERED = 'period_not_offered'
 # A case line without one of the doctor's own patients that is free to order a case for
 # (epic-ordering 9.1); raised by payments.service, never by the pricing itself.
 PATIENT_REFUSED = 'patient_refused'
+# A voucher posted with a monthly subscription purchase (epic-subscriptions 8.5: a voucher
+# applies to the year upfront only); raised by subscriptions.service, never by the pricing.
+VOUCHER_PERIOD = 'voucher_period'
 REFUSALS = (NO_LINES, COUNTRY_NOT_SERVED, NO_BILLING_RULES, PRODUCT_NOT_OFFERED,
             QUANTITY_REFUSED, ADD_ON_REFUSED, TWO_COMPANIES, TWO_CURRENCIES, ICE_TWICE,
             ICE_NOT_PLANNING, ICE_CURRENCY, VOUCHER_NOT_USABLE, VOUCHER_TYPE,
             VOUCHER_CURRENCY, VOUCHER_DOCTOR, VOUCHER_USED, VOUCHER_UNKNOWN,
             SUBSCRIPTION_NOT_OFFERED, PERIOD_NOT_OFFERED, PATIENT_REFUSED,
-            VOUCHER_NOTHING_TO_COVER)
+            VOUCHER_NOTHING_TO_COVER, VOUCHER_PERIOD)
 
 
 class OrderRefused(ValueError):
