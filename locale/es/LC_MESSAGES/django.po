@@ -3723,6 +3723,50 @@ msgstr ""
 "El crédito ICE de un paciente de su carrito está reservado por otro de sus "
 "pedidos. Si finaliza de nuevo, este pedido se calcula sin él."
 
+#: cart/templates
+#, python-format
+msgid "Your MyTreatPlan order %(reference)s: payment by bank transfer"
+msgstr "Su pedido %(reference)s de MyTreatPlan: pago por transferencia bancaria"
+
+#: cart/templates
+#, python-format
+msgid "Payment received for your MyTreatPlan order %(reference)s"
+msgstr "Pago recibido de su pedido %(reference)s de MyTreatPlan"
+
+#: cart/templates
+#, python-format
+msgid ""
+"Thank you for your MyTreatPlan order %(reference)s. You chose to pay by bank "
+"transfer."
+msgstr ""
+"Gracias por su pedido %(reference)s de MyTreatPlan. Ha elegido pagar por "
+"transferencia bancaria."
+
+#: cart/templates
+msgid "Order"
+msgstr "Pedido"
+
+#: cart/templates
+msgid "You can see the transfer details again here:"
+msgstr "Puede volver a ver los datos de la transferencia aquí:"
+
+#: cart/templates
+#, python-format
+msgid ""
+"We have received the payment for your MyTreatPlan order %(reference)s. Thank "
+"you."
+msgstr ""
+"Hemos recibido el pago de su pedido %(reference)s de MyTreatPlan. Gracias."
+
+#: cart/templates
+#, python-format
+msgid ""
+"Your invoice %(number)s is attached. You can also download it from your "
+"invoices:"
+msgstr ""
+"Adjuntamos su factura %(number)s. También puede descargarla desde sus "
+"facturas:"
+
 #: accounts/templates/accounts/home.html
 msgid "Pending payment"
 msgstr "Pendiente de pago"

@@ -1,0 +1,1 @@
+{% load i18n %}{% blocktranslate with reference=order.reference %}Payment received for your MyTreatPlan order {{ reference }}{% endblocktranslate %}

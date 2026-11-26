@@ -85,10 +85,10 @@ def _reason(code):
             'error': pgettext('invoice PDF', 'Error')}.get(code, '')
 
 
-def _lines(rows, user, currency):
+def _lines(rows, user, currency, named=True):
     """The lines as the template shows them: each patient's current name next to the
-    code (invoices.patients), for this render only."""
-    names = patients.names_for(user, [row.patient_code for row in rows])
+    code (invoices.patients), for this render only; with `named` false, the code alone."""
+    names = patients.names_for(user, [row.patient_code for row in rows]) if named else {}
     lines = []
     for row in rows:
         name = names.get(row.patient_code)
@@ -143,6 +143,13 @@ def context(invoice, user):
         **_amounts(invoice),
         'fonts': _fonts(),
     }
+
+
+def codes_only_context(invoice, user):
+    """`context` with every patient shown by code alone (the PDF attached to an email)."""
+    return {**context(invoice, user),
+            'lines': _lines(list(invoice.lines.order_by('position')), user, invoice.currency,
+                            named=False)}
 
 
 # --- A pending-payment document (epic-ordering 9.19) ----------------------------------------
@@ -239,6 +246,12 @@ def render(invoice, user, build=context):
     from weasyprint import HTML
     html = render_html(invoice, user, build)
     return HTML(string=html, url_fetcher=_fonts_only()).write_pdf()
+
+
+def render_codes_only(invoice, user):
+    """The invoice's PDF with the patients' codes and no names (epic-ordering 9.20: the
+    receipt's attachment); the download keeps the names."""
+    return render(invoice, user, build=codes_only_context)
 
 
 def render_pending(order, user):

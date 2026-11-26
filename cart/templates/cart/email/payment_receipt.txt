@@ -1,0 +1,15 @@
+{% load i18n %}{% autoescape off %}{% translate "Hello," %}
+
+{% blocktranslate with reference=order.reference %}We have received the payment for your MyTreatPlan order {{ reference }}. Thank you.{% endblocktranslate %}
+
+{% translate "Order" %}: {{ order.reference }}
+{% translate "Total" %}: {{ order.total }} {{ order.currency }}
+{% translate "Patients" %}:
+{% for line in lines %}- {{ line.name }} ({{ line.patient_code }})
+{% endfor %}
+{% blocktranslate with number=invoice.number %}Your invoice {{ number }} is attached. You can also download it from your invoices:{% endblocktranslate %}
+
+{{ url }}
+
+MyTreatPlan
+{% endautoescape %}

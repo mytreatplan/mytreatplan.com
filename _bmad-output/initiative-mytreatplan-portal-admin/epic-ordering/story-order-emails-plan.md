@@ -3,14 +3,14 @@ title: 'Order emails'
 type: 'feature'
 ticket: '20'
 created: '2026-11-26'
-status: 'draft'
-baseline_revision: ''
+status: 'done'
+baseline_revision: 'fb2977896c4beaa51747b830c7bbea84d6c5bc2b'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -22,6 +22,11 @@ context: []
 **Problem:** A doctor who approves a bank-transfer order or pays a service order gets no email. They have no written confirmation, no bank details in their inbox and no receipt.
 
 **Approach:** Two receivers on the payments hooks queue a task after commit. The task sends an order confirmation (on `transfer_approved`) or a payment receipt with the invoice PDF (on `paid`), each at most once per order. Decisions (user, 2026-11-25, answers 2A/3A/4A): bank-transfer orders get the confirmation at approval, with the bank details as the 7-day reminder shows them; every service order gets one receipt when paid, with the invoice PDF attached; card and free orders get the receipt only.
+
+Decisions (user, 2026-11-26):
+- The receipt attaches a codes-only render of the invoice PDF (no patient names); the PDF downloaded in the portal keeps the names.
+- A failed send is tried once and logged by order UUID; nothing is marked sent, so staff can re-run it by hand. No automatic retry.
+- The plan is kept whole (~2100 tokens).
 
 ## Boundaries & Constraints
 
@@ -74,7 +79,7 @@ context: []
 - [ ] `cart/tasks.py` -- new `@task send_order_email(kind, order_id)`: inside `run_once('order_confirmation' | 'payment_receipt', order_id, send)` re-read the order, build and send; catch every exception outside `run_once`, log `order email not sent: <kind> order <uuid> (<Type>)` -- once per order, failure leaves no mark.
 - [ ] `cart/apps.py` -- register `transfer_approved` → `order_confirmation_email` and `paid` → `payment_receipt_email` after the existing cart receivers.
 - [ ] `cart/templates/cart/email/order_confirmation{,_subject}.txt`, `payment_receipt{,_subject}.txt` -- reference, total, one row per patient line (product name + patient code), bank details block on the confirmation only when present, link to the transfer page or the invoices list.
-- [ ] `invoices/pdf.py` -- the attachment build per the decision below, without changing what the download shows.
+- [ ] `invoices/pdf.py` -- a codes-only build (a `build` like `context` whose lines skip `names_for` and show the code alone) and a `render_codes_only(invoice, user)` helper; `render` and the portal download unchanged.
 - [ ] `locale/es/LC_MESSAGES/django.po` -- Spanish strings for the four templates; `compilemessages`.
 - [ ] `cart/tests/test_order_emails.py` -- one test per I/O matrix row, plus: receipt attachment name and content type; no patient name anywhere in the message or attachment; Spanish doctor gets Spanish text.
 
@@ -85,9 +90,21 @@ context: []
 
 ## Implementation Notes
 
+- Implemented by a Sonnet subagent (2026-11-26). New `cart/emails.py` (`should_email`, `build_confirmation`, `build_receipt`, receivers `on_transfer_approved`/`on_paid`), `cart/tasks.py` (`send_order_email` with `run_once`), receivers registered last in `cart/apps.py`, four `.txt` templates in `cart/templates/cart/email/`, `invoices/pdf.py` `_lines(named=)`, `codes_only_context`, `render_codes_only`; six Spanish `.po` entries; `cart/tests/test_order_emails.py` (13 tests).
+- The local venv had mytp-core 0.33.0 while requirements pin 0.35.0; the vendored 0.35.0 wheel was installed into `../.venv` before the suite.
+- The real WeasyPrint render of the codes-only PDF is not run locally (no Pango on this Mac); the email tests mock `pdf.render`, and names are checked on `render_html(..., build=codes_only_context)`.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Pass 1 (quick lens, Opus, 2026-11-26): high 0, medium 1, low 2, false 0, maybe-false 0. All patched by the implementer.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | `cart/tasks.py`: the confirmation is sent whatever the order's state when the task runs (late worker, staff re-run), and the spent mark blocks a later confirmation | medium | patch | Real: the task checked only `should_email`. Now returns False before `run_once` unless the order is `pending_payment` with an OPEN bank-transfer payment (as `remind_due`); new test switches to card before the task runs, then back to transfer. |
+| 2 | Matrix row "Send or render fails": only the send failure is tested | low | patch | Real test gap (code was safe). Added a receipt test with `pdf.render` raising: None, logged by UUID, no TaskEffect, order unchanged. |
+| 3 | `test_a_card_order_gets_the_receipt_only` only checks the queue | low | patch | Real. The test now runs the task and asserts one email with one PDF attachment. |
 
 ## Verification
 
@@ -95,12 +112,17 @@ context: []
 - `../.venv/bin/python -m pytest -q -p no:cacheprovider cart payments invoices patients` (env as in the suite command) -- expected: all pass except the known local WeasyPrint failures.
 - `../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: full suite passes.
 
-## Open Questions
+**Results (2026-11-26):** full suite after the review patches: 4479 passed, 17 skipped, 11 failed, all the known local WeasyPrint failures in `invoices/tests/test_pdf.py` and `test_pending_documents.py` (pass on CI).
 
-1. **The invoice PDF prints each patient's current name next to the code.** The ticket says patients by code only. Options:
-   - (a) attach a codes-only render of the same invoice (a `build` that skips `names_for`); the download in the portal keeps names. Recommended: the email leaves the region through the mail provider, and the architecture review says messages identify a case by code only.
-   - (b) attach the normal PDF with names (it is the doctor's own document).
-   - (c) no attachment; the receipt links to the invoices list.
-2. **A failed send is not retried.** Options:
-   - (a) one try, logged by order UUID; nothing marked, so staff can re-run it by hand. Recommended: simplest; failures show in Sentry.
-   - (b) retry a few times with a delay (`send_order_email.using(run_after=...)`), then log.
+## Staging
+
+- Merge: PR #149 → eb554a3 (2026-11-26), after merging master (9.9) into the branch; the only conflict was `locale/es/LC_MESSAGES/django.po` (both sides added strings, both kept). CI on the merged branch: 4505 passed, 2 skipped on PostgreSQL. Master run 45815574885: test, deploy dev and deploy dev-ae all green.
+- Checks on dev (2026-11-26), script piped into `manage.py shell` over SSH, test doctor pk 18, a new test patient, everything in one rolled-back transaction, emails captured in memory (no mailbox reached), no names printed:
+  0. Receivers `order_confirmation_email` (transfer_approved) and `payment_receipt_email` (paid) registered, `invoice_issue` before the receipt: passed.
+  1. Bank-transfer approval queues the task after commit; the task sends one confirmation to the doctor with the reference, total, patient code, IBAN block and transfer-page link, no patient name: passed.
+  2. Choosing bank transfer again: no second confirmation: passed.
+  3. Staff record the money: one receipt with `<invoice number>.pdf` (application/pdf, a real WeasyPrint PDF over 5 KB); the codes-only render shows the code and no name, while the download render keeps the name; body has the code and no name: passed. (The PDF text itself was not extracted: no pypdf on the host.)
+  4. Redsys order: no confirmation queued; after payment the confirmation is not due and one receipt is sent: passed.
+  5. Spanish doctor: Spanish subject and body, `/es/` link: passed.
+  6. Dev worker log, last 2 hours: 0 `order email not sent` lines; worker active: passed.
+- Not checked: a real email in a real inbox (the checks captured the messages in memory). The first real bank-transfer approval or payment on dev will send real emails through dev's mail settings.
