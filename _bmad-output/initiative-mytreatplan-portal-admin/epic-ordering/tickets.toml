@@ -172,12 +172,23 @@ risk = "medium"
 id = 8
 type = "story"
 title = "Work orders per service and order emails"
-description = "Creates one work order per patient-service: on the paid hook in 'pending assignment'; for a bank-transfer order at the doctor's approval in 'pending payment' (blocking the patient like a live work order), turned live on the paid hook and cancelled with the order; closes a live ICE work order when its planning is paid, emits work-order events without patient data (stage, product category, region; a contract type) for epic-clinical-ops' workload figures, and sends the order confirmation and payment receipt emails (patients by code; epic-payments sends no such emails)."
-verify = "Paying an order for two patients creates two work orders; paying a planning after an ICE closes the ICE work order; admindev receives the events without names; the emails name patients by code only."
+description = "Creates one work order per patient-service: on the paid hook in 'pending assignment'; for a bank-transfer order at the doctor's approval in 'pending payment' (blocking the patient like a live work order), turned live on the paid hook and cancelled with the order; closes a live ICE work order when its planning is paid, and emits work-order events without patient data (stage, product category, region; a contract type) for epic-clinical-ops' workload figures. The order emails were split out to entry 20 (user, 2026-11-25)."
+verify = "Paying an order for two patients creates two work orders; paying a planning after an ICE closes the ICE work order; admindev receives the events without names."
 covers = ["O6"]
 after = [7, 17]
 hitl = false
 risk = "high"
+
+[[entry]]
+id = 20
+type = "story"
+title = "Order emails"
+description = "Sends the doctor two emails for orders with patient lines (not subscription orders): an order confirmation when a bank-transfer order is approved, with the order reference and the bank details as the 7-day transfer reminder shows them; and a payment receipt when any service order is paid, with the invoice PDF attached. Card and free orders get the receipt only. Each email goes once per order even when its hook fires again. Patients are named by code only, in the doctor's language. Emails are sent after the transaction commits; a send failure never rolls back an approval or a payment and is logged by order UUID only. Split from entry 8; decisions by the user 2026-11-25 (answers 2A, 3A, 4A in deferred-work.md)."
+verify = "On dev, approving a bank-transfer order sends one confirmation with the reference and bank details; confirming its payment on admindev sends one receipt with the invoice PDF; a Redsys test payment sends only the receipt; approving the same order again sends no second confirmation; no email names a patient; a failed send leaves the order paid."
+covers = ["O6"]
+after = [8, "7.10"]
+hitl = false
+risk = "medium"
 
 [[entry]]
 id = 9
@@ -197,7 +208,7 @@ title = "Production checks for the EU go-live"
 description = "Writes this epic's production checks (patients and codes, wizard branches with maker-login warning, cart and checkout with voucher, ICE deduction, work orders and emails, pending-payment list) into epic-eu-golive's Done when."
 verify = "epic-eu-golive lists one runnable production check per Done when item of this epic."
 covers = []
-after = [9, 12, 13, 14, 15, 16, 17, 18, 19]
+after = [9, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 hitl = false
 risk = "low"
 
@@ -208,6 +219,6 @@ title = "Refactor sweep"
 description = "Cleanup only, scoped when it starts from the entries' plans and the review findings deferred during the epic."
 verify = "The portal's and mytp-core's test suites pass; deferred review findings are closed or recorded."
 covers = []
-after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19]
+after = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 13, 14, 15, 16, 17, 18, 19, 20]
 hitl = false
 risk = "low"
