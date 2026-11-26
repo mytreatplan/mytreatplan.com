@@ -125,6 +125,12 @@ Quick lens, iteration 0, 4 findings: 2 medium (patched by the same implementer; 
 
 ## Staging
 
-Owed (the plan stays `built` until both pass):
-1. Dev, Redsys's public test terminal, after the PR merges: the README "Payments: saved cards" check (a `save_card` order paid with the test card stores one card; `charge_saved_card` twice for a second order and the same period charges once). Record whether the notification carries `Ds_Merchant_Identifier`/`Ds_Merchant_Cof_Txnid`, whether a REST charge also notifies, and a refused MIT's decline code.
-2. Our own Redsys terminal: the same check, once Santander's Venta + contract is signed and its test credentials arrive (not to be asked for before the product owner says it is signed).
+The plan stays `built` until check 2 passes.
+
+1. PASS, 2026-11-26, dev (Redsys public test terminal 999008881/1), release eceef54 (contains PR #151, 00d561f); scripts `.handoff/check_711_a.py` and `_b.py` (they write; left on dev: orders JF-174223 and ED-965597, both paid, 60.00 EUR, with their invoices, and doctor 18's saved test card):
+   - Redsys and fake save cards; the save-card order (JF-174223) offered `redsys`, `fake`; checkout showed the consent line; paid with the test card: one `accepted`/`paid` notification, attempt `confirmed`, order `paid`.
+   - The notification DOES carry the token and the COF transaction id: one `SavedCard` (VISA, 0004, expiry `3512`, token, COF id and masked number present). The field names taken from ActiveMerchant/creagia are right on the test terminal.
+   - Second order ED-965597, `charge_saved_card(order, 'dev-check-711')` twice: first `paid`, second returns the same payment (no new charge); one charge of the period, `confirmed`; order `paid`. Redsys order `7477WE8U4PPO`.
+   - A REST (MIT) charge ALSO sends a signed notification: logged `accepted`/`paid` for the charge's Ds_Order; the order was still paid once.
+   - Not checked: a refused MIT's real decline code (the public test card does not refuse on demand); tests cover codes from the libraries.
+2. Owed: our own Redsys terminal: the same check, once Santander's Venta + contract is signed and its test credentials arrive (not to be asked for before the product owner says it is signed).
