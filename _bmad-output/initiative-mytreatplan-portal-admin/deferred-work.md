@@ -264,3 +264,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-ordering/story-work-orders-per-service-and-order-emails-plan.md`
   summary: DONE in the 9.8 PR (test now uses `timezone.localtime`). Flaky test `accounts/tests/test_personal_data.py::test_page_shows_the_form_the_read_only_data_and_the_tiles` (:103) fails between 23:00 and 24:00 UTC: it formats `doctor.date_joined` in UTC while the page shows it in the region's time zone (Europe/Madrid); format it with `timezone.localtime` in the test.
   evidence: Failed in the 9.8 full run at 23:25 UTC on 2026-11-25 and passes otherwise; pre-existing (the test is from 2026-11-20), unrelated to 9.8.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-payments/story-saved-cards-and-repeat-charges-on-redsys-plan.md`
+  summary: Doctors cannot see or remove the card saved for renewals (7.11 stores it, one per doctor and gateway); a settings line "Saved card: brand ••••last4, expires MM/YY, Remove" (deleting our token, renewals then need a new card) belongs to epic-subscriptions 8.10 (cancellation and expiry).
+  evidence: User decision 2026-11-26 while planning 7.11: keep 7.11 to the backend and the checkout consent line.
