@@ -3,15 +3,15 @@ title: 'Buy Advanced or Premium'
 type: 'feature'
 ticket: '5'
 created: '2026-11-26'
-status: 'in-progress'
+status: 'draft'
 baseline_revision: '7179d5772bad376461f54c1fa6d73a8e8bec16ea'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
-review_loop_iteration: 0
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
+review_loop_iteration: 1
 context: []
 ---
 
@@ -41,6 +41,7 @@ context: []
 - Decision (user, 2026-11-26): a paid subscription purchase sends one confirmation email after commit: level, billing (monthly with 12-month commitment, or annual), amount, the end of the term (monthly: the next charge date), whether the card is saved for renewals, how to cancel (contact us until 8.10), with the codes-only invoice PDF attached; once per order, one try, as 9.20's `cart/emails.py`/`cart/tasks.py`. Renewal and failure emails stay with 8.6/8.7.
 - Decision (user, 2026-11-26): 8.5 stores nothing for included cases; 8.13 creates the grant from the purchase (and for subscriptions bought before it ships).
 - Decision (user, 2026-11-26): one plan, not split (about 1,900 tokens).
+- Decision (user, 2026-11-26, from review): a subscription voucher applies only to the year upfront. On monthly the page offers no voucher field, and a code posted with monthly is refused with a message, no order (a voucher covering a month would make a 0.00 monthly order with no saved card).
 
 ## I/O & Edge-Case Matrix
 
@@ -63,26 +64,26 @@ context: []
 
 ## Code Map
 
-- `subscriptions/views.py` `upgrade_purchase` :52 (placeholder) + `subscriptions/templates/subscriptions/upgrade_purchase.html` -- becomes the purchase form (GET shows periods + voucher field; POST creates the order). `_level` builds the prices shown; `upgrade.html:27-38` prices and the Buy link.
-- `subscriptions/service.py` -- `upgrade_options` :309, `record_of` :165, `change` :507 (via `_write` :475: `StaleVersion`, `ManualLocked`, `ChangeRefused`; `_check` :421), reasons :97-99 (add `purchase`), `doctor_actor`/`SYSTEM_ACTOR` :125-135. Add `monthly_possible(user)` and the `paid` receiver `activate(order)`.
+- `subscriptions/views.py` `upgrade_purchase` :52 (placeholder) + `subscriptions/templates/subscriptions/upgrade_purchase.html` -- becomes the purchase form (GET shows periods; the voucher field only for the year upfront; POST calls the service and maps its refusals). `_level` builds the prices shown; `upgrade.html:27-38` prices and the Buy link. The view holds no business rule (ONBOARDING.md section 6): no `Order` query, no lock, no period or voucher decision, no `save_card` choice.
+- `subscriptions/service.py` -- `upgrade_options` :309, `record_of` :165, `change` :507 (via `_write` :475: `StaleVersion`, `ManualLocked`, `ChangeRefused`; `_check` :421), reasons :97-99 (add `purchase`), `doctor_actor`/`SYSTEM_ACTOR` :125-135. Add `monthly_possible(user)`, the `paid` receiver `activate(order)`, `open_purchase(user)` (the doctor's open subscription order, read through `payments.service`, not `payments.models` from a view) and `purchase(user, level, period, voucher_code)`: locks the doctor's row, returns an open order if one exists, refuses a period not offered (monthly where not `monthly_possible`) and a voucher code with monthly (`OrderRefused` with a new reason the page shows), resolves the voucher, calls `create_subscription_order(..., save_card=monthly_possible(user))`, returns the order. `activate` backfills a missing record with `ensure_basic(user, SYSTEM_ACTOR, reason=BACKFILL)`.
 - `subscriptions/apps.py` :24-27 -- register `paid` → `subscriptions_activate` (example name in `payments/hooks.py:4`). Receivers run inside the transition's transaction.
 - `catalogue/resolver.py` `subscription_rule` :298 / `billing_rule_for` :266, `catalogue/models.py:503` `gateways_for(country)`, `settings.REGION_PROFILE.gateways`; `payments.gateways.can_save_cards`.
 - `catalogue/pricing.py` `price_subscription` :288-317 (monthly = one month), refusals :96-118; `payments/views.py` `REFUSALS` :60-87.
 - `payments/service.py` `create_subscription_order` :441 (`save_card`), `_create` :384 (€0 → `_pay_free` when an entity exists; `NoPaymentMethod`, `EntityRefused`, `OrderRefused`); `subscriptions/vouchers.py` `voucher_for_code` :48.
-- Pattern for POST → order → checkout with a voucher field and re-render on refusal: `cart/views.py:178-188`, `cart/templates/cart/cart.html:37-38`.
+- Pattern: the service owns the lock, the open-order check and the order (`cart/service.py` `finish`); the view only calls it and re-renders on refusal (`cart/views.py:178-188`, `cart/templates/cart/cart.html:37-38`).
 - `payments/views.py` `checkout_return` :254, `payments/templates/payments/return.html` -- for a paid SUBSCRIPTION order, a "Continue" link to `welcome` (`accounts/urls.py:13`) instead of "Back to home".
 - Tests: `subscriptions/tests/helpers.py` (`ADVANCED`/`PREMIUM` Iberia €60/€600, €120/€1200, `doctor()`, `DAY`), `integration/tests/snapshot_rows.py` (Iberia subscription rule `['redsys']` :246; add a Rest-of-EU subscription rule with `['revolut']` for the IE case; `voucher(...)` :333), `payments/tests/test_redsys.py` `redsys_on`, `payments/tests/conftest.py` `fake_on`.
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `subscriptions/service.py` -- `monthly_possible(user)`; `activate(order)` (SUBSCRIPTION orders only; idempotent; error to Sentry when the record cannot take it); reason `purchase`.
+- [ ] `subscriptions/service.py` -- `monthly_possible(user)`; `open_purchase(user)`; `purchase(...)` (above; voucher only with upfront); `activate(order)` (SUBSCRIPTION orders only; idempotent; error to Sentry when the record cannot take it; backfill reason `BACKFILL`); reason `purchase`.
 - [ ] `subscriptions/apps.py` -- register the receiver.
-- [ ] `subscriptions/views.py`, `subscriptions/urls.py`, `upgrade_purchase.html` -- the form, guards, POST → order → `checkout` (or the return page for a €0 order).
+- [ ] `subscriptions/views.py`, `subscriptions/urls.py`, `upgrade_purchase.html` -- the form (voucher field shown with the year upfront only), guards, POST → `service.purchase` → `checkout` (or the return page for a €0 order); refusals re-render with the message and the typed code.
 - [ ] `payments/views.py`, `return.html` -- the welcome link after a paid subscription order.
 - [ ] `subscriptions/emails.py`, `subscriptions/tasks.py`, `subscriptions/templates/subscriptions/email/purchase_confirmation{,_subject}.txt` -- the confirmation email, queued by the `paid` receiver after commit (model: `cart/emails.py`, `cart/tasks.py` `send_order_email` with `mytp_core.tasks.run_once`, `invoices.pdf.render_codes_only`, `pdf.language_of`).
 - [ ] `locale/es/LC_MESSAGES/django.po`, `README.md` -- ES strings; a "Buying a subscription" section.
-- [ ] `subscriptions/tests/test_purchase.py` -- every matrix row (fake and Redsys adapters; IE with a Revolut rule).
+- [ ] `subscriptions/tests/test_purchase.py` -- every matrix row (fake and Redsys adapters; IE with a Revolut rule), plus: a voucher code posted with monthly is refused, no order; `service.purchase` tested directly (open order returned, forged period refused); the backfill row's reason is `backfill`.
 
 **Acceptance Criteria:**
 - Given dev, when a Basic doctor buys Advanced upfront with a partial subscription voucher, then the record shows Advanced and the doctor sees Advanced prices.
@@ -91,9 +92,24 @@ context: []
 
 ## Implementation Notes
 
+- `SubscriptionChange.order_id` (nullable UUID, no database link, unique when set; migration `subscriptions.0004_change_order`): the plan asks for a change row naming the order and a per-order idempotent receiver; the column carries it and the unique constraint is the last word on "one change per order". `_write` takes it as an optional argument (`change`'s signature is unchanged).
+- `activate` writes with the doctor as the actor (the purchase is the doctor's): an expired manual record then becomes standard, as a doctor's own switch does. Refusals (`ChangeRefused`, `ManualLocked`, `RecordGone`, `StaleVersion`) and a record that moved (manual that counts, a paid tier that counts) are a Sentry error by order UUID (`subscription purchase ...: order <uuid>`), never a raise: the payment is kept. The email is queued only when the record changed.
+- The structure test allows only `subscriptions.service` to name the models: the email and the views read through `service.purchase_values(order)`, `service.MONTHLY` / `service.UPFRONT`.
+- A doctor on a paid tier that counts (an Advanced doctor clicking "Upgrade to Premium") is redirected to `upgrade` with the message "To change between paid levels, please contact us." until 8.8; the upgrade screen's button stays as it was.
+- A level whose only price is monthly, for a doctor where monthly is not possible, shows "This level cannot be bought online for your country yet" (no form).
+- `integration/tests/snapshot_rows.py` gains `eu_subscription_rule()` (Rest of EU, Revolut only), added by the purchase tests only, so other tests keep "only Iberia has a `subscription` rule".
+
 ## Plan Change Log
 
+- 2026-11-26, review loop 1. Triggers: triage 1 (intent_gap: a voucher covering a month made a 0.00 monthly order with no saved card; user decided vouchers apply to the year upfront only), triage 2 (bad_plan: purchase rules in the view, against ONBOARDING.md section 6), triage 3 (patch: backfill reason). Amended: Code Map (service `purchase`/`open_purchase`, view holds no rule), tasks (voucher upfront only, tests). Avoided: business rules in `subscriptions/views.py`; a monthly order with a voucher. KEEP (from the first implementation, copy in `.handoff/8-5-first-implementation.patch`, which passed the full suite): everything in Implementation Notes below; `monthly_possible` excluding `gateways.FAKE` and requiring a region gateway; `activate` as written (doctor actor, `_counts` guard, `_report` to Sentry by order UUID, `enqueue_on_commit(send_purchase_email)`); `term_of`; `purchase_values`; the email/task modules and templates; `to_welcome` on the return page; the ES strings; README and deploy/README sections; the test helpers and fixtures of `test_purchase.py` (`loaded`, `spanish`, `irish`, `pay_on_fake`, `capture`, `queued`); the updated tests in `test_upgrade.py` and `signup/tests/browser/test_success.py`.
+
 ## Review Triage Log
+
+| # | Lens | Finding | Verdict | Route | Evidence |
+|---|------|---------|---------|-------|----------|
+| 1 | quick | Monthly + subscription voucher >= one month's price: 0.00 order paid by `_pay_free`, no gateway, no saved card; `activate` writes monthly, auto-renew, 12-month commitment that cannot be charged in month 2; email says "Next charge" and "card not saved" | high | intent_gap | `price_subscription` prices monthly as one month (pricing.py:288-317); `_create` pays 0.00 via `_pay_free` (service.py:421) without a gateway; `_periods` offers monthly whatever the voucher. The frozen intent says monthly needs a card-saving gateway and a full voucher pays at once; it does not say which wins. |
+| 2 | quick | Purchase business rules (open-order lookup, per-doctor lock, forged-period refusal, `save_card` choice, order creation) live in `subscriptions/views.py`, against ONBOARDING.md section 6 | medium | bad_plan | ONBOARDING.md:144 "Business rules live in services"; the cited pattern `cart/views.py` only calls `cart.service.finish`. The plan's task put "POST -> order -> checkout" in views.py. 8.8 (paid-tier change) would duplicate it. |
+| 3 | quick | `activate` calls `ensure_basic(user, SYSTEM_ACTOR)` with the default reason `signup` for a backfilled doctor | low | patch | `ensure_basic` defaults `reason=SIGNUP` (service.py:410); `assign_basic` passes `reason=service.BACKFILL` (assign_basic.py:41). Fix: pass `reason=BACKFILL`. |
 
 ## Verification
 
