@@ -204,6 +204,8 @@ def checkout(request, pk):
         'add_entity_url': f"{reverse('settings_fiscal_add')}?next={quote(here, safe='')}",
         'gateway_choices': _gateway_choices(order),
         'free': order.total <= 0,
+        # Entry 11: only gateways that save cards are offered for such an order.
+        'saves_card': order.save_card and order.total > 0,
     })
 
 
