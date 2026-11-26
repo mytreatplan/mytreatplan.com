@@ -3,14 +3,14 @@ title: 'Order emails'
 type: 'feature'
 ticket: '20'
 created: '2026-11-26'
-status: 'ready-for-dev'
-baseline_revision: ''
+status: 'built'
+baseline_revision: 'fb2977896c4beaa51747b830c7bbea84d6c5bc2b'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -90,12 +90,26 @@ Decisions (user, 2026-11-26):
 
 ## Implementation Notes
 
+- Implemented by a Sonnet subagent (2026-11-26). New `cart/emails.py` (`should_email`, `build_confirmation`, `build_receipt`, receivers `on_transfer_approved`/`on_paid`), `cart/tasks.py` (`send_order_email` with `run_once`), receivers registered last in `cart/apps.py`, four `.txt` templates in `cart/templates/cart/email/`, `invoices/pdf.py` `_lines(named=)`, `codes_only_context`, `render_codes_only`; six Spanish `.po` entries; `cart/tests/test_order_emails.py` (13 tests).
+- The local venv had mytp-core 0.33.0 while requirements pin 0.35.0; the vendored 0.35.0 wheel was installed into `../.venv` before the suite.
+- The real WeasyPrint render of the codes-only PDF is not run locally (no Pango on this Mac); the email tests mock `pdf.render`, and names are checked on `render_html(..., build=codes_only_context)`.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Pass 1 (quick lens, Opus, 2026-11-26): high 0, medium 1, low 2, false 0, maybe-false 0. All patched by the implementer.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | `cart/tasks.py`: the confirmation is sent whatever the order's state when the task runs (late worker, staff re-run), and the spent mark blocks a later confirmation | medium | patch | Real: the task checked only `should_email`. Now returns False before `run_once` unless the order is `pending_payment` with an OPEN bank-transfer payment (as `remind_due`); new test switches to card before the task runs, then back to transfer. |
+| 2 | Matrix row "Send or render fails": only the send failure is tested | low | patch | Real test gap (code was safe). Added a receipt test with `pdf.render` raising: None, logged by UUID, no TaskEffect, order unchanged. |
+| 3 | `test_a_card_order_gets_the_receipt_only` only checks the queue | low | patch | Real. The test now runs the task and asserts one email with one PDF attachment. |
 
 ## Verification
 
 **Commands:**
 - `../.venv/bin/python -m pytest -q -p no:cacheprovider cart payments invoices patients` (env as in the suite command) -- expected: all pass except the known local WeasyPrint failures.
 - `../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: full suite passes.
+
+**Results (2026-11-26):** full suite after the review patches: 4479 passed, 17 skipped, 11 failed, all the known local WeasyPrint failures in `invoices/tests/test_pdf.py` and `test_pending_documents.py` (pass on CI).
