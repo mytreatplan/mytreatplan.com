@@ -1,0 +1,23 @@
+{% load i18n %}{% autoescape off %}{% translate "Hello," %}
+
+{% if link %}{% if declined %}{% blocktranslate with name=level %}We could not charge your saved card for the renewal of your MyTreatPlan {{ name }} subscription.{% endblocktranslate %}{% else %}{% blocktranslate with name=level %}Your MyTreatPlan {{ name }} subscription is due for renewal, and we have no saved card to charge.{% endblocktranslate %}{% endif %}
+
+{% translate "Please pay the renewal within 24 hours here (sign in to MyTreatPlan first):" %}
+
+{{ link }}
+
+{% translate "Order" %}: {{ order.reference }}
+
+{% blocktranslate with name=level date=ends_on|date:"DATE_FORMAT" basic=basic_from|date:"DATE_FORMAT" %}You keep {{ name }} until {{ date }}. If the renewal is not paid by then, your account is on Basic from {{ basic }} until you pay; once paid, your subscription runs for the full new year.{% endblocktranslate %}
+{% else %}{% blocktranslate with name=level %}Your MyTreatPlan {{ name }} subscription cannot be renewed: it is no longer offered.{% endblocktranslate %}
+
+{% blocktranslate with name=level date=ends_on|date:"DATE_FORMAT" basic=basic_from|date:"DATE_FORMAT" %}You keep {{ name }} until {{ date }}; from {{ basic }} your account is on Basic. You can choose a level on your subscription levels:{% endblocktranslate %}
+
+{{ upgrade_url }}
+{% endif %}
+{% translate "If you have questions, please contact us:" %}
+
+{{ support_url }}
+
+MyTreatPlan
+{% endautoescape %}

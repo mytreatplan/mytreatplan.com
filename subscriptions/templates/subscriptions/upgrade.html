@@ -3,7 +3,10 @@
 {% comment %}
 The upgrade screen (subscriptions.views.upgrade): the levels of the doctor's country group,
 side by side from the tablet breakpoint and stacked on a phone, the current one marked in
-words. Prices are the catalogue's net prices (the `money` filter); no VAT amount.
+words. Prices are the catalogue's net prices (the `money` filter); no VAT amount. A running
+annual subscription (`renewal`, epic-subscriptions 8.6) shows its renewal date, the card's
+last 4 or the payment link, the Turn off / Turn on button and, in the last 30 days, "Renew
+now".
 {% endcomment %}
 
 {% block title %}{% translate "Subscription levels" %} &mdash; MyTreatPlan{% endblock %}
@@ -11,6 +14,30 @@ words. Prices are the catalogue's net prices (the `money` filter); no VAT amount
 {% block portal_content %}
 <h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% translate "Subscription levels" %}</h1>
 <p class="mt-3 text-copy text-ink-muted" data-current-level>{% blocktranslate with name=current_name %}Your current level is <strong class="text-ink">{{ name }}</strong>.{% endblocktranslate %}</p>
+{% if renewal %}
+<div class="mt-4 flex flex-col gap-3 rounded-12 border border-line bg-surface p-5 text-copy" data-renewal>
+  {% if not renewal.sold %}
+  <p data-renewal-date>{% blocktranslate with date=renewal.ends_on|date:"DATE_FORMAT" %}This subscription is no longer offered: your level ends on <strong>{{ date }}</strong>.{% endblocktranslate %}</p>
+  {% elif renewal.auto_renew %}
+  <p data-renewal-date>{% blocktranslate with date=renewal.ends_on|date:"DATE_FORMAT" %}Renews automatically on <strong>{{ date }}</strong>.{% endblocktranslate %}
+    <span data-renewal-payment>{% if renewal.card_last4 %}{% blocktranslate with last4=renewal.card_last4 %}Charged to your saved card ending in {{ last4 }}.{% endblocktranslate %}{% else %}{% translate "We will email you a payment link on that day." %}{% endif %}</span></p>
+  {% else %}
+  <p data-renewal-date>{% blocktranslate with date=renewal.ends_on|date:"DATE_FORMAT" %}Automatic renewal is off: your level ends on <strong>{{ date }}</strong>.{% endblocktranslate %}</p>
+  {% endif %}
+  <div class="flex flex-wrap items-center gap-4">
+    {% if renewal.sold %}
+    <form method="post" action="{% url 'upgrade_auto_renew' %}">{% csrf_token %}
+      <input type="hidden" name="version" value="{{ renewal.version }}">
+      <input type="hidden" name="auto_renew" value="{% if renewal.auto_renew %}off{% else %}on{% endif %}">
+      <button type="submit" class="inline-flex min-h-[44px] cursor-pointer items-center rounded-pill border border-ink px-6 text-[15px] font-black transition hover:bg-card-grey focus-visible:shadow-focus-pill focus-visible:outline-none" data-auto-renew="{% if renewal.auto_renew %}off{% else %}on{% endif %}">{% if renewal.auto_renew %}{% translate "Turn off automatic renewal" %}{% else %}{% translate "Turn on automatic renewal" %}{% endif %}</button>
+    </form>
+    {% endif %}
+    {% if renewal.can_renew_now %}
+    <a href="{% url 'upgrade_purchase' renewal.tier %}" class="inline-flex min-h-[44px] items-center rounded-pill bg-ink px-6 text-[15px] font-black text-white transition hover:bg-green hover:text-ink focus-visible:shadow-focus-pill focus-visible:outline-none" data-renew-now>{% translate "Renew now" %}</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
 {% if manual %}
 <p class="mt-2 text-copy text-ink-muted" data-manual-note>{% translate "Your subscription was arranged with our team, who make any change to it. The standard levels are shown for information." %}</p>
 {% endif %}

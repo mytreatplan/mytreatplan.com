@@ -1,0 +1,1 @@
+{% load i18n %}{% blocktranslate with name=level %}Your MyTreatPlan {{ name }} subscription is renewed{% endblocktranslate %}

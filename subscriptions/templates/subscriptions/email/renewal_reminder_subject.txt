@@ -1,0 +1,1 @@
+{% load i18n %}{% blocktranslate with name=level date=ends_on|date:"DATE_FORMAT" %}Your MyTreatPlan {{ name }} subscription renews on {{ date }}{% endblocktranslate %}

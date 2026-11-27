@@ -1,0 +1,19 @@
+{% load i18n money %}{% autoescape off %}{% translate "Hello," %}
+
+{% blocktranslate with name=level date=ends_on|date:"DATE_FORMAT" %}Your MyTreatPlan {{ name }} subscription, paid a year upfront, runs until {{ date }}. It renews automatically for another year.{% endblocktranslate %}
+
+{% translate "Level" %}: {{ level }}
+{% translate "Renewal date" %}: {{ ends_on|date:"DATE_FORMAT" }}
+{% if price %}{% translate "Price" %}: {% blocktranslate with price=price|money %}{{ price }} for a year, paid upfront{% endblocktranslate %} ({% translate "+ VAT where applicable" %})
+{% endif %}{% translate "Payment" %}: {% if card_last4 %}{% blocktranslate with last4=card_last4 %}your saved card ending in {{ last4 }}{% endblocktranslate %}{% else %}{% translate "payment link: on the renewal date we will email you a link to pay" %}{% endif %}
+
+{% translate 'To turn automatic renewal off, choose "Turn off automatic renewal" on your subscription levels:' %}
+
+{{ upgrade_url }}
+
+{% translate "If you have questions, please contact us:" %}
+
+{{ support_url }}
+
+MyTreatPlan
+{% endautoescape %}

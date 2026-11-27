@@ -1,0 +1,1 @@
+{% load i18n %}{% if link %}{% blocktranslate with name=level %}Pay the renewal of your MyTreatPlan {{ name }} subscription{% endblocktranslate %}{% else %}{% blocktranslate with name=level date=ends_on|date:"DATE_FORMAT" %}Your MyTreatPlan {{ name }} subscription ends on {{ date }}{% endblocktranslate %}{% endif %}

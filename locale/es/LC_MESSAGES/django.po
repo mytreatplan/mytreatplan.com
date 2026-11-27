@@ -4057,3 +4057,162 @@ msgstr "Fase"
 #: notifications/templates/notifications/email/case_pending_review.txt
 msgid "You can see the case here:"
 msgstr "Puede ver el caso aquí:"
+
+# Epic-subscriptions 8.6: annual renewals.
+#: subscriptions/templates/subscriptions/email/renewal_reminder_subject.txt
+#, python-format
+msgid "Your MyTreatPlan %(name)s subscription renews on %(date)s"
+msgstr "Su suscripción MyTreatPlan %(name)s se renueva el %(date)s"
+
+#: subscriptions/templates/subscriptions/email/renewal_reminder.txt
+#, python-format
+msgid "Your MyTreatPlan %(name)s subscription, paid a year upfront, runs until %(date)s. It renews automatically for another year."
+msgstr "Su suscripción MyTreatPlan %(name)s, pagada por un año por adelantado, está vigente hasta el %(date)s. Se renueva automáticamente por otro año."
+
+#: subscriptions/templates/subscriptions/email/renewal_reminder.txt
+msgid "Renewal date"
+msgstr "Fecha de renovación"
+
+#: subscriptions/templates/subscriptions/email/renewal_reminder.txt
+msgid "Price"
+msgstr "Precio"
+
+#: subscriptions/templates/subscriptions/email/renewal_reminder.txt
+msgid "Payment"
+msgstr "Pago"
+
+#: subscriptions/templates/subscriptions/email/renewal_reminder.txt
+#, python-format
+msgid "your saved card ending in %(last4)s"
+msgstr "su tarjeta guardada terminada en %(last4)s"
+
+#: subscriptions/templates/subscriptions/email/renewal_reminder.txt
+msgid "payment link: on the renewal date we will email you a link to pay"
+msgstr "enlace de pago: en la fecha de renovación le enviaremos por correo electrónico un enlace para pagar"
+
+#: subscriptions/templates/subscriptions/email/renewal_reminder.txt
+msgid "To turn automatic renewal off, choose \"Turn off automatic renewal\" on your subscription levels:"
+msgstr "Para desactivar la renovación automática, elija «Desactivar la renovación automática» en sus niveles de suscripción:"
+
+#: subscriptions/templates/subscriptions/email/renewal_reminder.txt
+msgid "If you have questions, please contact us:"
+msgstr "Si tiene alguna pregunta, póngase en contacto con nosotros:"
+
+#: subscriptions/templates/subscriptions/email/renewal_payment_link_subject.txt
+#, python-format
+msgid "Pay the renewal of your MyTreatPlan %(name)s subscription"
+msgstr "Pague la renovación de su suscripción MyTreatPlan %(name)s"
+
+#: subscriptions/templates/subscriptions/email/renewal_payment_link_subject.txt
+#, python-format
+msgid "Your MyTreatPlan %(name)s subscription ends on %(date)s"
+msgstr "Su suscripción MyTreatPlan %(name)s finaliza el %(date)s"
+
+#: subscriptions/templates/subscriptions/email/renewal_payment_link.txt
+#, python-format
+msgid "We could not charge your saved card for the renewal of your MyTreatPlan %(name)s subscription."
+msgstr "No hemos podido cobrar en su tarjeta guardada la renovación de su suscripción MyTreatPlan %(name)s."
+
+#: subscriptions/templates/subscriptions/email/renewal_payment_link.txt
+#, python-format
+msgid "Your MyTreatPlan %(name)s subscription is due for renewal, and we have no saved card to charge."
+msgstr "Su suscripción MyTreatPlan %(name)s debe renovarse y no tenemos ninguna tarjeta guardada en la que cobrarla."
+
+#: subscriptions/templates/subscriptions/email/renewal_payment_link.txt
+msgid "Please pay the renewal within 24 hours here (sign in to MyTreatPlan first):"
+msgstr "Pague la renovación en las próximas 24 horas aquí (inicie sesión en MyTreatPlan primero):"
+
+#: subscriptions/templates/subscriptions/email/renewal_payment_link.txt
+#, python-format
+msgid "You keep %(name)s until %(date)s. If the renewal is not paid by then, your account is on Basic from %(basic)s until you pay; once paid, your subscription runs for the full new year."
+msgstr "Mantiene %(name)s hasta el %(date)s. Si la renovación no está pagada para entonces, su cuenta pasa a Básica desde el %(basic)s hasta que pague; una vez pagada, su suscripción dura el nuevo año completo."
+
+#: subscriptions/templates/subscriptions/email/renewal_payment_link.txt
+#, python-format
+msgid "Your MyTreatPlan %(name)s subscription cannot be renewed: it is no longer offered."
+msgstr "Su suscripción MyTreatPlan %(name)s no se puede renovar: ya no se ofrece."
+
+#: subscriptions/templates/subscriptions/email/renewal_payment_link.txt
+#, python-format
+msgid "You keep %(name)s until %(date)s; from %(basic)s your account is on Basic. You can choose a level on your subscription levels:"
+msgstr "Mantiene %(name)s hasta el %(date)s; desde el %(basic)s su cuenta pasa a Básica. Puede elegir un nivel en sus niveles de suscripción:"
+
+#: subscriptions/templates/subscriptions/email/renewal_receipt_subject.txt
+#, python-format
+msgid "Your MyTreatPlan %(name)s subscription is renewed"
+msgstr "Su suscripción MyTreatPlan %(name)s se ha renovado"
+
+#: subscriptions/templates/subscriptions/email/renewal_receipt.txt
+#, python-format
+msgid "Thank you: your MyTreatPlan %(name)s subscription is renewed for another year."
+msgstr "Gracias: su suscripción MyTreatPlan %(name)s se ha renovado por otro año."
+
+#: subscriptions/templates/subscriptions/email/renewal_receipt.txt
+msgid "Valid from"
+msgstr "Válida desde"
+
+#: subscriptions/templates/subscriptions/email/renewal_receipt.txt
+msgid "You can turn automatic renewal on or off on your subscription levels:"
+msgstr "Puede activar o desactivar la renovación automática en sus niveles de suscripción:"
+
+#: subscriptions/templates/subscriptions/upgrade.html
+#, python-format
+msgid "Renews automatically on <strong>%(date)s</strong>."
+msgstr "Se renueva automáticamente el <strong>%(date)s</strong>."
+
+#: subscriptions/templates/subscriptions/upgrade.html
+#, python-format
+msgid "Charged to your saved card ending in %(last4)s."
+msgstr "Se cobra en su tarjeta guardada terminada en %(last4)s."
+
+#: subscriptions/templates/subscriptions/upgrade.html
+msgid "We will email you a payment link on that day."
+msgstr "Ese día le enviaremos un enlace de pago por correo electrónico."
+
+#: subscriptions/templates/subscriptions/upgrade.html
+#, python-format
+msgid "Automatic renewal is off: your level ends on <strong>%(date)s</strong>."
+msgstr "La renovación automática está desactivada: su nivel finaliza el <strong>%(date)s</strong>."
+
+#: subscriptions/templates/subscriptions/upgrade.html
+msgid "Turn off automatic renewal"
+msgstr "Desactivar la renovación automática"
+
+#: subscriptions/templates/subscriptions/upgrade.html
+msgid "Turn on automatic renewal"
+msgstr "Activar la renovación automática"
+
+#: subscriptions/templates/subscriptions/upgrade.html
+msgid "Renew now"
+msgstr "Renovar ahora"
+
+#: subscriptions/templates/subscriptions/upgrade_purchase.html
+#, python-format
+msgid "Renew %(name)s"
+msgstr "Renovar %(name)s"
+
+#: subscriptions/templates/subscriptions/upgrade_purchase.html
+#, python-format
+msgid "Your current year runs until %(ends)s. Renewing now adds another year after it."
+msgstr "Su año actual dura hasta el %(ends)s. Si renueva ahora, se añade otro año a continuación."
+
+#: subscriptions/views.py
+msgid "Your subscription changed meanwhile. Please try again."
+msgstr "Su suscripción ha cambiado entretanto. Inténtelo de nuevo."
+
+#: subscriptions/views.py
+msgid "Automatic renewal cannot be changed now."
+msgstr "La renovación automática no se puede cambiar ahora."
+
+#: subscriptions/views.py
+msgid "Automatic renewal is on."
+msgstr "La renovación automática está activada."
+
+#: subscriptions/views.py
+msgid "Automatic renewal is off."
+msgstr "La renovación automática está desactivada."
+
+#: subscriptions/templates/subscriptions/upgrade.html
+#, python-format
+msgid "This subscription is no longer offered: your level ends on <strong>%(date)s</strong>."
+msgstr "Esta suscripción ya no se ofrece: su nivel finaliza el <strong>%(date)s</strong>."
