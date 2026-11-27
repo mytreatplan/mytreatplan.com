@@ -135,6 +135,13 @@ deploy/README.md, "Doctor subscriptions"):
     python manage.py doctor_subscription <uid or email> --order --product <UUID or code> \
         [--quantity N] [--vies valid|invalid|pending|not_applicable]
 
+On a staging site (`SENTRY_ENVIRONMENT` dev or dev-ae; locally `development` with DEBUG on),
+`reset_to_basic` puts a test doctor (standard or manual, paid or not) back on a standard Basic,
+so the same account can repeat the purchase checks; a change by the system with reason
+`test_reset`. Anywhere else it refuses and writes nothing:
+
+    python manage.py reset_to_basic <uid or email>
+
 ## Buying a subscription (epic-subscriptions entry 5)
 
 A Basic doctor buys Advanced or Premium from the upgrade screen's button, on the purchase page

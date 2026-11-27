@@ -104,7 +104,7 @@ __all__ = ['Actor', 'ChangeRefused', 'Effective', 'Level', 'ManualLocked', 'Reco
            'activate', 'admin_actor', 'assign_manual', 'change', 'doctor_actor',
            'doctors_without_a_record', 'effective', 'ensure_basic', 'monthly_possible',
            'offers_for', 'price_order_for', 'purchase_values', 'record_of', 'reminder',
-           'term_of',
+           'reset_to_basic', 'term_of',
            'upgrade_options']
 
 BASIC = DoctorSubscription.BASIC
@@ -119,6 +119,8 @@ BACKFILL = 'backfill'
 MANUAL_ASSIGNED = 'manual_assigned'
 # Epic-subscriptions entry 5: a paid subscription order (the change row names the order).
 PURCHASE = 'purchase'
+# A staging site's test doctor put back on Basic by `reset_to_basic` (never production).
+TEST_RESET = 'test_reset'
 # The billing periods of a bought subscription.
 MONTHLY, UPFRONT = DoctorSubscription.MONTHLY, DoctorSubscription.UPFRONT
 # How long a bought subscription runs (a monthly one is a 12-month commitment).
@@ -536,6 +538,24 @@ def change(user, *, expected_version, actor, reason, **fields):
     for `reason` (a short code), when it is still at `expected_version`: see the module
     docstring. Returns the record."""
     return _write(user, expected_version, actor, reason, fields)
+
+
+def reset_to_basic(user):
+    """Put the doctor back on a standard Basic (active, no subscription, no period or end
+    date, auto-renew off, not manual, started today), by the system with reason
+    `TEST_RESET`, so a test doctor on a staging site can buy again; a doctor without a
+    record gets one. For the `reset_to_basic` command only, which refuses outside the
+    staging sites. Returns the record. RecordGone for a staff or superuser account."""
+    with transaction.atomic():
+        record = record_of(user)
+        if record is None:
+            if not is_client(user):
+                raise RecordGone(user.pk)
+            return ensure_basic(user, SYSTEM_ACTOR, reason=TEST_RESET)
+        return _write(user, record.version, SYSTEM_ACTOR, TEST_RESET, {
+            'tier': BASIC, 'subscription_id': None, 'manual': False, 'auto_renew': False,
+            'status': DoctorSubscription.ACTIVE, 'billing_period': '',
+            'started_on': resolver.today(), 'ends_on': None})
 
 
 def assign_manual(user, subscription, *, expected_version, actor, ends_on=None):
