@@ -112,6 +112,13 @@ context: []
 - The not-sold email reuses the payment-link template without a link (no fourth template).
 - ES strings appended by hand to `django.po` (a full `makemessages` run rewrites unrelated
   entries); `django.mo` recompiled.
+- Review fixes (2026-11-27): renewal date shown as `ends_on` (no `renews_on`); inactive/missing held row
+  treated as not sold (`_sold_row`: no reminder, price or "Renew now"); only `NoSavedCard` /
+  `UnsupportedOperation` are `no_card`, other `OrderError`s a `_warn` + `declined`; `_prepare`
+  locks the doctor then the record and charges only this term's open order (another open order
+  skips the run); `_bind` refuses to move a row off an open order; `drop_unrenewed` skips an order
+  made that day; tests for each plus a 0.00 "Renew now".
+
 
 ## Plan Change Log
 

@@ -17,7 +17,7 @@ upfront only, the voucher field; the new term starts the day after the current o
 
 {% block portal_content %}
 <h1 class="text-[clamp(28px,5vw,40px)] font-black leading-[1.1] tracking-[-0.03em]">{% if level.renewal %}{% blocktranslate with name=level.name %}Renew {{ name }}{% endblocktranslate %}{% else %}{% blocktranslate with name=level.name %}Upgrade to {{ name }}{% endblocktranslate %}{% endif %}</h1>
-{% if level.renewal %}<p class="mt-3 text-copy text-ink-muted" data-renewal-term>{% blocktranslate with ends=level.ends_on|date:"DATE_FORMAT" starts=level.renews_on|date:"DATE_FORMAT" %}Your current year runs until {{ ends }}. Renewing now adds another year from {{ starts }}.{% endblocktranslate %}</p>{% endif %}
+{% if level.renewal %}<p class="mt-3 text-copy text-ink-muted" data-renewal-term>{% blocktranslate with ends=level.ends_on|date:"DATE_FORMAT" %}Your current year runs until {{ ends }}. Renewing now adds another year after it.{% endblocktranslate %}</p>{% endif %}
 {% if level.description %}<p class="mt-3 text-copy text-ink-muted">{{ level.description|linebreaksbr }}</p>{% endif %}
 {% if error %}<p class="mt-6 rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold leading-[1.5] text-notice-text" role="alert" data-error>{{ error }}</p>{% endif %}
 

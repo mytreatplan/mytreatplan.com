@@ -199,15 +199,24 @@ standard (not manual), upfront, active Advanced or Premium record takes part; mo
   whenever a gateway of the doctor can) and one `Renewal(record, term_ends_on)` row holding the
   order id, so a rerun never makes a second order or charge. Then, outside any transaction,
   `payments.repeat.charge_saved_card` (period: the term's `ends_on`). Paid: the order's `paid`
-  hook renews the record. No saved card (an IE doctor on Revolut), no usable fiscal entity, or a
-  decline: the order stays open and the doctor is emailed its checkout as a payment link (login
+  hook renews the record. No saved card (an IE doctor on Revolut) is `no_card`; a decline, or a
+  charge refused for another reason (no usable fiscal entity, an attempt open: also a Sentry
+  warning by order UUID), is `declined`. Either way the order stays open and the doctor is emailed its checkout as a payment link (login
   required; the order expires after the usual 24 hours). Unknown outcome: no email, a Sentry
   error from `payments.repeat`, and the doctor keeps the level while the order's charge needs
   staff attention (staff decide). A held row the catalogue no longer sells (deactivated or
   gone): no order, a Sentry warning by record UUID, an email that the subscription ends.
   Each record on its own; a failure is logged by record UUID and never stops the run.
 - **Drop** (`drop_unrenewed`): the day after `ends_on`, a term not renewed (auto-renew off,
-  unpaid, not sold) puts the record on Basic (reason `renewal_unpaid`, by the system).
+  unpaid, not sold) puts the record on Basic (reason `renewal_unpaid`, by the system); never on
+  the day its renewal order was made (a missed run caught up leaves a day to pay).
+
+The doctor is always shown `ends_on` as the renewal date (the day of the charge or the link).
+A held row deactivated or gone from the catalogue is not renewable: no reminder, no price, no
+"Renew now"; the screen says the level ends on `ends_on`. The job takes the doctor's lock, then
+the record's (as "Renew now"), charges an open "Renew now" order of the term instead of making
+another, skips a doctor with another open subscription order for that run, and never moves a
+`Renewal` row off an order still open.
 
 `service.activate` tells a renewal order by its `Renewal` row (`_renew`) and never treats it as
 a purchase: the record's term becomes `ends_on + 1 day` to 12 months later minus one day,

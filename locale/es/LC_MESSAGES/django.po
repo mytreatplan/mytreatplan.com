@@ -4193,8 +4193,8 @@ msgstr "Renovar %(name)s"
 
 #: subscriptions/templates/subscriptions/upgrade_purchase.html
 #, python-format
-msgid "Your current year runs until %(ends)s. Renewing now adds another year from %(starts)s."
-msgstr "Su año actual dura hasta el %(ends)s. Si renueva ahora, se añade otro año desde el %(starts)s."
+msgid "Your current year runs until %(ends)s. Renewing now adds another year after it."
+msgstr "Su año actual dura hasta el %(ends)s. Si renueva ahora, se añade otro año a continuación."
 
 #: subscriptions/views.py
 msgid "Your subscription changed meanwhile. Please try again."
@@ -4211,3 +4211,8 @@ msgstr "La renovación automática está activada."
 #: subscriptions/views.py
 msgid "Automatic renewal is off."
 msgstr "La renovación automática está desactivada."
+
+#: subscriptions/templates/subscriptions/upgrade.html
+#, python-format
+msgid "This subscription is no longer offered: your level ends on <strong>%(date)s</strong>."
+msgstr "Esta suscripción ya no se ofrece: su nivel finaliza el <strong>%(date)s</strong>."

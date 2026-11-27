@@ -908,6 +908,16 @@ def _annual_records():
         status=DoctorSubscription.ACTIVE, ends_on__isnull=False)
 
 
+def _sold_row(record):
+    """The record's held catalogue row when it can still be renewed (in the catalogue,
+    active, of the record's tier, standard), else None: the term then just ends (the
+    doctor is told on `ends_on`, `NOT_SOLD`)."""
+    row = resolver.subscription_by_id(record.subscription_id)
+    if row is None or not row.active or row.tier != record.tier or row.manual:
+        return None
+    return row
+
+
 def _order(order_id):
     from payments.models import Order
     return Order.objects.filter(pk=order_id).first() if order_id else None
@@ -933,15 +943,17 @@ def _card_last4(user):
 @dataclass(frozen=True)
 class RenewalInfo:
     """The renewal line of the upgrade screen ("Your current level"): the record's `tier`
-    and held catalogue row (`subscription`, None when gone), the term's `ends_on` and
-    `renews_on` (the day after), `auto_renew`, the saved card's `card_last4` ('' for a
-    payment link), its upfront `price` today (None without one), whether the doctor
-    `can_renew_now` (the last 30 days of the term, the row still with a price) and the
-    record's `version` (for `set_auto_renew`)."""
+    and held catalogue row (`subscription`, None when gone), the term's `ends_on` (the
+    renewal date: the card is charged, or the link sent, that day), whether the held row is
+    still `sold` (active, of the record's tier and kind; else the term just ends),
+    `auto_renew`, the saved card's `card_last4` ('' for a payment link), its upfront `price`
+    today (None when not sold or without one), whether the doctor `can_renew_now` (the last
+    30 days of the term, sold with a price) and the record's `version` (for
+    `set_auto_renew`)."""
     tier: str
     subscription: object
     ends_on: date
-    renews_on: date
+    sold: bool
     auto_renew: bool
     card_last4: str
     price: object
@@ -957,13 +969,12 @@ def renewal_info(user, day=None):
     if not (_annual(record) and _counts(record, day) and day <= record.ends_on):
         return None
     row = resolver.subscription_by_id(record.subscription_id)
-    price = row.upfront_price if row is not None else None
+    sold = _sold_row(record) is not None
+    price = row.upfront_price if sold else None
     return RenewalInfo(
-        tier=record.tier, subscription=row, ends_on=record.ends_on,
-        renews_on=record.ends_on + timedelta(days=1), auto_renew=record.auto_renew,
-        card_last4=_card_last4(user), price=price,
-        can_renew_now=(price is not None and row.tier == record.tier and not row.manual
-                       and record.ends_on - RENEWAL_NOTICE <= day),
+        tier=record.tier, subscription=row, ends_on=record.ends_on, sold=sold,
+        auto_renew=record.auto_renew, card_last4=_card_last4(user), price=price,
+        can_renew_now=price is not None and record.ends_on - RENEWAL_NOTICE <= day,
         version=record.version)
 
 
@@ -981,13 +992,19 @@ def set_auto_renew(user, on, *, expected_version):
 def _bind(record, term_ends_on, order_id, outcome):
     """The `Renewal` row of the record's term, created or pointed at `order_id` (an
     abandoned order replaced) with `outcome`; one already naming the order is left as it
-    is. Inside the caller's transaction."""
+    is. ChangeRefused when the row names another order still open. Inside the caller's
+    transaction."""
     now = timezone.now()
     renewal, created = Renewal.objects.select_for_update().get_or_create(
         record_id=getattr(record, 'pk', record), term_ends_on=term_ends_on,
         defaults={'order_id': order_id, 'outcome': outcome, 'created_at': now,
                   'updated_at': now})
     if not created and (renewal.order_id != order_id or order_id is None):
+        current = _order(renewal.order_id)
+        if current is not None and current.state in current.OPEN_STATES:
+            # Never moved off an order the doctor can still pay (it would then be paid as
+            # a purchase and refused): the caller's transaction is rolled back.
+            raise ChangeRefused(f'the renewal order {current.pk} of this term is still open')
         renewal.order_id, renewal.outcome, renewal.updated_at = order_id, outcome, now
         renewal.save(update_fields=['order_id', 'outcome', 'updated_at'])
     return renewal
@@ -1148,18 +1165,22 @@ def renew_now(user, voucher_code=''):
 def due_reminders(day=None):
     """Queue the renewal reminder of every annual record with auto-renew on whose term ends
     within 30 days of `day` (today when None), once per record and term (`run_once`, period
-    `ends_on`; the task checks again). Returns how many were queued."""
+    `ends_on`; the task checks again). None for a held row no longer sold. Returns how many
+    were queued."""
     from mytp_core.tasks import effect_done, enqueue_on_commit
 
     from .tasks import send_renewal_reminder
     day = day or resolver.today()
     queued = 0
-    for pk, ends_on in list(_annual_records().filter(
+    for record in list(_annual_records().filter(
             auto_renew=True, ends_on__gt=day, ends_on__lte=day + RENEWAL_NOTICE)
-            .order_by('ends_on', 'pk').values_list('pk', 'ends_on')):
-        if effect_done(REMINDER_EFFECT, pk, period=ends_on.isoformat()):
+            .order_by('ends_on', 'pk')):
+        ends_on = record.ends_on.isoformat()
+        if effect_done(REMINDER_EFFECT, record.pk, period=ends_on):
             continue
-        enqueue_on_commit(send_renewal_reminder, str(pk), ends_on.isoformat())
+        if _sold_row(record) is None:
+            continue  # not renewable: the doctor is told on `ends_on` (NOT_SOLD)
+        enqueue_on_commit(send_renewal_reminder, str(record.pk), ends_on)
         queued += 1
     return queued
 
@@ -1172,15 +1193,22 @@ def _queue_link(record_pk, term_ends_on):
 
 
 def _prepare(record_pk, day):
-    """Under the record's lock: the (renewal, order) to charge for the record's term ending
-    on or before `day`; NOT_SOLD when no order could be made now (the row says so, Sentry
+    """Under the doctor's lock, then the record's (as `renew_now`): the (renewal, order) to
+    charge for the record's term ending on or before `day` (the doctor's open subscription
+    order only when it is this term's renewal order; another open one skips the record this
+    run); NOT_SOLD when no order could be made now (the row says so, Sentry
     and the doctor hear of it); None when there is nothing to do (not due any more, or done
     by an earlier run)."""
     from catalogue import pricing
     from payments import service as payments
     from payments.models import Order
 
+    doctor_pk = (DoctorSubscription.objects.filter(pk=record_pk)
+                 .values_list('doctor_id', flat=True).first())
+    if doctor_pk is None:
+        return None
     with transaction.atomic():
+        get_user_model().objects.select_for_update().filter(pk=doctor_pk).first()
         record = (DoctorSubscription.objects.select_for_update().select_related('doctor')
                   .filter(pk=record_pk).first())
         if not (_annual(record) and record.auto_renew and record.ends_on <= day
@@ -1193,14 +1221,17 @@ def _prepare(record_pk, day):
             return None  # charged, declined, unknown or not sold by an earlier run
         if order is not None and order.state == Order.PAID:
             return None
-        if order is not None and order.state in Order.OPEN_STATES:
-            return renewal, order  # made by an earlier run (or by hand): charged now
         user = record.doctor
-        row = resolver.subscription_by_id(record.subscription_id)
+        pending = open_purchase(user)
+        if pending is not None:
+            if renewal is not None and renewal.order_id == pending.pk:
+                return renewal, pending  # made by an earlier run (or by hand): charged now
+            return None  # another open order of the doctor: the next run looks again
+        row = _sold_row(record)
         try:
-            if row is None or row.tier != record.tier or row.manual:
+            if row is None:
                 raise pricing.OrderRefused(pricing.SUBSCRIPTION_NOT_OFFERED,
-                                           'the held subscription is not in the catalogue')
+                                           'the held subscription is no longer sold')
             order = _create_renewal_order(user, record, row, actor=payments.SYSTEM_ACTOR)
         except (pricing.OrderRefused, payments.NoPaymentMethod) as refused:
             _bind(record, record.ends_on, None, NOT_SOLD)
@@ -1225,8 +1256,11 @@ def _charge(renewal, order):
                                           actor=payments.SYSTEM_ACTOR)
         outcome = {repeat.PAID: RENEWAL_PAID, repeat.DECLINED: DECLINED,
                    repeat.UNKNOWN: UNKNOWN}.get(result.outcome)
-    except (payments.OrderError, payment_gateways.UnsupportedOperation):
-        outcome = NO_CARD  # no saved card, or the order cannot be charged without the doctor
+    except (repeat.NoSavedCard, payment_gateways.UnsupportedOperation):
+        outcome = NO_CARD
+    except payments.OrderError as refused:  # no usable entity, an attempt open, ...
+        _warn(f'order {order.pk}', f'charge refused ({type(refused).__name__})')
+        outcome = DECLINED
     if outcome is None:  # not payable: paid meanwhile, or ended (the next run makes another)
         paid = _order(order.pk)
         outcome = RENEWAL_PAID if paid is not None and paid.paid_at is not None else PENDING
@@ -1262,7 +1296,8 @@ def renew_due(day=None):
 def drop_unrenewed(day=None):
     """Drop to Basic every annual record whose term ended before `day` (today when None)
     without a paid renewal: auto-renew off, declined or unpaid, not sold. Left alone while
-    the renewal order's charge needs staff attention (staff decide). By the system, reason
+    the renewal order's charge needs staff attention (staff decide), and on the day its
+    renewal order was made (a missed run caught up: dropped by the next run if unpaid). By the system, reason
     `renewal_unpaid`; each record in its own transaction, a failure logged by record UUID.
     Returns how many were dropped."""
     from payments import service as payments
@@ -1286,6 +1321,8 @@ def drop_unrenewed(day=None):
                     continue
                 if order is not None and payments.needs_attention(order):
                     continue  # the charge's outcome is unknown: staff decide
+                if order is not None and resolver.today(order.created_at) == day:
+                    continue  # made today (a missed run caught up): a day to pay it
                 _write(record.doctor, record.version, SYSTEM_ACTOR, RENEWAL_UNPAID, {
                     'tier': BASIC, 'subscription_id': None, 'manual': False,
                     'auto_renew': False, 'status': DoctorSubscription.ACTIVE,
@@ -1318,7 +1355,7 @@ class RenewalNotice:
 def renewal_notice(record_id, term_ends_on, *, reminder=False):
     """The `RenewalNotice` of the record `record_id`'s term ending `term_ends_on`, or None
     when no email is due: for the reminder (`reminder`), the record must still take part,
-    with auto-renew on and that end date; for the payment link, the term's `Renewal` row
+    with auto-renew on, that end date and its held row still sold; for the payment link, the term's `Renewal` row
     must have been declined, found no card or not sold, and its order not be paid. Reads
     only."""
     from payments.models import Order
@@ -1330,7 +1367,8 @@ def renewal_notice(record_id, term_ends_on, *, reminder=False):
     renewal = Renewal.objects.filter(record=record, term_ends_on=term_ends_on).first()
     order = _order(renewal.order_id) if renewal is not None else None
     if reminder:
-        if not (_annual(record) and record.auto_renew and record.ends_on == term_ends_on):
+        if not (_annual(record) and record.auto_renew and record.ends_on == term_ends_on
+                and _sold_row(record) is not None):
             return None
     elif (renewal is None or renewal.outcome not in LINK_OUTCOMES
           or (order is not None and order.state == Order.PAID)):

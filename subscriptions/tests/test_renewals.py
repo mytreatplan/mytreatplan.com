@@ -14,6 +14,8 @@ import pytest
 from dateutil.relativedelta import relativedelta
 from django.core import mail
 from django.core.management import call_command
+from django.utils import translation
+from django.utils.formats import date_format
 from django_tasks_db.models import DBTaskResult
 
 from accounts.models import Profile
@@ -44,10 +46,10 @@ INCLUDED = 12
 DAY = timedelta(days=1)
 
 
-def section(advanced_active=True):
+def section(advanced_active=True, advanced=True):
     """The subscriptions tests' catalogue, Rest of EU's Advanced (Revolut only) and Advanced
     of Iberia including 12 TPS branded cases."""
-    data = catalogue(advanced_active=advanced_active)
+    data = catalogue(advanced_active=advanced_active, advanced=advanced)
     data['billing_rules'].append(eu_subscription_rule())
     data['subscriptions'].append(full_subscription(
         EU_ADVANCED, 'advanced', EU, 'ADV-EU', 'Advanced', ALL, {'tps_branded': '6.00'},
@@ -58,8 +60,11 @@ def section(advanced_active=True):
     return data
 
 
+BIG_VOUCHER = 'f0000004-0000-4000-8000-000000000004'
+BIG_CODE = 'BIGSU23456'
 VOUCHERS = [voucher(SUBSCRIPTION_VOUCHER, VOUCHER_CODE, type_='subscription',
-                    amount='100.00')]
+                    amount='100.00'),
+            voucher(BIG_VOUCHER, BIG_CODE, type_='subscription', amount='1000.00')]
 
 
 @pytest.fixture
@@ -142,7 +147,9 @@ def test_one_reminder_30_days_before_with_date_price_card_and_how_to_turn_off(lo
     assert f'ending in {last4}' in body and '600.00 EUR for a year, paid upfront' in body
     assert '+ VAT where applicable' in body and 'Turn off' in body
     assert '/en/upgrade/' in body
-    assert (ends_on + DAY).strftime('%Y') in body
+    with translation.override('en'):
+        shown = date_format(ends_on, 'DATE_FORMAT')  # the charge day, not ends_on + 1
+    assert f'Renewal date: {shown}' in body and shown in message.subject
     # Rerun (the job, and the task): none more.
     assert service.due_reminders(today()) == 0
     assert tasks.send_renewal_reminder.call(str(record(user).pk), ends_on.isoformat()) is False
@@ -476,3 +483,105 @@ def test_the_new_terms_grant_counts_from_its_first_day_and_the_old_one_stops(loa
     assert service.included_left(user, ends_on + DAY) == (INCLUDED, INCLUDED)
     assert service.counting_purchase(user, renewed_term(ends_on)[1] + DAY) == order.pk
     assert service.included_left(user, renewed_term(ends_on)[1] + DAY) is None
+
+
+# --- Review fixes ------------------------------------------------------------------------------
+
+def test_a_deactivated_row_gets_no_reminder_no_price_and_no_renew_now(loaded):
+    user = annual(days_left=20)
+    assert pull(loaded, 2, section(advanced_active=False), vouchers=VOUCHERS) == (
+        'applied', 2)
+    assert service.due_reminders(today()) == 0
+    info = service.renewal_info(user)
+    assert (info.sold, info.price, info.can_renew_now) == (False, None, False)
+    page = html(browser(user).get('/en/upgrade/'))
+    assert 'no longer offered' in page and 'Renews automatically' not in page
+    assert 'data-renew-now' not in page and 'data-auto-renew' not in page
+    with pytest.raises(pricing.OrderRefused):
+        service.renew_now(user)
+    assert orders(user) == 1
+
+
+def test_a_row_gone_from_the_catalogue_is_not_renewed_and_basic_after(loaded, sentry):
+    user = annual()
+    found = record(user)
+    assert pull(loaded, 2, section(advanced=False), vouchers=VOUCHERS) == ('applied', 2)
+    assert resolver.subscription_by_id(ADVANCED) is None
+    assert service.renew_due(today()) == {'not_sold': 1}
+    assert orders(user) == 1
+    assert f'subscription renewal not sold (subscription_not_offered): record {found.pk}' \
+        in sentry
+    assert send_all('send_renewal_link') == [True]
+    assert 'cannot be renewed' in mail.outbox[-1].body
+    assert service.drop_unrenewed(today() + DAY) == 1
+    assert record(user).tier == 'basic'
+
+
+def test_a_charge_refused_for_another_reason_is_a_declined_link_and_a_warning(
+        loaded, sentry, monkeypatch):
+    from payments import repeat
+    from payments import service as payments
+    user = annual()
+
+    def refused(order, period, actor):
+        raise payments.AttemptOpen('a payment attempt of the order is open')
+    monkeypatch.setattr(repeat, 'charge_saved_card', refused)
+    assert service.renew_due(today()) == {'declined': 1}
+    order = renewal_order(user)
+    assert sentry == [f'subscription renewal charge refused (AttemptOpen): order {order.pk}']
+    assert send_all('send_renewal_link') == [True]
+    assert 'could not charge your saved card' in mail.outbox[-1].body
+
+
+def test_the_job_charges_an_open_renew_now_order_and_never_makes_a_second(loaded):
+    user = annual()  # the last day: "Renew now" left unpaid when the job runs
+    mine = service.renew_now(user)
+    assert service.renew_due(today()) == {'paid': 1}
+    assert orders(user) == 2 and Order.objects.get(pk=mine.pk).state == 'paid'
+    assert record(user).ends_on == renewed_term(today())[1]
+
+
+def test_a_renewal_row_is_never_moved_off_an_open_order(loaded):
+    import uuid
+    user = annual(days_left=3)
+    mine = service.renew_now(user)
+    found = record(user)
+    with pytest.raises(service.ChangeRefused):
+        service._bind(found, found.ends_on, uuid.uuid4(), service.PENDING)
+    assert found.renewals.get().order_id == mine.pk
+
+
+def test_another_open_subscription_order_skips_the_record_this_run(loaded, monkeypatch):
+    user = annual()
+    other = renewal_order(user)
+    monkeypatch.setattr(service, 'open_purchase', lambda doctor: other)
+    assert service.renew_due(today()) == {}
+    assert orders(user) == 1
+
+
+def test_a_missed_run_charges_late_and_drops_only_the_next_day(loaded):
+    user = annual(days_left=-1)  # the job did not run on ends_on
+    ends_on = record(user).ends_on
+    fake.decline_next_charge('0190')
+    assert 'renewals: declined 1' in run_job() and record(user).tier == 'advanced'
+    assert service.drop_unrenewed(today()) == 0  # the order is from today: a day to pay
+    assert service.drop_unrenewed(today() + DAY) == 1
+    assert record(user).tier == 'basic' and ends_on < today()
+
+
+def test_renew_now_fully_covered_by_a_voucher_is_a_renewal_not_a_purchase(loaded, sentry):
+    user = annual(days_left=10)
+    ends_on = record(user).ends_on
+    order = service.renew_now(user, BIG_CODE)
+    order.refresh_from_db()
+    assert (order.state, order.total, order.gateway) == ('paid', Decimal('0.00'), '')
+    found = record(user)
+    assert (found.started_on, found.ends_on) == renewed_term(ends_on)
+    assert found.changes.filter(reason='purchase').count() == 1
+    change = found.changes.order_by('-version').first()
+    assert (change.reason, change.order_id, change.actor_type) == ('renewal', order.pk,
+                                                                   'doctor')
+    renewal = found.renewals.get()
+    assert (renewal.order_id, renewal.outcome, renewal.term_ends_on) == (order.pk, 'paid',
+                                                                        ends_on)
+    assert sentry == [] and included.has_term_grant(order.pk)

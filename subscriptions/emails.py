@@ -94,7 +94,7 @@ def build_reminder(notice):
     def build(language):
         return {
             'level': level_name(notice.subscription, notice.tier, language),
-            'ends_on': notice.ends_on, 'renews_on': notice.ends_on + DAY,
+            'ends_on': notice.ends_on,
             'price': notice.price, 'card_last4': notice.card_last4,
             'upgrade_url': _url('upgrade'), 'support_url': _url('support'),
         }

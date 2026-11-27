@@ -147,7 +147,7 @@ def _renewal(request, renewal):
     row = renewal.subscription
     level = {'tier': renewal.tier, 'name': _name(row, renewal.tier, language),
              'description': row.description_in(language), 'renewal': True,
-             'ends_on': renewal.ends_on, 'renews_on': renewal.renews_on}
+             'ends_on': renewal.ends_on}
     periods = [{'value': UPFRONT, 'price': renewal.price}]
     if request.method != 'POST':
         return _page(request, level, periods)
