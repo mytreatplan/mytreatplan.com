@@ -99,6 +99,15 @@ context: []
 
 ## Review Triage Log
 
+Quick lens, pass 1 (2026-11-27): high 0, medium 1, low 2, false 1, maybe-false 0.
+
+| # | Lens | Finding | Verdict | Route | Evidence |
+|---|------|---------|---------|-------|----------|
+| 1 | quick | A grant counts whenever its dates contain the day and the record is on any standard paid tier: after the record goes back to Basic (`reset_to_basic` on staging; a drop during grace, 8.7) and the doctor buys again, the old grant counts too and is used first | medium | patch | `_eligible` filters by dates and `counts_as_paid` only; `activate` accepts a new purchase on a Basic record and creates a second grant. Smallest fix: only the grant of the record's latest `purchase` order counts (no new public surface beyond a service read). |
+| 2 | quick | `records_missing_a_grant` (dry run) skips neither non-client accounts nor held rows missing from the catalogue, which `grant_missing_term` refuses: the dry run never reaches 0 | low | patch | The two functions apply different checks; fix is one shared predicate. Staging staff accounts can hold paid records, so the deploy check would meet it. |
+| 3 | quick | `included.py` docstring, README and the service docstring disagree with the structure test about who names/writes `CaseGrant`/`CaseUse` | low | patch | Test allows only `models.py` and `included.py`; the texts name the service too, or call the service the only writer. Direct correction. |
+| 4 | quick | Home line does not say "TPS branded" | false | - | The frozen matrix fixes the text: "12 of 12 included cases left"; the task's "(branded TPS)" names which cases are counted, not the wording. |
+
 ## Verification
 
 **Commands:**
