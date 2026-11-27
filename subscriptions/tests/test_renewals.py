@@ -546,7 +546,8 @@ def test_a_renewal_row_is_never_moved_off_an_open_order(loaded):
     user = annual(days_left=3)
     mine = service.renew_now(user)
     found = record(user)
-    with pytest.raises(service.ChangeRefused):
+    from django.db import transaction
+    with pytest.raises(service.ChangeRefused), transaction.atomic():  # as its callers run it
         service._bind(found, found.ends_on, uuid.uuid4(), service.PENDING)
     assert found.renewals.get().order_id == mine.pk
 
