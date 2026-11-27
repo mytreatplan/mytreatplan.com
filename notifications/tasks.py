@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 @task
 def send_message(message_id):
-    """Send the row's email unless it was already handled. Returns the new state, or None
+    """Send the row's email or SMS unless it was already handled. Returns the new state, or None
     when nothing was sent. Failures are stored on the row; any other is logged by UUID."""
     try:
         return service.send(message_id)

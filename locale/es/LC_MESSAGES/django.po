@@ -4049,3 +4049,10 @@ msgstr "Fase"
 #: notifications/templates/notifications/email/case_pending_review.txt
 msgid "You can see the case here:"
 msgstr "Puede ver el caso aquí:"
+
+#: notifications/templates/notifications/sms/case_pending_appointment.txt
+#: notifications/templates/notifications/sms/case_pending_approval.txt
+#: notifications/templates/notifications/sms/case_pending_review.txt
+#, python-format
+msgid "MyTreatPlan: patient %(code)s, %(stage)s. %(url)s"
+msgstr "MyTreatPlan: paciente %(code)s, %(stage)s. %(url)s"

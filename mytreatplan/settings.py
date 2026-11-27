@@ -186,6 +186,22 @@ TWILIO_VERIFY_BASE_URL = (config('TWILIO_VERIFY_BASE_URL', default='')
 # send raises ChannelUnavailable without calling Twilio, and the SMS fallback applies).
 TWILIO_WHATSAPP_ENABLED = config('TWILIO_WHATSAPP_ENABLED', default=False, cast=bool)
 
+# The SMS fallback for case messages (notifications.sms, epic-case-lifecycle 10.3): sent when
+# a case email ends `failed`. A dotted path to a class with send(to, body, reference); the
+# default fake (development and tests) logs the message UUID only. Staging and production use
+# notifications.sms.TwilioSmsSender, which sends through a Twilio Messaging Service (the
+# sender "MyTreatPlan" and a fallback number are added to it in the console; deploy/README.md,
+# "Twilio Messaging sender") with the account and API key above. With it selected, an empty
+# TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET or
+# TWILIO_MESSAGING_SERVICE_SID fails every `check` and `migrate` (notifications.E001).
+# The paths are the constants notifications.sms.FAKE_SENDER and TWILIO_SENDER, typed out
+# here because settings load before any app module can be imported.
+SMS_SENDER = config('SMS_SENDER', default='notifications.sms.FakeSmsSender')
+TWILIO_MESSAGING_SERVICE_SID = config('TWILIO_MESSAGING_SERVICE_SID', default='')
+# The Messaging API's base URL; tests point it at a host that cannot exist.
+TWILIO_MESSAGING_BASE_URL = (config('TWILIO_MESSAGING_BASE_URL', default='')
+                             or 'https://api.twilio.com/2010-04-01')
+
 # Where a person stuck in the signup codes is told to write: the hourly resend limit, a
 # code invalidated after too many wrong attempts, or a failed send (signup entry 7).
 SIGNUP_SUPPORT_EMAIL = config('SIGNUP_SUPPORT_EMAIL', default='sayhi@mytreatplan.com')

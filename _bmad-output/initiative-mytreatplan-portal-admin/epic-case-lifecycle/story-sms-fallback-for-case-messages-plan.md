@@ -3,14 +3,14 @@ title: 'SMS fallback for case messages'
 type: 'feature'
 ticket: '3'
 created: '2026-11-27'
-status: 'in-progress'
+status: 'built'
 baseline_revision: '14a935002234779edf19d0d219769d5bd29f4849'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/initiative-mytreatplan-portal-admin/architecture-portal-admin/architecture-portal-admin.md'
@@ -77,14 +77,14 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `notifications/models.py` + migration -- channel `sms`; reasons `no_mobile`.
-- [ ] `notifications/sms.py` -- `FakeSmsSender` (logs row UUID only, records sends for tests) and `TwilioSmsSender` (POST `<base>/Accounts/<sid>/Messages.json`; `send(to, body)` raises `SmsFailed(detail)` on an HTTP error); `get_sender()` from the setting.
-- [ ] `notifications/service.py` -- on a `failed` email, get-or-create the SMS row (same work order, version, kind, recipient) and queue it; `send` handles the SMS channel.
-- [ ] `notifications/templates/notifications/sms/<kind>.txt` -- one short line per kind: "MyTreatPlan:", code, stage, link (no name).
-- [ ] `notifications/checks.py` + `apps.py` -- the settings check.
-- [ ] `mytreatplan/settings.py`, `settings.env.example`, `deploy/staging.env.example`, `conftest.py`, `deploy/README.md` -- settings, test defaults, setup steps.
-- [ ] `locale/es/LC_MESSAGES/django.po` -- Spanish SMS texts.
-- [ ] `notifications/tests/test_sms_fallback.py` -- one test per matrix row; the request Twilio gets (URL, form fields, auth) with the HTTP call patched; no mobile, email or name in logs.
+- [x] `notifications/models.py` + migration -- channel `sms`; reasons `no_mobile`.
+- [x] `notifications/sms.py` -- `FakeSmsSender` (logs row UUID only, records sends for tests) and `TwilioSmsSender` (POST `<base>/Accounts/<sid>/Messages.json`; `send(to, body)` raises `SmsFailed(detail)` on an HTTP error); `get_sender()` from the setting.
+- [x] `notifications/service.py` -- on a `failed` email, get-or-create the SMS row (same work order, version, kind, recipient) and queue it; `send` handles the SMS channel.
+- [x] `notifications/templates/notifications/sms/<kind>.txt` -- one short line per kind: "MyTreatPlan:", code, stage, link (no name).
+- [x] `notifications/checks.py` + `apps.py` -- the settings check.
+- [x] `mytreatplan/settings.py`, `settings.env.example`, `deploy/staging.env.example`, `conftest.py`, `deploy/README.md` -- settings, test defaults, setup steps.
+- [x] `locale/es/LC_MESSAGES/django.po` -- Spanish SMS texts.
+- [x] `notifications/tests/test_sms_fallback.py` -- one test per matrix row; the request Twilio gets (URL, form fields, auth) with the HTTP call patched; no mobile, email or name in logs.
 
 **Acceptance Criteria:**
 - Given a dev case whose doctor's email cannot be sent, when admindev sends `send_for_review`, then one SMS reaches the test mobile with the patient code only, and the SMS outcome is `sent`.
@@ -99,3 +99,25 @@ The email task, not the move, decides the fallback: the email outcome is only kn
 **Commands:**
 - `../.venv/bin/python -m pytest -q` -- expected: 0 failures besides the known WeasyPrint ones.
 - `../.venv/bin/python manage.py makemigrations --check --dry-run` -- expected: no changes.
+
+## Implementation Notes
+
+- New `notifications/sms.py` (`FakeSmsSender` logs the row UUID only; `TwilioSmsSender` posts with urllib, `SEND_TIMEOUT` 10 s, raises `SmsFailed('twilio <code>' | exception type)`), `notifications/checks.py` (`notifications.E001`), migration `0002_sms_channel` (channel choices only), three SMS templates and one Spanish msgid. `service.send` dispatches on channel; a `failed` email calls `_queue_sms` in its own savepoint.
+- Settings `SMS_SENDER` (fake by default), `TWILIO_MESSAGING_SERVICE_SID`, `TWILIO_MESSAGING_BASE_URL`; conftest forces the fake and a `.invalid` base URL; deploy/README.md "Twilio Messaging sender".
+- Text: "MyTreatPlan: patient CODE, STAGE. URL".
+- Verification after the patches: portal suite 4695 passed, 17 skipped, 11 failed (the known local WeasyPrint OSError in invoices/tests/test_pdf.py and test_pending_documents.py); `makemigrations --check` clean. A fresh checkout needs `compilemessages` for the Spanish tests (`.mo` not in git).
+
+## Plan Change Log
+
+## Review Triage Log
+
+Pass 1 (quick lens, Opus): 6 findings — high 0, medium 1, low 4, false 1; patch 5, reject 1.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | Fallback keyed on channel, not kind: a future 10.10 "assigned" email would get an SMS | false | reject | Every kind in `Message.KINDS` today is one of the three case kinds with a stage and an SMS template; no reachable path fails. Whether the assignment message falls back to SMS is 10.10's decision (the epic says it builds on both channels). |
+| 2 | `FakeSmsSender.sent` class list grows in dev/staging workers, holding mobiles and codes | medium | patch | The fake is the default sender on servers. The fake now only logs; tests record sends through a fixture. |
+| 3 | 3 s `EXTERNAL_CHECK_TIMEOUT` can store `failed` for an SMS Twilio accepted late | low | patch | Module constant `SEND_TIMEOUT = 10` s; request test asserts it. |
+| 4 | `send_message` docstring says email only | low | patch | Now "email or SMS". |
+| 5 | Unreachable-Twilio test misses "logged, no retry" | low | patch | Asserts the row UUID in the logs and that a rerun returns None. |
+| 6 | Log privacy checked on one path only | low | patch | Refused-email and no-mobile tests assert no email, mobile or name in the logs. |

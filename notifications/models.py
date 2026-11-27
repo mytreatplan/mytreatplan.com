@@ -18,7 +18,8 @@ class Message(models.Model):
              (PENDING_APPROVAL, 'Case pending approval')]
 
     EMAIL = 'email'
-    CHANNELS = [(EMAIL, 'Email')]
+    SMS = 'sms'
+    CHANNELS = [(EMAIL, 'Email'), (SMS, 'SMS')]
 
     PENDING, SENT, FAILED = 'pending', 'sent', 'failed'
     STATES = [(PENDING, 'Pending'), (SENT, 'Sent'), (FAILED, 'Failed')]
@@ -33,7 +34,8 @@ class Message(models.Model):
     recipient = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
                                   related_name='+')
     state = models.CharField(max_length=10, choices=STATES, default=PENDING)
-    # `no_address` or the exception type of a failed send, for 10.3 to act on.
+    # A failed send's reason: `no_address` (email), `no_mobile` (SMS), `twilio <code>` (SMS
+    # refused by Twilio) or the exception type.
     reason = models.CharField(max_length=100, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     sent_at = models.DateTimeField(null=True, blank=True)
