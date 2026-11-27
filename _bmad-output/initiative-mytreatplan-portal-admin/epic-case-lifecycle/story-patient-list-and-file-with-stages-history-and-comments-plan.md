@@ -93,7 +93,8 @@ context:
 ## Verification
 
 **Commands:**
-- Portal suite (per the local dev notes) -- expected: 0 failures besides the known WeasyPrint ones.
+- This checkout is the worktree `../mytreatplan-10-4`, built in parallel with 10.2. Run everything from it with the sandbox off and these non-secret test values: `export SECRET_KEY=ci-only-not-a-secret DEBUG=False SECURE_SSL_REDIRECT=False ALLOWED_HOSTS=localhost,127.0.0.1,testserver FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" DATABASE_URL="sqlite:///$TMPDIR/wt104.sqlite3"`. Run `compilemessages` after editing the `.po`.
+- Portal suite: `../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: 0 failures besides the known WeasyPrint ones.
 - `../.venv/bin/python manage.py makemigrations --check --dry-run` -- expected: no changes.
 
 ## Implementation Notes
