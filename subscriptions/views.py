@@ -20,6 +20,13 @@
   typed code, and creates nothing. A doctor with an open subscription order goes to its
   checkout (no second order); a manual record, or a paid tier that counts, goes back to
   `upgrade` (changing between paid tiers is 8.8).
+- Annual renewals (epic-subscriptions 8.6, user decisions 2026-11-27): under "Your current
+  level" a doctor on a running annual subscription (`service.renewal_info`) sees the renewal
+  date, the saved card's last 4 or "payment link" and a Turn off / Turn on button (a POST to
+  `upgrade_auto_renew`, calling `service.set_auto_renew` with the shown version); within the
+  last 30 days of the term, "Renew now" opens `upgrade_purchase` for the same level in
+  renewal mode: a year upfront only, with the voucher field; POST calls
+  `service.renew_now`, which owns the rules (a forged POST outside the window is refused).
 
 Everything about the subscription comes from `subscriptions.service.upgrade_options`;
 the prices are the catalogue's (AD-16), shown with the `money` filter. A level is named
@@ -65,7 +72,30 @@ def upgrade(request):
         'current_name': _name(options.subscription, options.tier, language),
         'manual': options.manual,
         'levels': [_level(level, language) for level in options.levels],
+        'renewal': service.renewal_info(request.user),
     })
+
+
+@login_required
+@require_http_methods(['POST'])
+def upgrade_auto_renew(request):
+    """Turn auto-renew on (`auto_renew=on`) or off, at the version the screen showed; the
+    rules are the service's."""
+    on = request.POST.get('auto_renew') == 'on'
+    try:
+        version = int(request.POST.get('version', ''))
+    except ValueError:
+        version = -1
+    try:
+        service.set_auto_renew(request.user, on, expected_version=version)
+    except service.StaleVersion:
+        messages.error(request, _('Your subscription changed meanwhile. Please try again.'))
+    except (service.ChangeRefused, service.RecordGone):
+        messages.error(request, _('Automatic renewal cannot be changed now.'))
+    else:
+        messages.success(request, _('Automatic renewal is on.') if on
+                         else _('Automatic renewal is off.'))
+    return redirect('upgrade')
 
 
 def _periods(level, monthly_possible):
@@ -85,6 +115,9 @@ def upgrade_purchase(request, level):
     options = service.upgrade_options(request.user)
     if not options.on_offer:
         return redirect('welcome')
+    renewal = service.renewal_info(request.user)
+    if renewal is not None and level == renewal.tier:
+        return _renewal(request, renewal)
     if not options.can_switch or options.tier in service.PAID_TIERS:
         if options.can_switch:
             messages.info(request, _('To change between paid levels, please contact us.'))
@@ -102,10 +135,44 @@ def upgrade_purchase(request, level):
     return _page(request, found, periods)
 
 
+def _renewal(request, renewal):
+    """The purchase page in renewal mode ("Renew now"): the held level, a year upfront
+    only, the voucher field. Outside the last 30 days of the term, back to `upgrade`."""
+    if not renewal.can_renew_now:
+        return redirect('upgrade')
+    pending = service.open_purchase(request.user)
+    if pending is not None:
+        return redirect('checkout', pk=pending.pk)
+    language = get_language()
+    row = renewal.subscription
+    level = {'tier': renewal.tier, 'name': _name(row, renewal.tier, language),
+             'description': row.description_in(language), 'renewal': True,
+             'ends_on': renewal.ends_on, 'renews_on': renewal.renews_on}
+    periods = [{'value': UPFRONT, 'price': renewal.price}]
+    if request.method != 'POST':
+        return _page(request, level, periods)
+    voucher_code = (request.POST.get('voucher') or '').strip()[:VOUCHER_LENGTH]
+    try:
+        order = service.renew_now(request.user, voucher_code)
+    except pricing.OrderRefused as refused:
+        return _page(request, level, periods, refusal_message(refused), voucher_code)
+    except payments.NoPaymentMethod:
+        return _page(request, level, periods,
+                     _('There is no payment method for this order yet.'), voucher_code)
+    except payments.OrderError:
+        return _page(request, level, periods,
+                     _('Something went wrong. Please try again in a moment.'), voucher_code)
+    if order.paid_at is not None:
+        return redirect('checkout_return', pk=order.pk)
+    return redirect('checkout', pk=order.pk)
+
+
 def _page(request, level, periods, error='', voucher_code='', chosen=''):
     values = [period['value'] for period in periods]
+    if not isinstance(level, dict):
+        level = _level(level, get_language())
     return render(request, 'subscriptions/upgrade_purchase.html', {
-        'level': _level(level, get_language()), 'periods': periods,
+        'level': level, 'periods': periods,
         'chosen': chosen if chosen in values else (UPFRONT if UPFRONT in values
                                                    else values[0] if values else ''),
         'error': error, 'voucher_code': voucher_code,

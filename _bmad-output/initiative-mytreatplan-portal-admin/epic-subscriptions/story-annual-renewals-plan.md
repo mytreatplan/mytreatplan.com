@@ -3,14 +3,14 @@ title: 'Annual renewals'
 type: 'feature'
 ticket: '6'
 created: '2026-11-27'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: '270b2305d3201b940f6f9bf70c17db0f47d2ab3b'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -75,19 +75,43 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `subscriptions/models.py` + migration -- `Renewal`.
-- [ ] `subscriptions/service.py` -- reminders, renew, drop, `set_auto_renew`, `activate` renewal branch, `_purchase_of`.
-- [ ] `subscriptions/emails.py`, `tasks.py`, templates -- the three emails.
-- [ ] command + `deploy/jobs.conf` + `deploy/README.md` -- the daily job.
-- [ ] `subscriptions/views.py`, `urls.py`, `upgrade.html`, `upgrade_purchase.html` -- the renewal line, Turn off / Turn on, "Renew now" in the last 30 days (the purchase page in renewal mode: same level, upfront, voucher).
-- [ ] `locale/es/...django.po`, `README.md` -- ES strings; a "Renewals" section.
-- [ ] `subscriptions/tests/test_renewals.py` -- every matrix row; rerun idempotence; the 8.13 grant of the new term counts and the old one stops.
+- [x] `subscriptions/models.py` + migration -- `Renewal`.
+- [x] `subscriptions/service.py` -- reminders, renew, drop, `set_auto_renew`, `activate` renewal branch, `_purchase_of`.
+- [x] `subscriptions/emails.py`, `tasks.py`, templates -- the three emails.
+- [x] command + `deploy/jobs.conf` + `deploy/README.md` -- the daily job.
+- [x] `subscriptions/views.py`, `urls.py`, `upgrade.html`, `upgrade_purchase.html` -- the renewal line, Turn off / Turn on, "Renew now" in the last 30 days (the purchase page in renewal mode: same level, upfront, voucher).
+- [x] `locale/es/...django.po`, `README.md` -- ES strings; a "Renewals" section.
+- [x] `subscriptions/tests/test_renewals.py` -- every matrix row; rerun idempotence; the 8.13 grant of the new term counts and the old one stops.
 
 **Acceptance Criteria:**
 - Given dev with Redsys's test terminal, when an annual Advanced doctor's `ends_on` is set to today and the job runs twice, then they are charged once, invoiced, and the record runs to next year.
 - Given the full suite, then 0 failures; `makemigrations --check`, `check`, `msgfmt --check` clean.
 
 ## Implementation Notes
+
+- `save_card` of the job's renewal order is `monthly_possible(user)` (as `purchase`), not a bare
+  `True`: a save-card order is offered only card-saving gateways, so `True` raised
+  `NoPaymentMethod` for the IE (Revolut-only) doctor and the "No card" row could not get an order.
+- `Renewal.outcome`: `pending`, `paid`, `declined`, `no_card`, `unknown`, `not_sold` (no order,
+  `order_id` null). The charge period is the term's `ends_on` (ISO). An abandoned "Renew now"
+  order (expired/cancelled) is replaced on the same row by the job's order on `ends_on`; an open
+  one is charged.
+- A 0.00 renewal order (a voucher covering "Renew now" in full) fires `paid` inside its creation,
+  before the `Renewal` row can name it: a `contextvars` marker (`_RENEWING`) lets `activate`
+  take the renewal branch then.
+- Unknown outcome: no email; `drop_unrenewed` skips the record while the order has a payment
+  needing attention (`payments.service.needs_attention`), i.e. staff decide.
+- `_purchase_of(record, day)` takes the latest `purchase`/`renewal` change whose `after.started_on`
+  is on or before `day`, so a term renewed in advance does not cut off the running term's grant.
+- Paid late after the drop: `_renew` restores tier/row/period/active with the `auto_renew` from the
+  `renewal_unpaid` change's `before` (False when that drop was not of this term).
+- New change reason `auto_renew` for the doctor's Turn off / Turn on. The renewal change's actor is
+  the doctor when the order's `created` change was the doctor's ("Renew now"), else the system.
+- Structure test: `subscriptions_renewal` added to the scanned tables and `Renewal` as a code-only
+  name (strings are not scanned for "renewal", common prose).
+- The not-sold email reuses the payment-link template without a link (no fourth template).
+- ES strings appended by hand to `django.po` (a full `makemessages` run rewrites unrelated
+  entries); `django.mo` recompiled.
 
 ## Plan Change Log
 

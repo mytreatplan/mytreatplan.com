@@ -11,7 +11,9 @@ class SubscriptionsConfig(AppConfig):
     receivers of the order hooks are registered in `ready`) and buying Advanced or Premium
     (entry 5: the purchase page, `service.activate` on `paid`, the confirmation email of
     subscriptions.emails and subscriptions.tasks) and the included cases (epic-subscriptions
-    13: subscriptions.included, whose receivers are registered in `ready`)."""
+    13: subscriptions.included, whose receivers are registered in `ready`) and the annual
+    renewals (8.6: the `renew_subscriptions` job, `Renewal` rows, the renewal branch of
+    `service.activate`, the renewal emails)."""
 
     default_auto_field = 'django.db.models.BigAutoField'
     name = 'subscriptions'

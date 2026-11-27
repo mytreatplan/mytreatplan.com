@@ -174,13 +174,62 @@ A Basic doctor buys Advanced or Premium from the upgrade screen's button, on the
 - **Email.** After commit, `subscriptions.tasks.send_purchase_email` sends one confirmation per
   order (`run_once`, one try, a failure logged by order UUID): level, billing, amount, the end of
   the term (monthly: the next charge date), whether the card is saved for renewals, how to cancel
-  (contact us, until 8.10), the invoice's codes-only PDF attached. Renewals, charges, their emails
-  and cancellation are 8.6, 8.7 and 8.10.
+  (contact us, until 8.10), the invoice's codes-only PDF attached. Annual renewals are 8.6
+  ("Renewals" below); monthly charges and cancellation are 8.7 and 8.10.
 
 Dev check: as a Basic ES doctor with a fiscal entity, buy Advanced upfront with a subscription
 voucher of the snapshot (the record shows Advanced, the upgrade screen marks it); with Redsys's
 public test terminal, buy Advanced monthly (one month invoiced, a `SavedCard`); with a voucher
 covering the price, the order is paid at once with a 0.00 invoice and no gateway.
+
+## Renewals (epic-subscriptions 8.6)
+
+A doctor who pays a year upfront renews automatically (user decisions 2026-11-27). Only a
+standard (not manual), upfront, active Advanced or Premium record takes part; monthly ones are
+8.7's. Everything is in `subscriptions.service`; the daily job `renew_subscriptions`
+(`renewsubscriptions` in `deploy/jobs.conf`, 05:00 UTC) runs, in order:
+
+- **Reminder** (`due_reminders`): with auto-renew on, one email 30 days before `ends_on` (a
+  missed day is caught up while the term runs): the renewal date, the held subscription's
+  upfront price that day (+ VAT where applicable), the saved card's last 4 digits or "payment
+  link", and how to turn auto-renew off. Once per record and term (`run_once`, period
+  `ends_on`).
+- **Renewal** (`renew_due`): on `ends_on`, the renewal order (the system as the actor, a year
+  upfront of the held row at its catalogue price that day, never a voucher; the card saved
+  whenever a gateway of the doctor can) and one `Renewal(record, term_ends_on)` row holding the
+  order id, so a rerun never makes a second order or charge. Then, outside any transaction,
+  `payments.repeat.charge_saved_card` (period: the term's `ends_on`). Paid: the order's `paid`
+  hook renews the record. No saved card (an IE doctor on Revolut), no usable fiscal entity, or a
+  decline: the order stays open and the doctor is emailed its checkout as a payment link (login
+  required; the order expires after the usual 24 hours). Unknown outcome: no email, a Sentry
+  error from `payments.repeat`, and the doctor keeps the level while the order's charge needs
+  staff attention (staff decide). A held row the catalogue no longer sells (deactivated or
+  gone): no order, a Sentry warning by record UUID, an email that the subscription ends.
+  Each record on its own; a failure is logged by record UUID and never stops the run.
+- **Drop** (`drop_unrenewed`): the day after `ends_on`, a term not renewed (auto-renew off,
+  unpaid, not sold) puts the record on Basic (reason `renewal_unpaid`, by the system).
+
+`service.activate` tells a renewal order by its `Renewal` row (`_renew`) and never treats it as
+a purchase: the record's term becomes `ends_on + 1 day` to 12 months later minus one day,
+auto-renew and status kept, reason `renewal` with the order on the change row (the doctor as the
+actor for "Renew now", else the system); the new term's included cases are granted
+(`included.grant_term`), and only from its first day (`_purchase_of` takes the latest `purchase`
+or `renewal` whose term has started); the receipt with the invoice's codes-only PDF goes after
+commit (`send_renewal_receipt`, once per order). A payment that arrives after the drop (the
+link paid while the order is still open) restores the level for the full new term, with the
+auto-renew it had.
+
+On the upgrade screen, under "Your current level", a doctor on a running annual subscription
+sees the renewal date, the card's last 4 or the payment link, and a Turn off / Turn on button
+(`upgrade_auto_renew`, `service.set_auto_renew`: version-checked, the doctor as the actor, reason
+`auto_renew`). Within the last 30 days of the term "Renew now" opens the purchase page for the
+same level in renewal mode (a year upfront only, with the subscription voucher field;
+`service.renew_now`, which refuses a forged POST outside the window); paid, it adds the next
+term as above and the job charges nothing for that term (an unpaid one left to expire is
+replaced by the job's own order on `ends_on`).
+
+Dev check (Redsys's public test terminal; deploy/README.md, "Doctor subscriptions"): reminder,
+renewal, rerun, auto-renew off, declined card, IE link.
 
 ## Included cases (epic-subscriptions 13)
 
@@ -192,10 +241,11 @@ go through `subscriptions.included`):
 - **Grant.** When a purchase activates the record (`service.activate`, same transaction), the doctor
   gets one grant for the term: the catalogue's number for `tps_branded`, frozen (a later catalogue
   edit never changes it), `upfront` or `monthly` from the order's period, the term's dates, keyed
-  by the order (a repeated `paid` creates nothing). Renewals, upgrades and manual subscriptions get
-  theirs in 8.6, 8.8 and 8.11.
+  by the order (a repeated `paid` creates nothing). An annual renewal gets the new term's grant
+  (8.6, "Renewals"); upgrades and manual subscriptions get theirs in 8.8 and 8.11.
 - **Available** on a day: earned − reserved − consumed, over the grant of the record's current
-  purchase (its latest `purchase` change's order) when its term contains the day, and only while
+  purchase (its latest `purchase` or `renewal` change's order whose term has started by that
+  day) when its term contains the day, and only while
   the record counts as a standard paid tier. Earned: the count (upfront) or
   `count × months paid // 12` (monthly; the confirmed payments of the purchase order,
   `payments.service.months_paid`).

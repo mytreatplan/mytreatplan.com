@@ -9,7 +9,8 @@ backfill command go through it.
   the same order creates nothing and changes nothing.
 - `available(user, day=None)` and `left(user, day=None)`: what the doctor may still use on
   `day` (Madrid date; today when None). Only the grant of the record's current purchase
-  counts (`service.counting_purchase`: its latest `purchase` order, while the record
+  counts (`service.counting_purchase`: its latest `purchase` or `renewal` order whose term
+  has started (8.6), while the record
   counts as a standard paid tier), and only on the days of its term. Earned: `count` (upfront) or `count × months paid // 12`
   (monthly; the months paid are the confirmed payments of the purchase order,
   `payments.service.months_paid`). Available: earned − reserved − consumed.

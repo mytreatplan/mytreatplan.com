@@ -3751,6 +3751,36 @@ Same on dev-ae with `mytp-dev-ae` and `/srv/mytp-dev-ae/current`. Staging check:
 upfront as a Basic ES doctor; the home shows the catalogue's number left (e.g. "12 of 12
 included cases left this term"); the dry run then reports 0.
 
+**Annual renewals** (epic-subscriptions 8.6; README.md, "Renewals"): the `renewsubscriptions`
+job (`jobs.conf`, daily 05:00 UTC; re-run `provision.sh` after the deploy that adds it, then
+set its Sentry monitor's notifications) runs `renew_subscriptions`: the reminders 30 days
+before the end of an annual term, the renewal order and the saved-card charge on the end
+date (no card or a decline: a payment link by email), and the drop to Basic of a term not
+renewed, the day after its end. Once per record and term: running it again the same day does
+nothing more. Run it by hand (counts only):
+
+```sh
+sudo systemctl start mytp-dev-job@renewsubscriptions
+sudo journalctl -u mytp-dev-job@renewsubscriptions -n 20
+#   renew_subscriptions: 1 reminder(s) queued; renewals: paid 1; 0 dropped to Basic
+```
+
+A charge whose outcome is unknown (Sentry: `payment repeat charge outcome unknown: order
+<uuid>`) keeps the doctor on their level and sends no email: check the charge in the
+gateway's own records, then settle the order and the record by hand. A held subscription no
+longer sold at renewal is a Sentry warning (`subscription renewal not sold (...): record
+<uuid>`): no order, the doctor is emailed and drops to Basic after the end date.
+
+Staging check (dev, Redsys's public test terminal): as an ES doctor with a fiscal entity, buy
+Advanced upfront with the test card (a `SavedCard`); in `manage.py shell` set the record's
+`ends_on` to today + 30 through `service.change(..., reason='test')` and run the job: one
+reminder (date, price, card last 4, how to turn off); again: none. Set `ends_on` to today and
+run the job twice: Redsys's admin module shows one charge, one invoice, the record runs to
+next year and `/en/upgrade/` shows the new renewal date. Turn auto-renew off on
+`/en/upgrade/`, set `ends_on` to yesterday and run it: the record is Basic. With
+`fake.decline_next_charge('0190')` on a fake-gateway doctor, or an IE doctor (Revolut, no
+card): the payment-link email opens the order's checkout.
+
 ### Country map
 
 Which region serves each country, or whether it is banned (epic-regions entry 1, AD-3,

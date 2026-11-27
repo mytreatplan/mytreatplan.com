@@ -140,9 +140,9 @@ class SubscriptionChange(models.Model):
     before = models.JSONField(default=dict, blank=True)
     after = models.JSONField(default=dict)
     version = models.PositiveIntegerField()
-    # The order that made the change (epic-subscriptions entry 5: a `purchase`), else
-    # None. A plain UUID, no database link (orders are another app's); at most one change
-    # per order, so a repeated `paid` hook changes nothing.
+    # The order that made the change (epic-subscriptions entry 5: a `purchase`; 8.6: a
+    # `renewal`), else None. A plain UUID, no database link (orders are another app's); at
+    # most one change per order, so a repeated `paid` hook changes nothing.
     order_id = models.UUIDField(null=True, blank=True)
 
     objects = SubscriptionChangeQuerySet.as_manager()
@@ -163,6 +163,43 @@ class SubscriptionChange(models.Model):
 
     def delete(self, *args, **kwargs):
         raise AppendOnly('the subscription changes are append-only')
+
+
+class Renewal(models.Model):
+    """The renewal of one annual term of a record (epic-subscriptions 8.6; user decisions
+    2026-11-27): one row per record and term (`term_ends_on`: the `ends_on` of the term
+    being renewed), so a rerun of the daily job never makes a second order or charge.
+    `order_id` is the renewal order (a plain UUID, no database link: orders are another
+    app's), None when none could be made (the held subscription is no longer sold); an
+    abandoned order made by hand ("Renew now") is replaced by the next one. `outcome`: see
+    OUTCOMES. Written only by `subscriptions.service`."""
+
+    CROSSES_SITES = True  # AD-5: its UUID is its global id
+
+    PENDING, PAID, DECLINED, NO_CARD, UNKNOWN, NOT_SOLD = (
+        'pending', 'paid', 'declined', 'no_card', 'unknown', 'not_sold')
+    OUTCOMES = [(PENDING, 'Order made, not charged or paid yet'), (PAID, 'Paid'),
+                (DECLINED, 'Card declined: payment link sent'),
+                (NO_CARD, 'No saved card: payment link sent'),
+                (UNKNOWN, 'Charge outcome unknown: staff decide'),
+                (NOT_SOLD, 'Subscription no longer sold: no order')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    record = models.ForeignKey(DoctorSubscription, on_delete=models.CASCADE,
+                               related_name='renewals')
+    term_ends_on = models.DateField()
+    order_id = models.UUIDField(null=True, blank=True, unique=True)
+    outcome = models.CharField(max_length=10, choices=OUTCOMES, default=PENDING)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['term_ends_on', 'id']
+        constraints = [models.UniqueConstraint(fields=['record', 'term_ends_on'],
+                                               name='renewal_one_per_term')]
+
+    def __str__(self):
+        return f'Renewal {self.pk} ({self.outcome})'
 
 
 class VoucherRedemption(models.Model):
