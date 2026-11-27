@@ -1,9 +1,13 @@
 """The doctor's patients pages (epic-ordering 9.1, 9.2, 9.15): the create form and the
 list of their own patients (portrait, code, name or reference, status, created; all rows
-rendered, searched and paged in the browser by patient-list.js), and a
-patient page with the portrait and its controls. A doctor sees only their own patients
+rendered, searched and paged in the browser by patient-list.js, with the stage of the
+patient's current case), and a patient page with the portrait and its controls, the
+Services history (every work order with its dated stage changes), the editable comments
+(`patient_comments`), the active/inactive control (`patient_status`) and the two slots
+other apps fill (`patients.slots`). A doctor sees only their own patients
 (another doctor's code is a 404); no name is put in a URL, a log line or a message. Writes
-go through `patients.service` and `patients.portrait`."""
+go through `patients.service` (comments and status: `update_comments`, `set_active`) and
+`patients.portrait`."""
 import uuid
 
 from django.contrib import messages
@@ -22,10 +26,10 @@ from storage import service as storage_service
 
 from catalogue import resolver
 
-from . import portrait, service
+from . import portrait, service, slots
 from .stages import stage_label
-from .forms import PatientForm
-from .models import Patient
+from .forms import CommentsForm, PatientForm, StatusForm
+from .models import Patient, WorkOrder
 
 
 def _doctor_only(request):
@@ -62,10 +66,15 @@ def patient_list(request):
     else:
         form = PatientForm()
     with_portraits = portrait.storage_available()
+    patients = list(service.patients_of(request.user)
+                    .select_related('portrait', 'portrait_pending'))
+    current = service.current_work_orders(patients)
     rows = [{'patient': patient, 'search': service.search_text(patient),
-             'portrait': portrait.portrait_of(patient, request.user) if with_portraits else None}
-            for patient in service.patients_of(request.user)
-            .select_related('portrait', 'portrait_pending')]
+             'portrait': portrait.portrait_of(patient, request.user) if with_portraits else None,
+             'stage': current[patient.pk].stage if patient.pk in current else '',
+             'stage_label': (stage_label(current[patient.pk].stage)
+                             if patient.pk in current else '')}
+            for patient in patients]
     return render(request, 'patients/list.html', {
         'form': form, 'rows': rows, 'with_portraits': with_portraits,
         'open_dialog': open_dialog})
@@ -106,6 +115,47 @@ def _case_of(patient):
             'stage': work_order.stage, 'stage_label': stage_label(work_order.stage)}
 
 
+def _services_of(patient):
+    """Every service (work order) of the patient, newest first, each with its product name
+    (or code), current stage and dated stage changes (oldest first). `recorded` is False
+    when the stage changes of a service from before they were recorded are missing: no row,
+    or a first row that is not its creation."""
+    work_orders = (WorkOrder.objects.filter(patient_id=patient.pk)
+                   .prefetch_related('stage_changes').order_by('-created_at', '-id'))
+    services = []
+    for work_order in work_orders:
+        product = resolver.product(work_order.product_id) if work_order.product_id else None
+        changes = list(work_order.stage_changes.all())
+        services.append({
+            'service': product.public_name if product is not None else work_order.code,
+            'stage': work_order.stage, 'stage_label': stage_label(work_order.stage),
+            'created_at': work_order.created_at,
+            'changes': [{'at': change.at, 'stage': change.to_stage,
+                         'label': stage_label(change.to_stage)} for change in changes],
+            'recorded': bool(changes) and changes[0].from_stage == ''})
+    return services
+
+
+def _file_context(request, patient, comments_form=None):
+    """The patient file's context: the portrait part, the case, the comments form, the
+    services history and the slot entries."""
+    available = portrait.storage_available()
+    rejected = portrait.settle(patient) if available else False
+    if available:
+        patient.refresh_from_db()
+    shown = portrait.portrait_of(patient, request.user) if available else portrait.Portrait()
+    return {
+        'patient': patient, 'portrait': shown, 'rejected': rejected,
+        'storage_available': available, 'purpose': portrait.PURPOSE,
+        'max_size': portrait.MAX_SIZE, 'allowed_types': ' '.join(portrait.CONTENT_TYPES),
+        'has_portrait': portrait.has_portrait(patient), 'case': _case_of(patient),
+        'comments_form': comments_form or CommentsForm(
+            initial={'comments': patient.comments, 'version': patient.version}),
+        'services': _services_of(patient),
+        'case_actions': slots.render_context(slots.CASE_ACTIONS, request, patient),
+        'appointments': slots.render_context(slots.APPOINTMENTS, request, patient)}
+
+
 @login_required
 @csrf_protect
 @never_cache
@@ -133,15 +183,63 @@ def patient_page(request, code):
             messages.success(request, _('The portrait is being checked. It will be shown '
                                         'once the check is done.'))
         return redirect(reverse('patient', args=[patient.code]))
-    rejected = portrait.settle(patient) if available else False
-    if available:
-        patient.refresh_from_db()
-    shown = portrait.portrait_of(patient, request.user) if available else portrait.Portrait()
-    return render(request, 'patients/patient.html', {
-        'patient': patient, 'portrait': shown, 'rejected': rejected,
-        'storage_available': available, 'purpose': portrait.PURPOSE,
-        'max_size': portrait.MAX_SIZE, 'allowed_types': ' '.join(portrait.CONTENT_TYPES),
-        'has_portrait': portrait.has_portrait(patient), 'case': _case_of(patient)})
+    return render(request, 'patients/patient.html', _file_context(request, patient))
+
+
+def _stale():
+    return _('This patient changed meanwhile. Reload the page and try again.')
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_http_methods(['POST'])
+def patient_comments(request, code):
+    """Save the patient's comments (epic-case-lifecycle 10.4). The text is never logged."""
+    patient = _own_patient(request, code)
+    form = CommentsForm(request.POST)
+    target = reverse('patient', args=[patient.code])
+    if not form.is_valid():
+        return render(request, 'patients/patient.html',
+                      _file_context(request, patient, comments_form=form))
+    try:
+        service.update_comments(
+            patient, form.cleaned_data['comments'], form.cleaned_data['version'],
+            payments_service.doctor_actor(request.user))
+    except service.StaleVersion:
+        messages.error(request, _stale())
+        return redirect(target)
+    except service.PatientInvalid:
+        raise Http404
+    messages.success(request, _('The comments have been saved.'))
+    return redirect(target)
+
+
+@login_required
+@csrf_protect
+@never_cache
+@require_http_methods(['POST'])
+def patient_status(request, code):
+    """Set the patient active or inactive (epic-case-lifecycle 10.4)."""
+    patient = _own_patient(request, code)
+    form = StatusForm(request.POST)
+    target = reverse('patient', args=[patient.code])
+    if not form.is_valid():
+        messages.error(request, _('The change could not be saved. Reload the page and try '
+                                  'again.'))
+        return redirect(target)
+    active = form.cleaned_data['active']
+    try:
+        service.set_active(patient, active, form.cleaned_data['version'],
+                           payments_service.doctor_actor(request.user))
+    except service.StaleVersion:
+        messages.error(request, _stale())
+        return redirect(target)
+    except service.PatientInvalid:
+        raise Http404
+    messages.success(request, _('The patient is now active.') if active
+                     else _('The patient is now inactive.'))
+    return redirect(target)
 
 
 @login_required

@@ -3954,3 +3954,66 @@ msgstr "Caso"
 #: patients/templates/patients/patient.html
 msgid "No case yet"
 msgstr "Aún no hay ningún caso"
+
+#: patients/templates/patients/_patient_chooser.html
+msgctxt "patient list"
+msgid "Stage"
+msgstr "Fase"
+
+#: patients/templates/patients/patient.html
+msgctxt "patient file"
+msgid "Services"
+msgstr "Servicios"
+
+#: patients/templates/patients/patient.html
+msgid "Earlier stage changes were not recorded"
+msgstr "Los cambios de fase anteriores no se registraron"
+
+#: patients/templates/patients/patient.html
+msgid "No services yet"
+msgstr "Aún no hay ningún servicio"
+
+#: patients/templates/patients/patient.html
+msgid "Save comments"
+msgstr "Guardar comentarios"
+
+#: patients/templates/patients/patient.html
+msgctxt "patient file"
+msgid "Patient status"
+msgstr "Estado del paciente"
+
+#: patients/templates/patients/patient.html
+msgid "This patient is inactive: it stays listed, but no new services can be ordered for it."
+msgstr "Este paciente está inactivo: sigue en la lista, pero no se pueden pedir servicios nuevos para él."
+
+#: patients/templates/patients/patient.html
+msgid "Setting a patient inactive keeps the patient listed and any case going, but no new services can be ordered."
+msgstr "Si marca a un paciente como inactivo, sigue en la lista y su caso continúa, pero no se pueden pedir servicios nuevos."
+
+#: patients/templates/patients/patient.html
+msgid "Set active"
+msgstr "Marcar como activo"
+
+#: patients/templates/patients/patient.html
+msgid "Set inactive"
+msgstr "Marcar como inactivo"
+
+#: patients/views.py
+msgid "This patient changed meanwhile. Reload the page and try again."
+msgstr "Este paciente ha cambiado entretanto. Recargue la página e inténtelo de nuevo."
+
+#: patients/views.py
+msgid "The comments have been saved."
+msgstr "Los comentarios se han guardado."
+
+#: patients/views.py
+msgid "The patient is now active."
+msgstr "El paciente está ahora activo."
+
+#: patients/views.py
+msgid "The patient is now inactive."
+msgstr "El paciente está ahora inactivo."
+
+#: patients/views.py
+msgid "The change could not be saved. Reload the page and try again."
+msgstr "No se pudo guardar el cambio. Recargue la página e inténtelo de nuevo."

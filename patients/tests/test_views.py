@@ -179,8 +179,10 @@ def test_the_file_shows_the_stage_in_english_and_spanish(doctor, patient):
 
 
 def test_the_file_shows_the_live_case_before_a_finished_one(doctor, patient):
-    old = case_for(doctor, patient, 'cancelled')
+    case_for(doctor, patient, 'cancelled')
     case_for(doctor, patient, 'in_development')
     page = browser(doctor).get(f'/en/patients/{patient.code}/').content.decode()
-    assert 'In development' in page and 'Cancelled' not in page
-    assert old.pk
+    # The Case section shows the live one; the Services history lists both.
+    assert re.search(r'data-case-stage="in_development"', page)
+    assert 'data-case-stage="cancelled"' not in page
+    assert 'data-service-stage="cancelled"' in page

@@ -3,14 +3,14 @@ title: 'Patient list and file with stages, history and comments'
 type: 'feature'
 ticket: '4'
 created: '2026-11-27'
-status: 'in-progress'
+status: 'built'
 baseline_revision: '3ebd81e0546e5d3a1655f2e593736482c6706123'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/initiative-mytreatplan-portal-admin/architecture-portal-admin/architecture-portal-admin.md'
@@ -99,7 +99,25 @@ context:
 
 ## Implementation Notes
 
+- New service functions `update_comments`, `set_active` and `current_work_orders` (one query for the list); `patients/slots.py`; POST views `patients/<code>/comments/` and `patients/<code>/status/`; the file template's Services history, Comments form, status control and slot wrappers. The existing test asserting `'Cancelled' not in page` was rewritten for the Case section only.
+- A slot renders no wrapper at all when nothing is registered. Entries are included with their context as `slot`.
+- "Not recorded" means a service with no stage-change rows, or one whose first row is not a creation row (`from_stage` empty). Such a service always shows "Created <date> — <current stage>" and the note.
+- Verification after the patches: portal suite 4695 passed, 17 skipped, 11 failed (the known WeasyPrint OSError in invoices/tests/test_pdf.py and test_pending_documents.py); `makemigrations --check` clean.
+- After review: the inactive row highlight is `bg-ink/5`, so the pill stays visible. Comments normalise CRLF before the 2000 limit (the textarea counts a line break as 1). A bad `version` on the status form says "The change could not be saved". Module docstrings were updated.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Pass 1 (quick lens, Opus): 7 findings — high 0, medium 1, low 6, false 0; patch 6, reject 1.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | A pre-10.1 service that moved since loses its creation date | medium | patch | The template showed the creation line only with no rows; the user's decision asks for it with the note. Shown whenever `recorded` is false; test extended. |
+| 2 | Inactive row highlight hides the inactive pill | low | patch | The row and the pill shared `bg-notice-bg`. Row now `bg-ink/5`. |
+| 3 | CRLF line breaks push an accepted comment over 2000 | low | patch | The browser counts a line break as 1 for `maxlength`, but it is posted as CRLF. Normalised in `clean_comments`; test added. |
+| 4 | Status form with a bad version says "changed meanwhile" | low | patch | Untrue message; replaced with "The change could not be saved…" (EN/ES); test added. |
+| 5 | Comments form with a bad version re-renders silently | low | reject | `version` is a hidden field the page always fills; only a tampered form reaches this, and the fix adds a branch. |
+| 6 | Module docstrings and template header out of date | low | patch | Updated in `views.py`, `service.py` and `patient.html`. |
+| 7 | PEP 8 E305 after the `slot_template` fixture | low | patch | Blank lines added. |
 
