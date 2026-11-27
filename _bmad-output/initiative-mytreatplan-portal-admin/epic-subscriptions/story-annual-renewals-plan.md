@@ -117,6 +117,18 @@ context: []
 
 ## Review Triage Log
 
+Quick lens, pass 1 (2026-11-27): high 0, medium 3, low 4, false 0, maybe-false 0.
+
+| # | Lens | Finding | Verdict | Route | Evidence |
+|---|------|---------|---------|-------|----------|
+| 1 | quick | Reminder, its subject and the upgrade screen show `ends_on + 1` as the renewal / link date, but the job charges and sends the link on `ends_on` | medium | patch | `RenewalInfo.renews_on = ends_on + 1` used in the texts; `renew_due` charges for `ends_on <= day` (decision 1). Show `ends_on`. |
+| 2 | quick | A deactivated held row still gets "renews automatically", a price and "Renew now" | medium | patch | `renewal_info` / `renewal_notice` never read `row.active`; `subscription_by_id` returns rows in any state; the job then takes NOT_SOLD. |
+| 3 | quick | Every `OrderError` from `charge_saved_card` becomes NO_CARD ("we have no saved card"), unlogged | low | patch | `_charge` catches `payments.OrderError`; `NoEntity`, `AttemptOpen`, `GatewayRefused`... subclass it. Only `NoSavedCard` is no card; others to Sentry, worded "could not charge". |
+| 4 | quick | Job and "Renew now" racing on `ends_on` make two orders; `_bind` repoints the Renewal row, so the doctor's paid order is treated as a purchase and refused (money kept, nothing renewed) | medium | patch | `_prepare` locks the record only, not the doctor row `renew_now`/`purchase` lock, and skips `open_purchase`; `_bind` repoints whenever the id differs. |
+| 5 | quick | A job first handling a term after `ends_on` charges/links and drops in the same run: no time to pay | low | patch | `renew_due` takes `ends_on <= day`, `drop_unrenewed` `ends_on < day`, same run, same day. Guard: no drop on the day the renewal order was made. |
+| 6 | quick | `_renew` refusing after marking the Renewal PAID leaves the doctor on the paid level with `ends_on` past | low | reject | Needs a refusal after payment (record changed or row unusable meanwhile): rare; the doctor has paid, Sentry warns daily ("paid but not applied"); a fix adds branches. |
+| 7 | quick | Tests missing: held row missing (`None`), a 0.00 "Renew now" (the `_RENEWING` path), no reminder / Renew now for a deactivated row | low | patch | `test_renewals.py` covers only the deactivated row's job path. |
+
 ## Verification
 
 **Commands:**
