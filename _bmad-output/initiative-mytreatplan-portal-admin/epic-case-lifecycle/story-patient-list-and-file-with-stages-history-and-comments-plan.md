@@ -3,7 +3,7 @@ title: 'Patient list and file with stages, history and comments'
 type: 'feature'
 ticket: '4'
 created: '2026-11-27'
-status: 'built'
+status: 'done'
 baseline_revision: '3ebd81e0546e5d3a1655f2e593736482c6706123'
 route: 'full'
 route_source: 'auto'
@@ -121,3 +121,12 @@ Pass 1 (quick lens, Opus): 7 findings — high 0, medium 1, low 6, false 0; patc
 | 6 | Module docstrings and template header out of date | low | patch | Updated in `views.py`, `service.py` and `patient.html`. |
 | 7 | PEP 8 E305 after the `slot_template` fixture | low | patch | Blank lines added. |
 
+
+## Staging
+
+- **Merge:** PR #157 → 7d6d05c, after merging master (10.2) into the branch. Both sets of Spanish strings were kept, and "stage" is "Fase" in the email too. CI passed on both PR runs (45975598194, 45979874433). Master run 45982169255 passed: tests, then dev and dev-ae deployed. Local suite: 4695 passed, 17 skipped, 11 local-only WeasyPrint failures.
+- **Checks on dev (2026-11-27),** run over SSH as doctor pk 18 through the test client, each in one transaction rolled back:
+  1. A patient with two work orders shows the stage `pending_appointment` in the list. The file shows 2 services, 2 dated changes and 2 "not recorded" notes (both cases predate a creation row), in `/en/` and `/es/`. Passed.
+  2. Saving comments returned 302, version 2, actor `doctor`. Set inactive returned 302, and the list row is highlighted (`bg-ink/5`). The cart wizard no longer offers the patient. Set active again returned 302. Passed.
+  3. A patient of another doctor (made inside the rolled-back transaction) answered 404 to the file and to both write routes, and nothing changed. Passed.
+- **Left on dev:** nothing.
