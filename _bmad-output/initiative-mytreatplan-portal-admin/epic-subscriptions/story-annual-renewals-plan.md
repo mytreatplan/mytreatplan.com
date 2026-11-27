@@ -41,7 +41,8 @@ context: []
 - Decision (user, 2026-11-27): an automatic renewal never takes a voucher (no stored voucher, none on the link's checkout). A doctor who renews in advance by hand (for example with auto-renew off) can type one.
 - Decision (user, 2026-11-27): auto-renew is turned off and on from the upgrade screen, under "Your current level": the renewal date, the card's last 4 or "payment link", and a Turn off / Turn on button.
 - Decision (user, 2026-11-27): with auto-renew off, the same job drops the record to Basic the day after `ends_on`.
-- Decision (user, 2026-11-27): one plan, not split (about 2,200 tokens).
+- Decision (user, 2026-11-27): a doctor can renew in advance by hand: within the last 30 days of an annual term, the upgrade screen shows "Renew now", opening the purchase page for the same level, year upfront only, with the voucher field. Paid, it adds the new term from `ends_on + 1` as an automatic renewal does, and the job charges nothing for that term.
+- Decision (user, 2026-11-27): one plan, not split (about 2,400 tokens).
 
 ## I/O & Edge-Case Matrix
 
@@ -53,6 +54,7 @@ context: []
 | Declined | card declined | payment-link email; still paid level until the end | — |
 | No card | Revolut (IE) doctor | order without a charge; payment-link email | — |
 | Paid late | link paid after the drop, order still open | record back on the level, term from old `ends_on + 1` | — |
+| Renew now | annual Advanced, 20 days left, voucher typed | order (year upfront, voucher applied) → paid → term from old `ends_on + 1`; on `ends_on` the job creates nothing | before the last 30 days: no button; a forged POST refused |
 | Unpaid at end | day after `ends_on`, renewal not paid | record → Basic (reason `renewal_unpaid`) | — |
 | Row gone | held subscription deactivated or missing at renewal | no order; doctor emailed; → Basic at the end | Sentry warning |
 | Manual / monthly | manual or monthly record | ignored | — |
@@ -63,7 +65,7 @@ context: []
 ## Code Map
 
 - `subscriptions/models.py` -- add `Renewal` (uuid pk, `record` FK, `term_ends_on`, `order_id` uuid unique null, `outcome`, timestamps; unique (record, term_ends_on)). Migration `0006_renewal`. Structure test: add to the service-only names.
-- `subscriptions/service.py` -- reasons (:132-139) add `RENEWAL`, `RENEWAL_UNPAID`; `activate` :651-705 (guard :676 refuses a counting paid record: branch first on `Renewal` for the order → `_renew(order)`); `term_of` :628 (renewal term starts `ends_on + 1`); `_purchase_of` :775 (reason in purchase, renewal); `_counts` :226; `_write` :531; `included.grant_term` (`subscriptions/included.py:55`). New: `due_reminders(day)`, `renew_due(day)`, `drop_unrenewed(day)`, `set_auto_renew(user, on)`.
+- `subscriptions/service.py` -- reasons (:132-139) add `RENEWAL`, `RENEWAL_UNPAID`; `activate` :651-705 (guard :676 refuses a counting paid record: branch first on `Renewal` for the order → `_renew(order)`); `term_of` :628 (renewal term starts `ends_on + 1`); `_purchase_of` :775 (reason in purchase, renewal); `_counts` :226; `_write` :531; `included.grant_term` (`subscriptions/included.py:55`). New: `due_reminders(day)`, `renew_due(day)`, `drop_unrenewed(day)`, `set_auto_renew(user, on)`, `renew_now(user, voucher_code)` (the 8.5 `purchase` :720 pattern: doctor lock, open-order check, refusals; creates the `Renewal` row with the order so `activate` takes the renewal branch).
 - `payments/service.py` `create_subscription_order` :441 (actor `SYSTEM_ACTOR`, `save_card=True`, no voucher), `EXPIRY_HOURS` :70 (24 h: the link lives a day), `expire_stale` :621; `payments/repeat.py` `charge_saved_card` :232 (outcomes :45 `paid`/`declined`/`unknown`, `NoSavedCard`), `saved_card` :74. Read through `payments.service`/`repeat` only.
 - Job: `deploy/jobs.conf` (line: `renewsubscriptions | ... | daily 05:00 UTC`), thin command `subscriptions/management/commands/renew_subscriptions.py` → reminders, renew, drop; pattern `payments/management/commands/remind_transfers.py` + `payments/transfers.py:69` `remind_due`.
 - Emails: `subscriptions/emails.py`, `subscriptions/tasks.py:20` (`run_once`, `enqueue_on_commit`); new `renewal_reminder`, `renewal_receipt` (invoice codes-only PDF as the purchase email), `renewal_payment_link` (absolute `SITE_URL` + `checkout` URL; login required), templates under `subscriptions/templates/subscriptions/email/`. ES strings in `locale/es/LC_MESSAGES/django.po`.
@@ -77,7 +79,7 @@ context: []
 - [ ] `subscriptions/service.py` -- reminders, renew, drop, `set_auto_renew`, `activate` renewal branch, `_purchase_of`.
 - [ ] `subscriptions/emails.py`, `tasks.py`, templates -- the three emails.
 - [ ] command + `deploy/jobs.conf` + `deploy/README.md` -- the daily job.
-- [ ] `subscriptions/views.py`, `urls.py`, `upgrade.html` -- the renewal line and the Turn off / Turn on button.
+- [ ] `subscriptions/views.py`, `urls.py`, `upgrade.html`, `upgrade_purchase.html` -- the renewal line, Turn off / Turn on, "Renew now" in the last 30 days (the purchase page in renewal mode: same level, upfront, voucher).
 - [ ] `locale/es/...django.po`, `README.md` -- ES strings; a "Renewals" section.
 - [ ] `subscriptions/tests/test_renewals.py` -- every matrix row; rerun idempotence; the 8.13 grant of the new term counts and the old one stops.
 
@@ -99,7 +101,3 @@ context: []
 
 **Manual checks:**
 - dev (Redsys test terminal): reminder, renewal, rerun, auto-renew off, declined card, IE link.
-
-## Open Questions
-
-6. **Renewing in advance by hand.** Decision 3 lets a doctor who renews in advance type a voucher, but nothing lets a paid doctor renew by hand today (the purchase page sends a paid doctor back to the upgrade screen). (a) Add it to this story: on the upgrade screen, within the last 30 days of an annual term, a "Renew now" button opens the purchase page for the same level, year upfront only, with the voucher field; paid, it adds the new term from `ends_on + 1` (as an automatic renewal) and the job then charges nothing for that term. (b) Leave renewing by hand to its own ticket; in this story an automatic renewal simply takes no voucher.
