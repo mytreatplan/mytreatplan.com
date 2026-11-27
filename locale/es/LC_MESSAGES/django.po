@@ -4017,3 +4017,35 @@ msgstr "El paciente está ahora inactivo."
 #: patients/views.py
 msgid "The change could not be saved. Reload the page and try again."
 msgstr "No se pudo guardar el cambio. Recargue la página e inténtelo de nuevo."
+
+#: notifications/templates/notifications/email/case_pending_appointment.txt
+msgid "The case of your patient %(code)s is waiting for an appointment."
+msgstr "El caso de su paciente %(code)s está a la espera de una cita."
+
+#: notifications/templates/notifications/email/case_pending_appointment_subject.txt
+msgid "Appointment needed for patient %(code)s"
+msgstr "Se necesita una cita para el paciente %(code)s"
+
+#: notifications/templates/notifications/email/case_pending_review.txt
+msgid "The case of your patient %(code)s is ready for your review."
+msgstr "El caso de su paciente %(code)s está listo para que lo revise."
+
+#: notifications/templates/notifications/email/case_pending_review_subject.txt
+msgid "Case ready for review: patient %(code)s"
+msgstr "Caso listo para revisar: paciente %(code)s"
+
+#: notifications/templates/notifications/email/case_pending_approval.txt
+msgid "The case of your patient %(code)s is waiting for your approval."
+msgstr "El caso de su paciente %(code)s está a la espera de su aprobación."
+
+#: notifications/templates/notifications/email/case_pending_approval_subject.txt
+msgid "Case awaiting your approval: patient %(code)s"
+msgstr "Caso pendiente de su aprobación: paciente %(code)s"
+
+#: notifications/templates/notifications/email/case_pending_review.txt
+msgid "Stage"
+msgstr "Fase"
+
+#: notifications/templates/notifications/email/case_pending_review.txt
+msgid "You can see the case here:"
+msgstr "Puede ver el caso aquí:"

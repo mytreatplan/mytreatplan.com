@@ -1,0 +1,1 @@
+{% load i18n %}{% blocktranslate with code=code %}Case awaiting your approval: patient {{ code }}{% endblocktranslate %}
