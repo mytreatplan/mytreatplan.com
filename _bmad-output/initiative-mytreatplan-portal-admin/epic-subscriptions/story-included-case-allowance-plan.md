@@ -21,26 +21,34 @@ context: []
 
 **Problem:** Paid subscriptions carry an `included_cases` number in the catalogue (5.17), but nothing gives a doctor their cases, counts them or spends them: `OrderLine.included_case` exists with no hook behind it and the home page shows nothing.
 
-**Approach:** A per-doctor ledger in `subscriptions`: a `CaseGrant` per source (now: one subscription term, frozen from the catalogue at purchase) and a `CaseUse` per order line, reserved on `created`, consumed on `paid`, released on `cancelled`/`expired`, exactly as `vouchers.py` does for redemptions. One service function returns what is left; the doctor's home shows it. Grants for subscriptions activated before this ships are created by a backfill command.
+**Approach:** A per-doctor ledger in `subscriptions`: a `CaseGrant` per source (now: one subscription term, frozen from the catalogue at purchase) and a `CaseUse` per order line, reserved on `created`, consumed on `paid`, released on `cancelled`/`expired` (and a consumed use on `refunded` while its grant's term runs), exactly as `vouchers.py` does for redemptions. One service function returns what is left; the doctor's home shows it. Grants for subscriptions activated before this ships are created by a backfill command.
 
 ## Boundaries & Constraints
 
 **Always:**
 - Grant frozen at activation: `count` = `resolver.included_cases(subscription, 'tps_branded')` read once, `accrual` upfront or monthly from the record's `billing_period`, `starts_on`/`ends_on` = the term; source `subscription_term` + the order id (unique per source, so a repeat `paid` creates nothing). A catalogue edit never touches an existing grant.
-- Available on a day = earned − reserved − consumed, where earned = `count` (upfront) or `count × months_paid ÷ 12` (monthly, rounded per Open Question 1); only grants whose term contains the day and whose doctor's record still counts as that paid tier.
+- Available on a day = earned − reserved − consumed, where earned = `count` (upfront) or `count × months_paid ÷ 12` (monthly, rounded down); only grants whose term contains the day and whose doctor's record still counts as that paid tier.
 - A use points at one grant, the soonest-ending grant with something available first; reserve, consume and release lock the doctor's grants (`select_for_update`) and are idempotent per order line; a `created` with not enough available raises (the order is not created).
 - Models read only through `subscriptions.service` / the new module (structure test); no business rule in views.
 
-**Never:** No cart tick or wizard change (9.3/9.6), no invoice or ICE change, no renewal/upgrade grants (8.6/8.8 call the grant function later), no manual-subscription allowance (8.11), no admin client record, no packages, no change to pricing or to `payments` hooks module.
+**Never:** No outbox events for grants or uses (no mytp-core release), no cart tick or wizard change (9.3/9.6), no invoice or ICE change, no renewal/upgrade grants (8.6/8.8 call the grant function later), no manual-subscription allowance (8.11), no admin client record, no packages, no change to pricing or to `payments` hooks module.
+
+## Decisions
+
+- Decision (user, 2026-11-27): a monthly payer's earned count is rounded down (`count × months_paid // 12`): a case is earned only when fully paid for.
+- Decision (user, 2026-11-27): a `refunded` order releases its consumed uses while the grant's term still runs (after `ends_on`, nothing comes back).
+- Decision (user, 2026-11-27): no outbox events for included cases in this story; sales-finance reads usage later.
+- Decision (user, 2026-11-27): one plan, not split (about 2,000 tokens).
 
 ## I/O & Edge-Case Matrix
 
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |----------|--------------|---------------------------|----------------|
 | Upfront Advanced | catalogue 12, paid | grant 12; home "12 of 12 included cases left" | — |
-| Monthly Premium | catalogue 25, 3 months paid | earned per rule 1 from 25 × 3 ÷ 12 | — |
+| Monthly Premium | catalogue 25, 3 months paid | earned 6 (25 × 3 // 12) | — |
 | Reserve / consume | included line, order created then paid | available −1 at created, stays −1 at paid | — |
 | Release | order cancelled or expired | use released, available +1 | consumed never released |
+| Refund in term | paid order with a consumed use refunded, term running | use released, available +1 | after the term: unchanged |
 | None left | included line, available 0 | order not created | hook raises → `HookFailed` |
 | Repeat hook | `created`/`paid`/`paid` again | nothing changes | idempotent |
 | Catalogue edit | 12 → 20 mid-term | grant still 12 | — |
@@ -54,7 +62,7 @@ context: []
 - `subscriptions/models.py` -- add `CaseGrant` (uuid pk, `doctor_uid`, `source` choices `subscription_term`, `source_id` uuid unique with source, `category`, `count`, `accrual`, `starts_on`, `ends_on`, `created_at`) and `CaseUse` (uuid pk, `grant` FK, `doctor_uid`, `order_id`, `line_id` unique, `state` reserved/consumed/released, `version`, timestamps). Plain UUIDs, no FKs to doctor/order (as `VoucherRedemption` :168-224). Migration `0005_included_cases`.
 - `subscriptions/vouchers.py` :87-160 -- pattern for `_locked`, `reserve`, `consume` (reserve inside nested atomic when missing), `release` (reserved only). New module `subscriptions/included.py` mirrors it per order line where `line.included_case`; plus `grant_term(...)` (explicit values, idempotent) and `available(user, day)`.
 - `subscriptions/service.py` -- `activate` :603-645: after a successful `_write`, call `included.grant_term` with the record's values (inside the same transaction). `_counts` :208 and `effective` :218 decide "still counts". Add `included_left(user, day=None)` → `(left, total)` or None, read by the home tag. `record_of` :191.
-- `subscriptions/apps.py` :20-33 -- register `included_reserve` (created), `included_consume` (paid), `included_release` (cancelled, expired), beside the voucher receivers.
+- `subscriptions/apps.py` :20-33 -- register `included_reserve` (created), `included_consume` (paid), `included_release` (cancelled, expired), `included_refund` (refunded), beside the voucher receivers.
 - `payments/service.py` -- add `months_paid(order_id)`: confirmed `Payment` rows of the order (first payment + `period` charges, `payments/models.py:272,285`), so `subscriptions` does not import `payments.models`.
 - `catalogue/resolver.py:376` `included_cases`, `catalogue/models.py:117` `Product.TPS_BRANDED`.
 - `accounts/templates/accounts/home.html:67` + new tag `subscriptions/templatetags/included_cases.py` modelled on `upgrade_reminder.py:27-55` (never raises, request-cached).
@@ -91,9 +99,3 @@ context: []
 
 **Manual checks:**
 - dev: buy Advanced upfront, run the backfill dry run, see the home count.
-
-## Open Questions
-
-1. **Monthly rounding.** 25 × 3 ÷ 12 = 6.25. (a) round down: a case is earned only when fully paid for (recommended; 12/year gives exactly 1 a month); (b) round to nearest; (c) round up: the doctor gets the case early.
-2. **Refunds.** The initiative says a refund after payment gives the case back while the term runs. (a) this story also releases a consumed use on `refunded` when its grant's term still runs (one more receiver); (b) leave it to epic-payments 7.7's handoff.
-3. **Outbox events.** Vouchers emit `voucher.redeemed`/`released`, but a new event type needs a mytp-core contract and release. (a) no events now; sales-finance usage reads later (recommended, no core release); (b) add `included_case.*` events with a core release first.
