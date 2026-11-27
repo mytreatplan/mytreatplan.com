@@ -135,6 +135,13 @@ deploy/README.md, "Doctor subscriptions"):
     python manage.py doctor_subscription <uid or email> --order --product <UUID or code> \
         [--quantity N] [--vies valid|invalid|pending|not_applicable]
 
+On a staging site (`SENTRY_ENVIRONMENT` dev or dev-ae; locally `development` with DEBUG on),
+`reset_to_basic` puts a test doctor (standard or manual, paid or not) back on a standard Basic,
+so the same account can repeat the purchase checks; a change by the system with reason
+`test_reset`. Anywhere else it refuses and writes nothing:
+
+    python manage.py reset_to_basic <uid or email>
+
 ## Buying a subscription (epic-subscriptions entry 5)
 
 A Basic doctor buys Advanced or Premium from the upgrade screen's button, on the purchase page
@@ -174,6 +181,36 @@ Dev check: as a Basic ES doctor with a fiscal entity, buy Advanced upfront with 
 voucher of the snapshot (the record shows Advanced, the upgrade screen marks it); with Redsys's
 public test terminal, buy Advanced monthly (one month invoiced, a `SavedCard`); with a voucher
 covering the price, the order is paid at once with a 0.00 invoice and no gateway.
+
+## Included cases (epic-subscriptions 13)
+
+A paid subscription includes free TPS branded cases (the catalogue's `included_cases`, 5.17).
+`subscriptions.included` keeps a per-doctor ledger (`CaseGrant`, `CaseUse`; only that module and
+`subscriptions.models` name them: the service, the hooks, the home's tag and the backfill command
+go through `subscriptions.included`):
+
+- **Grant.** When a purchase activates the record (`service.activate`, same transaction), the doctor
+  gets one grant for the term: the catalogue's number for `tps_branded`, frozen (a later catalogue
+  edit never changes it), `upfront` or `monthly` from the order's period, the term's dates, keyed
+  by the order (a repeated `paid` creates nothing). Renewals, upgrades and manual subscriptions get
+  theirs in 8.6, 8.8 and 8.11.
+- **Available** on a day: earned − reserved − consumed, over the grant of the record's current
+  purchase (its latest `purchase` change's order) when its term contains the day, and only while
+  the record counts as a standard paid tier. Earned: the count (upfront) or
+  `count × months paid // 12` (monthly; the confirmed payments of the purchase order,
+  `payments.service.months_paid`).
+- **Uses.** One per order line with `included_case` (the cart's tick is 9.3/9.6), from the
+  soonest-ending grant with one available, under a lock on the doctor's grants: reserved by the
+  `created` hook (none available: the hook raises and no order is created), consumed at `paid`,
+  released at `cancelled` / `expired`, and a consumed one released at `refunded` while its grant's
+  term runs. No outbox events (sales-finance reads the usage later).
+- **Home.** The profile card shows "N of M included cases left this term" (M: earned so far) from
+  `service.included_left`, through the `included_cases` template tag (never raises).
+
+Run once after the deploy that adds it, for the doctors who bought before (deploy/README.md,
+"Doctor subscriptions"); running it again grants none:
+
+    python manage.py grant_included_cases [--dry-run]
 
 ## Legal texts and the region's company (epic-regions 2.6)
 

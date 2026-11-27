@@ -222,3 +222,88 @@ class VoucherRedemption(models.Model):
 
     def __str__(self):
         return f'Voucher redemption {self.pk} ({self.state})'
+
+
+class CaseGrant(models.Model):
+    """Included cases given to a doctor by one source (epic-subscriptions 13; user decisions
+    2026-11-27). Today the only source is a subscription term (`subscription_term`,
+    `source_id` the purchase order's UUID): `count` is the catalogue's included cases of
+    `category` (`tps_branded`) for the bought subscription, frozen when it was activated (a
+    later catalogue edit never touches it). `accrual`: `upfront` (all of `count` earned at
+    once) or `monthly` (`count × months paid ÷ 12`, rounded down). `starts_on` / `ends_on`:
+    the term (Madrid dates, both included). One grant per source (a repeated `paid` creates
+    nothing). `doctor_uid` and `source_id` are plain UUIDs, with no database link (as
+    `VoucherRedemption`). Written and read only through `subscriptions.included`."""
+
+    CROSSES_SITES = True  # AD-5: its UUID is its global id
+
+    SUBSCRIPTION_TERM = 'subscription_term'
+    SOURCES = [(SUBSCRIPTION_TERM, 'Subscription term')]
+    UPFRONT = DoctorSubscription.UPFRONT
+    MONTHLY = DoctorSubscription.MONTHLY
+    ACCRUALS = [(UPFRONT, 'All at once'), (MONTHLY, 'Earned month by month')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    doctor_uid = models.UUIDField()
+    source = models.CharField(max_length=20, choices=SOURCES)
+    source_id = models.UUIDField()
+    category = models.CharField(max_length=40)
+    count = models.PositiveIntegerField()
+    accrual = models.CharField(max_length=10, choices=ACCRUALS)
+    starts_on = models.DateField()
+    ends_on = models.DateField()
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['ends_on', 'starts_on', 'id']
+        indexes = [models.Index(fields=['doctor_uid', 'ends_on'],
+                                name='case_grant_doctor_ends')]
+        constraints = [
+            models.UniqueConstraint(fields=['source', 'source_id'],
+                                    name='case_grant_one_per_source'),
+            models.CheckConstraint(condition=models.Q(accrual__in=['upfront', 'monthly']),
+                                   name='case_grant_accrual'),
+            models.CheckConstraint(condition=models.Q(ends_on__gte=models.F('starts_on')),
+                                   name='case_grant_term'),
+        ]
+
+    def __str__(self):
+        return f'Case grant {self.pk} ({self.count} {self.category})'
+
+
+class CaseUse(models.Model):
+    """One included case used by one order line (epic-subscriptions 13), taken from one
+    grant. It follows its order through the `payments.hooks` receivers of
+    `subscriptions.included`: `reserved` when the order is created, `consumed` when it is
+    paid, `released` when it is cancelled or expires before payment, or when a paid order is
+    refunded while its grant's term still runs. A released row stays as history and never
+    counts. One use per order line (`line_id` unique: two hooks racing cannot take two).
+    `doctor_uid`, `order_id` and `line_id` are plain UUIDs, with no database link. `version`
+    is raised by one on every change of state."""
+
+    CROSSES_SITES = True  # AD-5
+
+    RESERVED, CONSUMED, RELEASED = 'reserved', 'consumed', 'released'
+    STATES = [(RESERVED, 'Reserved'), (CONSUMED, 'Consumed'), (RELEASED, 'Released')]
+    LIVE_STATES = (RESERVED, CONSUMED)
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    grant = models.ForeignKey(CaseGrant, on_delete=models.PROTECT, related_name='uses')
+    doctor_uid = models.UUIDField()
+    order_id = models.UUIDField()
+    line_id = models.UUIDField(unique=True)
+    state = models.CharField(max_length=10, choices=STATES)
+    version = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+        indexes = [models.Index(fields=['order_id'], name='case_use_order'),
+                   models.Index(fields=['grant', 'state'], name='case_use_grant_state')]
+        constraints = [models.CheckConstraint(
+            condition=models.Q(state__in=['reserved', 'consumed', 'released']),
+            name='case_use_state')]
+
+    def __str__(self):
+        return f'Case use {self.pk} ({self.state})'

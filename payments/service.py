@@ -666,6 +666,14 @@ def open_subscription_order(user):
             .order_by('-created_at').first())
 
 
+def months_paid(order_id):
+    """How many payments of the order `order_id` are confirmed: its first payment plus each
+    confirmed repeat charge of a period (`Payment.period`, entry 11). For a monthly
+    subscription, the months paid (epic-subscriptions 13 earns its included cases by them).
+    0 for an unknown order. Reads only."""
+    return Payment.objects.filter(order_id=order_id, state=Payment.CONFIRMED).count()
+
+
 # --- Payment attempts and confirmation (entry 2) ---------------------------------------------
 
 CONFIRMED, STILL_PENDING, FAILED_AT_GATEWAY = 'confirmed', 'pending', 'failed'

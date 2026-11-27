@@ -1,10 +1,11 @@
 {% extends "doctor_base.html" %}
-{% load i18n static doctor_area upgrade_reminder %}
+{% load i18n static doctor_area included_cases upgrade_reminder %}
 {% comment %}
 The doctor area's home (accounts.views.home, Annex I mockup): the greeting, the two large
 tiles (VirtuaORTHO, planning services), the green bar to start a case, the profile card
 (with the upgrade reminder's line for a doctor who can upgrade: epic-subscriptions entry
-3) and the four small tiles (invoices: epic-payments entry 10). A doctor with manual work
+3; and the included TPS branded cases left this term of a paid doctor: epic-subscriptions
+13) and the four small tiles (invoices: epic-payments entry 10). A doctor with manual work
 orders waiting to be paid (epic-ordering 9.9) sees a "Pending payment" block under the bar,
 one row per work order (patient code, product, "Add to cart" into its wizard). Every link leads to an area's address ("coming soon" until its
 epic builds it). Below the tablet breakpoint everything stacks in one column.
@@ -65,6 +66,7 @@ epic builds it). Below the tablet breakpoint everything stacks in one column.
       <strong class="block break-words text-[clamp(15px,1.5vw,18px)] font-bold" data-profile-name>{{ profile_name }}</strong>
       {% if profile_line %}<span class="block text-[clamp(14px,1.4vw,17px)]" data-profile-line>{{ profile_line }}</span>{% endif %}
       {% upgrade_reminder as reminder %}{% if reminder %}<span class="mt-1 block text-[clamp(14px,1.4vw,17px)]" data-upgrade-line="{{ reminder.tier }}">{% blocktranslate with level=reminder.name %}Level: {{ level }}{% endblocktranslate %} · <a href="{{ reminder.url }}" class="font-bold underline underline-offset-4 hover:text-violet">{% translate "See upgrade options" %}</a></span>{% endif %}
+      {% included_cases as cases %}{% if cases %}<span class="mt-1 block text-[clamp(14px,1.4vw,17px)]" data-included-cases="{{ cases.left }}">{% blocktranslate count total=cases.total with left=cases.left %}{{ left }} of {{ total }} included case left this term{% plural %}{{ left }} of {{ total }} included cases left this term{% endblocktranslate %}</span>{% endif %}
     </span>
   </section>
   <ul class="grid grid-cols-1 gap-[clamp(12px,1.4vw,16px)] {% if show_invoices %}tablet:grid-cols-4{% else %}tablet:grid-cols-3{% endif %}" data-small-tiles>
