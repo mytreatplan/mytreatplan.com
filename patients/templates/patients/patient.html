@@ -6,6 +6,11 @@ portrait with its controls (the storage widget for one JPEG, PNG or WebP file of
 5 MiB, the hidden form static/js/patient-portrait.js posts the stored object's id with).
 The portrait is shown only once the virus scan and the image check have passed it. Without a
 bucket (storage_available false) the portrait block is not offered.
+Epic-case-lifecycle 10.4 adds: the Case section; the two slots (`case_actions`,
+`appointments`, filled through patients.slots, nothing rendered when empty); the Services
+history (every work order, newest first, with its dated stage changes; a service whose
+earlier changes were not recorded shows its creation date and the note); the comments form
+(patients.views.patient_comments) and the active/inactive control (patient_status).
 {% endcomment %}
 
 {% block title %}{% translate "Patient" %} &mdash; MyTreatPlan{% endblock %}
@@ -23,6 +28,55 @@ bucket (storage_available false) the portrait block is not offered.
 {% else %}
 <p class="mt-3 text-copy text-ink-muted" data-case-none>{% translate "No case yet" %}</p>
 {% endif %}
+
+{% if case_actions %}<div class="mt-4" data-slot="case_actions">{% for entry in case_actions %}{% include entry.template with slot=entry.context %}{% endfor %}</div>{% endif %}
+{% if appointments %}<div class="mt-4" data-slot="appointments">{% for entry in appointments %}{% include entry.template with slot=entry.context %}{% endfor %}</div>{% endif %}
+
+<h2 class="mt-10 text-[22px] font-black leading-[1.2]">{% translate "Services" context "patient file" %}</h2>
+{% if services %}
+<ul class="mt-3 flex flex-col gap-4" data-services>
+  {% for item in services %}
+  <li class="rounded-12 border border-ink/20 px-5 py-4" data-service>
+    <p class="text-copy"><span class="font-semibold" data-service-name>{{ item.service }}</span> &middot; <span data-service-stage="{{ item.stage }}">{{ item.stage_label }}</span></p>
+    {% if item.changes %}
+    {% if not item.recorded %}<p class="mt-2 text-copy text-ink-muted" data-service-created>{% translate "Created" context "patient list" %} {{ item.created_at|date:"DATE_FORMAT" }} &mdash; {{ item.stage_label }}</p>{% endif %}
+    <ol class="mt-2 flex flex-col gap-1 text-copy text-ink-muted" data-stage-changes>
+      {% for change in item.changes %}<li data-stage-change="{{ change.stage }}">{{ change.at|date:"DATE_FORMAT" }} &mdash; {{ change.label }}</li>{% endfor %}
+    </ol>
+    {% else %}
+    <p class="mt-2 text-copy text-ink-muted" data-service-created>{% translate "Created" context "patient list" %} {{ item.created_at|date:"DATE_FORMAT" }} &mdash; {{ item.stage_label }}</p>
+    {% endif %}
+    {% if not item.recorded %}<p class="mt-2 text-[14px] text-ink-muted" data-stages-not-recorded>{% translate "Earlier stage changes were not recorded" %}</p>{% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<p class="mt-3 text-copy text-ink-muted" data-services-none>{% translate "No services yet" %}</p>
+{% endif %}
+
+<h2 class="mt-10 text-[22px] font-black leading-[1.2]">{% translate "Comments" %}</h2>
+<form method="post" action="{% url 'patient_comments' patient.code %}" class="mt-3 flex max-w-[640px] flex-col gap-3" data-comments-form>
+  {% csrf_token %}
+  {{ comments_form.version }}
+  {% if comments_form.comments.errors %}<p class="rounded-12 border border-notice-border bg-notice-bg px-5 py-4 text-[15px] font-semibold text-notice-text" role="alert" data-comments-error>{{ comments_form.comments.errors.0 }}</p>{% endif %}
+  <label for="{{ comments_form.comments.id_for_label }}" class="sr-only">{{ comments_form.comments.label }}</label>
+  {{ comments_form.comments }}
+  <div><button type="submit" class="min-h-[44px] rounded-pill bg-green-deep px-6 font-semibold text-white hover:bg-ink">{% translate "Save comments" %}</button></div>
+</form>
+
+<h2 class="mt-10 text-[22px] font-black leading-[1.2]">{% translate "Patient status" context "patient file" %}</h2>
+<form method="post" action="{% url 'patient_status' patient.code %}" class="mt-3" data-status-form>
+  {% csrf_token %}
+  <input type="hidden" name="version" value="{{ patient.version }}">
+  {% if patient.status == "inactive" %}
+  <p class="text-copy text-ink-muted">{% translate "This patient is inactive: it stays listed, but no new services can be ordered for it." %}</p>
+  <input type="hidden" name="active" value="on">
+  <button type="submit" class="mt-3 min-h-[44px] rounded-pill border border-ink/30 px-6 font-semibold hover:bg-notice-bg" data-set-active>{% translate "Set active" %}</button>
+  {% else %}
+  <p class="text-copy text-ink-muted">{% translate "Setting a patient inactive keeps the patient listed and any case going, but no new services can be ordered." %}</p>
+  <button type="submit" class="mt-3 min-h-[44px] rounded-pill border border-ink/30 px-6 font-semibold hover:bg-notice-bg" data-set-inactive>{% translate "Set inactive" %}</button>
+  {% endif %}
+</form>
 
 {% if storage_available %}
 <h2 class="mt-10 text-[22px] font-black leading-[1.2]">{% translate "Portrait" %}</h2>

@@ -28,6 +28,7 @@ and the search box, size select and pagination stay hidden.
     <th class="py-2 pr-3 font-semibold">{% translate "Code" context "patient list" %}</th>
     <th class="py-2 pr-3 font-semibold">{% translate "Name or reference" context "patient list" %}</th>
     {% if mode == "list" %}
+    <th class="py-2 pr-3 font-semibold">{% translate "Stage" context "patient list" %}</th>
     <th class="py-2 pr-3 font-semibold">{% translate "Status" context "patient list" %}</th>
     <th class="py-2 font-semibold">{% translate "Created" context "patient list" %}</th>
     {% else %}
@@ -36,13 +37,14 @@ and the search box, size select and pagination stay hidden.
   </tr></thead>
   <tbody>
   {% for row in rows %}{% with patient=row.patient %}
-  <tr class="border-b border-ink/10" data-patient="{{ patient.code }}" data-search="{{ row.search }}">
+  <tr class="border-b border-ink/10{% if mode == "list" and patient.status == "inactive" %} bg-ink/5{% endif %}" data-patient="{{ patient.code }}" data-search="{{ row.search }}">
     {% if mode == "list" %}
     {% if with_portraits %}<td class="py-3 pr-3">
       <span class="flex size-12 items-center justify-center overflow-hidden rounded-[50%] bg-violet text-white" data-portrait-thumb>{% if row.portrait.url %}<img src="{{ row.portrait.url }}" alt="" loading="lazy" class="size-full object-cover" data-portrait-image>{% else %}{% include "includes/_icon.html" with name="user" class="size-6" %}{% endif %}</span>
     </td>{% endif %}
     <td class="py-3 pr-3 font-semibold">{% if patient.status == "erased" %}{{ patient.code }}{% else %}<a href="{% url 'patient' patient.code %}" class="text-green-deep underline underline-offset-4 hover:text-ink" data-open>{{ patient.code }}</a>{% endif %}</td>
     <td class="py-3 pr-3">{{ patient.display_name }}</td>
+    <td class="py-3 pr-3" data-stage="{{ row.stage }}">{% if row.stage_label %}{{ row.stage_label }}{% else %}&mdash;{% endif %}</td>
     <td class="py-3 pr-3" data-status="{{ patient.status }}">{% if patient.status == "inactive" %}<span class="rounded-pill bg-notice-bg px-3 py-1 text-[14px] font-semibold text-notice-text">{% translate "Inactive" context "patient status" %}</span>{% elif patient.status == "erased" %}{% translate "Erased" context "patient status" %}{% else %}{% translate "Active" context "patient status" %}{% endif %}</td>
     <td class="py-3">{{ patient.created_at|date:"DATE_FORMAT" }}</td>
     {% else %}
@@ -53,7 +55,7 @@ and the search box, size select and pagination stay hidden.
     {% endif %}
   </tr>
   {% endwith %}{% endfor %}
-  <tr data-no-match hidden><td colspan="{% if mode == "list" %}{% if with_portraits %}5{% else %}4{% endif %}{% else %}3{% endif %}" class="py-3 text-ink-muted">{% translate "No patients match your search." %}</td></tr>
+  <tr data-no-match hidden><td colspan="{% if mode == "list" %}{% if with_portraits %}6{% else %}5{% endif %}{% else %}3{% endif %}" class="py-3 text-ink-muted">{% translate "No patients match your search." %}</td></tr>
   </tbody>
 </table>
 </div>

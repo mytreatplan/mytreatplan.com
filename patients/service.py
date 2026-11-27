@@ -29,6 +29,12 @@
   rows are `cancelled`, except a manual one, which only loses the order's `order_id` and
   waits again). A failure rolls the order's transition back
   (`payments.service.HookFailed`).
+- `update_comments` and `set_active` (epic-case-lifecycle 10.4): the patient file's comments
+  (at most 2000 characters) and active/inactive control, each under the row lock and the
+  version (`StaleVersion`), storing the actor. Inactive keeps the patient listed and any
+  live case going; only new orders are refused.
+- `current_work_orders`: the current case (live, else latest) of many patients in one query,
+  for the patient list's stage column.
 - `names_for_invoice`: the invoice PDF's name lookup (invoices.patients).
 
 Every create and stage change records a `work_order.created` or `work_order.stage_changed`
@@ -139,6 +145,56 @@ def create_patient(doctor, *, first_name='', surname='', reference='', comments=
                 raise
 
 
+COMMENTS_MAX = 2000
+
+
+def _locked_patient(patient):
+    """The locked row of a patient that is not erased (`PatientInvalid` for an erased or
+    missing one)."""
+    locked = Patient.objects.select_for_update().filter(pk=patient.pk).first()
+    if locked is None or locked.status == Patient.ERASED:
+        raise PatientInvalid('no such patient')
+    return locked
+
+
+def _write_locked(locked, actor, **fields):
+    for name, value in fields.items():
+        setattr(locked, name, value)
+    locked.version += 1
+    locked.actor_type, locked.actor_uuid = actor.type, actor.uuid
+    locked.updated_at = timezone.now()
+    locked.save()
+    return locked
+
+
+def update_comments(patient, text, expected_version, actor):
+    """Replace the patient's comments (at most 2000 characters, `PatientInvalid`), under the
+    row lock: `StaleVersion` unless `expected_version` is current. The text is never logged.
+    Returns the locked, updated row."""
+    _check_actor(actor)
+    text = (text or '').strip()
+    if len(text) > COMMENTS_MAX:
+        raise PatientInvalid('the comments are too long')
+    with transaction.atomic():
+        locked = _locked_patient(patient)
+        if locked.version != expected_version:
+            raise StaleVersion(locked.version)
+        return _write_locked(locked, actor, comments=text)
+
+
+def set_active(patient, active, expected_version, actor):
+    """Make the patient active or inactive (a live case carries on; only new orders are
+    refused), under the row lock: `StaleVersion` unless `expected_version` is current.
+    Returns the locked, updated row."""
+    _check_actor(actor)
+    with transaction.atomic():
+        locked = _locked_patient(patient)
+        if locked.version != expected_version:
+            raise StaleVersion(locked.version)
+        return _write_locked(
+            locked, actor, status=Patient.ACTIVE if active else Patient.INACTIVE)
+
+
 def fold(text):
     """Lower-case `text` and drop its accents (NFKD, combining marks removed), the form the
     chooser's search compares in (patient-list.js folds the typed term the same way)."""
@@ -178,6 +234,22 @@ def current_work_order(patient):
     creation), or None when there is none."""
     return live_work_order(patient) or WorkOrder.objects.filter(
         patient_id=patient.pk).order_by('-created_at', '-id').first()
+
+
+def current_work_orders(patients):
+    """The current work order (`current_work_order`: the live one, else the latest) of each
+    of `patients`, in one query: a dict of patient id to `WorkOrder`; a patient without a
+    case is absent."""
+    ids = [patient.pk for patient in patients]
+    live = set(stages.LIVE_STAGES)
+    chosen = {}
+    for work_order in WorkOrder.objects.filter(patient_id__in=ids).order_by(
+            'created_at', 'id'):
+        held = chosen.get(work_order.patient_id)
+        # Ascending creation: a later one replaces an earlier, but never a live one.
+        if held is None or held.stage not in live:
+            chosen[work_order.patient_id] = work_order
+    return chosen
 
 
 def blocking_work_order(patient, exclude_order=None):

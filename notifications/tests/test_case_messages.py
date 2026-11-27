@@ -87,7 +87,7 @@ def test_a_spanish_doctor_gets_spanish_text(doctor, patient, capture):
     send_message.call(str(Message.objects.get().pk))
     message = mail.outbox[0]
     assert 'pendiente de su aprobación' in message.subject
-    assert 'Etapa: Pendiente de su aprobación' in message.body
+    assert 'Fase: Pendiente de su aprobación' in message.body
     assert 'Puede ver el caso aquí' in message.body
 
 

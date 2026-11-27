@@ -273,3 +273,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-case-lifecycle/story-named-stage-moves-from-the-admin-site-plan.md`
   summary: No move reassigns a case: `assign` only starts from pending_assignment, so a wrong or departed assignee leaves the case with nobody able to act as Clinical User; 10.10 (assignment proposal and confirmation) should add a reassign path and may check the assignee against the admin directory.
   evidence: 10.1 review finding 2.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-case-lifecycle/story-patient-list-and-file-with-stages-history-and-comments-plan.md`
+  summary: The portrait writes (`patients.portrait`: attach, promote, remove) change the patient row without checking or raising `version` and without storing the actor; they should go through `patients.service` like the comments and status writes added in 10.4 (AD-15).
+  evidence: 10.4 plan, Never list ("Fixing the portrait's missing version/actor (deferred)").

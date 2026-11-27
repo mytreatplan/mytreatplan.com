@@ -31,3 +31,32 @@ class PatientForm(StyledForm):
         if not any(cleaned.get(name) for name in ('first_name', 'surname', 'reference')):
             self.add_error('first_name', self.error_messages['needed'])
         return cleaned
+
+
+class CommentsForm(StyledForm):
+    """The comments of a patient's file (epic-case-lifecycle 10.4): a textarea of at most
+    2000 characters and the version of the patient the form was shown for (the stale-edit
+    check of `patients.service.update_comments`)."""
+
+    # No `max_length` on the field: a browser submits a line break as CRLF (2 characters)
+    # though its `maxlength` counts 1, so the limit is checked after normalising.
+    comments = forms.CharField(
+        label=_('Comments'), required=False,
+        widget=forms.Textarea(attrs={'rows': 5, 'autocomplete': 'off', 'maxlength': 2000}))
+    version = forms.IntegerField(min_value=1, widget=forms.HiddenInput)
+
+    def clean_comments(self):
+        text = self.cleaned_data['comments'].replace('\r\n', '\n').replace('\r', '\n')
+        if len(text) > 2000:
+            raise forms.ValidationError(
+                _('Ensure this value has at most %(limit_value)d characters (it has '
+                  '%(show_value)d).'), code='max_length',
+                params={'limit_value': 2000, 'show_value': len(text)})
+        return text
+
+
+class StatusForm(forms.Form):
+    """Set the patient active or inactive; `version` as in `CommentsForm`."""
+
+    active = forms.BooleanField(required=False)
+    version = forms.IntegerField(min_value=1)
