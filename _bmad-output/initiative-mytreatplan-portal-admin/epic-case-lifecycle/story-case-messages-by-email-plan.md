@@ -3,7 +3,7 @@ title: 'Case messages by email'
 type: 'feature'
 ticket: '2'
 created: '2026-11-27'
-status: 'built'
+status: 'done'
 baseline_revision: '3ebd81e0546e5d3a1655f2e593736482c6706123'
 route: 'full'
 route_source: 'auto'
@@ -117,3 +117,12 @@ Pass 1 (quick lens, Opus): 6 findings — high 0, medium 3, low 2, false 1; patc
 | 5 | Replay not tested through the remote write | low | patch | New test sends `send_for_review` twice with one idempotency key: one row, one task. |
 | 6 | `django.po` missing from the diff | false | reject | The review diff left out `locale/` on purpose; the file is changed and is committed with the code. |
 
+
+## Staging
+
+- **Merge:** PR #155 → a9fd8f6. The PR's CI test job passed (run 45974755742). Master run 45979609942 passed: tests, then dev and dev-ae deployed. Local suite: 4671 passed, 17 skipped, 11 local-only WeasyPrint failures.
+- **Checks on dev (2026-11-27),** run over SSH with shell scripts. The signed calls came from admindev with its own key. The test case was a fresh manual work order bcf88ee9 for doctor pk 18 (English), moved to `pending_assignment` as the system.
+  1. Migration `notifications.0001_initial` is applied on dev and dev-ae. Passed.
+  2. As Clinical Manager: `assign`, `request_appointment`, `start_development`, `send_for_review` and `send_for_approval`, each answered 200 (versions 3 to 7). Three `Message` rows: `case_pending_appointment` v4, `case_pending_review` v6 and `case_pending_approval` v7. All three are `sent` to the patient's doctor, and their three tasks were `SUCCESSFUL`. There was no row for `assign` or `start_development`. Passed.
+  3. Replaying `send_for_approval` with the same idempotency key returned the same answer (version 7) and added no row and no task. Passed.
+- **Left on dev:** work order bcf88ee9 was cancelled afterwards (version 8), so the patient is free again. Its 3 message rows and the 3 emails sent to the doctor's login address stay.
