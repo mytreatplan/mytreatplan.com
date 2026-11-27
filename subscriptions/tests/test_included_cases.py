@@ -154,10 +154,10 @@ def test_a_monthly_payer_earns_the_cases_month_by_month(loaded):
     user = spanish()
     order = payments.create_subscription_order(
         user, resolver.subscription_by_id(PREMIUM), 'upfront', actor=actor(user))
-    record = service.change(user, expected_version=1, actor=service.SYSTEM_ACTOR,
-                            reason='test', tier='premium', subscription_id=PREMIUM,
-                            billing_period='monthly', started_on=resolver.today(),
-                            ends_on=resolver.today() + timedelta(days=364))
+    record = service._write(user, 1, service.SYSTEM_ACTOR, service.PURCHASE, {
+        'tier': 'premium', 'subscription_id': PREMIUM, 'billing_period': 'monthly',
+        'started_on': resolver.today(),
+        'ends_on': resolver.today() + timedelta(days=364)}, order_id=order.pk)
     with transaction.atomic():
         included.grant_term(doctor_uid=user.uid, order_id=order.pk, count=25,
                             accrual='monthly', starts_on=record.started_on,
@@ -321,6 +321,19 @@ def test_a_grant_outside_its_term_counts_none(advanced):
     assert left(advanced, grant.starts_on - timedelta(days=1)) is None
 
 
+def test_only_the_current_purchase_grant_counts(advanced, capture):
+    old = CaseGrant.objects.get()
+    service.reset_to_basic(advanced)
+    assert left(advanced) is None
+    buy(advanced)
+    capture(lambda: pay_on_fake(Order.objects.filter(user=advanced, kind=Order.SUBSCRIPTION,
+                                                     state='checkout').get(), advanced))
+    assert CaseGrant.objects.count() == 2
+    new_grant = CaseGrant.objects.exclude(pk=old.pk).get()
+    assert left(advanced) == (12, 12)
+    assert included._eligible(advanced, resolver.today()) == [new_grant]
+
+
 def test_the_tag_never_breaks_the_home(advanced, monkeypatch):
     def broken(user, day=None):
         raise RuntimeError('boom')
@@ -353,6 +366,15 @@ def test_the_backfill_grants_a_paid_record_without_one(advanced, loaded):
     assert run('--dry-run').startswith('grant_included_cases: 0 doctor(s)')
 
 
+def test_a_staff_account_paid_record_is_counted_by_neither_run(advanced):
+    CaseGrant.objects.all().delete()
+    type(advanced).objects.filter(pk=advanced.pk).update(is_staff=True)
+    assert service.records_missing_a_grant() == []
+    assert run('--dry-run').startswith('grant_included_cases: 0 doctor(s)')
+    assert run() == 'grant_included_cases: 0 doctor(s) given their included cases'
+    assert not CaseGrant.objects.exists()
+
+
 # --- Concurrency guard and grant order ---------------------------------------------------------
 
 def test_one_use_per_order_line(advanced, included_lines):
@@ -363,12 +385,16 @@ def test_one_use_per_order_line(advanced, included_lines):
                                order_id=use.order_id, line_id=use.line_id, state='reserved')
 
 
-def test_the_soonest_ending_grant_is_used_first(advanced, included_lines):
+def test_the_soonest_ending_grant_is_used_first(advanced, included_lines, monkeypatch):
     term = CaseGrant.objects.get()
     with transaction.atomic():
         sooner, _ = included.grant_term(
             doctor_uid=advanced.uid, order_id=uuid.uuid4(), count=1, accrual='upfront',
             starts_on=term.starts_on, ends_on=term.ends_on - timedelta(days=30))
+    assert left(advanced) == (12, 12)  # only the current purchase's grant counts
+    # Two counting grants (later sources, e.g. renewals): the soonest-ending is used first.
+    monkeypatch.setattr(included, '_term_sources',
+                        lambda user, day: [term.source_id, sooner.source_id])
     assert left(advanced) == (13, 13)
     first = CaseUse.objects.get(order_id=new(advanced).pk)
     second = CaseUse.objects.get(order_id=new(advanced).pk)

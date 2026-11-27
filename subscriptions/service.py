@@ -1,7 +1,9 @@
 """The one service of a doctor's subscription (epic-subscriptions entry 1, AD-15, AD-16,
 AD-22; user decisions 2026-11-14). Every caller (signup, the Django admin, the commands,
 the later screens, purchases, renewals and the admin site's assignment) goes through it;
-it is the only writer of `subscriptions.models` (with the backfill migration 0002).
+it is the only writer of the record and its change rows (with the backfill migration 0002).
+The included cases' grant and use models are named only by `subscriptions.models` and
+`subscriptions.included`: the service goes through `included`.
 
 - `ensure_basic(user, actor)`: Basic for a doctor without a record (signup, the Django
   admin's add, `assign_basic`), with its change row; nothing for staff, superusers or a
@@ -76,13 +78,13 @@ it is the only writer of `subscriptions.models` (with the backfill migration 000
   payment is kept (staff decide). After commit it queues the confirmation email
   (`subscriptions.tasks.send_purchase_email`).
 
-- `counts_as_paid(user, day)`, `included_left(user, day=None)`, `grant_missing_term(pk)` and
+- `counting_purchase(user, day)`, `included_left(user, day=None)`, `grant_missing_term(pk)` and
   `records_missing_a_grant()` (epic-subscriptions 13, user decisions 2026-11-27): the
   included cases. `activate` also gives the doctor the term's grant
   (`subscriptions.included.grant_term`: the catalogue's `tps_branded` included cases of the
   bought row, frozen; upfront or monthly from the line's period; the term's dates), in the
-  same transaction. A grant counts only while the record counts as a standard paid tier
-  (`counts_as_paid`). `included_left` gives `(left, earned)` for the home, or None.
+  same transaction. Only the grant of the record's current purchase counts, and only while
+  the record counts as a standard paid tier (`counting_purchase`). `included_left` gives `(left, earned)` for the home, or None.
   `records_missing_a_grant` / `grant_missing_term` are the backfill command's
   (`grant_included_cases`): a counting paid record whose purchase order has no grant gets
   one from today's catalogue row.
@@ -113,7 +115,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = ['Actor', 'ChangeRefused', 'Effective', 'Level', 'ManualLocked', 'RecordGone',
            'Reminder', 'StaleVersion', 'SYSTEM_ACTOR', 'TIERS', 'UpgradeOptions',
-           'activate', 'admin_actor', 'assign_manual', 'change', 'counts_as_paid',
+           'activate', 'admin_actor', 'assign_manual', 'change', 'counting_purchase',
            'doctor_actor', 'doctors_without_a_record', 'effective', 'ensure_basic',
            'grant_missing_term', 'included_left', 'monthly_possible',
            'records_missing_a_grant',
@@ -231,13 +233,16 @@ def _counts(record, day):
     return True  # active, past due
 
 
-def counts_as_paid(user, day=None):
-    """Whether the doctor's record counts on `day` (today when None) as a standard paid
-    tier (Advanced or Premium, not manual): when an included-case grant counts. Reads
-    only."""
+def counting_purchase(user, day=None):
+    """The order id of the purchase that started the doctor's current term (the record's
+    latest `purchase` change) while the record counts on `day` (today when None) as a
+    standard paid tier (Advanced or Premium, not manual); else None. Only that order's
+    included-case grant counts (epic-subscriptions 13). Reads only."""
     day = day or resolver.today()
     record = record_of(user)
-    return bool(_counts(record, day) and record.tier in PAID_TIERS and not record.manual)
+    if not (_counts(record, day) and record.tier in PAID_TIERS and not record.manual):
+        return None
+    return _purchase_of(record)
 
 
 def effective(user, day=None, *, log_drift=True):
@@ -774,42 +779,49 @@ def _purchase_of(record):
             .order_by('-version').values_list('order_id', flat=True).first())
 
 
-def records_missing_a_grant(day=None):
-    """The doctor pks (in order) whose record counts on `day` as a standard paid tier
-    bought by an order that has no included-case grant: those activated before
-    epic-subscriptions 13 (`grant_included_cases`). Reads only."""
-    day = day or resolver.today()
-    pks = []
-    for record in (DoctorSubscription.objects.filter(manual=False, tier__in=PAID_TIERS)
-                   .exclude(status=DoctorSubscription.EXPIRED).order_by('doctor_id')):
-        if not _counts(record, day) or record.ends_on is None:
-            continue
-        order_id = _purchase_of(record)
-        if order_id is not None and not included.has_term_grant(order_id):
-            pks.append(record.doctor_id)
-    return pks
-
-
-def grant_missing_term(doctor_pk, day=None):
-    """Give the doctor `doctor_pk` the grant of their current term when it is missing
-    (see `records_missing_a_grant`): today's catalogue number for the held row, the
-    record's period and term. Returns True when a grant was created. Run it inside a
-    transaction (the command's, one per doctor)."""
-    day = day or resolver.today()
-    record = (DoctorSubscription.objects.select_for_update()
-              .filter(doctor_id=doctor_pk).select_related('doctor').first())
+def _missing_grant(record, day):
+    """(order id, catalogue row) of the grant the record's current term lacks, or None:
+    the record counts on `day` as a standard paid tier of a client (not staff), bought by
+    an order without a grant, and its row is in the catalogue. The one check of the dry
+    run and the real run of `grant_included_cases`."""
     if (record is None or record.manual or record.tier not in PAID_TIERS
             or not _counts(record, day) or record.ends_on is None
             or not is_client(record.doctor)):
-        return False
+        return None
     order_id = _purchase_of(record)
     if order_id is None or included.has_term_grant(order_id):
-        return False
+        return None
     row = resolver.subscription_by_id(record.subscription_id)
     if row is None:
         logger.error('subscription record %s: its subscription %s is not in the catalogue; '
                      'no included cases granted', record.pk, record.subscription_id)
+        return None
+    return order_id, row
+
+
+def records_missing_a_grant(day=None):
+    """The doctor pks (in order) whose record lacks its term's included-case grant
+    (`_missing_grant`): those activated before epic-subscriptions 13
+    (`grant_included_cases`). Reads only."""
+    day = day or resolver.today()
+    records = (DoctorSubscription.objects.filter(manual=False, tier__in=PAID_TIERS)
+               .exclude(status=DoctorSubscription.EXPIRED).select_related('doctor')
+               .order_by('doctor_id'))
+    return [record.doctor_id for record in records if _missing_grant(record, day)]
+
+
+def grant_missing_term(doctor_pk, day=None):
+    """Give the doctor `doctor_pk` the grant of their current term when it is missing
+    (`_missing_grant`): today's catalogue number for the held row, the record's period and
+    term. Returns True when a grant was created. Run it inside a transaction (the
+    command's, one per doctor)."""
+    day = day or resolver.today()
+    record = (DoctorSubscription.objects.select_for_update()
+              .filter(doctor_id=doctor_pk).select_related('doctor').first())
+    found = _missing_grant(record, day)
+    if found is None:
         return False
+    order_id, row = found
     period = record.billing_period if record.billing_period in (MONTHLY, UPFRONT) else UPFRONT
     _grant, created = included.grant_term(
         doctor_uid=record.doctor.uid, order_id=order_id,

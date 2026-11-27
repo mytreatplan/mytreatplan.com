@@ -88,7 +88,7 @@ context: []
 ## Implementation Notes
 
 - "N of M left": M is what the grants have earned so far (upfront: the count; monthly: `count × months_paid // 12`), N = M − reserved − consumed.
-- "Still counts as that paid tier" = `service.counts_as_paid`: the record counts on the day (`_counts`) and is a standard (non-manual) Advanced or Premium; `CaseGrant` stores no tier (field list kept as in the Code Map).
+- "Still counts as that paid tier" = `service.counting_purchase`: the record counts on the day (`_counts`) and is a standard (non-manual) Advanced or Premium; only the grant of its latest `purchase` change's order counts. `CaseGrant` stores no tier (field list kept as in the Code Map).
 - A use takes a grant of the line product's category (`tps_branded` today); an included line without a catalogue product, or of another category, is refused at `created`.
 - One use per order line, whatever the line's quantity.
 - `activate` grants inside a savepoint; a fault there is logged and reported to Sentry, never undoing the payment (the backfill can grant it later).

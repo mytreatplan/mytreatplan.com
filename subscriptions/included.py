@@ -1,15 +1,16 @@
 """Included cases (epic-subscriptions 13; user decisions 2026-11-27): the per-doctor ledger
 of the free cases a paid subscription includes. Mirrors `subscriptions.vouchers`, per order
-line instead of per order. The only module, with `subscriptions.service`, that names
-`CaseGrant` and `CaseUse`.
+line instead of per order. The only module, with `subscriptions.models`, that names
+`CaseGrant` and `CaseUse`: `subscriptions.service`, the hooks, the home's tag and the
+backfill command go through it.
 
 - `grant_term(...)`: a grant for one subscription term, with explicit values (the caller,
   `service.activate`, reads the catalogue once). Idempotent per source: a second call for
   the same order creates nothing and changes nothing.
 - `available(user, day=None)` and `left(user, day=None)`: what the doctor may still use on
-  `day` (Madrid date; today when None). A grant counts only on the days of its term, and
-  only while the doctor's record counts as a standard paid tier
-  (`service.counts_as_paid`). Earned: `count` (upfront) or `count × months paid // 12`
+  `day` (Madrid date; today when None). Only the grant of the record's current purchase
+  counts (`service.counting_purchase`: its latest `purchase` order, while the record
+  counts as a standard paid tier), and only on the days of its term. Earned: `count` (upfront) or `count × months paid // 12`
   (monthly; the months paid are the confirmed payments of the purchase order,
   `payments.service.months_paid`). Available: earned − reserved − consumed.
 - `reserve(order)`, `consume(order)`, `release(order)` and `refund(order)`: the receivers
@@ -94,13 +95,22 @@ def _live(grant):
     return grant.uses.filter(state__in=CaseUse.LIVE_STATES).count()
 
 
-def _eligible(user, day, category=None, lock=False):
-    """The doctor's grants that count on `day` (soonest-ending first): within their term,
-    and only while the record counts as a standard paid tier. Locked when `lock`."""
+def _term_sources(user, day):
+    """The source ids whose grants may count on `day`: the record's current purchase
+    order (none when the record does not count as a standard paid tier)."""
     from . import service
-    if user is None or not service.counts_as_paid(user, day):
+    order_id = service.counting_purchase(user, day) if user is not None else None
+    return [] if order_id is None else [order_id]
+
+
+def _eligible(user, day, category=None, lock=False):
+    """The doctor's grants that count on `day` (soonest-ending first): the current
+    purchase's (`_term_sources`), within their term. Locked when `lock`."""
+    sources = _term_sources(user, day)
+    if not sources:
         return []
-    grants = CaseGrant.objects.filter(doctor_uid=user.uid, starts_on__lte=day,
+    grants = CaseGrant.objects.filter(doctor_uid=user.uid, source=SUBSCRIPTION_TERM,
+                                      source_id__in=sources, starts_on__lte=day,
                                       ends_on__gte=day)
     if category is not None:
         grants = grants.filter(category=category)

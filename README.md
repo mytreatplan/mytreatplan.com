@@ -186,15 +186,17 @@ covering the price, the order is paid at once with a 0.00 invoice and no gateway
 
 A paid subscription includes free TPS branded cases (the catalogue's `included_cases`, 5.17).
 `subscriptions.included` keeps a per-doctor ledger (`CaseGrant`, `CaseUse`; only that module and
-`subscriptions.service` read it):
+`subscriptions.models` name them: the service, the hooks, the home's tag and the backfill command
+go through `subscriptions.included`):
 
 - **Grant.** When a purchase activates the record (`service.activate`, same transaction), the doctor
   gets one grant for the term: the catalogue's number for `tps_branded`, frozen (a later catalogue
   edit never changes it), `upfront` or `monthly` from the order's period, the term's dates, keyed
   by the order (a repeated `paid` creates nothing). Renewals, upgrades and manual subscriptions get
   theirs in 8.6, 8.8 and 8.11.
-- **Available** on a day: earned − reserved − consumed, over the grants whose term contains the
-  day, and only while the record counts as a standard paid tier. Earned: the count (upfront) or
+- **Available** on a day: earned − reserved − consumed, over the grant of the record's current
+  purchase (its latest `purchase` change's order) when its term contains the day, and only while
+  the record counts as a standard paid tier. Earned: the count (upfront) or
   `count × months paid // 12` (monthly; the confirmed payments of the purchase order,
   `payments.service.months_paid`).
 - **Uses.** One per order line with `included_case` (the cart's tick is 9.3/9.6), from the
