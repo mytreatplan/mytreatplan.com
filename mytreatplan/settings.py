@@ -479,6 +479,10 @@ INSTALLED_APPS = [
     # subscriptions.service (the effective tier, the doctor's offers and order prices
     # through catalogue.resolver), and the commands assign_basic and doctor_subscription.
     'subscriptions.apps.SubscriptionsConfig',
+    # Messages to doctors about their cases (epic-case-lifecycle entry 2, 10.2): the
+    # message row written in a case move's transaction and sent after commit
+    # (notifications.service, notifications.tasks); receivers of patients.moves.
+    'notifications.apps.NotificationsConfig',
     # The django.tasks database backend (AD-8, epic-platform entry 9): its table of
     # queued and finished tasks, and the commands db_worker (systemd
     # mytp-<site>-worker) and prune_db_task_results (the `prunetasks` job).

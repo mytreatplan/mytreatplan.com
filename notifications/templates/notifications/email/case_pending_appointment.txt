@@ -1,0 +1,13 @@
+{% load i18n %}{% autoescape off %}{% translate "Hello," %}
+
+{% blocktranslate with code=code %}The case of your patient {{ code }} is waiting for an appointment.{% endblocktranslate %}
+
+{% translate "Patient" %}: {{ code }}
+{% translate "Stage" %}: {{ stage }}
+
+{% translate "You can see the case here:" %}
+
+{{ url }}
+
+MyTreatPlan
+{% endautoescape %}

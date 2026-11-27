@@ -3,14 +3,14 @@ title: 'Case messages by email'
 type: 'feature'
 ticket: '2'
 created: '2026-11-27'
-status: 'in-progress'
+status: 'built'
 baseline_revision: '3ebd81e0546e5d3a1655f2e593736482c6706123'
 route: 'full'
 route_source: 'auto'
 risk: 'medium'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/initiative-mytreatplan-portal-admin/architecture-portal-admin/architecture-portal-admin.md'
@@ -72,13 +72,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `notifications/` (new app: `apps.py`, `models.py`, migration `0001`) -- `Message`: uuid pk, `kind` (`case_pending_appointment`, `case_pending_review`, `case_pending_approval`), `channel` (`email`), `work_order_id` UUID, `work_order_version`, `recipient` FK user (PROTECT), `state` (`pending`/`sent`/`failed`), `reason`, `created_at`, `sent_at`; unique (`work_order_id`, `work_order_version`, `channel`).
-- [ ] `notifications/service.py` -- `case_message(work_order, kind)` (get-or-create the row, then `enqueue_on_commit`); `send(message_id)` (lock the row, skip unless `pending`, render, send, set the state).
-- [ ] `notifications/tasks.py` -- `@task send_message(message_id)` calling `service.send`; exceptions are caught and stored on the row.
-- [ ] `notifications/receivers.py` + `apps.py` `ready()` -- register the three receivers (name `notifications_case`).
-- [ ] `notifications/templates/notifications/email/<kind>.txt` and `<kind>_subject.txt` -- patient code, stage label, patient page link, no name.
-- [ ] `locale/es/LC_MESSAGES/django.po` -- Spanish subjects and bodies.
-- [ ] `notifications/tests/` -- one test per matrix row, plus: no patient name or email in the logs, a body without the name.
+- [x] `notifications/` (new app: `apps.py`, `models.py`, migration `0001`) -- `Message`: uuid pk, `kind` (`case_pending_appointment`, `case_pending_review`, `case_pending_approval`), `channel` (`email`), `work_order_id` UUID, `work_order_version`, `recipient` FK user (PROTECT), `state` (`pending`/`sent`/`failed`), `reason`, `created_at`, `sent_at`; unique (`work_order_id`, `work_order_version`, `channel`).
+- [x] `notifications/service.py` -- `case_message(work_order, kind)` (get-or-create the row, then `enqueue_on_commit`); `send(message_id)` (lock the row, skip unless `pending`, render, send, set the state).
+- [x] `notifications/tasks.py` -- `@task send_message(message_id)` calling `service.send`; exceptions are caught and stored on the row.
+- [x] `notifications/receivers.py` + `apps.py` `ready()` -- register the three receivers (name `notifications_case`).
+- [x] `notifications/templates/notifications/email/<kind>.txt` and `<kind>_subject.txt` -- patient code, stage label, patient page link, no name.
+- [x] `locale/es/LC_MESSAGES/django.po` -- Spanish subjects and bodies.
+- [x] `notifications/tests/` -- one test per matrix row, plus: no patient name or email in the logs, a body without the name.
 
 **Acceptance Criteria:**
 - Given a dev case at `in_development`, when admindev sends `send_for_review`, then the doctor's login email gets one "Pending review" email with the patient code and no name, and the row is `sent`.
@@ -96,7 +96,24 @@ The row is written in the move's transaction, so a rolled-back move leaves nothi
 
 ## Implementation Notes
 
+- New app `notifications` (`Message`, service, task, receivers, 6 templates); settings `INSTALLED_APPS`; Spanish strings in `django.po`.
+- Subjects chosen by the implementer: "Appointment needed for patient X", "Case ready for review: patient X", "Case awaiting your approval: patient X". The body's "Stage:" line uses the existing stage labels.
+- The email is sent while the row is locked (two workers never both send it). A crash between sending and marking `sent` can still send twice, as with 9.20.
+- Verification after the patches: portal suite 4671 passed, 17 skipped, 11 failed (the known WeasyPrint OSError in invoices/tests/test_pdf.py and test_pending_documents.py); `makemigrations --check` clean.
+- After review: the row write has its own savepoint (a failed write is logged and the move commits); the label comes from the kind; the work in `send` runs in a nested savepoint so a DB error is stored on the row.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Pass 1 (quick lens, Opus): 6 findings — high 0, medium 3, low 2, false 1; patch 5, reject 1.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | A failed row write rolls back the move | medium | patch | `fire` runs inside `apply_move`'s atomic block with no guard; the plan says never fail the move. Savepoint + log by UUID and type; test added. |
+| 2 | Stage label read from the live work order at send time | medium | patch | `send` reloads the row after commit; a case moved on shows the wrong stage. Label now from the kind; test added. |
+| 3 | DB error inside `send`'s try leaves the row `pending` | medium | patch | Caught inside the same atomic block, then `_outcome` raises TransactionManagementError. Nested savepoint added. |
+| 4 | SMTP failure test does not check the log | low | patch | caplog asserts the row UUID is logged and the address is not. |
+| 5 | Replay not tested through the remote write | low | patch | New test sends `send_for_review` twice with one idempotency key: one row, one task. |
+| 6 | `django.po` missing from the diff | false | reject | The review diff left out `locale/` on purpose; the file is changed and is committed with the code. |
 
