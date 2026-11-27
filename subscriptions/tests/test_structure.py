@@ -20,12 +20,13 @@ from catalogue.models import Subscription
 from integration.snapshot_tables import SnapshotFedModel
 from integration.tests.snapshot_rows import pull, snapshot
 from subscriptions import service
-from subscriptions.models import AppendOnly, DoctorSubscription, SubscriptionChange
+from subscriptions.models import (AppendOnly, CaseGrant, CaseUse, DoctorSubscription,
+                                  SubscriptionChange)
 
 from .helpers import ADVANCED, PASSWORD, catalogue, doctor, load
 
 User = get_user_model()
-MODELS = (DoctorSubscription, SubscriptionChange)
+MODELS = (DoctorSubscription, SubscriptionChange, CaseGrant, CaseUse)
 
 
 def test_neither_model_is_snapshot_fed_nor_in_the_django_admin():
@@ -110,6 +111,10 @@ ALLOWED = {Path('subscriptions/models.py'), Path('subscriptions/service.py')}
 OWN_MIGRATIONS = Path('subscriptions/migrations')
 MODEL_NAMES = {'DoctorSubscription', 'SubscriptionChange'}
 TABLES = {'subscriptions_doctorsubscription', 'subscriptions_subscriptionchange'}
+# The included cases (epic-subscriptions 13): only their module (and the models) name them.
+CASE_ALLOWED = {Path('subscriptions/models.py'), Path('subscriptions/included.py')}
+CASE_NAMES = {'CaseGrant', 'CaseUse'}
+CASE_TABLES = {'subscriptions_casegrant', 'subscriptions_caseuse'}
 
 
 def _production_modules(root):
@@ -141,7 +146,7 @@ def _names(tree):
                 yield node.lineno, alias.name
         elif isinstance(node, ast.Constant) and isinstance(node.value, str):
             lowered = node.value.lower()
-            for name in MODEL_NAMES | TABLES:
+            for name in MODEL_NAMES | TABLES | CASE_NAMES | CASE_TABLES:
                 if name.lower() in lowered:
                     yield node.lineno, name
 
@@ -161,6 +166,21 @@ def test_no_module_but_the_service_names_the_models():
     assert offenders == []
     assert Path('subscriptions/service.py') in modules
     assert Path('accounts/migrations/0001_initial.py') in modules
+
+
+def test_only_the_included_module_names_the_case_models():
+    """Only subscriptions.included (and subscriptions.models) name `CaseGrant` and
+    `CaseUse` or their tables: the service, the hooks, the tag and the backfill command go
+    through it (epic-subscriptions 13)."""
+    root = Path(settings.BASE_DIR)
+    modules = dict(_production_modules(root))
+    offenders = [
+        f'{relative}:{line}:{name}'
+        for relative, path in modules.items() if relative not in CASE_ALLOWED
+        for line, name in _names(ast.parse(path.read_text(), filename=str(path)))
+        if name in CASE_NAMES | CASE_TABLES]
+    assert offenders == []
+    assert Path('subscriptions/included.py') in modules
 
 
 def test_the_scan_finds_a_model_or_table_name_in_a_string():

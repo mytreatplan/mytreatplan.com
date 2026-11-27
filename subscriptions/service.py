@@ -76,6 +76,17 @@ it is the only writer of `subscriptions.models` (with the backfill migration 000
   payment is kept (staff decide). After commit it queues the confirmation email
   (`subscriptions.tasks.send_purchase_email`).
 
+- `counts_as_paid(user, day)`, `included_left(user, day=None)`, `grant_missing_term(pk)` and
+  `records_missing_a_grant()` (epic-subscriptions 13, user decisions 2026-11-27): the
+  included cases. `activate` also gives the doctor the term's grant
+  (`subscriptions.included.grant_term`: the catalogue's `tps_branded` included cases of the
+  bought row, frozen; upfront or monthly from the line's period; the term's dates), in the
+  same transaction. A grant counts only while the record counts as a standard paid tier
+  (`counts_as_paid`). `included_left` gives `(left, earned)` for the home, or None.
+  `records_missing_a_grant` / `grant_missing_term` are the backfill command's
+  (`grant_included_cases`): a counting paid record whose purchase order has no grant gets
+  one from today's catalogue row.
+
 Actors (AD-22): `doctor_actor(user)` (the user's uid), `admin_actor(uuid)` (an admin
 user of the admin site), `SYSTEM_ACTOR` (no UUID).
 """
@@ -95,14 +106,17 @@ from catalogue import resolver
 from integration.remote import RecordGone, StaleVersion
 from payments import gateways
 
+from . import included
 from .models import (ADMIN, DOCTOR, SYSTEM, DoctorSubscription, SubscriptionChange)
 
 logger = logging.getLogger(__name__)
 
 __all__ = ['Actor', 'ChangeRefused', 'Effective', 'Level', 'ManualLocked', 'RecordGone',
            'Reminder', 'StaleVersion', 'SYSTEM_ACTOR', 'TIERS', 'UpgradeOptions',
-           'activate', 'admin_actor', 'assign_manual', 'change', 'doctor_actor',
-           'doctors_without_a_record', 'effective', 'ensure_basic', 'monthly_possible',
+           'activate', 'admin_actor', 'assign_manual', 'change', 'counts_as_paid',
+           'doctor_actor', 'doctors_without_a_record', 'effective', 'ensure_basic',
+           'grant_missing_term', 'included_left', 'monthly_possible',
+           'records_missing_a_grant',
            'offers_for', 'price_order_for', 'purchase_values', 'record_of', 'reminder',
            'reset_to_basic', 'term_of',
            'upgrade_options']
@@ -215,6 +229,15 @@ def _counts(record, day):
     if record.status == DoctorSubscription.CANCELLED:
         return record.ends_on is not None and day <= record.ends_on
     return True  # active, past due
+
+
+def counts_as_paid(user, day=None):
+    """Whether the doctor's record counts on `day` (today when None) as a standard paid
+    tier (Advanced or Premium, not manual): when an included-case grant counts. Reads
+    only."""
+    day = day or resolver.today()
+    record = record_of(user)
+    return bool(_counts(record, day) and record.tier in PAID_TIERS and not record.manual)
 
 
 def effective(user, day=None, *, log_drift=True):
@@ -658,6 +681,18 @@ def activate(order):
     except (ChangeRefused, ManualLocked, RecordGone, StaleVersion) as refused:
         _report(order.pk, f'refused ({type(refused).__name__})')
         return None
+    # Epic-subscriptions 13: the term's included cases, frozen from the catalogue now. A
+    # fault here never undoes the payment (the backfill command can grant it later).
+    try:
+        with transaction.atomic():
+            included.grant_term(
+                doctor_uid=user.uid, order_id=order.pk,
+                count=resolver.included_cases(row, included.DEFAULT_CATEGORY),
+                accrual=line.period, starts_on=started_on, ends_on=ends_on)
+    except Exception as failure:  # noqa: BLE001
+        logger.error('order %s: the included cases could not be granted: %s', order.pk,
+                     type(failure).__name__, exc_info=True)
+        _report(order.pk, 'included cases not granted')
     from mytp_core.tasks import enqueue_on_commit
 
     from .tasks import send_purchase_email
@@ -716,3 +751,68 @@ def purchase(user, subscription, period, voucher_code=''):
         return payments.create_subscription_order(
             user, subscription, period, actor=payments.doctor_actor(user),
             voucher=voucher, save_card=possible)
+
+
+# --- Included cases (epic-subscriptions 13) ---------------------------------------------------
+
+def included_left(user, day=None):
+    """`(left, earned)` of the doctor's included TPS branded cases on `day` (today when
+    None): see `subscriptions.included.left`. None when no grant counts (Basic, expired,
+    a manual or dropped record, a term over) or the grants give none. Reads only."""
+    if not is_client(user):
+        return None
+    found = included.left(user, day)
+    if found is None or found[1] <= 0:
+        return None
+    return found
+
+
+def _purchase_of(record):
+    """The order id of the purchase that started the record's current term, or None."""
+    return (SubscriptionChange.objects.filter(record=record, reason=PURCHASE,
+                                              order_id__isnull=False)
+            .order_by('-version').values_list('order_id', flat=True).first())
+
+
+def records_missing_a_grant(day=None):
+    """The doctor pks (in order) whose record counts on `day` as a standard paid tier
+    bought by an order that has no included-case grant: those activated before
+    epic-subscriptions 13 (`grant_included_cases`). Reads only."""
+    day = day or resolver.today()
+    pks = []
+    for record in (DoctorSubscription.objects.filter(manual=False, tier__in=PAID_TIERS)
+                   .exclude(status=DoctorSubscription.EXPIRED).order_by('doctor_id')):
+        if not _counts(record, day) or record.ends_on is None:
+            continue
+        order_id = _purchase_of(record)
+        if order_id is not None and not included.has_term_grant(order_id):
+            pks.append(record.doctor_id)
+    return pks
+
+
+def grant_missing_term(doctor_pk, day=None):
+    """Give the doctor `doctor_pk` the grant of their current term when it is missing
+    (see `records_missing_a_grant`): today's catalogue number for the held row, the
+    record's period and term. Returns True when a grant was created. Run it inside a
+    transaction (the command's, one per doctor)."""
+    day = day or resolver.today()
+    record = (DoctorSubscription.objects.select_for_update()
+              .filter(doctor_id=doctor_pk).select_related('doctor').first())
+    if (record is None or record.manual or record.tier not in PAID_TIERS
+            or not _counts(record, day) or record.ends_on is None
+            or not is_client(record.doctor)):
+        return False
+    order_id = _purchase_of(record)
+    if order_id is None or included.has_term_grant(order_id):
+        return False
+    row = resolver.subscription_by_id(record.subscription_id)
+    if row is None:
+        logger.error('subscription record %s: its subscription %s is not in the catalogue; '
+                     'no included cases granted', record.pk, record.subscription_id)
+        return False
+    period = record.billing_period if record.billing_period in (MONTHLY, UPFRONT) else UPFRONT
+    _grant, created = included.grant_term(
+        doctor_uid=record.doctor.uid, order_id=order_id,
+        count=resolver.included_cases(row, included.DEFAULT_CATEGORY), accrual=period,
+        starts_on=record.started_on, ends_on=record.ends_on)
+    return created

@@ -182,6 +182,34 @@ voucher of the snapshot (the record shows Advanced, the upgrade screen marks it)
 public test terminal, buy Advanced monthly (one month invoiced, a `SavedCard`); with a voucher
 covering the price, the order is paid at once with a 0.00 invoice and no gateway.
 
+## Included cases (epic-subscriptions 13)
+
+A paid subscription includes free TPS branded cases (the catalogue's `included_cases`, 5.17).
+`subscriptions.included` keeps a per-doctor ledger (`CaseGrant`, `CaseUse`; only that module and
+`subscriptions.service` read it):
+
+- **Grant.** When a purchase activates the record (`service.activate`, same transaction), the doctor
+  gets one grant for the term: the catalogue's number for `tps_branded`, frozen (a later catalogue
+  edit never changes it), `upfront` or `monthly` from the order's period, the term's dates, keyed
+  by the order (a repeated `paid` creates nothing). Renewals, upgrades and manual subscriptions get
+  theirs in 8.6, 8.8 and 8.11.
+- **Available** on a day: earned − reserved − consumed, over the grants whose term contains the
+  day, and only while the record counts as a standard paid tier. Earned: the count (upfront) or
+  `count × months paid // 12` (monthly; the confirmed payments of the purchase order,
+  `payments.service.months_paid`).
+- **Uses.** One per order line with `included_case` (the cart's tick is 9.3/9.6), from the
+  soonest-ending grant with one available, under a lock on the doctor's grants: reserved by the
+  `created` hook (none available: the hook raises and no order is created), consumed at `paid`,
+  released at `cancelled` / `expired`, and a consumed one released at `refunded` while its grant's
+  term runs. No outbox events (sales-finance reads the usage later).
+- **Home.** The profile card shows "N of M included cases left this term" (M: earned so far) from
+  `service.included_left`, through the `included_cases` template tag (never raises).
+
+Run once after the deploy that adds it, for the doctors who bought before (deploy/README.md,
+"Doctor subscriptions"); running it again grants none:
+
+    python manage.py grant_included_cases [--dry-run]
+
 ## Legal texts and the region's company (epic-regions 2.6)
 
 The footer, the home page's JSON-LD and the public Privacy and Terms pages name the

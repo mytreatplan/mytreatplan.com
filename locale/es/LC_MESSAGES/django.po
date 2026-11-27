@@ -1569,6 +1569,14 @@ msgid "Level: %(level)s"
 msgstr "Nivel: %(level)s"
 
 #: accounts/templates/accounts/home.html
+#, python-format
+msgid "%(left)s of %(total)s included case left this term"
+msgid_plural "%(left)s of %(total)s included cases left this term"
+msgstr[0] "Casos incluidos restantes en este periodo: %(left)s de %(total)s"
+msgstr[1] "Casos incluidos restantes en este periodo: %(left)s de %(total)s"
+msgstr[2] "Casos incluidos restantes en este periodo: %(left)s de %(total)s"
+
+#: accounts/templates/accounts/home.html
 msgid "See upgrade options"
 msgstr "Ver opciones de mejora"
 

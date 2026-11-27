@@ -36,7 +36,7 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Geo-IP | DB-IP Lite country database `/srv/mytp-dev/shared/geoip/dbip-country-lite.mmdb` (CC BY 4.0), monthly `geoipupdate` job ("Geo-IP database") |
 | Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute; configuration snapshot pulled from it, `pullconfig` job every 5 minutes, `show_config`; `checkinterface` job every 5 minutes, one Sentry warning per outage of either; the catalogue it carries, `price_catalogue`; the country map it carries ("Interface with the admin site", "Interface alerts", "Outbox", "Configuration snapshot", "Catalogue", "Country map") |
 | Payment webhooks | `/payments/webhook/<gateway>/` (no password: signed by the gateway, checked by Django; 64 KB), Redsys settings `REDSYS_*` in `shared/settings.env` ("Payment webhooks"; the repo README "Payments: Redsys") |
-| Doctor subscriptions | one record per doctor (Basic from signup; migration `subscriptions.0002` for existing doctors), `assign_basic` after a deploy, `doctor_subscription` to read one ("Doctor subscriptions") |
+| Doctor subscriptions | one record per doctor (Basic from signup; migration `subscriptions.0002` for existing doctors), `assign_basic` after a deploy, `grant_included_cases` once after the included-cases deploy, `doctor_subscription` to read one ("Doctor subscriptions") |
 | Errors and job alerts | Sentry (EU region), one environment per site (`dev`, `dev-ae`, `admindev`), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -3734,6 +3734,22 @@ even their level. The rule runs once per request; a fault of the service is a Se
 error (`subscriptions.templatetags.upgrade_reminder`) and the page shows no reminder. A
 held row missing from the snapshot or changed under the same id is not logged by the
 reminder (it would repeat on every page): the upgrade screen, offers and pricing log it.
+
+**Included cases** (epic-subscriptions 13; README.md, "Included cases"): a doctor who buys
+Advanced or Premium gets the term's included TPS branded cases, frozen from the catalogue, and
+the home's profile card shows "N of M included cases left this term". **Run once after the
+deploy that adds it** (doctors who bought before it have no grant until then; harmless to run
+again):
+
+```sh
+cd /srv/mytp-dev/current
+sudo -u mytp-dev ./venv/bin/python manage.py grant_included_cases --dry-run   # "grant_included_cases: N doctor(s) without a grant (dry run: nothing written)"
+sudo -u mytp-dev ./venv/bin/python manage.py grant_included_cases             # "grant_included_cases: N doctor(s) given their included cases"; again: 0
+```
+
+Same on dev-ae with `mytp-dev-ae` and `/srv/mytp-dev-ae/current`. Staging check: buy Advanced
+upfront as a Basic ES doctor; the home shows the catalogue's number left (e.g. "12 of 12
+included cases left this term"); the dry run then reports 0.
 
 ### Country map
 

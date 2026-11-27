@@ -3,14 +3,14 @@ title: 'Included-case allowance'
 type: 'feature'
 ticket: '13'
 created: '2026-11-27'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: 'dcf2a3eeab8d08d96a8f318537d291f677d110cb'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -73,19 +73,27 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `subscriptions/models.py` + migration -- the two models and constraints.
-- [ ] `subscriptions/included.py` -- grant, available, reserve/consume/release.
-- [ ] `subscriptions/service.py`, `subscriptions/apps.py` -- grant on activate, `included_left`, receivers.
-- [ ] `payments/service.py` -- `months_paid`.
-- [ ] tag + `home.html` -- "N of M included cases left this term" (branded TPS), ES string in `locale/es/LC_MESSAGES/django.po`.
-- [ ] backfill command; `README.md` and `deploy/README.md` paragraph (run it once after deploy).
-- [ ] `subscriptions/tests/test_included_cases.py` -- every matrix row, plus concurrency guard (unique `line_id`) and the soonest-ending grant first.
+- [x] `subscriptions/models.py` + migration -- the two models and constraints.
+- [x] `subscriptions/included.py` -- grant, available, reserve/consume/release.
+- [x] `subscriptions/service.py`, `subscriptions/apps.py` -- grant on activate, `included_left`, receivers.
+- [x] `payments/service.py` -- `months_paid`.
+- [x] tag + `home.html` -- "N of M included cases left this term" (branded TPS), ES string in `locale/es/LC_MESSAGES/django.po`.
+- [x] backfill command; `README.md` and `deploy/README.md` paragraph (run it once after deploy).
+- [x] `subscriptions/tests/test_included_cases.py` -- every matrix row, plus concurrency guard (unique `line_id`) and the soonest-ending grant first.
 
 **Acceptance Criteria:**
 - Given dev, when a doctor buys Advanced upfront, then the home shows the frozen number left.
 - Given the full suite, when it runs, then 0 failures; `makemigrations --check`, `check`, `msgfmt --check` clean.
 
 ## Implementation Notes
+
+- "N of M left": M is what the grants have earned so far (upfront: the count; monthly: `count × months_paid // 12`), N = M − reserved − consumed.
+- "Still counts as that paid tier" = `service.counts_as_paid`: the record counts on the day (`_counts`) and is a standard (non-manual) Advanced or Premium; `CaseGrant` stores no tier (field list kept as in the Code Map).
+- A use takes a grant of the line product's category (`tps_branded` today); an included line without a catalogue product, or of another category, is refused at `created`.
+- One use per order line, whatever the line's quantity.
+- `activate` grants inside a savepoint; a fault there is logged and reported to Sentry, never undoing the payment (the backfill can grant it later).
+- Structure test: `CaseGrant`/`CaseUse` may be named only by `subscriptions/models.py` and `subscriptions/included.py`; the service, tag and command go through `included`.
+- `consume` for a line without a use reserves it first; when nothing is available it logs an error and the payment stands (as `vouchers.consume`).
 
 ## Plan Change Log
 
