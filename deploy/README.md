@@ -36,7 +36,7 @@ name (see [Sites on the staging host](#sites-on-the-staging-host)).
 | Geo-IP | DB-IP Lite country database `/srv/mytp-dev/shared/geoip/dbip-country-lite.mmdb` (CC BY 4.0), monthly `geoipupdate` job ("Geo-IP database") |
 | Interface with the admin site | signed `/api/v1/` (no password), `INTERFACE_*` in `shared/settings.env`, `manage.py ping_peer admindev`, call log kept 90 days; outbox of events to the admin site, `dispatchoutbox` job every minute; configuration snapshot pulled from it, `pullconfig` job every 5 minutes, `show_config`; `checkinterface` job every 5 minutes, one Sentry warning per outage of either; the catalogue it carries, `price_catalogue`; the country map it carries ("Interface with the admin site", "Interface alerts", "Outbox", "Configuration snapshot", "Catalogue", "Country map") |
 | Payment webhooks | `/payments/webhook/<gateway>/` (no password: signed by the gateway, checked by Django; 64 KB), Redsys settings `REDSYS_*` in `shared/settings.env` ("Payment webhooks"; the repo README "Payments: Redsys") |
-| Doctor subscriptions | one record per doctor (Basic from signup; migration `subscriptions.0002` for existing doctors), `assign_basic` after a deploy, `doctor_subscription` to read one ("Doctor subscriptions") |
+| Doctor subscriptions | one record per doctor (Basic from signup; migration `subscriptions.0002` for existing doctors), `assign_basic` after a deploy, `grant_included_cases` once after the included-cases deploy, `doctor_subscription` to read one ("Doctor subscriptions") |
 | Errors and job alerts | Sentry (EU region), one environment per site (`dev`, `dev-ae`, `admindev`), alerts to devops@mytreatplan.com |
 
 Files in this folder:
@@ -3765,6 +3765,52 @@ even their level. The rule runs once per request; a fault of the service is a Se
 error (`subscriptions.templatetags.upgrade_reminder`) and the page shows no reminder. A
 held row missing from the snapshot or changed under the same id is not logged by the
 reminder (it would repeat on every page): the upgrade screen, offers and pricing log it.
+
+**Included cases** (epic-subscriptions 13; README.md, "Included cases"): a doctor who buys
+Advanced or Premium gets the term's included TPS branded cases, frozen from the catalogue, and
+the home's profile card shows "N of M included cases left this term". **Run once after the
+deploy that adds it** (doctors who bought before it have no grant until then; harmless to run
+again):
+
+```sh
+cd /srv/mytp-dev/current
+sudo -u mytp-dev ./venv/bin/python manage.py grant_included_cases --dry-run   # "grant_included_cases: N doctor(s) without a grant (dry run: nothing written)"
+sudo -u mytp-dev ./venv/bin/python manage.py grant_included_cases             # "grant_included_cases: N doctor(s) given their included cases"; again: 0
+```
+
+Same on dev-ae with `mytp-dev-ae` and `/srv/mytp-dev-ae/current`. Staging check: buy Advanced
+upfront as a Basic ES doctor; the home shows the catalogue's number left (e.g. "12 of 12
+included cases left this term"); the dry run then reports 0.
+
+**Annual renewals** (epic-subscriptions 8.6; README.md, "Renewals"): the `renewsubscriptions`
+job (`jobs.conf`, daily 05:00 UTC; re-run `provision.sh` after the deploy that adds it, then
+set its Sentry monitor's notifications) runs `renew_subscriptions`: the reminders 30 days
+before the end of an annual term, the renewal order and the saved-card charge on the end
+date (no card or a decline: a payment link by email), and the drop to Basic of a term not
+renewed, the day after its end. Once per record and term: running it again the same day does
+nothing more. Run it by hand (counts only):
+
+```sh
+sudo systemctl start mytp-dev-job@renewsubscriptions
+sudo journalctl -u mytp-dev-job@renewsubscriptions -n 20
+#   renew_subscriptions: 1 reminder(s) queued; renewals: paid 1; 0 dropped to Basic
+```
+
+A charge whose outcome is unknown (Sentry: `payment repeat charge outcome unknown: order
+<uuid>`) keeps the doctor on their level and sends no email: check the charge in the
+gateway's own records, then settle the order and the record by hand. A held subscription no
+longer sold at renewal is a Sentry warning (`subscription renewal not sold (...): record
+<uuid>`): no order, the doctor is emailed and drops to Basic after the end date.
+
+Staging check (dev, Redsys's public test terminal): as an ES doctor with a fiscal entity, buy
+Advanced upfront with the test card (a `SavedCard`); in `manage.py shell` set the record's
+`ends_on` to today + 30 through `service.change(..., reason='test')` and run the job: one
+reminder (date, price, card last 4, how to turn off); again: none. Set `ends_on` to today and
+run the job twice: Redsys's admin module shows one charge, one invoice, the record runs to
+next year and `/en/upgrade/` shows the new renewal date. Turn auto-renew off on
+`/en/upgrade/`, set `ends_on` to yesterday and run it: the record is Basic. With
+`fake.decline_next_charge('0190')` on a fake-gateway doctor, or an IE doctor (Revolut, no
+card): the payment-link email opens the order's checkout.
 
 ### Country map
 

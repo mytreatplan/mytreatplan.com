@@ -140,9 +140,9 @@ class SubscriptionChange(models.Model):
     before = models.JSONField(default=dict, blank=True)
     after = models.JSONField(default=dict)
     version = models.PositiveIntegerField()
-    # The order that made the change (epic-subscriptions entry 5: a `purchase`), else
-    # None. A plain UUID, no database link (orders are another app's); at most one change
-    # per order, so a repeated `paid` hook changes nothing.
+    # The order that made the change (epic-subscriptions entry 5: a `purchase`; 8.6: a
+    # `renewal`), else None. A plain UUID, no database link (orders are another app's); at
+    # most one change per order, so a repeated `paid` hook changes nothing.
     order_id = models.UUIDField(null=True, blank=True)
 
     objects = SubscriptionChangeQuerySet.as_manager()
@@ -163,6 +163,43 @@ class SubscriptionChange(models.Model):
 
     def delete(self, *args, **kwargs):
         raise AppendOnly('the subscription changes are append-only')
+
+
+class Renewal(models.Model):
+    """The renewal of one annual term of a record (epic-subscriptions 8.6; user decisions
+    2026-11-27): one row per record and term (`term_ends_on`: the `ends_on` of the term
+    being renewed), so a rerun of the daily job never makes a second order or charge.
+    `order_id` is the renewal order (a plain UUID, no database link: orders are another
+    app's), None when none could be made (the held subscription is no longer sold); an
+    abandoned order made by hand ("Renew now") is replaced by the next one. `outcome`: see
+    OUTCOMES. Written only by `subscriptions.service`."""
+
+    CROSSES_SITES = True  # AD-5: its UUID is its global id
+
+    PENDING, PAID, DECLINED, NO_CARD, UNKNOWN, NOT_SOLD = (
+        'pending', 'paid', 'declined', 'no_card', 'unknown', 'not_sold')
+    OUTCOMES = [(PENDING, 'Order made, not charged or paid yet'), (PAID, 'Paid'),
+                (DECLINED, 'Card declined: payment link sent'),
+                (NO_CARD, 'No saved card: payment link sent'),
+                (UNKNOWN, 'Charge outcome unknown: staff decide'),
+                (NOT_SOLD, 'Subscription no longer sold: no order')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    record = models.ForeignKey(DoctorSubscription, on_delete=models.CASCADE,
+                               related_name='renewals')
+    term_ends_on = models.DateField()
+    order_id = models.UUIDField(null=True, blank=True, unique=True)
+    outcome = models.CharField(max_length=10, choices=OUTCOMES, default=PENDING)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['term_ends_on', 'id']
+        constraints = [models.UniqueConstraint(fields=['record', 'term_ends_on'],
+                                               name='renewal_one_per_term')]
+
+    def __str__(self):
+        return f'Renewal {self.pk} ({self.outcome})'
 
 
 class VoucherRedemption(models.Model):
@@ -222,3 +259,88 @@ class VoucherRedemption(models.Model):
 
     def __str__(self):
         return f'Voucher redemption {self.pk} ({self.state})'
+
+
+class CaseGrant(models.Model):
+    """Included cases given to a doctor by one source (epic-subscriptions 13; user decisions
+    2026-11-27). Today the only source is a subscription term (`subscription_term`,
+    `source_id` the purchase order's UUID): `count` is the catalogue's included cases of
+    `category` (`tps_branded`) for the bought subscription, frozen when it was activated (a
+    later catalogue edit never touches it). `accrual`: `upfront` (all of `count` earned at
+    once) or `monthly` (`count × months paid ÷ 12`, rounded down). `starts_on` / `ends_on`:
+    the term (Madrid dates, both included). One grant per source (a repeated `paid` creates
+    nothing). `doctor_uid` and `source_id` are plain UUIDs, with no database link (as
+    `VoucherRedemption`). Written and read only through `subscriptions.included`."""
+
+    CROSSES_SITES = True  # AD-5: its UUID is its global id
+
+    SUBSCRIPTION_TERM = 'subscription_term'
+    SOURCES = [(SUBSCRIPTION_TERM, 'Subscription term')]
+    UPFRONT = DoctorSubscription.UPFRONT
+    MONTHLY = DoctorSubscription.MONTHLY
+    ACCRUALS = [(UPFRONT, 'All at once'), (MONTHLY, 'Earned month by month')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    doctor_uid = models.UUIDField()
+    source = models.CharField(max_length=20, choices=SOURCES)
+    source_id = models.UUIDField()
+    category = models.CharField(max_length=40)
+    count = models.PositiveIntegerField()
+    accrual = models.CharField(max_length=10, choices=ACCRUALS)
+    starts_on = models.DateField()
+    ends_on = models.DateField()
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['ends_on', 'starts_on', 'id']
+        indexes = [models.Index(fields=['doctor_uid', 'ends_on'],
+                                name='case_grant_doctor_ends')]
+        constraints = [
+            models.UniqueConstraint(fields=['source', 'source_id'],
+                                    name='case_grant_one_per_source'),
+            models.CheckConstraint(condition=models.Q(accrual__in=['upfront', 'monthly']),
+                                   name='case_grant_accrual'),
+            models.CheckConstraint(condition=models.Q(ends_on__gte=models.F('starts_on')),
+                                   name='case_grant_term'),
+        ]
+
+    def __str__(self):
+        return f'Case grant {self.pk} ({self.count} {self.category})'
+
+
+class CaseUse(models.Model):
+    """One included case used by one order line (epic-subscriptions 13), taken from one
+    grant. It follows its order through the `payments.hooks` receivers of
+    `subscriptions.included`: `reserved` when the order is created, `consumed` when it is
+    paid, `released` when it is cancelled or expires before payment, or when a paid order is
+    refunded while its grant's term still runs. A released row stays as history and never
+    counts. One use per order line (`line_id` unique: two hooks racing cannot take two).
+    `doctor_uid`, `order_id` and `line_id` are plain UUIDs, with no database link. `version`
+    is raised by one on every change of state."""
+
+    CROSSES_SITES = True  # AD-5
+
+    RESERVED, CONSUMED, RELEASED = 'reserved', 'consumed', 'released'
+    STATES = [(RESERVED, 'Reserved'), (CONSUMED, 'Consumed'), (RELEASED, 'Released')]
+    LIVE_STATES = (RESERVED, CONSUMED)
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    grant = models.ForeignKey(CaseGrant, on_delete=models.PROTECT, related_name='uses')
+    doctor_uid = models.UUIDField()
+    order_id = models.UUIDField()
+    line_id = models.UUIDField(unique=True)
+    state = models.CharField(max_length=10, choices=STATES)
+    version = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['created_at', 'id']
+        indexes = [models.Index(fields=['order_id'], name='case_use_order'),
+                   models.Index(fields=['grant', 'state'], name='case_use_grant_state')]
+        constraints = [models.CheckConstraint(
+            condition=models.Q(state__in=['reserved', 'consumed', 'released']),
+            name='case_use_state')]
+
+    def __str__(self):
+        return f'Case use {self.pk} ({self.state})'

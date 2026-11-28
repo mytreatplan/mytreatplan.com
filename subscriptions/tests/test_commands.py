@@ -157,3 +157,55 @@ def test_doctor_subscription_of_a_doctor_made_staff_shows_no_record(admin, today
     assert 'record: none (staff account: any record is ignored)' in out
     assert 'effective: basic, subscription BAS-0, manual no, can switch yes' in out
     assert DoctorSubscription.objects.filter(doctor=user).exists()
+
+
+# --- reset_to_basic (staging sites only) ---------------------------------------------------
+
+@pytest.mark.django_db
+def test_reset_to_basic_puts_a_manual_doctor_back_on_basic_on_dev(admin, settings):
+    from catalogue import resolver
+    settings.SENTRY_ENVIRONMENT = 'dev'
+    load(admin)
+    user = doctor()
+    service.assign_manual(user, resolver.subscription_by_id(MANUAL), expected_version=1,
+                          actor=service.SYSTEM_ACTOR)
+    out = run('reset_to_basic', 'bea@example.com')
+    record = service.record_of(user)
+    assert (record.tier, record.subscription_id, record.manual, record.billing_period,
+            record.ends_on, record.status, record.version) == (
+        'basic', None, False, '', None, 'active', 3)
+    last = SubscriptionChange.objects.filter(record=record).order_by('-version').first()
+    assert (last.reason, last.actor_type) == ('test_reset', 'system')
+    assert f'{user.uid} was premium (manual), now basic (version 3)' in out
+    assert 'bea@example.com' not in out
+    assert service.reminder(user) is not None  # the upgrade links come back
+
+
+@pytest.mark.django_db
+def test_reset_to_basic_gives_a_doctor_without_a_record_basic(settings):
+    settings.SENTRY_ENVIRONMENT = 'dev-ae'
+    user = User.objects.create_user('nora@example.com', PASSWORD, country='ES')
+    assert 'was no record, now basic (version 1)' in run('reset_to_basic', str(user.uid))
+    assert SubscriptionChange.objects.get(record__doctor=user).reason == 'test_reset'
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize('site, debug', [('production', False), ('', False),
+                                         ('development', False), ('admindev', True)])
+def test_reset_to_basic_refuses_outside_staging(admin, settings, site, debug):
+    settings.SENTRY_ENVIRONMENT, settings.DEBUG = site, debug
+    load(admin)
+    user = doctor()
+    with pytest.raises(CommandError, match='staging site only'):
+        run('reset_to_basic', 'bea@example.com')
+    assert service.record_of(user).version == 1
+
+
+@pytest.mark.django_db
+def test_reset_to_basic_runs_locally_with_debug_and_refuses_staff(settings):
+    settings.SENTRY_ENVIRONMENT, settings.DEBUG = 'development', True
+    User.objects.create_user('staff@example.com', PASSWORD, is_staff=True)
+    with pytest.raises(CommandError, match='staff or superuser'):
+        run('reset_to_basic', 'staff@example.com')
+    with pytest.raises(CommandError, match='No such user'):
+        run('reset_to_basic', 'nobody@example.com')

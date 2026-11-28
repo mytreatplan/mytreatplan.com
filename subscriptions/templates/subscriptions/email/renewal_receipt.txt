@@ -1,0 +1,21 @@
+{% load i18n %}{% autoescape off %}{% translate "Hello," %}
+
+{% blocktranslate with name=level %}Thank you: your MyTreatPlan {{ name }} subscription is renewed for another year.{% endblocktranslate %}
+
+{% translate "Level" %}: {{ level }}
+{% translate "Billing" %}: {% translate "a year, paid upfront" %}
+{% translate "Paid" %}: {{ order.total }} {{ order.currency }}
+{% translate "Valid from" %}: {{ started_on|date:"DATE_FORMAT" }}
+{% translate "Valid until" %}: {{ ends_on|date:"DATE_FORMAT" }}
+{% translate "Order" %}: {{ order.reference }}
+
+{% blocktranslate with number=invoice.number %}Your invoice {{ number }} is attached. You can also download it from your invoices:{% endblocktranslate %}
+
+{{ invoices_url }}
+
+{% translate "You can turn automatic renewal on or off on your subscription levels:" %}
+
+{{ upgrade_url }}
+
+MyTreatPlan
+{% endautoescape %}
