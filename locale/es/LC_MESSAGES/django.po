@@ -4058,6 +4058,13 @@ msgstr "Fase"
 msgid "You can see the case here:"
 msgstr "Puede ver el caso aquí:"
 
+#: notifications/templates/notifications/sms/case_pending_appointment.txt
+#: notifications/templates/notifications/sms/case_pending_approval.txt
+#: notifications/templates/notifications/sms/case_pending_review.txt
+#, python-format
+msgid "MyTreatPlan: patient %(code)s, %(stage)s. %(url)s"
+msgstr "MyTreatPlan: paciente %(code)s, %(stage)s. %(url)s"
+
 # Epic-subscriptions 8.6: annual renewals.
 #: subscriptions/templates/subscriptions/email/renewal_reminder_subject.txt
 #, python-format

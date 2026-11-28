@@ -18,6 +18,7 @@ TEST_PWNED_PASSWORDS_API_URL = 'https://pwned.test.invalid/range/'
 TEST_DISPOSABLE_EMAIL_API_URL = 'https://disposable.test.invalid/'
 TEST_TURNSTILE_VERIFY_URL = 'https://turnstile.test.invalid/siteverify'
 TEST_TWILIO_VERIFY_BASE_URL = 'https://verify.test.invalid/v2'
+TEST_TWILIO_MESSAGING_BASE_URL = 'https://api.test.invalid/2010-04-01'
 
 # Cloudflare's public Turnstile test keys: the site key whose widget always passes, and
 # the secrets siteverify always accepts or always refuses. The always-pass pair is the
@@ -56,6 +57,10 @@ def pytest_configure(config):
     settings.TWILIO_API_KEY_SECRET = ''
     settings.TWILIO_VERIFY_SERVICE_SID = ''
     settings.TWILIO_WHATSAPP_ENABLED = False
+    # The fake SMS sender (10.3) and no Messaging Service, whatever settings.env selects.
+    settings.SMS_SENDER = 'notifications.sms.FakeSmsSender'
+    settings.TWILIO_MESSAGING_SERVICE_SID = ''
+    settings.TWILIO_MESSAGING_BASE_URL = TEST_TWILIO_MESSAGING_BASE_URL
     # No interface signing key or peers (a developer's settings.env must not make tests
     # call the KMS or a peer); the integration tests set fixed test keys.
     settings.INTERFACE_SIGNING_KMS_KEY = ''

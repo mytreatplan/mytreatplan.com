@@ -1,0 +1,1 @@
+{% load i18n %}{% autoescape off %}{% blocktranslate with code=code stage=stage url=url trimmed %}MyTreatPlan: patient {{ code }}, {{ stage }}. {{ url }}{% endblocktranslate %}{% endautoescape %}

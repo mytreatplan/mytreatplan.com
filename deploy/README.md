@@ -995,6 +995,37 @@ sudo systemctl restart mytp-dev-gunicorn
 With the Twilio provider selected and any of the four empty, every `check` and `migrate`
 (and so the next deploy) fails with `signup.E001`, naming the setting.
 
+### Twilio Messaging sender
+
+When a case email (10.2) cannot be sent (no login email, or the mail server refuses it), the
+doctor gets one SMS instead: "MyTreatPlan: patient TPS-..., <stage>. <patient page link>"
+(no name; the patient by code only). It goes through a Twilio Messaging Service, with the
+account SID and API key of "Twilio Verify" above. Until it is set up, `SMS_SENDER` stays on
+the fake, which logs the message UUID only.
+
+1. **Messaging → Services → Create**: friendly name `MyTreatPlan`, use case "Notify my
+   users". Copy the service SID (`MG...`).
+2. In the service's **Sender Pool**, add the alphanumeric sender `MyTreatPlan` and a
+   fallback phone number (for countries that do not accept alphanumeric senders). The
+   countries it may reach are set in **Messaging → Settings → Geo permissions** and in each
+   sender's registration, never in code.
+3. Type the service SID into the server's `settings.env` and switch the sender:
+
+```sh
+sudo -u mytp-dev nano /srv/mytp-dev/shared/settings.env
+#   SMS_SENDER=notifications.sms.TwilioSmsSender
+#   TWILIO_MESSAGING_SERVICE_SID=MG...
+cd /srv/mytp-dev/current
+sudo -u mytp-dev ./venv/bin/python manage.py check            # no notifications.E001
+sudo systemctl restart mytp-dev-gunicorn mytp-dev-worker
+```
+
+With the Twilio sender selected and any of `TWILIO_ACCOUNT_SID`, `TWILIO_API_KEY_SID`,
+`TWILIO_API_KEY_SECRET` or `TWILIO_MESSAGING_SERVICE_SID` empty, every `check` and `migrate`
+fails with `notifications.E001`, naming the setting. A refused SMS is kept on its message row
+as `failed` with `twilio <error code>` (the HTTP status is in the worker journal); there is
+no retry.
+
 ### Sentry alert on failed sends
 
 Every failed send logs the error `Signup code send failed` (channel, purpose, and
