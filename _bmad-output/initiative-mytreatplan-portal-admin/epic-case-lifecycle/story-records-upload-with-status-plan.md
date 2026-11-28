@@ -116,6 +116,7 @@ context:
 ## Verification
 
 **Commands:**
+- Run from the repo root (main checkout, branch `feat/10-5-records-upload`) with the sandbox off. Use these non-secret test values: `export FIELD_ENCRYPTION_KEYS="test1:dGVzdC1vbmx5LWZpZWxkLWtleS1ub3Qtc2VjcmV0ISE=" BLIND_INDEX_KEY="dGVzdC1vbmx5LWJsaW5kLWluZGV4LWtleS0zMmJ5dGU=" DATABASE_URL="sqlite:///$TMPDIR/s105.sqlite3"`. Run `compilemessages` after editing the `.po`.
 - Portal suite: `../.venv/bin/python -m pytest -q -p no:cacheprovider --tb=line` -- expected: 0 failures besides the known WeasyPrint ones.
 - `../.venv/bin/python manage.py makemigrations --check --dry-run` -- expected: no changes.
 
