@@ -158,7 +158,7 @@ def complete(doctor, code, expected_version):
         raise NotAttachable
     with transaction.atomic():
         _patient, work_order = _locked_waiting(doctor, code)
-        row = (CaseRecords.objects.select_for_update().filter(work_order=work_order)
+        row = (CaseRecords.objects.select_for_update(of=('self',)).filter(work_order=work_order)
                .select_related('stored_object').first())
         obj = row.stored_object if row is not None else None
         if (obj is None or obj.state != StoredObject.CLEAN
