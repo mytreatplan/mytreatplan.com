@@ -3,7 +3,7 @@ title: 'SMS fallback for case messages'
 type: 'feature'
 ticket: '3'
 created: '2026-11-27'
-status: 'built'
+status: 'done'
 baseline_revision: '14a935002234779edf19d0d219769d5bd29f4849'
 route: 'full'
 route_source: 'auto'
@@ -121,3 +121,14 @@ Pass 1 (quick lens, Opus): 6 findings — high 0, medium 1, low 4, false 1; patc
 | 4 | `send_message` docstring says email only | low | patch | Now "email or SMS". |
 | 5 | Unreachable-Twilio test misses "logged, no retry" | low | patch | Asserts the row UUID in the logs and that a rerun returns None. |
 | 6 | Log privacy checked on one path only | low | patch | Refused-email and no-mobile tests assert no email, mobile or name in the logs. |
+
+## Staging
+
+- **Merge:** PR #158 → acb408a (after merging master: 8.6/8.13 strings in `django.po`, both kept). PR CI run 46124758572 passed; master run 46125814158 passed: tests, then dev and dev-ae deployed. Local suite: 4695 passed, 17 skipped, 11 local-only WeasyPrint failures.
+- **Before the checks** the user created the Twilio Messaging Service (sender "MyTreatPlan" + fallback number) and typed `SMS_SENDER` and `TWILIO_MESSAGING_SERVICE_SID` into dev's settings.env (dev-ae stays on the fake). Test doctor: a new account (pk 30) with a second test mobile; test patient by reference only (EU-YE7YS2WX), manual work order 8e43c856.
+- **Checks on dev (2026-11-28),** over SSH:
+  1. Migration `notifications.0002_sms_channel` applied on dev and dev-ae; `manage.py check` clean on both. Passed.
+  2. Moves run in a dev shell with the email send forced to fail (that process only; tasks run in-process after commit, real Twilio sender). First run (`request_appointment`, v4): email `failed SMTPRecipientsRefused`, SMS row `failed ModuleNotFoundError` because the typed `SMS_SENDER` had a trailing full stop (deferred: the check should catch it). After the user fixed it: `start_development`, `send_for_review` (v6): email `failed`, SMS row `sent` (accepted by Twilio). Passed.
+  3. `send_for_approval` signed from admindev (v7, 200): email `sent`, no SMS row. Passed.
+  4. Replay with the same idempotency key: same answer (v7), no new row. Passed.
+- **Left on dev:** work order 8e43c856 cancelled (v8); the patient EU-YE7YS2WX of doctor pk 30 stays, with its 5 message rows; one SMS sent to the test mobile and one email to the test login.

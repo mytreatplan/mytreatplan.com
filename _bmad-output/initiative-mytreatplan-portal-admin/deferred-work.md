@@ -276,3 +276,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-case-lifecycle/story-patient-list-and-file-with-stages-history-and-comments-plan.md`
   summary: The portrait writes (`patients.portrait`: attach, promote, remove) change the patient row without checking or raising `version` and without storing the actor; they should go through `patients.service` like the comments and status writes added in 10.4 (AD-15).
   evidence: 10.4 plan, Never list ("Fixing the portrait's missing version/actor (deferred)").
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-case-lifecycle/story-sms-fallback-for-case-messages-plan.md`
+  summary: `notifications.E001` only reacts when `SMS_SENDER` equals the Twilio path exactly, so a mistyped value (dev had a trailing full stop) passes `manage.py check` and every SMS then fails with ModuleNotFoundError; the check should also refuse a value that cannot be imported (refactor sweep 10.12).
+  evidence: 10.3 dev check 2, first run (2026-11-28): sms row failed ModuleNotFoundError until the setting was fixed.
