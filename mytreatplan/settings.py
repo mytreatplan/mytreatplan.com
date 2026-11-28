@@ -473,6 +473,9 @@ INSTALLED_APPS = [
     # Patients and work orders (epic-ordering 9.1, AD-5, AD-21): the regional patient record
     # and its code, the work order of a paid case, the doctor's patients page.
     'patients.apps.PatientsConfig',
+    # The records a doctor uploads for a case (epic-case-lifecycle 10.5): the `case_records`
+    # purpose, its link to the work order and the patient file's records section.
+    'records.apps.RecordsConfig',
     # The doctor's cart (epic-ordering 9.3, AD-2): the regional cart items, the case wizard
     # and the cart page.
     'cart.apps.CartConfig',

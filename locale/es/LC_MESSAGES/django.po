@@ -4223,3 +4223,67 @@ msgstr "La renovación automática está desactivada."
 #, python-format
 msgid "This subscription is no longer offered: your level ends on <strong>%(date)s</strong>."
 msgstr "Esta suscripción ya no se ofrece: su nivel finaliza el <strong>%(date)s</strong>."
+
+#: records/templates/records/_case_records.html
+msgid "Your records"
+msgstr "Sus registros"
+
+#: records/templates/records/_case_records.html
+msgid "Being checked"
+msgstr "En revisión"
+
+#: records/templates/records/_case_records.html
+msgid "Uploaded, waiting"
+msgstr "Subido, en espera"
+
+#: records/templates/records/_case_records.html
+msgid "Processed"
+msgstr "Procesado"
+
+#: records/templates/records/_case_records.html
+msgid "Refused"
+msgstr "Rechazado"
+
+#: records/templates/records/_case_records.html
+msgid "The archive may be password-protected or too complex to scan. Upload it again without a password."
+msgstr "El archivo comprimido puede estar protegido con contraseña o ser demasiado complejo para analizarlo. Vuelva a subirlo sin contraseña."
+
+#: records/templates/records/_case_records.html
+msgid "The file did not pass the security check. Upload another file."
+msgstr "El archivo no superó la comprobación de seguridad. Suba otro archivo."
+
+#: records/templates/records/_case_records.html
+msgid "The file could not be accepted. Try another file."
+msgstr "No se pudo aceptar el archivo. Pruebe con otro."
+
+#: records/templates/records/_case_records.html
+msgid "Upload your patient's records as one compressed file (for example a zip) of up to 1 GB. Keep this page open until the upload finishes; if your connection drops, it resumes by itself. A new upload replaces the previous file."
+msgstr "Suba los registros de su paciente en un único archivo comprimido (por ejemplo, un zip) de hasta 1 GB. Mantenga esta página abierta hasta que termine la subida; si se corta la conexión, se reanuda sola. Una nueva subida sustituye al archivo anterior."
+
+#: records/templates/records/_case_records.html
+msgid "Records complete"
+msgstr "Registros completos"
+
+#: records/views.py
+msgid "This case is not waiting for records any more."
+msgstr "Este caso ya no está esperando registros."
+
+#: records/views.py
+msgid "Your file is being checked. Records complete is available once the check is done."
+msgstr "Su archivo se está revisando. Podrá pulsar «Registros completos» cuando termine la revisión."
+
+#: records/views.py
+msgid "Upload your records first. Records complete is available once your file has passed the check."
+msgstr "Suba primero sus registros. «Registros completos» está disponible cuando su archivo haya superado la revisión."
+
+#: records/views.py
+msgid "This case changed meanwhile. Reload the page and try again."
+msgstr "Este caso ha cambiado entretanto. Recargue la página e inténtelo de nuevo."
+
+#: records/views.py
+msgid "The records could not be completed. Reload the page and try again."
+msgstr "No se pudieron completar los registros. Recargue la página e inténtelo de nuevo."
+
+#: records/views.py
+msgid "Thank you. Your records are complete and the case is now being processed."
+msgstr "Gracias. Sus registros están completos y el caso se está procesando."

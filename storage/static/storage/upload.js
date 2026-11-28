@@ -17,6 +17,10 @@
   var SESSION_EXPIRED = 'session expired: reload the page and sign in';
 
   function init(root) {
+    // The widget's include may load this script more than once on a page (the patient file
+    // has two widgets): start each widget once.
+    if (root.dataset.storageReady === 'true') return;
+    root.dataset.storageReady = 'true';
     var logBox = root.dataset.logId ? document.getElementById(root.dataset.logId) : null;
     var signUrl = root.dataset.signUrl;
     var completeUrl = root.dataset.completeUrl;
@@ -165,7 +169,16 @@
     uppy.on('error', function (error) { log('error: ' + (error && error.message)); });
 
     window.addEventListener('offline', function () { log('browser went offline'); });
-    window.addEventListener('online', function () { log('browser is back online'); });
+    window.addEventListener('online', function () {
+      log('browser is back online');
+      // A connection cut mid-upload fails its requests; resume the failed uploads of this
+      // widget (the same multipart upload, ListParts) without the page reloading.
+      if (typeof uppy.retryAll === 'function') {
+        Promise.resolve(uppy.retryAll()).catch(function (error) {
+          log('retry after reconnecting failed: ' + (error && error.message));
+        });
+      }
+    });
     log('ready (Uppy ' + (window.Uppy.Uppy.VERSION || '?') + ', aws-s3 '
         + (window.Uppy.AwsS3.VERSION || '?') + ')');
   }

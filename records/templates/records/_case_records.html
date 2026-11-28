@@ -1,0 +1,43 @@
+{% load i18n static %}{% comment %}
+The records section of the patient file's `case_actions` slot (records.views.slot_context,
+epic-case-lifecycle 10.5): while the live case waits for records, the upload widget (one
+file of up to 1 GB), its status and the Records complete form; afterwards, the status of
+each service that has a records file. static/js/case-records.js posts the stored object's
+id with the hidden attach form. Rendered with `slot` (the context) and the page's context.
+{% endcomment %}
+{% if slot.upload or slot.statuses %}
+<section class="rounded-12 border border-ink/20 px-5 py-4" data-case-records>
+  <h3 class="text-[18px] font-black leading-[1.2]">{% translate "Your records" %}</h3>
+  {% if slot.statuses %}
+  <ul class="mt-3 flex flex-col gap-2" data-records-statuses>
+    {% for row in slot.statuses %}
+    <li class="text-copy" data-records-status="{{ row.status }}">
+      {% if row.status == slot.CHECKING %}<span class="font-semibold">{% translate "Being checked" %}</span>
+      {% elif row.status == slot.WAITING %}<span class="font-semibold">{% translate "Uploaded, waiting" %}</span>
+      {% elif row.status == slot.PROCESSED %}<span class="font-semibold">{% translate "Processed" %}</span>
+      {% else %}<span class="font-semibold">{% translate "Refused" %}</span>
+        <span class="text-ink-muted" data-records-reason="{{ row.reason }}">{% if row.reason == "unscannable" %}{% translate "The archive may be password-protected or too complex to scan. Upload it again without a password." %}{% elif row.reason == "infected" %}{% translate "The file did not pass the security check. Upload another file." %}{% else %}{% translate "The file could not be accepted. Try another file." %}{% endif %}</span>
+      {% endif %}
+      {% if row.service %}<span class="text-ink-muted">&middot; {{ row.service }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  {% if slot.upload %}
+  <p class="mt-3 text-copy text-ink-muted">{% translate "Upload your patient's records as one compressed file (for example a zip) of up to 1 GB. Keep this page open until the upload finishes; if your connection drops, it resumes by itself. A new upload replaces the previous file." %}</p>
+  <div class="mt-4" data-records-widget>
+    {% include "storage/_upload_widget.html" with purpose=slot.purpose max_size=slot.max_size single_file=True height=300 %}
+  </div>
+  <form method="post" action="{% url 'case_records_attach' patient.code %}" hidden data-records-attach>
+    {% csrf_token %}
+    <input type="hidden" name="object_id" value="">
+  </form>
+  <form method="post" action="{% url 'case_records_complete' patient.code %}" class="mt-4" data-records-complete>
+    {% csrf_token %}
+    <input type="hidden" name="version" value="{{ slot.version }}">
+    <button type="submit" class="min-h-[52px] cursor-pointer rounded-pill bg-green-ui px-8 text-[18px] font-black text-white transition hover:bg-green-deep focus-visible:shadow-focus-pill focus-visible:outline-none">{% translate "Records complete" %}</button>
+  </form>
+  <script src="{% static 'js/case-records.js' %}" defer></script>
+  {% endif %}
+</section>
+{% endif %}

@@ -190,11 +190,13 @@ def _finish_promotion(object_id):
     return True
 
 
-def _reject(object_id):
+def _reject(object_id, code=None):
     """Delete the object from the bucket (both keys; a key already gone is no error),
     keep the row as rejected, leave the system's DeletionTrace. False when the row may no
     longer change (gone, already decided, or its deletion asked: that deletion removes
-    every key)."""
+    every key). `code` is the scan's outcome code: `infected` is kept on the row as its
+    `reject_reason`, and `unscannable` and `limit_exceeded` (too large or complex to scan
+    fully) are both kept as `unscannable`."""
     obj = (StoredObject.objects.select_for_update()
            .filter(pk=object_id, state=StoredObject.QUARANTINE,
                    delete_requested_at__isnull=True).first())
@@ -202,7 +204,10 @@ def _reject(object_id):
         return False
     s3.delete_keys(s3.object_keys(object_id))
     obj.state = StoredObject.REJECTED
-    obj.save(update_fields=['state'])
+    if code == 'limit_exceeded':
+        code = StoredObject.UNSCANNABLE
+    obj.reject_reason = code if code in (StoredObject.UNSCANNABLE, StoredObject.INFECTED) else None
+    obj.save(update_fields=['state', 'reject_reason'])
     DeletionTrace.objects.get_or_create(
         object_id=object_id,
         defaults={'actor_type': DeletionTrace.SYSTEM, 'actor_uuid': None,
@@ -310,7 +315,7 @@ def scan_object_task(object_uuid, attempt=1):
             _copy_to_clean(object_id)
         applied = []
         done = run_once(SCAN_EFFECT, object_id, lambda: applied.append(
-            (_finish_promotion if promote else _reject)(object_id)))
+            _finish_promotion(object_id) if promote else _reject(object_id, code)))
     except _Undecided as exc:
         return _retry_or_report(object_id, exc.code, attempt)
     except Exception as exc:  # noqa: BLE001 - S3 or the database failed; nothing was kept
