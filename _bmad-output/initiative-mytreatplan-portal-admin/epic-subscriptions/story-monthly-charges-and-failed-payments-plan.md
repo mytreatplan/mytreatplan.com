@@ -35,15 +35,25 @@ context: []
 
 **Never:** No change to `charge_saved_card`, order expiry or the payments hooks; no cancellation status or downgrade (8.9); no upgrade (8.8); no Revolut saved cards (7.16); no outbox events.
 
+## Decisions
+
+- Decision (user, 2026-11-28): each month costs the catalogue's monthly price on its charge day (as 8.6 prices a renewal).
+- Decision (user, 2026-11-28): each failed attempt emails the doctor the order's payment link (open 24 h) and the next retry date; the doctor keeps the level until the day-7 retry fails, then drops to Basic that day.
+- Decision (user, 2026-11-28): the upgrade screen shows a monthly payer the next charge date and the card, with "Turn off auto-renew": they keep paying until the commitment ends, then Basic.
+- Decision (user, 2026-11-28): the 30-day reminder before the commitment renews, as for annual.
+- Decision (user, 2026-11-28): each paid month emails the receipt with its invoice, as 8.6's renewal receipt.
+- Decision (user, 2026-11-28): one plan, not split (about 2,300 tokens).
+
 ## I/O & Edge-Case Matrix
 
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |----------|--------------|---------------------------|----------------|
-| Month charged | monthly Advanced, month 2 due today, Redsys card | one order, one charge, one invoice; included cases earned for 2 months | rerun: nothing more |
+| Month charged | monthly Advanced, month 2 due today, Redsys card | one order, one charge, one invoice; receipt email; included cases earned for 2 months | rerun: nothing more |
+| Reminder | 30 days before month 13, auto-renew on | the 30-day reminder (annual's) | once |
 | Due on the 31st | started 31 Jan | month 2 due 28/29 Feb | — |
-| Declined | month 3 declined | record `past_due`; retries day 1, 3, 7 | — |
+| Declined | month 3 declined | record `past_due`; email with link and next retry date at each failed attempt; retries day 1, 3, 7 | — |
 | Retry pays | paid on day 3 | record `active`; no more retries | — |
-| Grace over | day-7 retry declined | record → Basic (reason `renewal_unpaid`); cases end | — |
+| Grace over | day-7 retry declined | record → Basic that day (reason `renewal_unpaid`); cases end | — |
 | Commitment renews | month 13 due, auto-renew on, paid | term +12 months, new grant, status active | — |
 | Auto-renew off | month 13 due | nothing charged; → Basic the day after `ends_on` | — |
 | No card | card removed or expired | treated as declined (retries, then Basic) | — |
@@ -59,8 +69,8 @@ context: []
 - `payments/service.py` `create_subscription_order` :441 (system actor, `period=monthly`, `save_card=True`), `months_paid` :669-674; `payments/repeat.py` `charge_saved_card` :232 (per (order, period); a paid order is `NOT_PAYABLE`, so one order per month), outcomes :45; `invoices` one per order on `paid`.
 - `subscriptions/included.py` `earned` :85-92 -- monthly: `count × min(months paid in the term, 12) // 12`, months paid = the grant's order paid (1) + paid `MonthlyCharge` rows of the term (through a service read; `included` must not name the subscription models).
 - Job: `subscriptions/management/commands/renew_subscriptions.py` (add the monthly step before the drop), `deploy/jobs.conf:74-78` unchanged schedule.
-- Emails: `subscriptions/emails.py` :92-139, `tasks.py` :49-97 (`run_once`, period = due date) -- per Open Questions 2, 4, 5.
-- Upgrade screen: `upgrade.html:17` renewal block, `renewal_info` (:964-970 returns None for monthly), `set_auto_renew` (:986-987 refuses monthly) -- per Open Question 3.
+- Emails: `subscriptions/emails.py` :92-139, `tasks.py` :49-97 (`run_once`, period = due date + attempt): a failed-attempt email (link + next retry date), the monthly receipt (8.6 receipt pattern), the 30-day reminder before month 13 (8.6 `due_reminders` extended to monthly).
+- Upgrade screen: `upgrade.html:17` renewal block, `renewal_info` (:964-970 returns None for monthly: extend with the next charge date), `set_auto_renew` (:986-987 refuses monthly: allow; off = no charge after `ends_on`). No "Renew now" for monthly.
 - Tests: `subscriptions/tests/test_renewals.py` fixtures, `subscriptions/tests/test_purchase.py` (`spanish`, `buy`, `pay_on_fake`), `payments/tests/test_repeat.py` (`saved_on_redsys`, `fake_charge`), `subscriptions/tests/test_included_cases.py` (monthly earning).
 
 ## Tasks & Acceptance
@@ -70,7 +80,7 @@ context: []
 - [ ] `subscriptions/service.py` -- monthly charges, retries, `past_due`, drop, commitment renewal, `activate` branch.
 - [ ] `subscriptions/included.py` (+ a service read) -- monthly earning from paid months of the term.
 - [ ] command -- the monthly step in `renew_subscriptions`; `deploy/README.md`, `README.md` "Renewals" section.
-- [ ] emails, upgrade screen, ES strings -- per Open Questions.
+- [ ] `subscriptions/emails.py`, `tasks.py`, templates, `upgrade.html`, `locale/es/...django.po` -- failed-attempt email, monthly receipt, reminder before month 13, the monthly block (next charge, card, auto-renew).
 - [ ] `subscriptions/tests/test_monthly.py` -- every matrix row; rerun idempotence; included cases earned month by month; PostgreSQL-safe (row locks inside transactions).
 
 **Acceptance Criteria:**
@@ -91,11 +101,3 @@ context: []
 
 **Manual checks:**
 - dev (Redsys test terminal): a month charged, a rerun, a declined card through the retries to Basic, a commitment renewal.
-
-## Open Questions
-
-1. **Monthly price.** (a) The catalogue's monthly price on each charge day, as 8.6 prices a renewal (recommended; no payments change). (b) Frozen at the start of the 12-month commitment: needs `payments` to create an order at a given price.
-2. **After a failed charge.** (a) An email at each failed attempt, with the order's payment link (open 24 h) and the next retry date; the doctor stays on the level until the day-7 retry fails, then drops that day (recommended). (b) One email at the first failure only, the drop the day after the day-7 retry.
-3. **Monthly payer's control.** (a) On the upgrade screen, the next charge date and the card, and "Turn off auto-renew": they keep paying until the commitment ends, then Basic (recommended; it is the epic's "a monthly payer who cancels keeps paying until the commitment ends"). (b) Nothing now: 8.9 adds cancellation.
-4. **Before the commitment renews.** (a) The 30-day reminder, as for annual (recommended). (b) No reminder.
-5. **Monthly receipts.** (a) Each paid month emails the receipt with its invoice, as 8.6's renewal receipt (recommended). (b) No email; invoices in the doctor area only.
