@@ -282,3 +282,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-case-lifecycle/story-sms-fallback-for-case-messages-plan.md`
   summary: For 10.10 (assignment proposal and confirmation, which sends over both channels): an SMS row says `sent` as soon as Twilio accepts the request, but Twilio can fail it afterwards (dev, 2026-11-28: error 21703, no usable sender while "MyTreatPlan" awaited verification); add a Twilio status callback (StatusCallback URL, request signature checked) that stores the final delivery status and error code on the row, keeping the Twilio message SID.
   evidence: 10.3 dev check 2: row `sent`, Twilio Messages list showed status failed, error 21703, empty from. User decision 2026-11-28: defer to 10.10.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-case-lifecycle/story-records-upload-with-status-plan.md`
+  summary: Resume of a records upload after a page reload (or a closed browser): the upload widget resumes only within the open page (it retries by itself when the browser comes back online); a reload loses the in-progress multipart upload and the doctor starts again. Resuming would need Uppy's golden-retriever or a stored upload id plus re-selecting the same file.
+  evidence: User decision 2026-11-28 while planning 10.5: resume stays within the open page; the page asks the doctor to keep it open.

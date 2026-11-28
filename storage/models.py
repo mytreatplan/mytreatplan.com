@@ -49,6 +49,13 @@ class StoredObject(models.Model):
     content_type = models.CharField(max_length=CONTENT_TYPE_MAX_LENGTH, blank=True)
     original_name = EncryptedCharField(max_length=ORIGINAL_NAME_MAX_LENGTH, blank=True)
     state = models.CharField(max_length=20, choices=STATES, default=QUARANTINE)
+    # Why the scan rejected it, for the pages that explain it (10.5): `unscannable` (an
+    # encrypted archive, or one too large or complex to scan) or `infected`. Blank for any other rejection and for
+    # an object that was not rejected.
+    UNSCANNABLE, INFECTED = 'unscannable', 'infected'
+    REJECT_REASONS = [(UNSCANNABLE, 'Could not be scanned'), (INFECTED, 'Infected')]
+    reject_reason = models.CharField(max_length=20, choices=REJECT_REASONS, null=True,
+                                     blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     # Set when its deletion is asked (storage.service.delete): no download URL after that,
     # and the hourly `sweepstorage` job enqueues the deletion again until it succeeds.

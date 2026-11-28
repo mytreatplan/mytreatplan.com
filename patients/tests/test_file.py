@@ -283,12 +283,25 @@ def test_the_service_refuses_a_bad_actor_and_stale_version(doctor, patient):
 
 # --- Slots ------------------------------------------------------------------------------------
 
-def test_the_slots_render_nothing_until_an_app_registers(doctor, patient):
+@pytest.fixture
+def without_the_records_entry():
+    """The records app (10.5) fills `case_actions` in production; these tests check the
+    slots themselves, empty, so take its entry out for the test."""
+    entry = slots._registry[slots.CASE_ACTIONS].get('case_records')
+    slots.unregister(slots.CASE_ACTIONS, 'case_records')
+    yield
+    if entry is not None:
+        slots._registry[slots.CASE_ACTIONS]['case_records'] = entry
+
+
+def test_the_slots_render_nothing_until_an_app_registers(doctor, patient,
+                                                         without_the_records_entry):
     page = browser(doctor).get(file_url(patient)).content.decode()
     assert 'data-slot=' not in page
 
 
-def test_a_registered_slot_is_rendered_and_can_be_removed(doctor, patient, slot_template):
+def test_a_registered_slot_is_rendered_and_can_be_removed(doctor, patient, slot_template,
+                                                          without_the_records_entry):
     slots.register(slots.CASE_ACTIONS, 'demo', 'slot_demo.html',
                    lambda request, p: {'word': 'hello-' + p.code})
     slots.register(slots.APPOINTMENTS, 'demo2', 'slot_demo.html',

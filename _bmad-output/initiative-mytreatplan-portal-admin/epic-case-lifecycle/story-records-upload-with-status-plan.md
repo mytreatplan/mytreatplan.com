@@ -3,14 +3,14 @@ title: 'Records upload with status'
 type: 'feature'
 ticket: '5'
 created: '2026-11-28'
-status: 'in-progress'
+status: 'built'
 baseline_revision: '7de40ea5f2f214db7dc2579b0cb944ca55c32ec0'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context:
   - '{project-root}/_bmad-output/initiative-mytreatplan-portal-admin/architecture-portal-admin/architecture-portal-admin.md'
@@ -122,6 +122,31 @@ context:
 
 ## Implementation Notes
 
+- New app `records`:
+  - `CaseRecords` is a one-to-one link to `WorkOrder`. Its `stored_object` is SET_NULL.
+  - Purpose `case_records`: no download, unclaimed after 6 h, `in_use` while linked.
+  - `attach`, `complete` and `statuses` in `records/service.py`.
+  - POSTs at `patients/<code>/records/` and `.../records/complete/`.
+  - The slot entry is registered in `RecordsConfig.ready`.
+- `StoredObject.reject_reason` (migration `storage/0004`) is set by `_reject`. `limit_exceeded` is stored as `unscannable`.
+- `upload.js`:
+  - It calls `retryAll` on the browser's `online` event.
+  - A `storageReady` guard starts each widget once, because the patient file now includes the widget twice.
+- `attach` links an object the scan already rejected, so the page can say why it was refused. "Processed" applies only to a clean file. The Records complete button always shows while the case waits for records, and the server refuses it until the file is clean.
+- Verification: portal suite 4777 passed, 17 skipped, 11 failed (the known local WeasyPrint `OSError`s). `makemigrations --check` is clean. An earlier run had one browser signup test failing (`test_failure_policies.py` row 5), which this change does not touch, and it passed on the re-run.
+
 ## Plan Change Log
 
 ## Review Triage Log
+
+Pass 1 (quick lens, Opus): 7 findings: high 0, medium 1, low 6, false 0. Five were patched and two rejected.
+
+| # | Finding | Verdict | Route | Evidence / action |
+|---|---------|---------|-------|-------------------|
+| 1 | A "too complex" archive gets the generic message | medium | patch | `clamd.Verdict.code` gives `limit_exceeded` for `Heuristics.Limits.Exceeded.*` and for a size-limit ERROR, and `_reject` kept only `unscannable` and `infected`. The user's decision puts "too complex to scan" under `unscannable`, so `limit_exceeded` is now stored as `unscannable`. A test was added. |
+| 2 | The records status names a service by its code | low | patch | `_services_of` on the same page uses `public_name`, with the code as the fallback. The records status now uses the same name. |
+| 3 | The `statuses` docstring names the wrong key | low | patch | Corrected. |
+| 4 | `current` in `slot_context` is never used | low | patch | Deleted. |
+| 5 | The "network cut" row is tested only by reading the JS source | low | reject | The behaviour is one `uppy.retryAll()` call on `online`. A browser test that simulates going offline adds a Playwright offline harness. It is covered instead by a manual staging check: cut the connection mid-upload with the page open. |
+| 6 | The autouse fixture in `test_file.py` covers the whole module | low | patch | The fixture now applies only to the slot tests. |
+| 7 | The Uppy assets load twice on the patient file | low | reject | It works. The `storageReady` guard starts each widget once, and both listeners filter on `detail.purpose`. Loading the assets once would need a page-level flag across the two includes. |
