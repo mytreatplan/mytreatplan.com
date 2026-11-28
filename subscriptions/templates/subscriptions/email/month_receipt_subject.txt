@@ -1,0 +1,1 @@
+{% load i18n %}{% if renewed %}{% blocktranslate with name=level %}Your MyTreatPlan {{ name }} subscription is renewed{% endblocktranslate %}{% else %}{% blocktranslate with name=level %}Your monthly payment for MyTreatPlan {{ name }}{% endblocktranslate %}{% endif %}

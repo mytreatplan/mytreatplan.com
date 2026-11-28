@@ -1,0 +1,24 @@
+{% load i18n %}{% autoescape off %}{% translate "Hello," %}
+
+{% if dropped %}{% blocktranslate with name=level date=due_on|date:"DATE_FORMAT" %}We could not charge your saved card for the monthly payment of your MyTreatPlan {{ name }} subscription due on {{ date }}, after several tries. Your account is on Basic from today.{% endblocktranslate %}
+
+{% translate "To subscribe again, choose a level on your subscription levels:" %}
+
+{{ upgrade_url }}
+{% else %}{% blocktranslate with name=level date=due_on|date:"DATE_FORMAT" %}We could not charge your saved card for the monthly payment of your MyTreatPlan {{ name }} subscription due on {{ date }}.{% endblocktranslate %}
+
+{% if link %}{% translate "Please pay it within 24 hours here (sign in to MyTreatPlan first):" %}
+
+{{ link }}
+
+{% translate "Order" %}: {{ order.reference }}
+{% else %}{% translate "We could not prepare this month's payment. Please contact us to keep your subscription." %}
+{% endif %}
+{% blocktranslate with name=level next=next_try_on|date:"DATE_FORMAT" last=last_try_on|date:"DATE_FORMAT" %}You keep {{ name }} meanwhile. We will try your card again on {{ next }}. If the payment is still not made after our last try on {{ last }}, your account moves to Basic.{% endblocktranslate %}
+{% endif %}
+{% translate "If you have questions, please contact us:" %}
+
+{{ support_url }}
+
+MyTreatPlan
+{% endautoescape %}

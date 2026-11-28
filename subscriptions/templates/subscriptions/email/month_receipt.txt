@@ -1,0 +1,22 @@
+{% load i18n %}{% autoescape off %}{% translate "Hello," %}
+
+{% if renewed %}{% blocktranslate with name=level %}Thank you: your MyTreatPlan {{ name }} subscription is renewed for another 12 months, paid monthly.{% endblocktranslate %}{% else %}{% blocktranslate with name=level %}Thank you: we received the monthly payment of your MyTreatPlan {{ name }} subscription.{% endblocktranslate %}{% endif %}
+
+{% translate "Level" %}: {{ level }}
+{% translate "Billing" %}: {% translate "monthly, with a 12-month commitment" %}
+{% translate "Month from" %}: {{ due_on|date:"DATE_FORMAT" }}
+{% translate "Paid" %}: {{ order.total }} {{ order.currency }}
+{% if next_charge %}{% translate "Next charge" %}: {{ next_charge|date:"DATE_FORMAT" }}
+{% endif %}{% if ends_on %}{% translate "End of the commitment" %}: {{ ends_on|date:"DATE_FORMAT" }}
+{% endif %}{% translate "Order" %}: {{ order.reference }}
+
+{% blocktranslate with number=invoice.number %}Your invoice {{ number }} is attached. You can also download it from your invoices:{% endblocktranslate %}
+
+{{ invoices_url }}
+
+{% translate "You can turn automatic renewal on or off on your subscription levels:" %}
+
+{{ upgrade_url }}
+
+MyTreatPlan
+{% endautoescape %}

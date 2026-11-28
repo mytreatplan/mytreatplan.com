@@ -21,12 +21,13 @@ from integration.snapshot_tables import SnapshotFedModel
 from integration.tests.snapshot_rows import pull, snapshot
 from subscriptions import service
 from subscriptions.models import (AppendOnly, CaseGrant, CaseUse, DoctorSubscription,
-                                  Renewal, SubscriptionChange)
+                                  MonthlyCharge, Renewal, SubscriptionChange)
 
 from .helpers import ADVANCED, PASSWORD, catalogue, doctor, load
 
 User = get_user_model()
-MODELS = (DoctorSubscription, SubscriptionChange, CaseGrant, CaseUse, Renewal)
+MODELS = (DoctorSubscription, SubscriptionChange, CaseGrant, CaseUse, Renewal,
+          MonthlyCharge)
 
 
 def test_neither_model_is_snapshot_fed_nor_in_the_django_admin():
@@ -111,10 +112,11 @@ ALLOWED = {Path('subscriptions/models.py'), Path('subscriptions/service.py')}
 OWN_MIGRATIONS = Path('subscriptions/migrations')
 MODEL_NAMES = {'DoctorSubscription', 'SubscriptionChange'}
 TABLES = {'subscriptions_doctorsubscription', 'subscriptions_subscriptionchange',
-          'subscriptions_renewal'}
-# Epic-subscriptions 8.6: the renewal rows, named only by the service (as code: the word
-# "renewal" is common prose, so strings are scanned for its table only).
-CODE_NAMES = {'Renewal'}
+          'subscriptions_renewal', 'subscriptions_monthlycharge'}
+# Epic-subscriptions 8.6 and 8.7: the renewal and monthly charge rows, named only by the
+# service (as code: the word "renewal" is common prose, so strings are scanned for the
+# tables only).
+CODE_NAMES = {'Renewal', 'MonthlyCharge'}
 # The included cases (epic-subscriptions 13): only their module (and the models) name them.
 CASE_ALLOWED = {Path('subscriptions/models.py'), Path('subscriptions/included.py')}
 CASE_NAMES = {'CaseGrant', 'CaseUse'}

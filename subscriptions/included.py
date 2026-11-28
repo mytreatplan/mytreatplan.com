@@ -13,7 +13,8 @@ backfill command go through it.
   has started (8.6), while the record
   counts as a standard paid tier), and only on the days of its term. Earned: `count` (upfront) or `count × months paid // 12`
   (monthly; the months paid are the confirmed payments of the purchase order,
-  `payments.service.months_paid`). Available: earned − reserved − consumed.
+  `payments.service.months_paid`, plus the months of the term paid since, 8.7's
+  `service.paid_months`). Available: earned − reserved − consumed.
 - `reserve(order)`, `consume(order)`, `release(order)` and `refund(order)`: the receivers
   of the order hooks `created`, `paid`, `cancelled` / `expired` and `refunded` (registered
   in `SubscriptionsConfig.ready`). Each acts on the order's lines with `included_case` set
@@ -84,11 +85,17 @@ def has_term_grant(order_id):
 
 def earned(grant):
     """How many cases the grant has given so far: `count` (upfront) or `count × months
-    paid // 12` (monthly: a case is earned only when fully paid for)."""
+    paid // 12` (monthly: a case is earned only when fully paid for). A monthly term's months
+    paid (8.7): the confirmed payments of the order that started it (its first month) plus
+    the months of the term paid since (`service.paid_months`), at most 12."""
     if grant.accrual == UPFRONT:
         return grant.count
     from payments import service as payments
-    months = min(payments.months_paid(grant.source_id), TERM_MONTHS)
+
+    from . import service
+    months = payments.months_paid(grant.source_id) + service.paid_months(
+        grant.doctor_uid, grant.starts_on, grant.ends_on)
+    months = min(months, TERM_MONTHS)
     return grant.count * months // TERM_MONTHS
 
 

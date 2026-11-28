@@ -186,7 +186,7 @@ covering the price, the order is paid at once with a 0.00 invoice and no gateway
 
 A doctor who pays a year upfront renews automatically (user decisions 2026-11-27). Only a
 standard (not manual), upfront, active Advanced or Premium record takes part; monthly ones are
-8.7's. Everything is in `subscriptions.service`; the daily job `renew_subscriptions`
+8.7's ("Monthly charges" below). Everything is in `subscriptions.service`; the daily job `renew_subscriptions`
 (`renewsubscriptions` in `deploy/jobs.conf`, 05:00 UTC) runs, in order:
 
 - **Reminder** (`due_reminders`): with auto-renew on, one email 30 days before `ends_on` (a
@@ -239,6 +239,49 @@ replaced by the job's own order on `ends_on`).
 
 Dev check (Redsys's public test terminal; deploy/README.md, "Doctor subscriptions"): reminder,
 renewal, rerun, auto-renew off, declined card, IE link.
+
+### Monthly charges (epic-subscriptions 8.7)
+
+A doctor who pays monthly (a 12-month commitment) is charged each month by the same daily job
+(user decisions 2026-11-28), its step `charge_months_due` between the renewals and the drop.
+Only a standard (not manual), monthly, active or `past_due` Advanced or Premium record takes
+part. Month n of a term is due `started_on + n months` (relativedelta: a term started on 31
+January has month 2 due on 28 or 29 February); month 1 is the purchase or renewal order itself.
+The first month after the term (`ends_on + 1 day`) renews the commitment for another 12 months,
+only with auto-renew on.
+
+- **Charge**: on the due date, the month's own order (the system as the actor, the held row's
+  monthly price that day, the card saved) and one `MonthlyCharge(record, due_on)` row holding
+  the order id and the retry state, so a rerun never charges twice; then, outside any
+  transaction, `payments.repeat.charge_saved_card` (period: the due date). Paid: the order's
+  `paid` hook marks the month paid (`activate` tells a month order by its `MonthlyCharge` row,
+  never a purchase), with its invoice and the monthly receipt (`send_month_receipt`, once per
+  order, the invoice's codes-only PDF attached). One month per record and run.
+- **Failure**: a decline, no saved card, a charge refused for another reason (a Sentry warning)
+  or an order that could not be made (the row no longer sold, no payment method: a Sentry
+  warning, no link) sets the record `past_due` (reason `month_unpaid`; the level and the
+  included cases kept) and emails the order's checkout as a payment link with the next retry
+  date (`send_month_failed`, once per attempt). Retries on days 1, 3 and 7 after the due date,
+  each on the same order while it is payable, else on a fresh one. The day-7 retry declined
+  drops the record to Basic that day (reason `renewal_unpaid`) and emails that the subscription
+  ended. A paid retry, or the link paid, makes the record `active` again (reason `month_paid`,
+  the change naming the order) and ends the retries; a link paid after the drop gives the term
+  back. Unknown outcome: no email, no retry and no drop while the order's charge needs staff
+  attention (a Sentry error from `payments.repeat`).
+- **Renewal**: the first month after the term paid starts the next term on its due date
+  (reason `renewal` with the order, the system as the actor), with a new monthly grant of
+  included cases. Retried and dropped as any month. A row no longer sold: no order, a Sentry
+  warning, Basic the day after `ends_on`.
+- **Auto-renew off**: the doctor keeps paying until the commitment ends; nothing is charged
+  after `ends_on`, and `drop_unrenewed` puts the record on Basic the day after it.
+
+The 30-day reminder (`due_reminders`) also goes 30 days before a monthly commitment renews
+(the renewal date is `ends_on + 1 day`, the price per month). Included cases of a monthly term:
+`count × months paid ÷ 12`, the months paid being the term's order (its confirmed payments)
+plus the term's paid `MonthlyCharge` rows (`service.paid_months`). On the upgrade screen a
+monthly payer sees the next charge date (or the next retry), the card, a failed month being
+retried, when the commitment renews (or ends) and the Turn off / Turn on button; no "Renew
+now".
 
 ## Included cases (epic-subscriptions 13)
 

@@ -1,10 +1,10 @@
 {% load i18n money %}{% autoescape off %}{% translate "Hello," %}
 
-{% blocktranslate with name=level date=ends_on|date:"DATE_FORMAT" %}Your MyTreatPlan {{ name }} subscription, paid a year upfront, runs until {{ date }}. It renews automatically for another year.{% endblocktranslate %}
+{% if monthly %}{% blocktranslate with name=level date=ends_on|date:"DATE_FORMAT" %}Your MyTreatPlan {{ name }} subscription, paid monthly with a 12-month commitment, runs until {{ date }}. It renews automatically for another 12 months.{% endblocktranslate %}{% else %}{% blocktranslate with name=level date=ends_on|date:"DATE_FORMAT" %}Your MyTreatPlan {{ name }} subscription, paid a year upfront, runs until {{ date }}. It renews automatically for another year.{% endblocktranslate %}{% endif %}
 
 {% translate "Level" %}: {{ level }}
-{% translate "Renewal date" %}: {{ ends_on|date:"DATE_FORMAT" }}
-{% if price %}{% translate "Price" %}: {% blocktranslate with price=price|money %}{{ price }} for a year, paid upfront{% endblocktranslate %} ({% translate "+ VAT where applicable" %})
+{% translate "Renewal date" %}: {{ renews_on|date:"DATE_FORMAT" }}
+{% if price %}{% translate "Price" %}: {% if monthly %}{% blocktranslate with price=price|money %}{{ price }} per month{% endblocktranslate %}, {% translate "12-month commitment" %}{% else %}{% blocktranslate with price=price|money %}{{ price }} for a year, paid upfront{% endblocktranslate %}{% endif %} ({% translate "+ VAT where applicable" %})
 {% endif %}{% translate "Payment" %}: {% if card_last4 %}{% blocktranslate with last4=card_last4 %}your saved card ending in {{ last4 }}{% endblocktranslate %}{% else %}{% translate "payment link: on the renewal date we will email you a link to pay" %}{% endif %}
 
 {% translate 'To turn automatic renewal off, choose "Turn off automatic renewal" on your subscription levels:' %}

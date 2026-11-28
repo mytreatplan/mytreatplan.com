@@ -27,6 +27,9 @@
   last 30 days of the term, "Renew now" opens `upgrade_purchase` for the same level in
   renewal mode: a year upfront only, with the voucher field; POST calls
   `service.renew_now`, which owns the rules (a forged POST outside the window is refused).
+- Monthly charges (epic-subscriptions 8.7, user decisions 2026-11-28): a monthly payer sees
+  the next charge date, the card and the same Turn off / Turn on button (off: they keep
+  paying until the commitment ends, then Basic); no "Renew now".
 
 Everything about the subscription comes from `subscriptions.service.upgrade_options`;
 the prices are the catalogue's (AD-16), shown with the `money` filter. A level is named

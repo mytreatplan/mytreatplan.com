@@ -411,23 +411,20 @@ def test_a_deactivated_subscription_is_not_renewed_the_doctor_is_told_and_basic_
     assert record(user).tier == 'basic'
 
 
-# --- Manual and monthly records ------------------------------------------------------------
+# --- Manual records (monthly ones are 8.7's: test_monthly.py) ---------------------------------
 
-def test_manual_and_monthly_records_are_ignored(loaded, monkeypatch):
-    monthly = spanish('mo@example.com')
-    service.change(monthly, expected_version=1, actor=service.SYSTEM_ACTOR, reason='test',
-                   tier='advanced', subscription_id=ADVANCED, billing_period='monthly',
-                   auto_renew=True, ends_on=today())
+def test_manual_records_are_ignored(loaded, monkeypatch):
     manual = spanish('ma@example.com')
     service.assign_manual(manual, resolver.subscription_by_id(MANUAL), expected_version=1,
                           actor=service.admin_actor(ADA), ends_on=today())
-    before = [record(user).business_values() for user in (monthly, manual)]
+    before = record(manual).business_values()
     calls = []
     fake_charge(monkeypatch, lambda *a: calls.append(a))
     assert service.due_reminders(today() - timedelta(days=5)) == 0
     assert service.renew_due(today()) == {}
+    assert service.charge_months_due(today() + DAY) == {}
     assert service.drop_unrenewed(today() + DAY) == 0
-    assert [record(user).business_values() for user in (monthly, manual)] == before
+    assert record(manual).business_values() == before
     assert not Order.objects.exists() and calls == []
 
 

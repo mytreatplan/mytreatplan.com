@@ -6,7 +6,9 @@ side by side from the tablet breakpoint and stacked on a phone, the current one 
 words. Prices are the catalogue's net prices (the `money` filter); no VAT amount. A running
 annual subscription (`renewal`, epic-subscriptions 8.6) shows its renewal date, the card's
 last 4 or the payment link, the Turn off / Turn on button and, in the last 30 days, "Renew
-now".
+now". A monthly one (8.7) shows the next charge date and the card, a failed payment being
+retried, when the commitment renews (or, auto-renew off, ends) and the same button; no
+"Renew now".
 {% endcomment %}
 
 {% block title %}{% translate "Subscription levels" %} &mdash; MyTreatPlan{% endblock %}
@@ -16,7 +18,18 @@ now".
 <p class="mt-3 text-copy text-ink-muted" data-current-level>{% blocktranslate with name=current_name %}Your current level is <strong class="text-ink">{{ name }}</strong>.{% endblocktranslate %}</p>
 {% if renewal %}
 <div class="mt-4 flex flex-col gap-3 rounded-12 border border-line bg-surface p-5 text-copy" data-renewal>
+  {% if renewal.monthly %}
+  {% if renewal.past_due %}<p class="font-semibold" data-past-due>{% translate "Your last monthly payment could not be charged. We emailed you a link to pay it." %}</p>{% endif %}
+  {% if renewal.next_charge_on %}<p data-next-charge>{% blocktranslate with date=renewal.next_charge_on|date:"DATE_FORMAT" %}Paid monthly: next charge on <strong>{{ date }}</strong>.{% endblocktranslate %}
+    <span data-renewal-payment>{% if renewal.card_last4 %}{% blocktranslate with last4=renewal.card_last4 %}Charged to your saved card ending in {{ last4 }}.{% endblocktranslate %}{% else %}{% translate "We will email you a payment link on that day." %}{% endif %}</span></p>{% endif %}
   {% if not renewal.sold %}
+  <p data-renewal-date>{% blocktranslate with date=renewal.ends_on|date:"DATE_FORMAT" %}This subscription is no longer offered: your level ends on <strong>{{ date }}</strong>.{% endblocktranslate %}</p>
+  {% elif renewal.auto_renew %}
+  <p data-renewal-date>{% blocktranslate with date=renewal.renews_on|date:"DATE_FORMAT" %}Your 12-month commitment renews automatically on <strong>{{ date }}</strong>.{% endblocktranslate %}</p>
+  {% else %}
+  <p data-renewal-date>{% blocktranslate with date=renewal.ends_on|date:"DATE_FORMAT" %}Automatic renewal is off: you keep paying monthly until your commitment ends on <strong>{{ date }}</strong>, then your account is on Basic.{% endblocktranslate %}</p>
+  {% endif %}
+  {% elif not renewal.sold %}
   <p data-renewal-date>{% blocktranslate with date=renewal.ends_on|date:"DATE_FORMAT" %}This subscription is no longer offered: your level ends on <strong>{{ date }}</strong>.{% endblocktranslate %}</p>
   {% elif renewal.auto_renew %}
   <p data-renewal-date>{% blocktranslate with date=renewal.ends_on|date:"DATE_FORMAT" %}Renews automatically on <strong>{{ date }}</strong>.{% endblocktranslate %}

@@ -110,6 +110,28 @@ The included cases' grant and use models are named only by `subscriptions.models
   doctor may renew by hand (`renew_now`: a voucher allowed); paid, it is a renewal as
   above and the job charges nothing for that term.
 
+- `charge_months_due(day)`, `paid_months(doctor_uid, starts_on, ends_on)` and
+  `month_notice(charge_id, attempt)` / `month_receipt(order_id)` (epic-subscriptions 8.7, user
+  decisions 2026-11-28): monthly charges. Only a standard (not manual), monthly, active or
+  past due paid-tier record takes part (`_monthly`). Month n of a term is due `started_on + n
+  months` (relativedelta clamps the 29th-31st) while within the term; the first month after
+  it (`ends_on + 1 day`) renews the commitment for another 12 months, only with auto-renew
+  on. The daily job makes the month's order (the system as the actor, the held row's monthly
+  price that day, the card saved) with its `MonthlyCharge(record, due_on)` row (one per
+  month: a rerun never charges twice) and, outside any transaction, charges the saved card.
+  A decline (or no card, or no order could be made) sets the record `past_due` (the level
+  and the included cases kept), emails the order's checkout as a payment link and the next
+  retry date, and retries on days 1, 3 and 7 after `due_on` (a fresh order when the previous
+  one is no longer payable); the day-7 retry declined drops the record to Basic that day
+  (reason `renewal_unpaid`). An unknown outcome keeps everything while staff decide.
+  `activate` tells a month order by its `MonthlyCharge` row (`_month_paid`): the row paid, a
+  `past_due` record `active` again (reason `month_paid`), or, for the first month after the
+  term, the next term (reason `renewal`, a new monthly grant of included cases); the monthly
+  receipt after commit. A monthly term with auto-renew off ends: Basic the day after
+  `ends_on` (`drop_unrenewed`). The reminder 30 days before the renewal, the upgrade screen's
+  next charge date and the auto-renew button work for monthly records as for annual ones (no
+  "Renew now").
+
 Actors (AD-22): `doctor_actor(user)` (the user's uid), `admin_actor(uuid)` (an admin
 user of the admin site), `SYSTEM_ACTOR` (no UUID).
 """
@@ -131,7 +153,7 @@ from integration.remote import RecordGone, StaleVersion
 from payments import gateways
 
 from . import included
-from .models import (ADMIN, DOCTOR, SYSTEM, DoctorSubscription, Renewal,
+from .models import (ADMIN, DOCTOR, SYSTEM, DoctorSubscription, MonthlyCharge, Renewal,
                      SubscriptionChange)
 
 logger = logging.getLogger(__name__)
@@ -139,7 +161,8 @@ logger = logging.getLogger(__name__)
 __all__ = ['Actor', 'ChangeRefused', 'Effective', 'Level', 'ManualLocked', 'RecordGone',
            'Reminder', 'StaleVersion', 'SYSTEM_ACTOR', 'TIERS', 'UpgradeOptions',
            'RenewalInfo', 'RenewalNotice',
-           'activate', 'admin_actor', 'assign_manual', 'change', 'counting_purchase',
+           'activate', 'admin_actor', 'assign_manual', 'change', 'charge_months_due',
+           'counting_purchase', 'month_notice', 'month_receipt', 'paid_months',
            'doctor_actor', 'doctors_without_a_record', 'drop_unrenewed', 'due_reminders',
            'effective', 'ensure_basic',
            'grant_missing_term', 'included_left', 'monthly_possible',
@@ -168,6 +191,10 @@ TEST_RESET = 'test_reset'
 RENEWAL = 'renewal'
 RENEWAL_UNPAID = 'renewal_unpaid'
 AUTO_RENEW = 'auto_renew'
+# Epic-subscriptions 8.7: a monthly charge failed (the record `past_due`) and a month paid
+# after a failure (the record `active` again; the change row names the order).
+MONTH_UNPAID = 'month_unpaid'
+MONTH_PAID = 'month_paid'
 # The billing periods of a bought subscription.
 MONTHLY, UPFRONT = DoctorSubscription.MONTHLY, DoctorSubscription.UPFRONT
 # How long a bought subscription runs (a monthly one is a 12-month commitment).
@@ -697,6 +724,11 @@ def activate(order):
     renewal = _renewal_of_order(order)
     if renewal is not None:
         return _renew(order, renewal)
+    # Epic-subscriptions 8.7: a month order of a monthly record, named by its
+    # `MonthlyCharge` row, is never a purchase either.
+    charge = _month_of_order(order)
+    if charge is not None:
+        return _month_paid(order, charge)
     line = order.lines.order_by('position').first()
     row = resolver.subscription_by_id(line.subscription_id) if line is not None else None
     if row is None or row.tier == BASIC or row.manual:
@@ -944,12 +976,16 @@ def _card_last4(user):
 class RenewalInfo:
     """The renewal line of the upgrade screen ("Your current level"): the record's `tier`
     and held catalogue row (`subscription`, None when gone), the term's `ends_on` (the
-    renewal date: the card is charged, or the link sent, that day), whether the held row is
-    still `sold` (active, of the record's tier and kind; else the term just ends),
-    `auto_renew`, the saved card's `card_last4` ('' for a payment link), its upfront `price`
-    today (None when not sold or without one), whether the doctor `can_renew_now` (the last
-    30 days of the term, sold with a price) and the record's `version` (for
-    `set_auto_renew`)."""
+    renewal date of an annual term: the card is charged, or the link sent, that day),
+    whether the held row is still `sold` (active, of the record's tier and kind; else the
+    term just ends), `auto_renew`, the saved card's `card_last4` ('' for a payment link), its
+    upfront `price` today (monthly: its monthly price; None when not sold or without one),
+    whether the doctor `can_renew_now` (the last 30 days of an annual term, sold with a
+    price) and the record's `version` (for `set_auto_renew`). A monthly record
+    (epic-subscriptions 8.7) also has `monthly` True, `next_charge_on` (the day its card is
+    charged next: the next month due, or the next retry of a failed one; None when nothing
+    more is charged in the term), `past_due` (a month unpaid, retried) and `renews_on` (the
+    first day after the term: the renewal's charge)."""
     tier: str
     subscription: object
     ends_on: date
@@ -959,14 +995,33 @@ class RenewalInfo:
     price: object
     can_renew_now: bool
     version: int
+    monthly: bool = False
+    next_charge_on: date | None = None
+    past_due: bool = False
+    renews_on: date | None = None
 
 
 def renewal_info(user, day=None):
     """The doctor's `RenewalInfo` on `day` (today when None), or None when their record does
-    not take part in annual renewals (Basic, monthly, manual, a term over). Reads only."""
+    not take part in annual renewals or monthly charges (Basic, manual, a term over). Reads
+    only."""
     day = day or resolver.today()
     record = record_of(user)
-    if not (_annual(record) and _counts(record, day) and day <= record.ends_on):
+    if record is None or not _counts(record, day) or record.ends_on is None \
+            or day > record.ends_on:
+        return None
+    if _monthly(record):
+        row = resolver.subscription_by_id(record.subscription_id)
+        sold = _sold_row(record) is not None
+        return RenewalInfo(
+            tier=record.tier, subscription=row, ends_on=record.ends_on, sold=sold,
+            auto_renew=record.auto_renew, card_last4=_card_last4(user),
+            price=row.monthly_price if sold else None, can_renew_now=False,
+            version=record.version, monthly=True,
+            next_charge_on=_next_charge_on(record, day),
+            past_due=record.status == DoctorSubscription.PAST_DUE,
+            renews_on=record.ends_on + timedelta(days=1))
+    if not _annual(record):
         return None
     row = resolver.subscription_by_id(record.subscription_id)
     sold = _sold_row(record) is not None
@@ -981,10 +1036,11 @@ def renewal_info(user, day=None):
 def set_auto_renew(user, on, *, expected_version):
     """Turn the doctor's auto-renew on or off (the upgrade screen's button), by the doctor,
     when the record is still at `expected_version`. ChangeRefused unless the record takes
-    part in annual renewals and its term runs; StaleVersion, RecordGone as `change`.
-    Returns the record."""
+    part in annual renewals or monthly charges and its term runs; StaleVersion, RecordGone
+    as `change`. A monthly payer who turns it off keeps paying until the commitment ends,
+    then is on Basic. Returns the record."""
     if renewal_info(user) is None:
-        raise ChangeRefused('auto-renew is turned on or off for a running annual subscription')
+        raise ChangeRefused('auto-renew is turned on or off for a running paid subscription')
     return _write(user, expected_version, doctor_actor(user), AUTO_RENEW,
                   {'auto_renew': bool(on)})
 
@@ -1164,17 +1220,20 @@ def renew_now(user, voucher_code=''):
 
 def due_reminders(day=None):
     """Queue the renewal reminder of every annual record with auto-renew on whose term ends
-    within 30 days of `day` (today when None), once per record and term (`run_once`, period
-    `ends_on`; the task checks again). None for a held row no longer sold. Returns how many
-    were queued."""
+    within 30 days of `day` (today when None), and of every monthly one (8.7) whose renewal
+    (the first month after the term, `ends_on + 1 day`) is charged within 30 days, once per
+    record and term (`run_once`, period `ends_on`; the task checks again). None for a held
+    row no longer sold. Returns how many were queued."""
     from mytp_core.tasks import effect_done, enqueue_on_commit
 
     from .tasks import send_renewal_reminder
     day = day or resolver.today()
     queued = 0
-    for record in list(_annual_records().filter(
-            auto_renew=True, ends_on__gt=day, ends_on__lte=day + RENEWAL_NOTICE)
-            .order_by('ends_on', 'pk')):
+    annual = list(_annual_records().filter(
+        auto_renew=True, ends_on__gt=day, ends_on__lte=day + RENEWAL_NOTICE))
+    monthly = list(_monthly_records().filter(
+        auto_renew=True, ends_on__gte=day, ends_on__lt=day + RENEWAL_NOTICE))
+    for record in sorted(annual + monthly, key=lambda found: (found.ends_on, found.pk)):
         ends_on = record.ends_on.isoformat()
         if effect_done(REMINDER_EFFECT, record.pk, period=ends_on):
             continue
@@ -1331,7 +1390,58 @@ def drop_unrenewed(day=None):
         except Exception as failure:  # noqa: BLE001 - one record never stops the run
             logger.error('subscription renewal drop failed: record %s (%s)', pk,
                          type(failure).__name__, exc_info=True)
+    for pk in list(_monthly_records().filter(ends_on__lt=day).order_by('ends_on', 'pk')
+                   .values_list('pk', flat=True)):
+        try:
+            with transaction.atomic():
+                if _drop_monthly(pk, day):
+                    dropped += 1
+        except Exception as failure:  # noqa: BLE001 - one record never stops the run
+            logger.error('subscription renewal drop failed: record %s (%s)', pk,
+                         type(failure).__name__, exc_info=True)
     return dropped
+
+
+def _drop_monthly(record_pk, day):
+    """Drop to Basic the monthly record `record_pk` whose term ended before `day` without
+    its next term (8.7): auto-renew off, or no charge of the first month after the term (not
+    sold, skipped). Left alone while that charge is retried (the monthly step drops it when
+    the grace is over), while a charge of the record needs staff attention, and when its
+    order is paid but not applied (a Sentry warning). Inside the caller's transaction.
+    Returns True when dropped."""
+    from payments import service as payments
+    from payments.models import Order
+
+    record = (DoctorSubscription.objects.select_for_update().select_related('doctor')
+              .filter(pk=record_pk).first())
+    if not (_monthly(record) and record.ends_on < day):
+        return False
+    charges = list(MonthlyCharge.objects.filter(record=record,
+                                                due_on__gt=record.started_on))
+    for charge in charges:
+        order = _order(charge.order_id)
+        if order is None:
+            continue
+        if order.state == Order.PAID and charge.outcome != MONTH_CHARGE_PAID:
+            _warn(f'order {order.pk}', 'paid but not applied')
+            return False
+        if payments.needs_attention(order):
+            return False  # the charge's outcome is unknown: staff decide
+    renewing = next((charge for charge in charges
+                     if charge.due_on == record.ends_on + timedelta(days=1)), None)
+    if record.auto_renew and renewing is not None:
+        return False  # retried by the monthly step; Basic when the grace is over
+    _drop(record, day)
+    return True
+
+
+def _drop(record, day):
+    """The record on Basic from `day` (a term not renewed or not paid): by the system, reason
+    `renewal_unpaid`."""
+    return _write(record.doctor, record.version, SYSTEM_ACTOR, RENEWAL_UNPAID, {
+        'tier': BASIC, 'subscription_id': None, 'manual': False, 'auto_renew': False,
+        'status': DoctorSubscription.ACTIVE, 'billing_period': '', 'started_on': day,
+        'ends_on': None})
 
 
 @dataclass(frozen=True)
@@ -1340,7 +1450,9 @@ class RenewalNotice:
     (`subscription`, None when gone), the term's `ends_on`, the row's upfront `price` today
     (None without one), the saved card's `card_last4` ('' for a payment link),
     `auto_renew`, the renewal `order` (None before the renewal day or when none could be
-    made) and the `outcome` of the `Renewal` row ('' without one)."""
+    made) and the `outcome` of the `Renewal` row ('' without one). For a monthly record's
+    reminder (8.7): `monthly` True, `price` the row's monthly price, and `renews_on` the
+    renewal's charge day (`ends_on + 1 day`; an annual term's is `ends_on`)."""
     user: object
     tier: str
     subscription: object
@@ -1350,6 +1462,8 @@ class RenewalNotice:
     auto_renew: bool
     order: object
     outcome: str
+    monthly: bool = False
+    renews_on: date | None = None
 
 
 def renewal_notice(record_id, term_ends_on, *, reminder=False):
@@ -1367,9 +1481,16 @@ def renewal_notice(record_id, term_ends_on, *, reminder=False):
     renewal = Renewal.objects.filter(record=record, term_ends_on=term_ends_on).first()
     order = _order(renewal.order_id) if renewal is not None else None
     if reminder:
-        if not (_annual(record) and record.auto_renew and record.ends_on == term_ends_on
-                and _sold_row(record) is not None):
+        if not ((_annual(record) or _monthly(record)) and record.auto_renew
+                and record.ends_on == term_ends_on and _sold_row(record) is not None):
             return None
+        if _monthly(record):
+            row = resolver.subscription_by_id(record.subscription_id)
+            return RenewalNotice(
+                user=record.doctor, tier=record.tier, subscription=row,
+                ends_on=term_ends_on, price=row.monthly_price,
+                card_last4=_card_last4(record.doctor), auto_renew=True, order=None,
+                outcome='', monthly=True, renews_on=term_ends_on + timedelta(days=1))
     elif (renewal is None or renewal.outcome not in LINK_OUTCOMES
           or (order is not None and order.state == Order.PAID)):
         return None
@@ -1389,4 +1510,496 @@ def renewal_notice(record_id, term_ends_on, *, reminder=False):
         user=record.doctor, tier=tier or BASIC, subscription=row, ends_on=term_ends_on,
         price=row.upfront_price if row is not None else None,
         card_last4=_card_last4(record.doctor), auto_renew=record.auto_renew, order=order,
-        outcome=renewal.outcome if renewal is not None else '')
+        outcome=renewal.outcome if renewal is not None else '', renews_on=term_ends_on)
+
+
+# --- Monthly charges (epic-subscriptions 8.7) -------------------------------------------------
+
+MONTH_PENDING, MONTH_CHARGE_PAID, MONTH_DECLINED, MONTH_UNKNOWN = (
+    MonthlyCharge.PENDING, MonthlyCharge.PAID, MonthlyCharge.DECLINED, MonthlyCharge.UNKNOWN)
+# What `charge_months_due` counts besides the charge outcomes: the grace over, Basic.
+MONTH_DROPPED = 'dropped'
+# A declined month is retried this many days after its due date; the last one declined
+# drops the record to Basic that day.
+RETRY_DAYS = (1, 3, 7)
+# The `run_once` effects of the monthly emails: a failed attempt (record: the charge, period:
+# its due date and attempt) and a month's receipt (record: the order).
+MONTH_FAILED_EFFECT = 'subscription_month_failed'
+MONTH_RECEIPT_EFFECT = 'subscription_month_receipt'
+
+# (record pk, due_on) of the month order being created now: its `paid` hook may fire inside
+# the creation (a 0.00 order), before its `MonthlyCharge` row names it.
+_CHARGING_MONTH = contextvars.ContextVar('subscriptions_charging_month', default=None)
+
+
+def _monthly(record):
+    """Whether the record takes part in monthly charges: a standard (not manual), monthly,
+    active or past due paid-tier record with an end date."""
+    return (record is not None and not record.manual and record.tier in PAID_TIERS
+            and record.billing_period == MONTHLY and record.ends_on is not None
+            and record.status in (DoctorSubscription.ACTIVE, DoctorSubscription.PAST_DUE))
+
+
+def _monthly_records():
+    return DoctorSubscription.objects.filter(
+        manual=False, tier__in=PAID_TIERS, billing_period=MONTHLY,
+        status__in=(DoctorSubscription.ACTIVE, DoctorSubscription.PAST_DUE),
+        ends_on__isnull=False)
+
+
+def _due_dates(record):
+    """[(due_on, renews)] of the record's term after its first month (the purchase or
+    renewal order itself): month n is due `started_on + n months` (relativedelta clamps the
+    29th-31st to the month's last day) while within the term; then the first month after the
+    term, `ends_on + 1 day`, which renews the commitment (`renews` True)."""
+    dates = []
+    for months in range(1, 12):
+        due_on = record.started_on + relativedelta(months=months)
+        if due_on > record.ends_on:
+            break
+        dates.append((due_on, False))
+    dates.append((record.ends_on + timedelta(days=1), True))
+    return dates
+
+
+def _term_charges(record):
+    """{due_on: MonthlyCharge} of the record's current term (its renewal month included)."""
+    return {charge.due_on: charge for charge in MonthlyCharge.objects.filter(
+        record=record, due_on__gt=record.started_on,
+        due_on__lte=record.ends_on + timedelta(days=1))}
+
+
+def _month_due(record, day):
+    """(due_on, renews, charge or None) of the month to charge now on `day`: the first month
+    of the term due by `day` that is not paid, when it has no charge yet, an order not yet
+    charged, a retry due, or an unknown outcome staff settled unpaid; None when nothing is
+    to be charged now (all paid, a retry not due yet, staff deciding, the renewal month with
+    auto-renew off). Reads only."""
+    from payments import service as payments
+    from payments.models import Order
+
+    charges = _term_charges(record)
+    for due_on, renews in _due_dates(record):
+        if due_on > day or (renews and not record.auto_renew):
+            return None
+        charge = charges.get(due_on)
+        if charge is None or charge.outcome == MONTH_PENDING:
+            return due_on, renews, charge
+        if charge.outcome == MONTH_CHARGE_PAID:
+            continue
+        if charge.outcome == MONTH_DECLINED:
+            if charge.next_try_on is not None and charge.next_try_on <= day:
+                return due_on, renews, charge
+            return None
+        order = _order(charge.order_id)  # unknown
+        if order is None or order.state == Order.PAID or payments.needs_attention(order):
+            return None
+        return due_on, renews, charge  # staff settled it unpaid: charged again
+    return None
+
+
+def _next_charge_on(record, day):
+    """The day the monthly record's card is charged next, from `day`: the first unpaid month
+    of the term (a past one: its next retry, or `day` when not charged yet); None when nothing
+    more is charged in the term (auto-renew off and every month paid) or staff decide."""
+    charges = _term_charges(record)
+    for due_on, renews in _due_dates(record):
+        if renews and not record.auto_renew:
+            return None
+        charge = charges.get(due_on)
+        outcome = charge.outcome if charge is not None else MONTH_PENDING
+        if outcome == MONTH_CHARGE_PAID:
+            continue
+        if outcome == MONTH_DECLINED:
+            return charge.next_try_on
+        if outcome == MONTH_UNKNOWN:
+            return None
+        return max(due_on, day)
+    return None
+
+
+def paid_months(doctor_uid, starts_on, ends_on):
+    """How many months after the first one the doctor `doctor_uid` paid in the term
+    `starts_on`-`ends_on` (their paid `MonthlyCharge` rows due within it; the first month is
+    the term's own order): `subscriptions.included` earns a monthly grant's cases by them.
+    Reads only."""
+    return MonthlyCharge.objects.filter(
+        record__doctor__uid=doctor_uid, outcome=MONTH_CHARGE_PAID, due_on__gt=starts_on,
+        due_on__lte=ends_on).count()
+
+
+def _bind_month(record, due_on, order_id):
+    """The `MonthlyCharge` row of the record's month `due_on`, created or pointed at
+    `order_id` (a fresh order: the previous one no longer payable; None when none could be
+    made); a row already naming the order is left as it is. ChangeRefused when the row names
+    another order still open. Inside the caller's transaction."""
+    now = timezone.now()
+    charge, created = MonthlyCharge.objects.select_for_update().get_or_create(
+        record_id=getattr(record, 'pk', record), due_on=due_on,
+        defaults={'order_id': order_id, 'outcome': MONTH_PENDING, 'created_at': now,
+                  'updated_at': now})
+    if not created and charge.order_id != order_id:
+        current = _order(charge.order_id)
+        if current is not None and current.state in current.OPEN_STATES:
+            raise ChangeRefused(f'the order {current.pk} of this month is still open')
+        charge.order_id, charge.updated_at = order_id, now
+        if charge.outcome != MONTH_CHARGE_PAID:
+            charge.outcome = MONTH_PENDING
+        charge.save(update_fields=['order_id', 'outcome', 'updated_at'])
+    return charge
+
+
+def _month_of_order(order):
+    """The `MonthlyCharge` row of the month order `order`, or None for any other order."""
+    charge = MonthlyCharge.objects.filter(order_id=order.pk).first()
+    if charge is not None:
+        return charge
+    pending = _CHARGING_MONTH.get()
+    if pending is None:
+        return None
+    record_pk, due_on = pending
+    record = DoctorSubscription.objects.filter(pk=record_pk).first()
+    if record is None or record.doctor_id != order.user_id:
+        return None
+    return _bind_month(record, due_on, order.pk)
+
+
+def _create_month_order(user, record, row, due_on):
+    """The order of the record's month `due_on` (a month of `row` at its catalogue price
+    today, the system as the actor, the card saved), with its `MonthlyCharge` row. Inside
+    the caller's transaction; `pricing.OrderRefused` and `payments.service` refusals pass
+    through, creating nothing. Returns (charge, order)."""
+    from payments import service as payments
+
+    token = _CHARGING_MONTH.set((record.pk, due_on))
+    try:
+        with transaction.atomic():
+            order = payments.create_subscription_order(
+                user, row, MONTHLY, actor=payments.SYSTEM_ACTOR, save_card=True)
+            charge = _bind_month(record, due_on, order.pk)
+    finally:
+        _CHARGING_MONTH.reset(token)
+    return charge, order
+
+
+def _prepare_month(record_pk, day):
+    """Under the doctor's lock, then the record's (as `_prepare`): (charge, order) of the
+    month to charge now (`_month_due`): its order when still payable, else a fresh one; the
+    order None when none could be made (no longer sold, no payment method: a Sentry warning,
+    charged as declined). None when there is nothing to do, another open subscription order
+    of the doctor (the next run looks again), or the renewal month of a row no longer sold
+    (the term ends: Basic the day after `ends_on`)."""
+    from catalogue import pricing
+    from payments import service as payments
+    from payments.models import Order
+
+    doctor_pk = (DoctorSubscription.objects.filter(pk=record_pk)
+                 .values_list('doctor_id', flat=True).first())
+    if doctor_pk is None:
+        return None
+    with transaction.atomic():
+        get_user_model().objects.select_for_update().filter(pk=doctor_pk).first()
+        record = (DoctorSubscription.objects.select_for_update().select_related('doctor')
+                  .filter(pk=record_pk).first())
+        if not (_monthly(record) and is_client(record.doctor)):
+            return None
+        found = _month_due(record, day)
+        if found is None:
+            return None
+        due_on, renews, charge = found
+        order = _order(charge.order_id) if charge is not None else None
+        if order is not None and order.state == Order.PAID:
+            _warn(f'order {order.pk}', 'paid but not applied')
+            return None
+        if order is not None and order.state in Order.OPEN_STATES:
+            return MonthlyCharge.objects.select_for_update().get(pk=charge.pk), order
+        user = record.doctor
+        if open_purchase(user) is not None:
+            return None  # another open subscription order of the doctor: the next run
+        row = _sold_row(record)
+        if row is None and renews:
+            _warn(f'record {record.pk}', 'not sold (subscription_not_offered)')
+            return None
+        try:
+            if row is None:
+                raise pricing.OrderRefused(pricing.SUBSCRIPTION_NOT_OFFERED,
+                                           'the held subscription is no longer sold')
+            return _create_month_order(user, record, row, due_on)
+        except (pricing.OrderRefused, payments.NoPaymentMethod) as refused:
+            reason = getattr(refused, 'reason', '') or type(refused).__name__
+            _warn(f'record {record.pk}', f'month order not made ({reason})')
+            return _bind_month(record, due_on, None), None
+
+
+def _charge_month(charge, order, day):
+    """Charge the doctor's saved card for the month's order (period: its due date), outside
+    any transaction; no order, no card or a refused charge counts as declined. Returns what
+    `_after_charge` makes of it."""
+    from payments import gateways as payment_gateways
+    from payments import repeat
+    from payments import service as payments
+
+    outcome = MONTH_DECLINED
+    if order is not None:
+        try:
+            result = repeat.charge_saved_card(order.pk, charge.due_on.isoformat(),
+                                              actor=payments.SYSTEM_ACTOR)
+            outcome = {repeat.PAID: MONTH_CHARGE_PAID, repeat.DECLINED: MONTH_DECLINED,
+                       repeat.UNKNOWN: MONTH_UNKNOWN}.get(result.outcome)
+        except (repeat.NoSavedCard, payment_gateways.UnsupportedOperation):
+            outcome = MONTH_DECLINED
+        except payments.OrderError as refused:  # no usable entity, an attempt open, ...
+            _warn(f'order {order.pk}', f'charge refused ({type(refused).__name__})')
+            outcome = MONTH_DECLINED
+        if outcome is None:  # not payable: paid meanwhile, or ended (the next run: another)
+            paid = _order(order.pk)
+            outcome = (MONTH_CHARGE_PAID if paid is not None and paid.paid_at is not None
+                       else MONTH_PENDING)
+    return _after_charge(charge.pk, outcome, day)
+
+
+def _after_charge(charge_pk, outcome, day):
+    """Record what the month's charge came to, under the record's lock, then the row's. Paid:
+    `activate` did it. Unknown: kept as it is (staff decide). Declined: one more attempt, the
+    next retry (the first of days 1, 3 and 7 after the due date still ahead of `day`), the
+    record `past_due`, and the failed-attempt email; no retry left: the record on Basic that
+    day (`MONTH_DROPPED`). Returns the outcome."""
+    with transaction.atomic():
+        record_pk = (MonthlyCharge.objects.filter(pk=charge_pk)
+                     .values_list('record_id', flat=True).first())
+        record = (DoctorSubscription.objects.select_for_update().select_related('doctor')
+                  .filter(pk=record_pk).first())
+        charge = MonthlyCharge.objects.select_for_update().get(pk=charge_pk)
+        if charge.outcome == MONTH_CHARGE_PAID:
+            return MONTH_CHARGE_PAID
+        if outcome in (MONTH_CHARGE_PAID, MONTH_PENDING):
+            return outcome
+        now = timezone.now()
+        if outcome == MONTH_UNKNOWN:
+            charge.outcome, charge.next_try_on, charge.updated_at = MONTH_UNKNOWN, None, now
+            charge.save(update_fields=['outcome', 'next_try_on', 'updated_at'])
+            return MONTH_UNKNOWN
+        due_on = charge.due_on
+        charge.attempts += 1
+        charge.outcome, charge.updated_at = MONTH_DECLINED, now
+        charge.next_try_on = next((due_on + timedelta(days=days) for days in RETRY_DAYS
+                                   if due_on + timedelta(days=days) > day), None)
+        charge.save(update_fields=['attempts', 'outcome', 'next_try_on', 'updated_at'])
+        result = MONTH_DECLINED
+        if (_monthly(record) and record.started_on < due_on
+                <= record.ends_on + timedelta(days=1)):
+            if charge.next_try_on is None:
+                _drop(record, day)
+                result = MONTH_DROPPED
+            elif record.status != DoctorSubscription.PAST_DUE:
+                try:
+                    with transaction.atomic():
+                        _write(record.doctor, record.version, SYSTEM_ACTOR, MONTH_UNPAID,
+                               {'status': DoctorSubscription.PAST_DUE})
+                except ChangeRefused as refused:  # its row gone from the catalogue
+                    _warn(f'record {record.pk}', f'not past due ({type(refused).__name__})')
+        _queue_month_failed(charge.pk, charge.attempts)
+        return result
+
+
+def _queue_month_failed(charge_pk, attempt):
+    from mytp_core.tasks import enqueue_on_commit
+
+    from .tasks import send_month_failed
+    enqueue_on_commit(send_month_failed, str(charge_pk), attempt)
+
+
+def charge_months_due(day=None):
+    """Charge every monthly record's month due by `day` (today when None): the order and its
+    charge, or a retry (see the module docstring); one month per record and run, each record
+    on its own, a failure logged by record UUID and skipped. Returns {outcome: count} of the
+    records handled now (a rerun handles none)."""
+    day = day or resolver.today()
+    counts = {}
+    for pk in list(_monthly_records().order_by('started_on', 'pk')
+                   .values_list('pk', flat=True)):
+        try:
+            found = _prepare_month(pk, day)
+            if found is None:
+                continue
+            outcome = _charge_month(*found, day)
+        except Exception as failure:  # noqa: BLE001 - one record never stops the run
+            logger.error('subscription monthly charge failed: record %s (%s)', pk,
+                         type(failure).__name__, exc_info=True)
+            continue
+        counts[outcome] = counts.get(outcome, 0) + 1
+    return counts
+
+
+def _dropped_term(record, due_on):
+    """The record's business values (`before`) of the monthly term its last change dropped
+    to Basic (`renewal_unpaid`), when `due_on` is a month of that term or the first one
+    after it; else None."""
+    if record is None or record.tier != BASIC or record.manual:
+        return None
+    last = record.changes.order_by('-version').first()
+    if last is None or last.reason != RENEWAL_UNPAID:
+        return None
+    before = last.before or {}
+    if before.get('billing_period') != MONTHLY or not before.get('ends_on'):
+        return None
+    started_on = date.fromisoformat(before['started_on'])
+    ends_on = date.fromisoformat(before['ends_on'])
+    if not started_on < due_on <= ends_on + timedelta(days=1):
+        return None
+    return before
+
+
+def _month_paid(order, charge):
+    """`activate` of a month order (the `paid` receiver, inside its transaction): the charge
+    paid; a `past_due` record `active` again (reason `month_paid`); the first month after the
+    term renews it for another 12 months from its due date (reason `renewal`, the new term's
+    monthly grant); a record dropped to Basic since (the link paid late) gets the term back.
+    The monthly receipt after commit. Never raises for a record that cannot take it: the
+    payment is kept and Sentry hears of it. Returns the record when it changed it now, else
+    None."""
+    record = (DoctorSubscription.objects.select_for_update().select_related('doctor')
+              .filter(pk=charge.record_id).first())
+    charge = MonthlyCharge.objects.select_for_update().get(pk=charge.pk)
+    if charge.outcome == MONTH_CHARGE_PAID:
+        return None  # an earlier `paid`
+    charge.outcome, charge.next_try_on, charge.updated_at = (MONTH_CHARGE_PAID, None,
+                                                             timezone.now())
+    charge.save(update_fields=['outcome', 'next_try_on', 'updated_at'])
+    user = record.doctor if record is not None else None
+    if user is None or not is_client(user) or user.pk != order.user_id:
+        _report(order.pk, 'month not a doctor')
+        return None
+    line = order.lines.order_by('position').first()
+    row = resolver.subscription_by_id(line.subscription_id) if line is not None else None
+    if row is None or row.tier == BASIC or row.manual or line.period != MONTHLY:
+        _report(order.pk, 'month not a paid standard subscription')
+        return None
+    due_on = charge.due_on
+    fields = {}
+    if _monthly(record) and record.started_on < due_on <= record.ends_on + timedelta(days=1):
+        renews = due_on > record.ends_on
+        if record.status != DoctorSubscription.ACTIVE:
+            fields['status'] = DoctorSubscription.ACTIVE
+    else:
+        before = _dropped_term(record, due_on)
+        if before is None:
+            _report(order.pk, 'month record cannot take it')
+            return None
+        renews = due_on > date.fromisoformat(before['ends_on'])
+        fields.update(
+            tier=before['tier'], subscription_id=before['subscription_id'],
+            billing_period=MONTHLY, started_on=date.fromisoformat(before['started_on']),
+            ends_on=date.fromisoformat(before['ends_on']),
+            auto_renew=bool(before.get('auto_renew')), status=DoctorSubscription.ACTIVE,
+            manual=False)
+    if renews:
+        started_on, ends_on = term_of(due_on)
+        fields.update(tier=row.tier, subscription_id=row.pk, billing_period=MONTHLY,
+                      started_on=started_on, ends_on=ends_on,
+                      status=DoctorSubscription.ACTIVE)
+    if fields:
+        try:
+            record = _write(user, record.version, SYSTEM_ACTOR,
+                            RENEWAL if renews else MONTH_PAID, fields, order_id=order.pk)
+        except (ChangeRefused, ManualLocked, RecordGone, StaleVersion) as refused:
+            _report(order.pk, f'month refused ({type(refused).__name__})')
+            return None
+    if renews:
+        try:
+            with transaction.atomic():
+                included.grant_term(
+                    doctor_uid=user.uid, order_id=order.pk,
+                    count=resolver.included_cases(row, included.DEFAULT_CATEGORY),
+                    accrual=MONTHLY, starts_on=started_on, ends_on=ends_on)
+        except Exception as failure:  # noqa: BLE001
+            logger.error('order %s: the included cases could not be granted: %s', order.pk,
+                         type(failure).__name__, exc_info=True)
+            _report(order.pk, 'included cases not granted')
+    from mytp_core.tasks import enqueue_on_commit
+
+    from .tasks import send_month_receipt
+    enqueue_on_commit(send_month_receipt, str(order.pk))
+    return record if fields else None
+
+
+@dataclass(frozen=True)
+class MonthNotice:
+    """What a monthly email says: the doctor (`user`), the `tier` and its catalogue row
+    (`subscription`, None when gone), the month's `due_on`, its open `order` (None when none
+    can be paid: the email then says to contact us), for a failed attempt the `next_try_on`
+    (None: the grace is over, `dropped` to Basic) and the `last_try_on`; for a receipt the
+    `order` paid, whether it `renewed` the commitment, the term's `ends_on` and the
+    `next_charge_on` (None when nothing more is charged in the term)."""
+    user: object
+    tier: str
+    subscription: object
+    due_on: date
+    order: object
+    next_try_on: date | None = None
+    last_try_on: date | None = None
+    dropped: bool = False
+    renewed: bool = False
+    ends_on: date | None = None
+    next_charge_on: date | None = None
+
+
+def _tier_of(record):
+    """The paid tier the record holds, or the one its last drop to Basic ended."""
+    if record.tier in PAID_TIERS:
+        return record.tier
+    last = record.changes.filter(reason=RENEWAL_UNPAID).order_by('-version').first()
+    if last is None:
+        return BASIC
+    return (last.before or {}).get('tier') or BASIC
+
+
+def month_notice(charge_id, attempt):
+    """The `MonthNotice` of the failed attempt `attempt` of the month charge `charge_id`, or
+    None when no email is due (paid since, another attempt made since, not a doctor). Reads
+    only."""
+    from payments.models import Order
+
+    charge = (MonthlyCharge.objects.select_related('record__doctor')
+              .filter(pk=charge_id).first())
+    if (charge is None or charge.outcome != MONTH_DECLINED or charge.attempts != attempt
+            or not is_client(charge.record.doctor)):
+        return None
+    order = _order(charge.order_id)
+    if order is not None and order.state == Order.PAID:
+        return None
+    record = charge.record
+    line = order.lines.order_by('position').first() if order is not None else None
+    row_id = line.subscription_id if line is not None else record.subscription_id
+    row = resolver.subscription_by_id(row_id) if row_id else None
+    return MonthNotice(
+        user=record.doctor, tier=row.tier if row is not None else _tier_of(record),
+        subscription=row, due_on=charge.due_on,
+        order=order if order is not None and order.state in Order.OPEN_STATES else None,
+        next_try_on=charge.next_try_on,
+        last_try_on=charge.due_on + timedelta(days=RETRY_DAYS[-1]),
+        dropped=charge.next_try_on is None)
+
+
+def month_receipt(order_id):
+    """The `MonthNotice` of the paid month order `order_id` (its receipt), or None when it is
+    not a paid month of a doctor. Reads only."""
+    from payments.models import Order
+
+    charge = (MonthlyCharge.objects.select_related('record__doctor')
+              .filter(order_id=order_id, outcome=MONTH_CHARGE_PAID).first())
+    order = _order(order_id)
+    if (charge is None or order is None or order.state != Order.PAID
+            or not is_client(charge.record.doctor)):
+        return None
+    record = charge.record
+    line = order.lines.order_by('position').first()
+    row = resolver.subscription_by_id(line.subscription_id) if line is not None else None
+    renewed = SubscriptionChange.objects.filter(order_id=order.pk, reason=RENEWAL).exists()
+    monthly = _monthly(record)
+    return MonthNotice(
+        user=record.doctor, tier=row.tier if row is not None else _tier_of(record),
+        subscription=row, due_on=charge.due_on, order=order, renewed=renewed,
+        ends_on=record.ends_on if monthly else None,
+        next_charge_on=(_next_charge_on(record, max(resolver.today(), charge.due_on))
+                        if monthly else None))

@@ -6,7 +6,9 @@ staff can run it again by hand. No automatic retry.
 The annual renewal emails (epic-subscriptions 8.6) work the same way: the reminder and the
 payment link once per record and term (`run_once`, period: the term's `ends_on`), the
 receipt once per renewal order; each checks again that it is still due
-(`service.renewal_notice`, `service.purchase_values`)."""
+(`service.renewal_notice`, `service.purchase_values`). So do the monthly emails
+(epic-subscriptions 8.7): a failed attempt once per charge and attempt, a month's receipt
+once per order (`service.month_notice`, `service.month_receipt`)."""
 import logging
 import uuid
 from datetime import date
@@ -97,5 +99,43 @@ def send_renewal_receipt(order_id):
         return run_once(service.RECEIPT_EFFECT, order.pk, send)
     except Exception as failure:  # noqa: BLE001 - logged by UUID; no mark was kept
         logger.error('subscription renewal receipt not sent: order %s (%s)', order_id,
+                     type(failure).__name__)
+        return None
+
+
+@task
+def send_month_failed(charge_id, attempt):
+    """Send the failed-attempt email (the order's payment link and the next retry, or the
+    drop to Basic) of attempt `attempt` of the month charge `charge_id` (epic-subscriptions
+    8.7), once (`run_once`, period: the due date and the attempt). True when sent now, False
+    when sent before or not due any more (paid, another attempt since), None on a failure."""
+    try:
+        notice = service.month_notice(uuid.UUID(str(charge_id)), int(attempt))
+        if notice is None:
+            return False
+        return run_once(service.MONTH_FAILED_EFFECT, charge_id,
+                        lambda: emails.build_month_failed(notice).send(),
+                        period=f'{notice.due_on.isoformat()}#{int(attempt)}')
+    except Exception as failure:  # noqa: BLE001 - logged by UUID; no mark was kept
+        logger.error('subscription month email not sent: charge %s (%s)', charge_id,
+                     type(failure).__name__)
+        return None
+
+
+@task
+def send_month_receipt(order_id):
+    """Send the receipt of the paid month order `order_id` (epic-subscriptions 8.7), once.
+    True when sent now, False when sent before or not due, None on a failure."""
+    try:
+        notice = service.month_receipt(uuid.UUID(str(order_id)))
+        if notice is None:
+            return False
+
+        def send():
+            invoice = Invoice.objects.filter(order=notice.order, kind=Invoice.ORDER).get()
+            emails.build_month_receipt(notice, invoice).send()
+        return run_once(service.MONTH_RECEIPT_EFFECT, notice.order.pk, send)
+    except Exception as failure:  # noqa: BLE001 - logged by UUID; no mark was kept
+        logger.error('subscription month receipt not sent: order %s (%s)', order_id,
                      type(failure).__name__)
         return None

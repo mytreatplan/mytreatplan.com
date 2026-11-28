@@ -4216,3 +4216,83 @@ msgstr "La renovación automática está desactivada."
 #, python-format
 msgid "This subscription is no longer offered: your level ends on <strong>%(date)s</strong>."
 msgstr "Esta suscripción ya no se ofrece: su nivel finaliza el <strong>%(date)s</strong>."
+
+#: subscriptions/templates/subscriptions/email/renewal_reminder.txt
+#, python-format
+msgid "Your MyTreatPlan %(name)s subscription, paid monthly with a 12-month commitment, runs until %(date)s. It renews automatically for another 12 months."
+msgstr "Su suscripción MyTreatPlan %(name)s, de pago mensual con una permanencia de 12 meses, dura hasta el %(date)s. Se renueva automáticamente por otros 12 meses."
+
+#: subscriptions/templates/subscriptions/email/month_payment_failed_subject.txt
+#, python-format
+msgid "Your MyTreatPlan %(name)s subscription has ended: unpaid"
+msgstr "Su suscripción MyTreatPlan %(name)s ha finalizado: impagada"
+
+#: subscriptions/templates/subscriptions/email/month_payment_failed_subject.txt
+#, python-format
+msgid "Pay this month of your MyTreatPlan %(name)s subscription"
+msgstr "Pague este mes de su suscripción MyTreatPlan %(name)s"
+
+#: subscriptions/templates/subscriptions/email/month_payment_failed.txt
+#, python-format
+msgid "We could not charge your saved card for the monthly payment of your MyTreatPlan %(name)s subscription due on %(date)s, after several tries. Your account is on Basic from today."
+msgstr "No hemos podido cobrar en su tarjeta guardada el pago mensual de su suscripción MyTreatPlan %(name)s con vencimiento el %(date)s, tras varios intentos. Su cuenta pasa a Básica desde hoy."
+
+#: subscriptions/templates/subscriptions/email/month_payment_failed.txt
+msgid "To subscribe again, choose a level on your subscription levels:"
+msgstr "Para suscribirse de nuevo, elija un nivel en sus niveles de suscripción:"
+
+#: subscriptions/templates/subscriptions/email/month_payment_failed.txt
+#, python-format
+msgid "We could not charge your saved card for the monthly payment of your MyTreatPlan %(name)s subscription due on %(date)s."
+msgstr "No hemos podido cobrar en su tarjeta guardada el pago mensual de su suscripción MyTreatPlan %(name)s con vencimiento el %(date)s."
+
+#: subscriptions/templates/subscriptions/email/month_payment_failed.txt
+msgid "Please pay it within 24 hours here (sign in to MyTreatPlan first):"
+msgstr "Páguelo en las próximas 24 horas aquí (inicie sesión en MyTreatPlan primero):"
+
+#: subscriptions/templates/subscriptions/email/month_payment_failed.txt
+msgid "We could not prepare this month's payment. Please contact us to keep your subscription."
+msgstr "No hemos podido preparar el pago de este mes. Contacte con nosotros para mantener su suscripción."
+
+#: subscriptions/templates/subscriptions/email/month_payment_failed.txt
+#, python-format
+msgid "You keep %(name)s meanwhile. We will try your card again on %(next)s. If the payment is still not made after our last try on %(last)s, your account moves to Basic."
+msgstr "Mientras tanto mantiene %(name)s. Volveremos a intentar el cobro en su tarjeta el %(next)s. Si el pago sigue sin hacerse tras nuestro último intento el %(last)s, su cuenta pasa a Básica."
+
+#: subscriptions/templates/subscriptions/email/month_receipt_subject.txt
+#, python-format
+msgid "Your monthly payment for MyTreatPlan %(name)s"
+msgstr "Su pago mensual de MyTreatPlan %(name)s"
+
+#: subscriptions/templates/subscriptions/email/month_receipt.txt
+#, python-format
+msgid "Thank you: your MyTreatPlan %(name)s subscription is renewed for another 12 months, paid monthly."
+msgstr "Gracias: su suscripción MyTreatPlan %(name)s se ha renovado por otros 12 meses, de pago mensual."
+
+#: subscriptions/templates/subscriptions/email/month_receipt.txt
+#, python-format
+msgid "Thank you: we received the monthly payment of your MyTreatPlan %(name)s subscription."
+msgstr "Gracias: hemos recibido el pago mensual de su suscripción MyTreatPlan %(name)s."
+
+#: subscriptions/templates/subscriptions/email/month_receipt.txt
+msgid "Month from"
+msgstr "Mes desde"
+
+#: subscriptions/templates/subscriptions/upgrade.html
+msgid "Your last monthly payment could not be charged. We emailed you a link to pay it."
+msgstr "No hemos podido cobrar su último pago mensual. Le hemos enviado por correo un enlace para pagarlo."
+
+#: subscriptions/templates/subscriptions/upgrade.html
+#, python-format
+msgid "Paid monthly: next charge on <strong>%(date)s</strong>."
+msgstr "Pago mensual: próximo cargo el <strong>%(date)s</strong>."
+
+#: subscriptions/templates/subscriptions/upgrade.html
+#, python-format
+msgid "Your 12-month commitment renews automatically on <strong>%(date)s</strong>."
+msgstr "Su permanencia de 12 meses se renueva automáticamente el <strong>%(date)s</strong>."
+
+#: subscriptions/templates/subscriptions/upgrade.html
+#, python-format
+msgid "Automatic renewal is off: you keep paying monthly until your commitment ends on <strong>%(date)s</strong>, then your account is on Basic."
+msgstr "La renovación automática está desactivada: sigue pagando cada mes hasta que su permanencia finalice el <strong>%(date)s</strong>; después su cuenta pasa a Básica."

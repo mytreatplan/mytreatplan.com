@@ -3,14 +3,14 @@ title: 'Monthly charges and failed payments'
 type: 'feature'
 ticket: '7'
 created: '2026-11-27'
-status: 'in-progress'
+status: 'in-review'
 baseline_revision: '499998d749a7bc9da659e5723ede006673369047'
 route: 'full'
 route_source: 'auto'
 risk: 'high'
-review: ''
-review_source: ''
-lenses_ran: []
+review: 'quick'
+review_source: 'pinned'
+lenses_ran: ['quick']
 review_loop_iteration: 0
 context: []
 ---
@@ -76,18 +76,63 @@ context: []
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `subscriptions/models.py` + migration -- `MonthlyCharge`.
-- [ ] `subscriptions/service.py` -- monthly charges, retries, `past_due`, drop, commitment renewal, `activate` branch.
-- [ ] `subscriptions/included.py` (+ a service read) -- monthly earning from paid months of the term.
-- [ ] command -- the monthly step in `renew_subscriptions`; `deploy/README.md`, `README.md` "Renewals" section.
-- [ ] `subscriptions/emails.py`, `tasks.py`, templates, `upgrade.html`, `locale/es/...django.po` -- failed-attempt email, monthly receipt, reminder before month 13, the monthly block (next charge, card, auto-renew).
-- [ ] `subscriptions/tests/test_monthly.py` -- every matrix row; rerun idempotence; included cases earned month by month; PostgreSQL-safe (row locks inside transactions).
+- [x] `subscriptions/models.py` + migration -- `MonthlyCharge`.
+- [x] `subscriptions/service.py` -- monthly charges, retries, `past_due`, drop, commitment renewal, `activate` branch.
+- [x] `subscriptions/included.py` (+ a service read) -- monthly earning from paid months of the term.
+- [x] command -- the monthly step in `renew_subscriptions`; `deploy/README.md`, `README.md` "Renewals" section.
+- [x] `subscriptions/emails.py`, `tasks.py`, templates, `upgrade.html`, `locale/es/...django.po` -- failed-attempt email, monthly receipt, reminder before month 13, the monthly block (next charge, card, auto-renew).
+- [x] `subscriptions/tests/test_monthly.py` -- every matrix row; rerun idempotence; included cases earned month by month; PostgreSQL-safe (row locks inside transactions).
 
 **Acceptance Criteria:**
 - Given dev with Redsys's test terminal, when a monthly Advanced doctor's month 2 is made due today and the job runs twice, then they are charged once and get the month's invoice.
 - Given the full suite on PostgreSQL, then 0 failures; `makemigrations --check`, `check`, `msgfmt --check` clean.
 
 ## Implementation Notes
+
+- Due dates: month n+1 of a term is due `started_on + n months` (n = 1..11, while within the
+  term; relativedelta from `started_on`, so a 31st start never drifts); the renewal month is
+  `ends_on + 1 day` (`_due_dates`), charged only with auto-renew on. The plan's "month k is due
+  `started_on + k months`" is read with the matrix (month 2 due `started_on + 1 month`).
+- `MonthlyCharge.outcome`: `pending`, `paid`, `declined`, `unknown` (as planned); no card, a
+  refused charge and an order that could not be made (row no longer sold, no payment method:
+  `order_id` null, a Sentry warning, an email saying to contact us) all count as `declined`.
+  Charge period: the due date (ISO). One month per record per run (`_month_due` takes the first
+  unpaid month of the term; a later month waits while an earlier one is retried).
+- Retries: after a decline on `day`, `next_try_on` is the first of due + 1, 3, 7 days still after
+  `day`; none left drops the record (`_drop`, reason `renewal_unpaid`) that day. A run that
+  missed days therefore catches up on the schedule, never past day 7 + the first run after it.
+  The same order is charged again while payable; an expired/cancelled one is replaced
+  (`_bind_month` refuses to move off an open order).
+- New change reasons: `month_unpaid` (active -> `past_due`, system) and `month_paid` (back to
+  `active`, the change naming the order). A paid month of an `active` record writes no change
+  (the `MonthlyCharge` row is the record of it; a repeated `paid` is a no-op through it).
+  Writing `past_due` when the held row left the catalogue (`_check` refuses) is a Sentry
+  warning; the attempt is still recorded.
+- Lock order: doctor -> record -> charge (`_prepare_month`), record -> charge (`_after_charge`,
+  `_month_paid` inside the `paid` hook). A `_CHARGING_MONTH` contextvar covers a 0.00 month
+  order paid inside its creation (as 8.6's `_RENEWING`).
+- Late payment after the drop: `_month_paid` restores the dropped monthly term from the
+  `renewal_unpaid` change's `before` (its last change must be that drop), or renews it when the
+  month was the renewal month.
+- `drop_unrenewed` also drops a monthly record the day after `ends_on` when auto-renew is off or
+  the renewal month has no charge (row no longer sold, skipped); never while a charge of the
+  term needs staff attention or its renewal month is being retried.
+- Included cases: monthly months paid = `payments.months_paid(source order)` (its confirmed
+  payments: 1 for a paid order, keeping 8.13's test of repeat payments on one order) +
+  `service.paid_months(doctor_uid, starts_on, ends_on)` (paid rows due after `starts_on`, up to
+  `ends_on`), capped at 12. The renewal month's grant is accrual `monthly`.
+- Emails: the reminder template takes `monthly` and `renews_on` (annual: `ends_on`, unchanged
+  output); new `month_payment_failed` (link + next retry + last retry; dropped variant) and
+  `month_receipt` (renewed variant) templates; tasks `send_month_failed(charge_id, attempt)`
+  (`run_once` period `<due>#<attempt>`, only for the latest attempt) and
+  `send_month_receipt(order_id)`. ES strings appended by hand to `django.po`.
+- `RenewalInfo` gains `monthly`, `next_charge_on`, `past_due`, `renews_on`; `set_auto_renew`
+  now accepts a running monthly record. `upgrade_purchase` for the held level redirects to the
+  screen (no "Renew now": `can_renew_now` False).
+- 8.6's `test_manual_and_monthly_records_are_ignored` became `test_manual_records_are_ignored`
+  (monthly records now take part); the structure test scans `MonthlyCharge` and its table.
+- Command output gains `months: <outcome> <count>` (`paid`, `declined`, `dropped`, `unknown`,
+  `pending`). `deploy/jobs.conf` unchanged.
 
 ## Plan Change Log
 

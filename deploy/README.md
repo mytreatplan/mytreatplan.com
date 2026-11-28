@@ -3781,6 +3781,33 @@ next year and `/en/upgrade/` shows the new renewal date. Turn auto-renew off on
 `fake.decline_next_charge('0190')` on a fake-gateway doctor, or an IE doctor (Revolut, no
 card): the payment-link email opens the order's checkout.
 
+**Monthly charges** (epic-subscriptions 8.7; README.md, "Monthly charges"): the same job charges
+each monthly subscription's month on its due date (its own order and invoice, the saved card),
+retries a failed one on days 1, 3 and 7 (a payment-link email at each failure; the record is
+`past_due` meanwhile) and drops it to Basic when the day-7 retry fails; the first month after
+the term renews the commitment unless auto-renew is off. No new job or schedule. Its counts
+are in the same line:
+
+```sh
+#   renew_subscriptions: 0 reminder(s) queued; renewals: none; months: paid 1; 0 dropped to Basic
+```
+
+`months:` counts `paid`, `declined` (retried), `dropped` (the grace over, Basic), `unknown`
+and `pending` (an order no longer payable: a fresh one next run). An unknown outcome is
+settled by staff as for renewals; until then nothing more is charged for that record. A month
+order that could not be made is a Sentry warning (`subscription renewal month order not made
+(...): record <uuid>`).
+
+Staging check (dev, Redsys's public test terminal): as an ES doctor with a fiscal entity, buy
+Advanced monthly with the test card; in `manage.py shell` move the term a month back through
+`service.change(..., reason='test', started_on=<today - 1 month>, ends_on=<that + 12 months - 1
+day>)` and run the job twice: Redsys's admin module shows one charge, the doctor one invoice
+and the receipt. With `fake.decline_next_charge('0190')` on a fake-gateway doctor, run
+`service.charge_months_due(<due>)`, then `<due + 1>`, `<due + 3>` and `<due + 7>`: a link email
+each time, `past_due`, then Basic. For the renewal, run `service.charge_months_due(<due>)`
+on each due date of months 2 to 12, then on `ends_on + 1 day`: the term runs another 12
+months from that day, with a new grant of included cases.
+
 ### Country map
 
 Which region serves each country, or whether it is banned (epic-regions entry 1, AD-3,

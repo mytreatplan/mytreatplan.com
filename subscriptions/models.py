@@ -202,6 +202,44 @@ class Renewal(models.Model):
         return f'Renewal {self.pk} ({self.outcome})'
 
 
+class MonthlyCharge(models.Model):
+    """The charge of one month of a monthly record (epic-subscriptions 8.7; user decisions
+    2026-11-28): one row per record and due date (`due_on`: month n of a term is due
+    `started_on + n months`, the first month after the term `ends_on + 1 day`, which renews
+    the commitment), so a rerun of the daily job never makes a second order or charge for a
+    month. `order_id` is the month's current order (a plain UUID, no database link: orders
+    are another app's), replaced by a fresh one when the previous is no longer payable; None
+    when none could be made. `outcome`: see OUTCOMES. `attempts`: the failed charges so far;
+    `next_try_on`: the next retry (days 1, 3 and 7 after `due_on`), None when none is due.
+    Written only by `subscriptions.service`."""
+
+    CROSSES_SITES = True  # AD-5: its UUID is its global id
+
+    PENDING, PAID, DECLINED, UNKNOWN = 'pending', 'paid', 'declined', 'unknown'
+    OUTCOMES = [(PENDING, 'Order made, not charged or paid yet'), (PAID, 'Paid'),
+                (DECLINED, 'Declined or no card: payment link sent, retried'),
+                (UNKNOWN, 'Charge outcome unknown: staff decide')]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    record = models.ForeignKey(DoctorSubscription, on_delete=models.CASCADE,
+                               related_name='monthly_charges')
+    due_on = models.DateField()
+    order_id = models.UUIDField(null=True, blank=True, unique=True)
+    outcome = models.CharField(max_length=10, choices=OUTCOMES, default=PENDING)
+    attempts = models.PositiveIntegerField(default=0)
+    next_try_on = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ['due_on', 'id']
+        constraints = [models.UniqueConstraint(fields=['record', 'due_on'],
+                                               name='monthly_charge_one_per_month')]
+
+    def __str__(self):
+        return f'Monthly charge {self.pk} ({self.outcome})'
+
+
 class VoucherRedemption(models.Model):
     """One use of a voucher by one order (epic-subscriptions entry 4, AD-20, S5; user
     decisions 2026-11-20). It follows the order through the `payments.hooks` receivers of
