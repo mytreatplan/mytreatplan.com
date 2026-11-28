@@ -270,8 +270,9 @@ only with auto-renew on.
   attention (a Sentry error from `payments.repeat`).
 - **Renewal**: the first month after the term paid starts the next term on its due date
   (reason `renewal` with the order, the system as the actor), with a new monthly grant of
-  included cases. Retried and dropped as any month. A row no longer sold: no order, a Sentry
-  warning, Basic the day after `ends_on`.
+  included cases. Retried and dropped as any month (a row no longer sold too: no order, a
+  Sentry warning, Basic when the day-7 retry is over). With auto-renew on, `drop_unrenewed`
+  never drops a monthly record: one skipped today is charged by the next run.
 - **Auto-renew off**: the doctor keeps paying until the commitment ends; nothing is charged
   after `ends_on`, and `drop_unrenewed` puts the record on Basic the day after it.
 
@@ -280,8 +281,11 @@ The 30-day reminder (`due_reminders`) also goes 30 days before a monthly commitm
 `count × months paid ÷ 12`, the months paid being the term's order (its confirmed payments)
 plus the term's paid `MonthlyCharge` rows (`service.paid_months`). On the upgrade screen a
 monthly payer sees the next charge date (or the next retry), the card, a failed month being
-retried, when the commitment renews (or ends) and the Turn off / Turn on button; no "Renew
-now".
+retried (the link mentioned only when the month has an order to pay), when the commitment
+renews (or ends) and the Turn off / Turn on button, also past `ends_on` while the renewal
+month is retried; no "Renew now". A row no longer sold mid-term: the screen says the months
+cannot be charged and the level ends on the day-7 date unless the doctor contacts us, and the
+final email says the subscription is no longer offered.
 
 ## Included cases (epic-subscriptions 13)
 

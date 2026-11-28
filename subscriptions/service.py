@@ -984,8 +984,11 @@ class RenewalInfo:
     price) and the record's `version` (for `set_auto_renew`). A monthly record
     (epic-subscriptions 8.7) also has `monthly` True, `next_charge_on` (the day its card is
     charged next: the next month due, or the next retry of a failed one; None when nothing
-    more is charged in the term), `past_due` (a month unpaid, retried) and `renews_on` (the
-    first day after the term: the renewal's charge)."""
+    more is charged in the term), `past_due` (a month unpaid, retried), `renews_on` (the
+    first day after the term: the renewal's charge), `pay_link` (the failed month has an
+    order the doctor can pay) and, for a row no longer sold, `drop_on` (the day the level
+    ends: the last retry of the first unpaid month; None when the term just ends). It is
+    shown past `ends_on` while the renewal month is pending or retried."""
     tier: str
     subscription: object
     ends_on: date
@@ -999,6 +1002,8 @@ class RenewalInfo:
     next_charge_on: date | None = None
     past_due: bool = False
     renews_on: date | None = None
+    pay_link: bool = False
+    drop_on: date | None = None
 
 
 def renewal_info(user, day=None):
@@ -1007,12 +1012,13 @@ def renewal_info(user, day=None):
     only."""
     day = day or resolver.today()
     record = record_of(user)
-    if record is None or not _counts(record, day) or record.ends_on is None \
-            or day > record.ends_on:
+    if record is None or not _counts(record, day) or record.ends_on is None:
         return None
-    if _monthly(record):
+    if _monthly(record) and (day <= record.ends_on or _renewal_month_open(record)):
         row = resolver.subscription_by_id(record.subscription_id)
         sold = _sold_row(record) is not None
+        failed = _failed_charge(record)
+        order = _order(failed.order_id) if failed is not None else None
         return RenewalInfo(
             tier=record.tier, subscription=row, ends_on=record.ends_on, sold=sold,
             auto_renew=record.auto_renew, card_last4=_card_last4(user),
@@ -1020,8 +1026,10 @@ def renewal_info(user, day=None):
             version=record.version, monthly=True,
             next_charge_on=_next_charge_on(record, day),
             past_due=record.status == DoctorSubscription.PAST_DUE,
-            renews_on=record.ends_on + timedelta(days=1))
-    if not _annual(record):
+            renews_on=record.ends_on + timedelta(days=1),
+            pay_link=order is not None and order.state in order.OPEN_STATES,
+            drop_on=None if sold else _drop_on(record, day))
+    if day > record.ends_on or not _annual(record):
         return None
     row = resolver.subscription_by_id(record.subscription_id)
     sold = _sold_row(record) is not None
@@ -1403,12 +1411,12 @@ def drop_unrenewed(day=None):
 
 
 def _drop_monthly(record_pk, day):
-    """Drop to Basic the monthly record `record_pk` whose term ended before `day` without
-    its next term (8.7): auto-renew off, or no charge of the first month after the term (not
-    sold, skipped). Left alone while that charge is retried (the monthly step drops it when
-    the grace is over), while a charge of the record needs staff attention, and when its
-    order is paid but not applied (a Sentry warning). Inside the caller's transaction.
-    Returns True when dropped."""
+    """Drop to Basic the monthly record `record_pk` whose term ended before `day` with
+    auto-renew off (8.7). With auto-renew on it is never dropped here: the monthly step
+    charges the renewal month (a record skipped today is charged by the next run) and drops
+    it when its retries are over. Left alone too while a charge of the record needs staff
+    attention, and when its order is paid but not applied (a Sentry warning). Inside the
+    caller's transaction. Returns True when dropped."""
     from payments import service as payments
     from payments.models import Order
 
@@ -1427,10 +1435,8 @@ def _drop_monthly(record_pk, day):
             return False
         if payments.needs_attention(order):
             return False  # the charge's outcome is unknown: staff decide
-    renewing = next((charge for charge in charges
-                     if charge.due_on == record.ends_on + timedelta(days=1)), None)
-    if record.auto_renew and renewing is not None:
-        return False  # retried by the monthly step; Basic when the grace is over
+    if record.auto_renew:
+        return False  # charged and retried by the monthly step; Basic when the grace is over
     _drop(record, day)
     return True
 
@@ -1618,6 +1624,37 @@ def _next_charge_on(record, day):
     return None
 
 
+def _renewal_month_open(record):
+    """Whether the monthly record's renewal month (`ends_on + 1 day`) is still to be charged
+    or retried: auto-renew on and its charge none yet, pending, or declined with a retry
+    ahead."""
+    if not record.auto_renew:
+        return False
+    charge = _term_charges(record).get(record.ends_on + timedelta(days=1))
+    return (charge is None or charge.outcome == MONTH_PENDING
+            or (charge.outcome == MONTH_DECLINED and charge.next_try_on is not None))
+
+
+def _failed_charge(record):
+    """The first declined month of the record's term, or None."""
+    return next((charge for _due, charge in sorted(_term_charges(record).items())
+                 if charge.outcome == MONTH_DECLINED), None)
+
+
+def _drop_on(record, day):
+    """The day a monthly record that cannot be charged any more drops to Basic: the last
+    retry (day 7) of its first unpaid month; None when nothing more is charged in the term
+    (it then ends after `ends_on`)."""
+    charges = _term_charges(record)
+    for due_on, renews in _due_dates(record):
+        if renews and not record.auto_renew:
+            return None
+        charge = charges.get(due_on)
+        if charge is None or charge.outcome != MONTH_CHARGE_PAID:
+            return max(due_on + timedelta(days=RETRY_DAYS[-1]), day)
+    return None
+
+
 def paid_months(doctor_uid, starts_on, ends_on):
     """How many months after the first one the doctor `doctor_uid` paid in the term
     `starts_on`-`ends_on` (their paid `MonthlyCharge` rows due within it; the first month is
@@ -1686,9 +1723,8 @@ def _prepare_month(record_pk, day):
     """Under the doctor's lock, then the record's (as `_prepare`): (charge, order) of the
     month to charge now (`_month_due`): its order when still payable, else a fresh one; the
     order None when none could be made (no longer sold, no payment method: a Sentry warning,
-    charged as declined). None when there is nothing to do, another open subscription order
-    of the doctor (the next run looks again), or the renewal month of a row no longer sold
-    (the term ends: Basic the day after `ends_on`)."""
+    charged as declined: retried, then Basic). None when there is nothing to do or another
+    open subscription order of the doctor (the next run looks again)."""
     from catalogue import pricing
     from payments import service as payments
     from payments.models import Order
@@ -1717,9 +1753,6 @@ def _prepare_month(record_pk, day):
         if open_purchase(user) is not None:
             return None  # another open subscription order of the doctor: the next run
         row = _sold_row(record)
-        if row is None and renews:
-            _warn(f'record {record.pk}', 'not sold (subscription_not_offered)')
-            return None
         try:
             if row is None:
                 raise pricing.OrderRefused(pricing.SUBSCRIPTION_NOT_OFFERED,
@@ -1930,7 +1963,8 @@ class MonthNotice:
     can be paid: the email then says to contact us), for a failed attempt the `next_try_on`
     (None: the grace is over, `dropped` to Basic) and the `last_try_on`; for a receipt the
     `order` paid, whether it `renewed` the commitment, the term's `ends_on` and the
-    `next_charge_on` (None when nothing more is charged in the term)."""
+    `next_charge_on` (None when nothing more is charged in the term). `not_sold`: no order
+    could be made because the held row is no longer sold."""
     user: object
     tier: str
     subscription: object
@@ -1942,6 +1976,7 @@ class MonthNotice:
     renewed: bool = False
     ends_on: date | None = None
     next_charge_on: date | None = None
+    not_sold: bool = False
 
 
 def _tier_of(record):
@@ -1970,15 +2005,25 @@ def month_notice(charge_id, attempt):
         return None
     record = charge.record
     line = order.lines.order_by('position').first() if order is not None else None
-    row_id = line.subscription_id if line is not None else record.subscription_id
+    held_id = record.subscription_id or _dropped_row_id(record)
+    row_id = line.subscription_id if line is not None else held_id
     row = resolver.subscription_by_id(row_id) if row_id else None
+    held = resolver.subscription_by_id(held_id) if held_id else None
     return MonthNotice(
         user=record.doctor, tier=row.tier if row is not None else _tier_of(record),
         subscription=row, due_on=charge.due_on,
         order=order if order is not None and order.state in Order.OPEN_STATES else None,
         next_try_on=charge.next_try_on,
         last_try_on=charge.due_on + timedelta(days=RETRY_DAYS[-1]),
-        dropped=charge.next_try_on is None)
+        dropped=charge.next_try_on is None,
+        not_sold=charge.order_id is None and (held is None or not held.active
+                                              or held.manual))
+
+
+def _dropped_row_id(record):
+    """The catalogue row id the record's last drop to Basic ended, or None."""
+    last = record.changes.filter(reason=RENEWAL_UNPAID).order_by('-version').first()
+    return (last.before or {}).get('subscription_id') if last is not None else None
 
 
 def month_receipt(order_id):

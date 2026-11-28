@@ -19,11 +19,11 @@ retried, when the commitment renews (or, auto-renew off, ends) and the same butt
 {% if renewal %}
 <div class="mt-4 flex flex-col gap-3 rounded-12 border border-line bg-surface p-5 text-copy" data-renewal>
   {% if renewal.monthly %}
-  {% if renewal.past_due %}<p class="font-semibold" data-past-due>{% translate "Your last monthly payment could not be charged. We emailed you a link to pay it." %}</p>{% endif %}
-  {% if renewal.next_charge_on %}<p data-next-charge>{% blocktranslate with date=renewal.next_charge_on|date:"DATE_FORMAT" %}Paid monthly: next charge on <strong>{{ date }}</strong>.{% endblocktranslate %}
+  {% if renewal.past_due and renewal.sold %}<p class="font-semibold" data-past-due>{% if renewal.pay_link %}{% translate "Your last monthly payment could not be charged. We emailed you a link to pay it." %}{% else %}{% translate "Your last monthly payment could not be charged." %}{% endif %}</p>{% endif %}
+  {% if renewal.next_charge_on and renewal.sold %}<p data-next-charge>{% blocktranslate with date=renewal.next_charge_on|date:"DATE_FORMAT" %}Paid monthly: next charge on <strong>{{ date }}</strong>.{% endblocktranslate %}
     <span data-renewal-payment>{% if renewal.card_last4 %}{% blocktranslate with last4=renewal.card_last4 %}Charged to your saved card ending in {{ last4 }}.{% endblocktranslate %}{% else %}{% translate "We will email you a payment link on that day." %}{% endif %}</span></p>{% endif %}
   {% if not renewal.sold %}
-  <p data-renewal-date>{% blocktranslate with date=renewal.ends_on|date:"DATE_FORMAT" %}This subscription is no longer offered: your level ends on <strong>{{ date }}</strong>.{% endblocktranslate %}</p>
+  <p data-renewal-date data-not-sold>{% if renewal.drop_on %}{% blocktranslate with date=renewal.drop_on|date:"DATE_FORMAT" %}This subscription is no longer offered, so its monthly payments cannot be charged: your level ends on <strong>{{ date }}</strong> unless you contact us.{% endblocktranslate %}{% else %}{% blocktranslate with date=renewal.ends_on|date:"DATE_FORMAT" %}This subscription is no longer offered: your level ends on <strong>{{ date }}</strong>.{% endblocktranslate %}{% endif %}</p>
   {% elif renewal.auto_renew %}
   <p data-renewal-date>{% blocktranslate with date=renewal.renews_on|date:"DATE_FORMAT" %}Your 12-month commitment renews automatically on <strong>{{ date }}</strong>.{% endblocktranslate %}</p>
   {% else %}

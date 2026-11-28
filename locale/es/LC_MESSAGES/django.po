@@ -4296,3 +4296,27 @@ msgstr "Su permanencia de 12 meses se renueva automáticamente el <strong>%(date
 #, python-format
 msgid "Automatic renewal is off: you keep paying monthly until your commitment ends on <strong>%(date)s</strong>, then your account is on Basic."
 msgstr "La renovación automática está desactivada: sigue pagando cada mes hasta que su permanencia finalice el <strong>%(date)s</strong>; después su cuenta pasa a Básica."
+
+#: subscriptions/templates/subscriptions/upgrade.html
+msgid "Your last monthly payment could not be charged."
+msgstr "No hemos podido cobrar su último pago mensual."
+
+#: subscriptions/templates/subscriptions/upgrade.html
+#, python-format
+msgid "This subscription is no longer offered, so its monthly payments cannot be charged: your level ends on <strong>%(date)s</strong> unless you contact us."
+msgstr "Esta suscripción ya no se ofrece, por lo que no se pueden cobrar sus pagos mensuales: su nivel finaliza el <strong>%(date)s</strong> salvo que contacte con nosotros."
+
+#: subscriptions/templates/subscriptions/email/month_payment_failed_subject.txt
+#, python-format
+msgid "Your MyTreatPlan %(name)s subscription has ended"
+msgstr "Su suscripción MyTreatPlan %(name)s ha finalizado"
+
+#: subscriptions/templates/subscriptions/email/month_payment_failed.txt
+#, python-format
+msgid "Your MyTreatPlan %(name)s subscription is no longer offered, so its monthly payment due on %(date)s cannot be charged. You keep %(name)s until %(last)s; after that your account moves to Basic unless you contact us."
+msgstr "Su suscripción MyTreatPlan %(name)s ya no se ofrece, por lo que no se puede cobrar su pago mensual con vencimiento el %(date)s. Mantiene %(name)s hasta el %(last)s; después, su cuenta pasará a Básica salvo que se ponga en contacto con nosotros."
+
+#: subscriptions/templates/subscriptions/email/month_payment_failed.txt
+#, python-format
+msgid "Your MyTreatPlan %(name)s subscription is no longer offered, so its monthly payment due on %(date)s could not be charged. Your account is on Basic from today."
+msgstr "Su suscripción MyTreatPlan %(name)s ya no se ofrece, por lo que no se ha podido cobrar su pago mensual con vencimiento el %(date)s. Su cuenta pasa a Básica desde hoy."

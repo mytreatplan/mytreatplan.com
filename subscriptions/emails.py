@@ -161,6 +161,7 @@ def build_month_failed(notice):
             'level': level_name(notice.subscription, notice.tier, language),
             'due_on': notice.due_on, 'next_try_on': notice.next_try_on,
             'last_try_on': notice.last_try_on, 'dropped': notice.dropped,
+            'not_sold': notice.not_sold,
             'link': _url('checkout', order.pk) if order is not None else '',
             'order': order,
             'upgrade_url': _url('upgrade'), 'support_url': _url('support'),

@@ -1,10 +1,11 @@
 {% load i18n %}{% autoescape off %}{% translate "Hello," %}
 
-{% if dropped %}{% blocktranslate with name=level date=due_on|date:"DATE_FORMAT" %}We could not charge your saved card for the monthly payment of your MyTreatPlan {{ name }} subscription due on {{ date }}, after several tries. Your account is on Basic from today.{% endblocktranslate %}
+{% if dropped %}{% if not_sold %}{% blocktranslate with name=level date=due_on|date:"DATE_FORMAT" %}Your MyTreatPlan {{ name }} subscription is no longer offered, so its monthly payment due on {{ date }} could not be charged. Your account is on Basic from today.{% endblocktranslate %}{% else %}{% blocktranslate with name=level date=due_on|date:"DATE_FORMAT" %}We could not charge your saved card for the monthly payment of your MyTreatPlan {{ name }} subscription due on {{ date }}, after several tries. Your account is on Basic from today.{% endblocktranslate %}{% endif %}
 
 {% translate "To subscribe again, choose a level on your subscription levels:" %}
 
 {{ upgrade_url }}
+{% elif not_sold %}{% blocktranslate with name=level date=due_on|date:"DATE_FORMAT" last=last_try_on|date:"DATE_FORMAT" %}Your MyTreatPlan {{ name }} subscription is no longer offered, so its monthly payment due on {{ date }} cannot be charged. You keep {{ name }} until {{ last }}; after that your account moves to Basic unless you contact us.{% endblocktranslate %}
 {% else %}{% blocktranslate with name=level date=due_on|date:"DATE_FORMAT" %}We could not charge your saved card for the monthly payment of your MyTreatPlan {{ name }} subscription due on {{ date }}.{% endblocktranslate %}
 
 {% if link %}{% translate "Please pay it within 24 hours here (sign in to MyTreatPlan first):" %}

@@ -114,9 +114,14 @@ context: []
 - Late payment after the drop: `_month_paid` restores the dropped monthly term from the
   `renewal_unpaid` change's `before` (its last change must be that drop), or renews it when the
   month was the renewal month.
-- `drop_unrenewed` also drops a monthly record the day after `ends_on` when auto-renew is off or
-  the renewal month has no charge (row no longer sold, skipped); never while a charge of the
-  term needs staff attention or its renewal month is being retried.
+- `drop_unrenewed` also drops a monthly record the day after `ends_on` when auto-renew is off;
+  never with auto-renew on (the monthly step charges the renewal month, a skipped record next
+  run, and drops it when day 7 fails) or while a charge needs staff attention. A renewal
+  month of a row no longer sold goes the failed path (no order, retries, Basic on day 7).
+- Review fixes (coordinator, 2026-11-28): not-sold texts on the screen (`drop_on`) and in the
+  dropped email (`not_sold`); the past-due line names the link only with an open order
+  (`pay_link`); `renewal_info` keeps a monthly record past `ends_on` while its renewal month
+  is pending or retried; `_drop_monthly` never drops with auto-renew on.
 - Included cases: monthly months paid = `payments.months_paid(source order)` (its confirmed
   payments: 1 for a paid order, keeping 8.13's test of repeat payments on one order) +
   `service.paid_months(doctor_uid, starts_on, ends_on)` (paid rows due after `starts_on`, up to

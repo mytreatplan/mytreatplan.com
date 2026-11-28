@@ -469,3 +469,93 @@ def test_a_failing_record_is_logged_and_the_others_charged(loaded, monkeypatch, 
     assert service.charge_months_due(month(first, 1)) == {'paid': 1}
     assert f'record {failing} (RuntimeError)' in caplog.text
     assert record(second).monthly_charges.get().outcome == 'paid'
+
+
+# --- Review fixes ------------------------------------------------------------------------------
+
+def test_a_row_no_longer_sold_mid_term_says_so_and_drops_on_day_7(loaded):
+    from integration.tests.snapshot_rows import pull
+    from subscriptions.tests.test_renewals import VOUCHERS, section
+    user = monthly()
+    due = month(user, 1)
+    assert pull(loaded, 2, section(advanced_active=False), vouchers=VOUCHERS) == (
+        'applied', 2)
+    info = service.renewal_info(user)
+    assert (info.sold, info.drop_on) == (False, due + 7 * DAY)
+    page = html(browser(user).get('/en/upgrade/'))
+    assert 'its monthly payments cannot be charged' in page
+    assert f'your level ends on <strong>{shown(due + 7 * DAY)}</strong> unless you contact us' \
+        in page
+    assert 'data-auto-renew' not in page
+    for day in (due, due + DAY, due + 3 * DAY):
+        assert service.charge_months_due(day) == {'declined': 1}
+    assert orders(user) == 1 and charge_of(user, due).order_id is None
+    info = service.renewal_info(user, due + 3 * DAY)
+    assert (info.past_due, info.pay_link, info.drop_on) == (True, False, due + 7 * DAY)
+    assert send_failed(charge_of(user, due)) is True  # before the drop
+    body = mail.outbox[-1].body
+    assert 'is no longer offered' in body and f'until {shown(due + 7 * DAY)}' in body
+    assert 'could not charge your saved card' not in body
+    assert service.charge_months_due(due + 7 * DAY) == {'dropped': 1}
+    assert record(user).tier == 'basic'
+    charge = charge_of(user, due)
+    assert send_failed(charge) is True
+    message = mail.outbox[-1]
+    assert message.subject == 'Your MyTreatPlan Advanced subscription has ended'
+    assert 'is no longer offered' in message.body and 'Basic from today' in message.body
+    assert 'could not charge your saved card' not in message.body
+    with translation.override('es'):
+        from django.utils.translation import gettext
+        assert gettext('Your last monthly payment could not be charged.') != (
+            'Your last monthly payment could not be charged.')
+
+
+def test_the_past_due_line_mentions_the_link_only_with_an_order_to_pay(loaded):
+    user = monthly()
+    due = month(user, 1)
+    fake.decline_next_charge('0190')
+    assert service.charge_months_due(due) == {'declined': 1}
+    assert service.renewal_info(user, due).pay_link is True
+    Order.objects.filter(pk=latest_order(user).pk).update(state='expired')
+    assert service.renewal_info(user, due).pay_link is False
+
+
+def test_the_block_and_auto_renew_show_while_the_renewal_month_is_retried(loaded):
+    user = monthly()
+    ends_on = today() - 3 * DAY
+    started_on = ends_on + DAY - relativedelta(months=12)
+    service.change(user, expected_version=record(user).version,
+                   actor=service.SYSTEM_ACTOR, reason='test', started_on=started_on,
+                   ends_on=ends_on)
+    pay_months(user)
+    renews_on = ends_on + DAY
+    for day in (renews_on, renews_on + DAY):
+        fake.decline_next_charge('0190')
+        assert service.charge_months_due(day) == {'declined': 1}
+    assert service.drop_unrenewed(today()) == 0
+    info = service.renewal_info(user)  # today: ends_on + 3
+    assert (info.monthly, info.past_due, info.next_charge_on) == (True, True,
+                                                                  renews_on + 3 * DAY)
+    client = browser(user)
+    page = html(client.get('/en/upgrade/'))
+    assert 'data-renewal' in page and 'data-auto-renew="off"' in page
+    assert shown(renews_on + 3 * DAY) in page
+    client.post('/en/upgrade/auto-renew/', {'auto_renew': 'off',
+                                            'version': record(user).version})
+    assert record(user).auto_renew is False
+
+
+def test_a_renewal_month_skipped_today_is_not_dropped_and_charged_next_run(
+        loaded, monkeypatch):
+    user = monthly()
+    pay_months(user)
+    renews_on = record(user).ends_on + DAY
+    other = latest_order(user)
+    original = service.open_purchase
+    monkeypatch.setattr(service, 'open_purchase', lambda doctor: other)
+    assert service.charge_months_due(renews_on) == {}
+    assert service.drop_unrenewed(renews_on) == 0
+    assert record(user).tier == 'advanced'
+    monkeypatch.setattr(service, 'open_purchase', original)
+    assert service.charge_months_due(renews_on + DAY) == {'paid': 1}
+    assert record(user).started_on == renews_on
