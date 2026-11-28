@@ -138,6 +138,14 @@ context: []
 
 ## Review Triage Log
 
+Quick lens, pass 1 (2026-11-28): high 0, medium 3, low 0, false 0, maybe-false 0.
+
+| # | Lens | Finding | Verdict | Route | Evidence |
+|---|------|---------|---------|-------|----------|
+| 1 | quick | A monthly record whose held row is no longer sold mid-term: the screen says the level ends on `ends_on` and mentions a link, the dropped email says the card could not be charged, but each month is treated as failed (past_due, retries, drop ~day 7) with no link | medium | patch | `_prepare_month` raises `OrderRefused` for no `_sold_row`; `_charge_month` counts it declined; `upgrade.html` not-sold branch and `month_payment_failed` texts disagree. Patch: texts say what happens. The behaviour (drop after grace vs keep the level to `ends_on`) is not settled by the frozen intent: put to the user. |
+| 2 | quick | During the renewal month's retries the upgrade screen's monthly block disappears and auto-renew cannot be turned off | medium | patch | `renewal_info` returns None for `day > ends_on`; the renewal month is due `ends_on + 1` and retried to `ends_on + 8` while past_due counts. Decision 3 asks for the next charge date and the button. |
+| 3 | quick | A renewal month skipped or failing before its charge row exists is dropped to Basic by the same run, with no attempt, email or grace | medium | patch | `_prepare_month` returns/raises before a `MonthlyCharge` row in several paths; `_drop_monthly` drops when `renewing is None` regardless of auto-renew. Matrix: a failed renewal is retried, then Basic. |
+
 ## Verification
 
 **Commands:**
