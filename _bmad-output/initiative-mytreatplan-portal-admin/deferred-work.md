@@ -279,3 +279,6 @@
 - source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-case-lifecycle/story-sms-fallback-for-case-messages-plan.md`
   summary: `notifications.E001` only reacts when `SMS_SENDER` equals the Twilio path exactly, so a mistyped value (dev had a trailing full stop) passes `manage.py check` and every SMS then fails with ModuleNotFoundError; the check should also refuse a value that cannot be imported (refactor sweep 10.12).
   evidence: 10.3 dev check 2, first run (2026-11-28): sms row failed ModuleNotFoundError until the setting was fixed.
+- source_plan: `_bmad-output/initiative-mytreatplan-portal-admin/epic-case-lifecycle/story-sms-fallback-for-case-messages-plan.md`
+  summary: For 10.10 (assignment proposal and confirmation, which sends over both channels): an SMS row says `sent` as soon as Twilio accepts the request, but Twilio can fail it afterwards (dev, 2026-11-28: error 21703, no usable sender while "MyTreatPlan" awaited verification); add a Twilio status callback (StatusCallback URL, request signature checked) that stores the final delivery status and error code on the row, keeping the Twilio message SID.
+  evidence: 10.3 dev check 2: row `sent`, Twilio Messages list showed status failed, error 21703, empty from. User decision 2026-11-28: defer to 10.10.
